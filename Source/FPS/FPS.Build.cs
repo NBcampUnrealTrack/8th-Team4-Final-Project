@@ -11,7 +11,8 @@ public class FPS : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
                                                                                                              "GameplayAbilities",
                                                                                                              "GameplayTags",
-                                                                                                             "GameplayTasks","PhysicsCore","UMG", "Slate", "SlateCore" });
+                                                                                                             "GameplayTasks","PhysicsCore","UMG", "Slate", "SlateCore",
+                                                                                                             "DeveloperSettings" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 

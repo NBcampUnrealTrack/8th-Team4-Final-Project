@@ -29,9 +29,19 @@ struct FRogueDamageRequest
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage") 
     FGameplayTag WeaponTag;
 
-    // 기본 데미지
+    // 기본 데미지. 거리/관통 감쇄와 부위 배율까지 적용 완료, 증강 보정 이전
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     float BaseDamage = 0.f;
+
+    // BaseDamage 중 머리에 맞은 몫
+    // 샷건은 펠릿이 부위별로 갈리므로 합산하면 헤드 정보가 사라짐
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
+    float HeadshotDamage = 0.f;
+
+    // 전투팀이 HeadshotDamage 에 이미 곱한 무기 헤드 배율
+    // 헤드샷 데미지 복원을 위해 필요
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
+    float AppliedHeadshotMultiplier = 1.f;
 
 	// 공격 위치
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
@@ -48,6 +58,10 @@ struct FRogueDamageRequest
     // 샷건 팰릿 수
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     int32 PelletsHit = 1;
+
+	// 발사된 총알 인덱스 (첫 발, 마지막 발 등을 구분)
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
+	int32 ShotIndexInMagazine = 0;
 };
 
 // 데미지 처리 결과
