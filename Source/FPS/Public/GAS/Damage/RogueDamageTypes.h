@@ -77,6 +77,37 @@ struct FRogueDamageResult
     bool bShieldBroken = false;
 
 	// 체력 소진 여부
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage") 
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
     bool bHealthDepleted = false;
+};
+
+// 사망 결과
+USTRUCT(BlueprintType)
+struct FRogueDeathContext
+{
+    GENERATED_BODY()
+
+    // 사망자
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    TObjectPtr<AActor> VictimActor = nullptr;
+
+    // 처치자. 킬 카운트 / 킬로그
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    TObjectPtr<AActor> InstigatorActor = nullptr;
+
+    // 투사체 등 물리적 원인
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    TObjectPtr<AActor> CauserActor = nullptr;
+
+    // 무기 종류
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    FGameplayTag WeaponTag;
+
+    // 피격 부위
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    FGameplayTag HitZoneTag;
+
+    // 헤드샷 여부
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    bool bHeadshot = false;
 };

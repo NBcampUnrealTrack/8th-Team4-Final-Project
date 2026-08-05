@@ -1,5 +1,197 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueVitalAttributeSet.h"
 
+#include "GameplayEffectExtension.h"
+#include "Net/UnrealNetwork.h"
+
+URogueVitalAttributeSet::URogueVitalAttributeSet()
+{
+	InitHealth(100.f);
+	InitMaxHealth(100.f);
+	InitShield(0.f);
+	InitMaxShield(50.f);
+	InitShopDamageAmplification(0.f);
+}
+
+void URogueVitalAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 체력/보호막은 관전자, 팀원 UI 에도 필요
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, Health,    COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, Shield,    COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, MaxShield, COND_None, REPNOTIFY_Always);
+
+	// 본인 HUD 전용
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, COND_OwnerOnly, REPNOTIFY_Always);
+}
+
+void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
+{
+	Super::PreAttributeChange(Attribute, NewValue);
+
+	if (Attribute == GetMaxHealthAttribute())
+	{
+		// 최대 체력은 반드시 1 이상
+		NewValue = FMath::Max(1.f, NewValue);
+	}
+	else if (Attribute == GetMaxShieldAttribute())
+	{
+		NewValue = FMath::Max(0.f, NewValue);
+	}
+	else if (Attribute == GetHealthAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxHealth());
+	}
+	else if (Attribute == GetShieldAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxShield());
+	}
+	else if (Attribute == GetShopDamageAmplificationAttribute())
+	{
+		// 상점 공격력 증가 상한 +25%
+		NewValue = FMath::Clamp(NewValue, 0.f, 0.25f);
+	}
+}
+
+void URogueVitalAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+
+	if (Attribute == GetMaxHealthAttribute())
+	{
+		AdjustCurrentForNewMax(GetHealthAttribute(), GetHealth(), OldValue, NewValue);
+	}
+	else if (Attribute == GetMaxShieldAttribute())
+	{
+		AdjustCurrentForNewMax(GetShieldAttribute(), GetShield(), OldValue, NewValue);
+	}
+}
+
+void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	const FGameplayAttribute Attribute = Data.EvaluatedData.Attribute;
+
+	// 보호막 차감
+	if (Attribute == GetIncomingShieldDamageAttribute())
+	{
+		const float Delta = GetIncomingShieldDamage();
+		SetIncomingShieldDamage(0.f);
+
+		if (Delta > 0.f)
+		{
+			SetShield(FMath::Clamp(GetShield() - Delta, 0.f, GetMaxShield()));
+		}
+		return;
+	}
+
+	// 체력 차감
+	if (Attribute == GetIncomingDamageAttribute())
+	{
+		const float Delta = GetIncomingDamage();
+		SetIncomingDamage(0.f);
+
+		if (Delta > 0.f)
+		{
+			SetHealth(FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth()));
+		}
+
+		// 사망 감지 시 브로드캐스트 서버에서만 실행
+		UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+		if (GetHealth() <= 0.f && !bDeathDeclared && OwnerASC && OwnerASC->IsOwnerActorAuthoritative())
+		{
+			bDeathDeclared = true;
+			OnOutOfHealth.Broadcast(OwnerASC, Data.EffectSpec.GetContext());
+		}
+		return;
+	}
+
+	// 회복
+	if (Attribute == GetIncomingHealingAttribute())
+	{
+		const float Delta = GetIncomingHealing();
+		SetIncomingHealing(0.f);
+
+		// 이미 사망한 상태면 회복하지 않음
+		if (Delta > 0.f && !bDeathDeclared)
+		{
+			SetHealth(FMath::Clamp(GetHealth() + Delta, 0.f, GetMaxHealth()));
+		}
+		return;
+	}
+
+	// GE가 직접 Health/Shield 를 수정하는 경우 클램핑
+	// 해당 경로는 사용하지 않는 것을 권장, 일단 구현
+	if (Attribute == GetHealthAttribute())
+	{
+		SetHealth(FMath::Clamp(GetHealth(), 0.f, GetMaxHealth()));
+
+		// 사망 감지 시 브로드캐스트 서버에서만 실행
+		UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+		if (GetHealth() <= 0.f && !bDeathDeclared && OwnerASC && OwnerASC->IsOwnerActorAuthoritative())
+		{
+			bDeathDeclared = true;
+			OnOutOfHealth.Broadcast(OwnerASC, Data.EffectSpec.GetContext());
+		}
+	}
+	else if (Attribute == GetShieldAttribute())
+	{
+		SetShield(FMath::Clamp(GetShield(), 0.f, GetMaxShield()));
+	}
+}
+
+void URogueVitalAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, Health, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, MaxHealth, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_Shield(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, Shield, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_MaxShield(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, MaxShield, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_ShopDamageAmplification(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, OldValue);
+}
+
+void URogueVitalAttributeSet::AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
+                                                     float CurrentValue, float OldMax, float NewMax)
+{
+	UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+	if (!ASC || FMath::IsNearlyEqual(OldMax, NewMax))
+	{
+		return;
+	}
+
+	// 사망한 상태면 체력/보호막 수정 X
+	if (bDeathDeclared)
+	{
+		return;
+	}
+
+	if (NewMax > OldMax)
+	{
+		// 증가분만큼 현재값도 증가
+		ASC->ApplyModToAttributeUnsafe(CurrentAttribute, EGameplayModOp::Additive, NewMax - OldMax);
+	}
+	else if (CurrentValue > NewMax)
+	{
+		// 감소 시에는 넘치는 값만 감소
+		ASC->ApplyModToAttributeUnsafe(CurrentAttribute, EGameplayModOp::Additive, NewMax - CurrentValue);
+	}
+}
