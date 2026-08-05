@@ -63,7 +63,7 @@ public:
 	FGameplayAttributeData Shield;
 	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, Shield)
 
-	// 최대 보호막 / 해당 값은 조정되지 않음
+	// 최대 보호막
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxShield, Category = "Rogue|Vital")
 	FGameplayAttributeData MaxShield;
 	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, MaxShield)
