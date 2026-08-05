@@ -10,6 +10,7 @@
 class UCameraComponent;
 class UInputAction;
 class USpringArmComponent;
+class UWeaponData;
 struct FInputActionValue;
 
 UCLASS()
@@ -24,8 +25,6 @@ protected:
 	virtual void BeginPlay() override;
 
 public:	
-	virtual void Tick(float DeltaTime) override;
-	
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
@@ -35,6 +34,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Character")
+	UWeaponData* GetWeaponData() const { return WeaponData; }
 
 	void HandleMoveInput(const FInputActionValue& Value);
 	void HandleLookInput(const FInputActionValue& Value);
@@ -53,23 +55,20 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Avatar")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> MoveAction;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Animation")
+	TObjectPtr<UWeaponData> WeaponData;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> LookAction;
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> CycleWeaponAction;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> JumpAction;
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> FireWeaponAction;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> SprintAction;
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> ReloadWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> AimWeaponAction;
 
 private:
-	void Input_Move(const FInputActionValue& Value);
-	void Input_Look(const FInputActionValue& Value);
-	void Input_JumpPressed();
-	void Input_JumpReleased();
-	void Input_SprintPressed();
-	void Input_SprintReleased();
 };

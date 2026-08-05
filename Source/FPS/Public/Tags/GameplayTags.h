@@ -3,12 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "NativeGameplayTags.h"
 
-/**
- * 
- */
 namespace ShooterTags
 {
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_None, "Weapon.Type.None", "No Weapon Type");
-
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_None);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_Rifle);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_Pistol);
 }

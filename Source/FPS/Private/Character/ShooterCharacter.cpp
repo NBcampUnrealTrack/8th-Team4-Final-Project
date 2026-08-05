@@ -3,7 +3,6 @@
 
 #include "Character/ShooterCharacter.h"
 
-#include "EnhancedInputComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -13,7 +12,7 @@
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetRootComponent());
@@ -39,43 +38,11 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	
-}
-
-void AShooterCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
 }
 
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
-
-	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
-	if (!EnhancedInputComponent)
-	{
-		return;
-	}
-
-	if (MoveAction)
-	{
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Move);
-	}
-	if (LookAction)
-	{
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Look);
-	}
-	if (JumpAction)
-	{
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_JumpPressed);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ThisClass::Input_JumpReleased);
-	}
-	if (SprintAction)
-	{
-		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
-		EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
-	}
 }
 
 USkeletalMeshComponent* AShooterCharacter::GetMesh1P_Implementation() const
@@ -109,36 +76,6 @@ FRotator AShooterCharacter::CalculateFixedAimRotation() const
 	}
 
 	return AimRotation;
-}
-
-void AShooterCharacter::Input_Move(const FInputActionValue& Value)
-{
-	HandleMoveInput(Value);
-}
-
-void AShooterCharacter::Input_Look(const FInputActionValue& Value)
-{
-	HandleLookInput(Value);
-}
-
-void AShooterCharacter::Input_JumpPressed()
-{
-	HandleJumpPressed();
-}
-
-void AShooterCharacter::Input_JumpReleased()
-{
-	HandleJumpReleased();
-}
-
-void AShooterCharacter::Input_SprintPressed()
-{
-	HandleSprintPressed();
-}
-
-void AShooterCharacter::Input_SprintReleased()
-{
-	HandleSprintReleased();
 }
 
 void AShooterCharacter::HandleMoveInput(const FInputActionValue& Value)
