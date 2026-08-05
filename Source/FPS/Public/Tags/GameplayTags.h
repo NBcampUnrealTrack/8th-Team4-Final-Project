@@ -20,7 +20,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_SelfCost);
 
 	// 무기 종류
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_None);
+	// FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_None); - 기존 코드와 중복되어 주석 처리
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Rifle);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Sniper);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Shotgun);

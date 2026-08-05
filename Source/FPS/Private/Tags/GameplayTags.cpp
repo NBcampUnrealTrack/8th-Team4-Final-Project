@@ -53,16 +53,13 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_NoShield,   "Source.State.NoShield",   "가해자 보호막 없음");
 
 	// SetByCaller 키
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base,       "Data.Damage.Base",       "전투팀이 넘긴 기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base,       "Data.Damage.Base",       "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_PelletsHit, "Data.Damage.PelletsHit", "이번 사격에서 이 대상에게 적중한 펠릿 수");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경");
-
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Weapon_BaseRPM,           "Data.Weapon.BaseRPM",           "MMC_FireInterval 입력. 최종 쿨다운 = 60 / (BaseRPM x FireRateMultiplier)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Weapon_BaseReloadSeconds, "Data.Weapon.BaseReloadSeconds", "MMC_ReloadDuration 입력");
 
 	// 전투 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsAiming,    "State.Combat.IsAiming",    "조준 중");
