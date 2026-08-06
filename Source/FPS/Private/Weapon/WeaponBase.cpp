@@ -319,6 +319,7 @@ void AWeaponBase::PerformPenetratingLineTrace(const FVector& TraceStart, const F
 		WeaponHit.DistanceMeters = DistanceMeters;
 		WeaponHit.HitLocation = Hit.Location;
 		WeaponHit.HitAngleDegrees = CalculateHitAngleDegrees(Hit, TraceDirection);
+		WeaponHit.HitBoneName = Hit.BoneName;
 		WeaponHit.bPenetratedWall = bCanPenetrate;
 		WeaponHit.RemainingPenetrationPower = RemainingPower;
 		WeaponHit.PelletIndex = PelletIndex;

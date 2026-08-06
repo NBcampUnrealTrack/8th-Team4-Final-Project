@@ -40,6 +40,12 @@ struct FWeaponHitResult
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
 	float HitAngleDegrees = 0.f;
 
+	// 피격 본 이름 (FHitResult::BoneName 원본). 데미지 파이프라인이 HitLocation만으로
+	// 부위(헤드/상체/사지)를 추정하는 것보다 정확하게 판정할 수 있도록 함께 넘긴다.
+	// 엔진 기본 타입(FName)이라 GAS와 무관하다.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
+	FName HitBoneName = NAME_None;
+
 	// 이 히트 지점을 관통해서 트레이스가 계속되었는지 여부
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
 	bool bPenetratedWall = false;
