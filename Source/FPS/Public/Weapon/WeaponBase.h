@@ -31,15 +31,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
 	FOnWeaponHit OnWeaponHit;
 
-	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> 탄퍼짐 반영 라인트레이스 -> 히트 브로드캐스트 -> 반동 적용 -> 연사 카운트 증가.
+	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> 탄퍼짐 반영 라인트레이스(PelletCountPerShot만큼 반복) -> 히트 브로드캐스트
+	// -> 반동 적용 -> 연사 카운트 증가.
+	// bHeavyAttack: 전술 칼처럼 좌/우클릭 대미지가 다른 무기용. AltBaseDamage가 0이면 무시되고 BaseDamage를 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
-	bool Fire();
+	bool Fire(bool bHeavyAttack = false);
 
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void StartReload();
 
 	// ADS 진입/해제. 탄퍼짐(0으로 고정)과 반동 적용 여부에 영향을 준다.
+	// bCanADS가 false인 무기(샷건/칼 등)는 true를 넘겨도 무시되고 계속 지향 사격 상태로 남는다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetADS(bool bNewIsADS);
 
@@ -71,6 +74,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	int32 GetMagazineSize() const { return MagazineSize; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetReloadDuration() const { return ReloadDuration; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	bool UsesAmmo() const { return bUsesAmmo; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -83,8 +95,9 @@ protected:
 	void TickRecoilRecovery(float DeltaTime);
 
 	// --- 관통 라인트레이스 ---
-	bool GetTraceOriginAndDirection(FVector& OutStart, FVector& OutDirection) const;
-	void PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex);
+	bool GetTraceOrigin(FVector& OutStart) const;
+	FVector CalculateTraceDirection(const FVector& AimDirection) const;
+	void PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex, float ShotDamage);
 	float GetSurfaceThickness(const FHitResult& Hit) const;
 	float GetSurfaceHardness(const FHitResult& Hit) const;
 	static float CalculateHitAngleDegrees(const FHitResult& Hit, const FVector& TraceDirection);
@@ -96,6 +109,24 @@ protected:
 	// 발당 기본 대미지 (관통 감쇠 이전 값)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float BaseDamage = 26.f;
+
+	// 강공격(예: 전술 칼 우클릭) 대미지. 0이면 강공격이 없는 무기로 취급해 BaseDamage를 그대로 쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	float AltBaseDamage = 0.f;
+
+	// 사격 1회당 발사되는 펠릿 수. 샷건은 10, 그 외 단발 무기는 1.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	int32 PelletCountPerShot = 1;
+
+	// 탄약/재장전을 사용하는 무기인지 여부. 전술 칼처럼 탄약이 없는 무기는 false로 설정한다.
+	// false면 CanFireNow()가 탄약을 확인하지 않고, StartReload()도 아무 동작을 하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	bool bUsesAmmo = true;
+
+	// ADS 가능한 무기인지 여부. 샷건/칼처럼 ADS가 없는 무기는 false로 설정한다.
+	// false면 SetADS(true)를 호출해도 무시된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS")
+	bool bCanADS = true;
 
 	// 무기 자체의 고정 발사속도. 증강/스탯 보정 이전 값.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")

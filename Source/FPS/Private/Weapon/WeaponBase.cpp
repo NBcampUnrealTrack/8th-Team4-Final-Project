@@ -39,7 +39,7 @@ void AWeaponBase::Tick(float DeltaTime)
 
 bool AWeaponBase::CanFireNow() const
 {
-	if (bIsReloading || CurrentAmmo <= 0 || EffectiveRPM <= 0.f)
+	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || EffectiveRPM <= 0.f)
 	{
 		return false;
 	}
@@ -66,10 +66,10 @@ void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
-	bIsADS = bNewIsADS;
+	bIsADS = bCanADS && bNewIsADS;
 }
 
-bool AWeaponBase::Fire()
+bool AWeaponBase::Fire(bool bHeavyAttack)
 {
 	if (!CanFireNow())
 	{
@@ -83,21 +83,32 @@ bool AWeaponBase::Fire()
 	}
 
 	FVector TraceStart;
-	FVector TraceDirection;
-	if (!GetTraceOriginAndDirection(TraceStart, TraceDirection))
+	if (!GetTraceOrigin(TraceStart))
 	{
 		return false;
 	}
 
 	LastFireTime = World->GetTimeSeconds();
-	CurrentAmmo--;
+
+	if (bUsesAmmo)
+	{
+		CurrentAmmo--;
+	}
 
 	if (ConsecutiveShotCount == 0)
 	{
 		BurstStartTime = World->GetTimeSeconds();
 	}
 
-	PerformPenetratingLineTrace(TraceStart, TraceDirection, 0);
+	const float ShotDamage = (bHeavyAttack && AltBaseDamage > 0.f) ? AltBaseDamage : BaseDamage;
+	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
+	const int32 PelletCount = FMath::Max(PelletCountPerShot, 1);
+
+	for (int32 PelletIndex = 0; PelletIndex < PelletCount; ++PelletIndex)
+	{
+		const FVector TraceDirection = CalculateTraceDirection(AimDirection);
+		PerformPenetratingLineTrace(TraceStart, TraceDirection, PelletIndex, ShotDamage);
+	}
 
 	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
 	if (bIsADS)
@@ -113,7 +124,7 @@ bool AWeaponBase::Fire()
 
 void AWeaponBase::StartReload()
 {
-	if (bIsReloading || CurrentAmmo >= MagazineSize)
+	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= MagazineSize)
 	{
 		return;
 	}
@@ -214,7 +225,7 @@ void AWeaponBase::TickRecoilRecovery(float DeltaTime)
 	AccumulatedRecoilYaw = NewYaw;
 }
 
-bool AWeaponBase::GetTraceOriginAndDirection(FVector& OutStart, FVector& OutDirection) const
+bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
 {
 	if (!CachedOwnerCamera)
 	{
@@ -222,20 +233,21 @@ bool AWeaponBase::GetTraceOriginAndDirection(FVector& OutStart, FVector& OutDire
 	}
 
 	OutStart = CachedOwnerCamera->GetComponentLocation();
-	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
+	return true;
+}
 
+FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
+{
 	if (bIsADS)
 	{
 		// ADS 중에는 탄퍼짐이 없으므로 조준선 정중앙으로 발사한다.
-		OutDirection = AimDirection;
-	}
-	else
-	{
-		const float SpreadDegrees = CalculateCurrentSpreadDegrees();
-		OutDirection = UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
+		return AimDirection;
 	}
 
-	return true;
+	// 펠릿마다 독립적으로 호출되므로, 샷건처럼 PelletCountPerShot > 1인 무기는
+	// 매 펠릿이 콘 안에서 각각 다른 방향으로 무작위 샘플링된다.
+	const float SpreadDegrees = CalculateCurrentSpreadDegrees();
+	return UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
 }
 
 float AWeaponBase::GetSurfaceThickness(const FHitResult& Hit) const
@@ -277,7 +289,7 @@ float AWeaponBase::CalculateHitAngleDegrees(const FHitResult& Hit, const FVector
 	return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(DotProduct, -1.f, 1.f)));
 }
 
-void AWeaponBase::PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex)
+void AWeaponBase::PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex, float ShotDamage)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -293,7 +305,7 @@ void AWeaponBase::PerformPenetratingLineTrace(const FVector& TraceStart, const F
 	TArray<FHitResult> HitResults;
 	World->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
 
-	float CurrentDamage = BaseDamage;
+	float CurrentDamage = ShotDamage;
 	float RemainingPower = PenetrationPower;
 
 	for (const FHitResult& Hit : HitResults)
