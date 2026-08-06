@@ -100,13 +100,7 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 			SetHealth(FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth()));
 		}
 
-		// 사망 감지 시 브로드캐스트 서버에서만 실행
-		UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
-		if (GetHealth() <= 0.f && !bDeathDeclared && OwnerASC && OwnerASC->IsOwnerActorAuthoritative())
-		{
-			bDeathDeclared = true;
-			OnOutOfHealth.Broadcast(OwnerASC, Data.EffectSpec.GetContext());
-		}
+		TryDeclareDeath(Data.EffectSpec.GetContext());
 		return;
 	}
 
@@ -130,13 +124,7 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 	{
 		SetHealth(FMath::Clamp(GetHealth(), 0.f, GetMaxHealth()));
 
-		// 사망 감지 시 브로드캐스트 서버에서만 실행
-		UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
-		if (GetHealth() <= 0.f && !bDeathDeclared && OwnerASC && OwnerASC->IsOwnerActorAuthoritative())
-		{
-			bDeathDeclared = true;
-			OnOutOfHealth.Broadcast(OwnerASC, Data.EffectSpec.GetContext());
-		}
+		TryDeclareDeath(Data.EffectSpec.GetContext());
 	}
 	else if (Attribute == GetShieldAttribute())
 	{
@@ -167,6 +155,35 @@ void URogueVitalAttributeSet::OnRep_MaxShield(const FGameplayAttributeData& OldV
 void URogueVitalAttributeSet::OnRep_ShopDamageAmplification(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, OldValue);
+}
+
+void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle& Context)
+{
+	if (GetHealth() > 0.f || bDeathDeclared)
+	{
+		return;
+	}
+
+	// 사망 확정은 서버에서만
+	UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+	if (!OwnerASC || !OwnerASC->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	bDeathDeclared = true;
+
+	// 사망시 HealthComponent 의 OnOutOfHealth 이벤트를 발신
+	// 구독되지 않은 상태면 사망 처리가 정상적으로 진행되지 않음
+	if (!OnOutOfHealth.IsBound())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
+			     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
+			*GetNameSafe(OwnerASC->GetAvatarActor()));
+	}
+
+	OnOutOfHealth.Broadcast(OwnerASC, Context);
 }
 
 void URogueVitalAttributeSet::AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,

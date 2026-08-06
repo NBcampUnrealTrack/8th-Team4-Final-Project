@@ -47,6 +47,9 @@ private:
 	void AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
 	                            float CurrentValue, float OldMax, float NewMax);
 
+	// 체력이 0 이 되었으면 사망을 1회 확정하고 발신
+	void TryDeclareDeath(const FGameplayEffectContextHandle& Context);
+
 public:
 	// 0 이 되면 즉시 사망
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Rogue|Vital")
@@ -90,6 +93,6 @@ private:
 	bool bDeathDeclared = false;
 
 public:
-	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유한다
-	FOnRogueOutOfHealth OnOutOfHealth;
+	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유
+	mutable FOnRogueOutOfHealth OnOutOfHealth;
 };
