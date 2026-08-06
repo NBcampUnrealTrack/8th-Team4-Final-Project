@@ -8,9 +8,10 @@
 #include "ShooterCharacter.generated.h"
 
 class UCameraComponent;
+class UCombatComponent;
 class UInputAction;
 class USpringArmComponent;
-class UWeaponData;
+class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
@@ -31,12 +32,16 @@ public:
 	virtual USkeletalMeshComponent* GetMesh3P_Implementation() const override;
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
+	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
 
-	UFUNCTION(BlueprintPure, Category = "FPS|Character")
-	UWeaponData* GetWeaponData() const { return WeaponData; }
+	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
+	bool HasCurrentWeapon() const;
+
+	UPROPERTY(BlueprintReadWrite, Category = "FPS|FABRIK")
+	FTransform FabricSocketTransform;
 
 	void HandleMoveInput(const FInputActionValue& Value);
 	void HandleLookInput(const FInputActionValue& Value);
@@ -55,9 +60,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Avatar")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Animation")
-	TObjectPtr<UWeaponData> WeaponData;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
+	TObjectPtr<UCombatComponent> Combat;
 
+private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;
 
@@ -70,5 +76,5 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> AimWeaponAction;
 
-private:
+
 };

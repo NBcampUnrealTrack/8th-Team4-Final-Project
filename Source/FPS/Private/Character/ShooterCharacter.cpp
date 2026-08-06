@@ -5,9 +5,11 @@
 
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
+#include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
+#include "Weapon/WeaponBase.h"
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -33,6 +35,9 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 	GetMesh()->bOnlyOwnerSee = false;
 	GetMesh()->bOwnerNoSee = true;
 	GetMesh()->bReceivesDecals = false;
+
+	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
+	Combat->SetIsReplicated(true);
 }
 
 void AShooterCharacter::BeginPlay()
@@ -63,6 +68,16 @@ UCameraComponent* AShooterCharacter::GetViewCamera_Implementation() const
 FRotator AShooterCharacter::GetFixedAimRotation_Implementation() const
 {
 	return CalculateFixedAimRotation();
+}
+
+AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
+{
+	return IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
+}
+
+bool AShooterCharacter::HasCurrentWeapon() const
+{
+	return IsValid(Combat) && IsValid(Combat->GetCurrentWeapon());
 }
 
 FRotator AShooterCharacter::CalculateFixedAimRotation() const
