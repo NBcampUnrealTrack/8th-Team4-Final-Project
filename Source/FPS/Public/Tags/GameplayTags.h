@@ -71,6 +71,13 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsSwapping);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsDead);
 
+	// 이동 상태.
+	// 지속 증강의 조건이므로 이벤트가 아니라 상태여야 한다 ("질주 중 받는 피해 -10%").
+	// 단 이동속도 계열은 이 태그가 필요 없다 — SprintSpeedMultiplier 축이 조건을 이미 내포한다
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_InAir);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Crouching);
+
 	// 현재 장착 무기 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Weapon_Equipped_Firearm);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Weapon_Equipped_Firearm_Rifle);

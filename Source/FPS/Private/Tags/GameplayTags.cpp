@@ -68,6 +68,11 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsSwapping,  "State.Combat.IsSwapping",  "무기 교체 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
 
+	// 이동 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_InAir,     "State.Movement.InAir",     "공중 (점프·낙하)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Crouching, "State.Movement.Crouching", "웅크림");
+
 	// 현재 장착 무기 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Weapon_Equipped_Firearm,         "State.Weapon.Equipped.Firearm",         "총기 장착(부모 태그)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Weapon_Equipped_Firearm_Rifle,   "State.Weapon.Equipped.Firearm.Rifle",   "돌격소총 장착");
