@@ -101,23 +101,24 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
-	// 비율 계열은 0 ~ 0.95 혹은 0 ~ 1.0
-	// 체력 비례 데미지, 데미지 감소율, 회피율
+	// 1.0 을 허용하면 게임이 성립하지 않는 축들. 0 ~ 0.95
+	// 체력 비례 데미지, 데미지 감소율, 회피율, 쿨타임 감소율
 	if (Attribute == GetMaxHealthPercentDamageAttribute()
 	 || Attribute == GetDamageReductionRateAttribute()
 	 || Attribute == GetDodgeChanceAttribute()
+	 || Attribute == GetCooldownReductionRateAttribute()
 	 )
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 0.95f);
 		return;
 	}
 
-	// 방어구 관통률, 생명력 흡수율, 보호막 전환율, 데미지 반사율, 쿨타임 감소율
+	// 1.0 이어도 성립하는 축들. 0 ~ 1.0
+	// 방어구 관통률, 생명력 흡수율, 보호막 전환율, 데미지 반사율
 	if(Attribute == GetShieldPenetrationRateAttribute()
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetShieldLeechRateAttribute()
-	|| Attribute == GetDamageReflectRateAttribute()
-	|| Attribute == GetCooldownReductionRateAttribute())
+	|| Attribute == GetDamageReflectRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
 		return;
