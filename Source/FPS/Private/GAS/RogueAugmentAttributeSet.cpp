@@ -34,7 +34,6 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitLifestealRate(0.f);
 	InitDamageReductionRate(0.f);
 	InitFlatDamageReduction(0.f);
-	InitDodgeChance(0.f);
 	InitDamageReflectRate(0.f);
 	InitShieldLeechRate(0.f);
 	InitPelletCountBonus(0.f);
@@ -71,7 +70,6 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReductionRate,       COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FlatDamageReduction,       COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HeadshotDamageTakenRate,   COND_OwnerOnly, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DodgeChance,               COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReflectRate,         COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HealingReceivedMultiplier, COND_OwnerOnly, REPNOTIFY_Always);
 
@@ -102,10 +100,9 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	Super::PreAttributeChange(Attribute, NewValue);
 
 	// 1.0 을 허용하면 게임이 성립하지 않는 축들. 0 ~ 0.95
-	// 체력 비례 데미지, 데미지 감소율, 회피율, 쿨타임 감소율
+	// 체력 비례 데미지, 데미지 감소율, 쿨타임 감소율
 	if (Attribute == GetMaxHealthPercentDamageAttribute()
 	 || Attribute == GetDamageReductionRateAttribute()
-	 || Attribute == GetDodgeChanceAttribute()
 	 || Attribute == GetCooldownReductionRateAttribute()
 	 )
 	{
@@ -118,7 +115,8 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	if(Attribute == GetShieldPenetrationRateAttribute()
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetShieldLeechRateAttribute()
-	|| Attribute == GetDamageReflectRateAttribute())
+	|| Attribute == GetDamageReflectRateAttribute()
+	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
 		return;
@@ -162,7 +160,6 @@ ROGUE_AUG_REPNOTIFY(ShieldLeechRate)
 ROGUE_AUG_REPNOTIFY(DamageReductionRate)
 ROGUE_AUG_REPNOTIFY(FlatDamageReduction)
 ROGUE_AUG_REPNOTIFY(HeadshotDamageTakenRate)
-ROGUE_AUG_REPNOTIFY(DodgeChance)
 ROGUE_AUG_REPNOTIFY(DamageReflectRate)
 ROGUE_AUG_REPNOTIFY(HealingReceivedMultiplier)
 

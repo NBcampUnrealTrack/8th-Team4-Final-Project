@@ -156,8 +156,6 @@ FRogueDamageResult URogueDamageSubsystem::MeasureDamageResult(const URogueVitalA
 	Result.bShieldBroken   = (ShieldBefore > 0.f && Vital.GetShield() <= 0.f);
 	Result.bHealthDepleted = Vital.IsDeathDeclared();
 
-	// bDodged는 GE 내부에서 처리되므로 여기서는 알 수 없음
-
 	return Result;
 }
 
@@ -168,6 +166,11 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageRequest& Request,
 	if (Request.HitZoneTag.IsValid())
 	{
 		OutTags.AddTag(Request.HitZoneTag);
+	}
+
+	if (Request.SourceTag.IsValid())
+	{
+		OutTags.AddTag(Request.SourceTag);
 	}
 
 	if (Request.bIsBackstab)

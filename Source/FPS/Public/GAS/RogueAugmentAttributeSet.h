@@ -42,7 +42,6 @@ protected:
 	UFUNCTION() void OnRep_DamageReductionRate(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_FlatDamageReduction(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_HeadshotDamageTakenRate(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_DodgeChance(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DamageReflectRate(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_HealingReceivedMultiplier(const FGameplayAttributeData& OldValue);
 
@@ -130,15 +129,11 @@ public:
 	FGameplayAttributeData FlatDamageReduction;
 	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, FlatDamageReduction)
 
-	// 받는 헤드샷 피해 배율. 1 미만이면 헤드샷 경감
+	// 헤드샷 보너스 배율
+	// 0 이면 상체 피격과 동일
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HeadshotDamageTakenRate, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData HeadshotDamageTakenRate;
 	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, HeadshotDamageTakenRate)
-
-	// 회피 확률
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DodgeChance, Category = "Rogue|Augment|Defense")
-	FGameplayAttributeData DodgeChance;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, DodgeChance)
 
 	// 반사 피해 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReflectRate, Category = "Rogue|Augment|Defense")

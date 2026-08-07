@@ -38,7 +38,7 @@ struct FRogueDamageRequest
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     float HeadshotDamage = 0.f;
 
-    // 전투팀이 HeadshotDamage 에 이미 곱한 무기 헤드 배율
+    // 무기 헤드 배율
     // 헤드샷 데미지 복원을 위해 필요
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     float AppliedHeadshotMultiplier = 1.f;
@@ -73,10 +73,6 @@ struct FRogueDamageResult
 	// 데미지 처리 성공 여부
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage") 
     bool bApplied = false;
-
-	// 회피 여부
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage") 
-    bool bDodged = false;
 
 	// 방어막 데미지
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage") 

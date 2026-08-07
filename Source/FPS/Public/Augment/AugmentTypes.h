@@ -122,10 +122,9 @@ struct FAugmentConditionalDamageRule
     // 배율 이후에 더하는 고정값. 경감 규칙은 음수
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
-
-	// 헤드샷에만 적용되는 규칙 여부
+    // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
-    bool bAppliesToHeadshotPortionOnly = false;
+    bool bAppliesToHeadshotBonusOnly = false;
 };
 
 // 증강 하나가 부여하는 GE
