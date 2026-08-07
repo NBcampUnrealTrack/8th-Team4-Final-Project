@@ -112,13 +112,6 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 {
 	if (!CanFireNow(bHeavyAttack))
 	{
-		// TODO(임시 검증용 로그): 좌/우클릭 쿨다운 상호 차단 확인 끝나면 제거할 것.
-		if (const UWorld* BlockedWorld = GetWorld())
-		{
-			const float RemainingCooldown = LastFireInterval - (BlockedWorld->GetTimeSeconds() - LastFireTime);
-			UE_LOG(LogTemp, Log, TEXT("[%s] Fire(bHeavyAttack=%s) 차단됨 - 남은 쿨다운 %.2fs"),
-				*GetName(), bHeavyAttack ? TEXT("true") : TEXT("false"), FMath::Max(RemainingCooldown, 0.f));
-		}
 		return false;
 	}
 
@@ -139,10 +132,6 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 	LastFireTime = World->GetTimeSeconds();
 	LastFireInterval = 60.f / RPMUsed;
-
-	// TODO(임시 검증용 로그): 좌/우클릭 쿨다운 상호 차단 확인 끝나면 제거할 것.
-	UE_LOG(LogTemp, Log, TEXT("[%s] Fire(bHeavyAttack=%s) 성공 - RPM=%.1f, 다음 쿨다운=%.2fs"),
-		*GetName(), bHeavyAttack ? TEXT("true") : TEXT("false"), RPMUsed, LastFireInterval);
 
 	if (bUsesAmmo)
 	{
