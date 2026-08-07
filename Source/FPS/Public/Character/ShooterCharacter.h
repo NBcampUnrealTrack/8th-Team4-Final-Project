@@ -10,6 +10,7 @@
 class UCameraComponent;
 class UCombatComponent;
 class UInputAction;
+class UPlayerCustomizationComponent;
 class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
@@ -62,6 +63,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
+	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
