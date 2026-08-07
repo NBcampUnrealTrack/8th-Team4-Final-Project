@@ -3,9 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "WeaponTypes.generated.h"
 
 class AActor;
+class UCurveFloat;
 
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
 // GAS 타입(FGameplayTag, AbilitySystemComponent 등)을 절대 포함하지 않는다.
@@ -62,3 +64,47 @@ struct FWeaponHitResult
 // AWeaponBase가 사격 히트를 알릴 때 사용하는 델리게이트.
 // 다른 팀원의 GAS Adapter가 이 델리게이트를 구독해서 FRogueDamageRequest 등으로 변환한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWeaponHit, const FWeaponHitResult&, HitResult);
+
+// 탄퍼짐/반동 튜닝 값 한 세트. 기획(밸런스) 담당자가 코드/블루프린트를 열지 않고도
+// DataTable 행만 수정해서 에디터에서 바로 테스트할 수 있도록 분리한 값들이다.
+// AWeaponBase::SpreadRecoilTable + SpreadRecoilRowName이 지정되면 BeginPlay 시 이 값들로
+// BaseSpreadDegrees 등 개별 프로퍼티를 덮어쓴다. 미지정 시에는 무기 블루프린트에 직접
+// 설정된 기존 값을 그대로 쓴다(하위 호환 fallback).
+USTRUCT(BlueprintType)
+struct FWeaponSpreadRecoilRow : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	// --- 탄퍼짐 ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float BaseSpreadDegrees = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float BloomPerShotDegrees = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float MaxBloomDegrees = 5.f;
+
+	// 사격을 멈춘 뒤 이 시간(초)이 지나야 ConsecutiveShotCount 감소가 시작된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float SpreadDecayDelay = 0.3f;
+
+	// 초당 감소하는 연속 사격 카운트
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float ConsecutiveShotDecayPerSecond = 5.f;
+
+	// --- 반동 ---
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	TObjectPtr<UCurveFloat> RecoilCurve;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilYawFactor = 0.f;
+
+	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilRecoveryDelay = 0.15f;
+
+	// 반동 복귀 FInterpTo 속도
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilRecoverySpeed = 10.f;
+};

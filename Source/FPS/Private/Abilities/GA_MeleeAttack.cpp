@@ -38,8 +38,17 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 	{
-		const float FinalRPM = URPMUtils::GetFinalRPM(ASC, Weapon->GetBaseRPM());
-		Weapon->SetEffectiveRPM(FinalRPM);
+		// 좌/우클릭은 서로 다른 RPM(쿨다운)을 쓰므로, 지금 발동한 쪽의 RPM만 갱신한다.
+		if (bIsHeavyAttack && Weapon->GetAltBaseRPM() > 0.f)
+		{
+			const float FinalAltRPM = URPMUtils::GetFinalRPM(ASC, Weapon->GetAltBaseRPM());
+			Weapon->SetEffectiveAltRPM(FinalAltRPM);
+		}
+		else
+		{
+			const float FinalRPM = URPMUtils::GetFinalRPM(ASC, Weapon->GetBaseRPM());
+			Weapon->SetEffectiveRPM(FinalRPM);
+		}
 	}
 
 	if (AttackMontage && ActorInfo)

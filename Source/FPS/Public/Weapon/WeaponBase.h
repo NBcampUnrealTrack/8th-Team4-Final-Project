@@ -11,6 +11,7 @@
 
 class UCameraComponent;
 class UCurveFloat;
+class UDataTable;
 struct FHitResult;
 
 // 무기 사격 파이프라인 담당 클래스.
@@ -51,19 +52,32 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveRPM(float NewRPM);
 
+	// 강공격(bHeavyAttack) 전용 실제 발사속도(RPM)를 갱신한다. AltBaseRPM이 0인 무기는 사용되지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveAltRPM(float NewRPM);
+
 	// 이동 상태에 따른 탄퍼짐 배율(정지 1.0 / 걷기 1.5 / 공중,뛰기 2.5 / 브레이킹 성공 1.0)을 외부에서 갱신한다.
 	// AWeaponBase는 이동 컴포넌트를 직접 참조하지 않으므로, 호출자(Character/CombatComponent)가 계산해서 넣어준다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetMovementSpreadMultiplier(float NewMultiplier);
 
+	// bHeavyAttack: 확인하려는 공격이 강공격인지. 실제 쿨다운 차단 여부는 좌/우 중 마지막으로 발사된
+	// 쪽의 간격(LastFireInterval) 기준이므로, 반대쪽 클릭의 쿨다운 중에는 bHeavyAttack 값과 무관하게 막힌다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
-	bool CanFireNow() const;
+	bool CanFireNow(bool bHeavyAttack = false) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseRPM() const { return BaseRPM; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetEffectiveRPM() const { return EffectiveRPM; }
+
+	// 0이면 이 무기에 강공격 전용 RPM이 없다는 뜻이며, Fire(true)를 호출해도 BaseRPM/EffectiveRPM을 그대로 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetAltBaseRPM() const { return AltBaseRPM; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetEffectiveAltRPM() const { return EffectiveAltRPM; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsReloading() const { return bIsReloading; }
@@ -85,6 +99,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	// SpreadRecoilTable + SpreadRecoilRowName이 지정된 경우, 해당 행의 값으로
+	// BaseSpreadDegrees 등 아래 탄퍼짐/반동 튜닝 값들을 덮어쓴다. BeginPlay에서 호출된다.
+	void ApplySpreadRecoilTuningTable();
 
 	// --- 탄퍼짐 ---
 	float CalculateCurrentSpreadDegrees() const;
@@ -136,6 +154,16 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float EffectiveRPM = 600.f;
 
+	// 강공격(예: 전술 칼 우클릭) 전용 발사속도. 0이면 강공격이 없는 무기로 취급해 BaseRPM을 그대로 쓴다
+	// (AltBaseDamage와 동일한 규칙). 좌/우 공격속도가 다른 무기만 값을 채운다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	float AltBaseRPM = 0.f;
+
+	// 현재 적용 중인 강공격 실제 발사속도. SetEffectiveAltRPM으로만 갱신되며, 기본값은 AltBaseRPM(또는
+	// AltBaseRPM이 0이면 BaseRPM)과 동일하게 초기화된다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	float EffectiveAltRPM = 0.f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MagazineSize = 30;
 
@@ -155,8 +183,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	int32 ConsecutiveShotCount = 0;
 
+	// --- 탄퍼짐/반동 DT 튜닝 ---
+	// 지정하면 BeginPlay 시 FWeaponSpreadRecoilRow의 값으로 아래 탄퍼짐/반동 튜닝 값들을 덮어쓴다.
+	// 기획 담당자가 코드/블루프린트를 건드리지 않고 이 DataTable 행만 수정해서 에디터에서 바로
+	// 테스트/조정할 수 있게 하기 위함. 비어있으면(=미지정) 아래 기본값/BP 오버라이드를 그대로 쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Tuning")
+	TObjectPtr<UDataTable> SpreadRecoilTable;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Tuning")
+	FName SpreadRecoilRowName;
+
 	// --- 탄퍼짐 튜닝 값 ---
-	// 무기 기본 탄퍼짐 각도. 임의로 1 설정, 추후 DataTable(FWeaponDataRow)로 이관 예정.
+	// 무기 기본 탄퍼짐 각도. SpreadRecoilTable 미지정 시 사용되는 기본값(=fallback).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float BaseSpreadDegrees = 1.f;
 
@@ -210,11 +248,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float DefaultSurfaceThickness = 10.f;
 
-	// SurfaceHardnessMap에 없는 표면 타입에 적용할 기본 경도(관통 난이도)
+	// 히트 액터에 UPenetrableSurfaceComponent가 없고, SurfaceHardnessMap에도 해당 표면 타입이 없을 때
+	// 적용할 최종 기본 경도(관통 난이도).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float DefaultSurfaceHardness = 0.f;
 
 	// 표면 타입(EPhysicalSurface)별 경도. 남은 관통력이 이 값보다 커야 관통 가능.
+	// 레벨 디자인이 벽마다 UPenetrableSurfaceComponent::SurfaceHardness를 직접 지정하지 않은 경우의
+	// 재질 기반 폴백으로 쓰인다(GetSurfaceHardness 우선순위: 컴포넌트 값 > 이 맵 > DefaultSurfaceHardness).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
 
@@ -226,6 +267,11 @@ private:
 	FTimerHandle ReloadTimerHandle;
 
 	float LastFireTime = -1000.f;
+
+	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
+	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).
+	float LastFireInterval = 0.f;
+
 	float TimeSinceLastShot = 1000.f;
 	float BurstStartTime = 0.f;
 	float ConsecutiveShotDecayAccumulator = 0.f;

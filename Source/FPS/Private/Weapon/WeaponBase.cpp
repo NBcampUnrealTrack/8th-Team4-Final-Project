@@ -4,6 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Curves/CurveFloat.h"
+#include "Engine/DataTable.h"
 #include "Weapon/PenetrableSurfaceComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -23,8 +24,37 @@ void AWeaponBase::BeginPlay()
 		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
 	}
 
+	ApplySpreadRecoilTuningTable();
+
 	EffectiveRPM = BaseRPM;
+	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
 	CurrentAmmo = MagazineSize;
+}
+
+void AWeaponBase::ApplySpreadRecoilTuningTable()
+{
+	if (!SpreadRecoilTable || SpreadRecoilRowName.IsNone())
+	{
+		return;
+	}
+
+	const FWeaponSpreadRecoilRow* Row = SpreadRecoilTable->FindRow<FWeaponSpreadRecoilRow>(
+		SpreadRecoilRowName, TEXT("AWeaponBase::ApplySpreadRecoilTuningTable"));
+	if (!Row)
+	{
+		return;
+	}
+
+	BaseSpreadDegrees = Row->BaseSpreadDegrees;
+	BloomPerShotDegrees = Row->BloomPerShotDegrees;
+	MaxBloomDegrees = Row->MaxBloomDegrees;
+	SpreadDecayDelay = Row->SpreadDecayDelay;
+	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
+
+	RecoilCurve = Row->RecoilCurve;
+	RecoilYawFactor = Row->RecoilYawFactor;
+	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
+	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
 }
 
 void AWeaponBase::Tick(float DeltaTime)
@@ -37,9 +67,12 @@ void AWeaponBase::Tick(float DeltaTime)
 	TickRecoilRecovery(DeltaTime);
 }
 
-bool AWeaponBase::CanFireNow() const
+bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
-	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || EffectiveRPM <= 0.f)
+	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
+	const float RPMForRequestedAttack = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+
+	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
 	{
 		return false;
 	}
@@ -50,13 +83,19 @@ bool AWeaponBase::CanFireNow() const
 		return false;
 	}
 
-	const float FireInterval = 60.f / EffectiveRPM;
-	return (World->GetTimeSeconds() - LastFireTime) >= FireInterval;
+	// 쿨다운은 직전에 실제로 발사된 공격(좌/우 무관)의 간격을 기준으로 하므로, 지금 요청한
+	// 공격이 좌/우 어느 쪽이든 그 간격이 지나기 전에는 발사할 수 없다.
+	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
 }
 
 void AWeaponBase::SetEffectiveRPM(float NewRPM)
 {
 	EffectiveRPM = NewRPM;
+}
+
+void AWeaponBase::SetEffectiveAltRPM(float NewRPM)
+{
+	EffectiveAltRPM = NewRPM;
 }
 
 void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
@@ -71,7 +110,7 @@ void AWeaponBase::SetADS(bool bNewIsADS)
 
 bool AWeaponBase::Fire(bool bHeavyAttack)
 {
-	if (!CanFireNow())
+	if (!CanFireNow(bHeavyAttack))
 	{
 		return false;
 	}
@@ -88,7 +127,11 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		return false;
 	}
 
+	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
+	const float RPMUsed = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+
 	LastFireTime = World->GetTimeSeconds();
+	LastFireInterval = 60.f / RPMUsed;
 
 	if (bUsesAmmo)
 	{
@@ -265,6 +308,14 @@ float AWeaponBase::GetSurfaceThickness(const FHitResult& Hit) const
 
 float AWeaponBase::GetSurfaceHardness(const FHitResult& Hit) const
 {
+	if (const AActor* HitActor = Hit.GetActor())
+	{
+		if (const UPenetrableSurfaceComponent* SurfaceComp = HitActor->FindComponentByClass<UPenetrableSurfaceComponent>())
+		{
+			return SurfaceComp->SurfaceHardness;
+		}
+	}
+
 	if (Hit.PhysMaterial.IsValid())
 	{
 		if (const float* FoundHardness = SurfaceHardnessMap.Find(Hit.PhysMaterial->SurfaceType))
