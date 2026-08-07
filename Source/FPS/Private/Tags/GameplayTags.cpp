@@ -114,4 +114,10 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Shotgun_Owned,   "Unlock.Weapon.Shotgun.Owned",   "산탄총 보유");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Pistol_Upgraded, "Unlock.Weapon.Pistol.Upgraded", "권총 업그레이드");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Knife_Upgraded,  "Unlock.Weapon.Knife.Upgraded",  "칼 업그레이드");
+
+	// 증강 계열
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Line, "Augment.Line", "증강 계열 앵커. 하위 계열 태그는 에디터에서 추가");
+
+	// 어빌리티 입력 슬롯
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
 }

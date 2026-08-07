@@ -119,4 +119,14 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Shotgun_Owned);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Pistol_Upgraded);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Knife_Upgraded);
+
+	// 증강 계열 앵커.
+	// 계열 태그(Augment.Line.FireRate 등)는 코드가 이름으로 참조하지 않고 비교만 하므로
+	// 네이티브로 선언하지 않고 에디터에서 추가한다. 이 태그는 그 뿌리이자 피커 필터다
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Line);
+
+	// 어빌리티 입력 슬롯 앵커.
+	// 슬롯 태그(InputTag.Ability.Slot1 등)도 코드가 이름으로 참조하지 않는다 —
+	// 애셋(증강 정의)과 입력 설정이 같은 태그를 가리키기만 하면 된다
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 }

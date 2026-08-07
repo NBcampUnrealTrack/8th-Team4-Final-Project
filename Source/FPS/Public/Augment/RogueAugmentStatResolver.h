@@ -9,20 +9,6 @@
 
 class URogueAugmentAttributeSet;
 
-/**
- * 증강 보정을 적용한 최종 수치를 돌려준다.
- * 타 팀이 증강 시스템을 만나는 유일한 창구다.
- *
- * ASC 나 AttributeSet 이 없으면 기본값을 그대로 반환한다.
- * ARoguePlayerState 가 아직 없는 지금도 타 팀이 최종 API 로 코딩할 수 있고,
- * 나중에 ASC 가 붙으면 값만 달라지고 호출부는 그대로다.
- *
- * 대미지 계수 12축은 여기 없다. ExecCalc_Damage 안쪽에서만 쓰이므로
- * 타 팀 시야에 들어올 이유가 없다.
- *
- * 시간 축(재장전·쿨다운)은 여기서 나눗셈까지 끝낸다.
- * 배율을 그대로 넘겨주면 호출부가 곱해버려 조용히 반대로 걸린다
- */
 UCLASS()
 class FPS_API URogueAugmentStatResolver : public UBlueprintFunctionLibrary
 {
@@ -108,6 +94,6 @@ public:
 
 private:
 	// Character / PlayerState / Controller 중 무엇을 넘겨도 해석
-	// 없으면 nullptr — 호출부는 기본값을 그대로 쓴다
+	// 없으면 nullptr
 	static const URogueAugmentAttributeSet* FindAugmentSet(const AActor* Actor);
 };
