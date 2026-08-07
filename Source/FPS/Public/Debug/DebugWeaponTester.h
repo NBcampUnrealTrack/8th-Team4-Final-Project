@@ -33,6 +33,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Debug|Input")
 	FKey FireKey = EKeys::LeftMouseButton;
 
+	// 칼처럼 bHeavyAttack(강공격) 쿨다운을 따로 테스트해야 하는 무기용. Fire(true)를 호출한다.
+	// ADSKey(우클릭)와 겹치지 않게 별도 키로 뒀다 - bCanADS가 없는 무기는 ADSKey를 눌러도 어차피 무시된다.
+	UPROPERTY(EditAnywhere, Category = "Debug|Input")
+	FKey HeavyFireKey = EKeys::MiddleMouseButton;
+
 	UPROPERTY(EditAnywhere, Category = "Debug|Input")
 	FKey ADSKey = EKeys::RightMouseButton;
 
@@ -41,6 +46,7 @@ protected:
 
 private:
 	void HandleFirePressed();
+	void HandleHeavyFirePressed();
 	void HandleADSPressed();
 	void HandleADSReleased();
 	void HandleReloadPressed();

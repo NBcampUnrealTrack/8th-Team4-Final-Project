@@ -65,11 +65,12 @@ void ADebugWeaponTester::BeginPlay()
 	}
 
 	InputComponent->BindKey(FireKey, IE_Pressed, this, &ADebugWeaponTester::HandleFirePressed);
+	InputComponent->BindKey(HeavyFireKey, IE_Pressed, this, &ADebugWeaponTester::HandleHeavyFirePressed);
 	InputComponent->BindKey(ADSKey, IE_Pressed, this, &ADebugWeaponTester::HandleADSPressed);
 	InputComponent->BindKey(ADSKey, IE_Released, this, &ADebugWeaponTester::HandleADSReleased);
 	InputComponent->BindKey(ReloadKey, IE_Pressed, this, &ADebugWeaponTester::HandleReloadPressed);
 
-	ShowDebugMessage(FString::Printf(TEXT("준비 완료: %s 장착, 좌클릭 발사/우클릭 ADS/R 재장전"), *WeaponClassToTest->GetName()), FColor::Green);
+	ShowDebugMessage(FString::Printf(TEXT("준비 완료: %s 장착, 좌클릭 약공격/휠클릭 강공격/우클릭 ADS/R 재장전"), *WeaponClassToTest->GetName()), FColor::Green);
 }
 
 void ADebugWeaponTester::HandleFirePressed()
@@ -82,6 +83,22 @@ void ADebugWeaponTester::HandleFirePressed()
 
 	const bool bFired = TestWeapon->Fire();
 	ShowDebugMessage(FString::Printf(TEXT("Fire() 호출 -> %s (탄약 %d, 재장전중 %s)"),
+		bFired ? TEXT("성공") : TEXT("실패(쿨다운/탄약/재장전 확인)"),
+		TestWeapon->GetCurrentAmmo(),
+		TestWeapon->IsReloading() ? TEXT("Y") : TEXT("N")),
+		bFired ? FColor::Cyan : FColor::Yellow);
+}
+
+void ADebugWeaponTester::HandleHeavyFirePressed()
+{
+	if (!TestWeapon)
+	{
+		ShowDebugMessage(TEXT("Heavy Fire 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
+		return;
+	}
+
+	const bool bFired = TestWeapon->Fire(true);
+	ShowDebugMessage(FString::Printf(TEXT("Fire(true) 호출 -> %s (탄약 %d, 재장전중 %s)"),
 		bFired ? TEXT("성공") : TEXT("실패(쿨다운/탄약/재장전 확인)"),
 		TestWeapon->GetCurrentAmmo(),
 		TestWeapon->IsReloading() ? TEXT("Y") : TEXT("N")),
