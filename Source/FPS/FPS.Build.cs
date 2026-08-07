@@ -21,7 +21,8 @@ public class FPS : ModuleRules
 			"PhysicsCore",
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"CommonUI"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
