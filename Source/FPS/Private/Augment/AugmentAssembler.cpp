@@ -15,13 +15,12 @@ namespace RogueAugmentAssembler
 	{
 		void ApplyGrantedEffects(UAbilitySystemComponent& ASC,
 		                         const UAugmentDefinition& Definition,
+		                         const FAugmentLevelData& LevelData,
 		                         FAugmentGrantHandles& OutHandles)
 		{
 			for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
 			{
-				const FAugmentGrantedEffect& Granted = Definition.GrantedEffects[Index];
-
-				UClass* EffectClass = Granted.EffectClass.LoadSynchronous();
+				UClass* EffectClass = Definition.GrantedEffects[Index].LoadSynchronous();
 				if (!EffectClass)
 				{
 					UE_LOG(LogAugmentAssembler, Error,
@@ -45,7 +44,8 @@ namespace RogueAugmentAssembler
 					continue;
 				}
 
-				for (const TPair<FGameplayTag, float>& Magnitude : Granted.SetByCallerMagnitudes)
+				// 각 레벨의 SetByCallerMagnitude 를 스펙에 적용. Magnitude 는 레벨마다 다르게 설정
+				for (const TPair<FGameplayTag, float>& Magnitude : LevelData.SetByCallerMagnitudes)
 				{
 					Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
 				}
@@ -102,7 +102,8 @@ namespace RogueAugmentAssembler
 }
 
 FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent& ASC,
-                                                         const UAugmentDefinition& Definition)
+                                                         const UAugmentDefinition& Definition,
+                                                         int32 Level)
 {
 	FAugmentGrantHandles Handles;
 
@@ -114,7 +115,16 @@ FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent
 		return Handles;
 	}
 
-	ApplyGrantedEffects(ASC, Definition, Handles);
+	const FAugmentLevelData* LevelData = Definition.FindLevel(Level);
+	if (!LevelData)
+	{
+		UE_LOG(LogAugmentAssembler, Error,
+			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
+			*Definition.GetName(), Level, Definition.GetMaxLevel());
+		return Handles;
+	}
+
+	ApplyGrantedEffects(ASC, Definition, *LevelData, Handles);
 	GiveGrantedAbilities(ASC, Definition, Handles);
 
 	return Handles;

@@ -60,7 +60,7 @@ void UAugmentInventoryComponent::UninitializeFromAbilitySystem()
 	AbilitySystemComponent = nullptr;
 }
 
-bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Definition)
+bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Definition, int32 Level)
 {
 	const AActor* Owner = GetOwner();
 	if (!Owner || !Owner->HasAuthority())
@@ -84,14 +84,23 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
+	// 요청은 임의의 레벨로 올 수 있음
+	if (!Definition->HasLevel(Level))
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
+			*Definition->GetName(), Level, Definition->GetMaxLevel());
+		return false;
+	}
+
 	const int32 CurrentLevel = GetLevelInLine(Definition->LineTag);
 
 	// 레벨은 반드시 1씩 증가
-	if (Definition->Level != CurrentLevel + 1)
+	if (Level != CurrentLevel + 1)
 	{
 		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s 는 %d레벨인데 현재 보유 레벨은 %d 입니다. 한 칸씩만 오를 수 있습니다"),
-			*Definition->GetName(), Definition->Level, CurrentLevel);
+			TEXT("[AugmentInventory] %s 의 %d레벨을 요청했는데 현재 보유 레벨은 %d 입니다. 한 칸씩만 오를 수 있습니다"),
+			*Definition->GetName(), Level, CurrentLevel);
 		return false;
 	}
 
@@ -110,10 +119,11 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 
 	// 새 증강 적용
 	GrantHandlesByLine.Add(Definition->LineTag,
-		RogueAugmentAssembler::ApplyAugment(*AbilitySystemComponent, *Definition));
+		RogueAugmentAssembler::ApplyAugment(*AbilitySystemComponent, *Definition, Level));
 
 	FAugmentInventoryEntry Entry;
 	Entry.DefinitionId = Definition->GetPrimaryAssetId();
+	Entry.Level        = Level;
 	Entries.Add(Entry);
 
 	RebuildConditionalRuleCache();
@@ -150,13 +160,9 @@ void UAugmentInventoryComponent::ServerRemoveAllAugments()
 int32 UAugmentInventoryComponent::GetLevelInLine(FGameplayTag LineTag) const
 {
 	const int32 Index = FindEntryIndexInLine(LineTag);
-	if (Index == INDEX_NONE)
-	{
-		return 0;
-	}
 
-	const UAugmentDefinition* Definition = ResolveDefinition(Entries[Index].DefinitionId);
-	return Definition ? Definition->Level : 0;
+	// 엔트리가 레벨을 의미함
+	return Index == INDEX_NONE ? 0 : Entries[Index].Level;
 }
 
 TArray<UAugmentDefinition*> UAugmentInventoryComponent::GetOwnedDefinitions() const
@@ -263,6 +269,10 @@ void UAugmentInventoryComponent::RebuildConditionalRuleCache()
 			continue;
 		}
 
-		CachedConditionalRules.Append(Definition->ConditionalDamageRules);
+		// 규칙은 레벨마다 다름
+		if (const FAugmentLevelData* LevelData = Definition->FindLevel(Entry.Level))
+		{
+			CachedConditionalRules.Append(LevelData->ConditionalDamageRules);
+		}
 	}
 }

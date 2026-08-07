@@ -36,7 +36,7 @@ public:
 	// 증강 획득. 서버 전용
 	// 같은 계열을 이미 보유하고 있으면 하위 레벨을 걷어내고 교체
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
-	bool ServerAcquireAugment(UAugmentDefinition* Definition);
+	bool ServerAcquireAugment(UAugmentDefinition* Definition, int32 Level = 1);
 
 	// 매치 초기화. 서버 전용
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")

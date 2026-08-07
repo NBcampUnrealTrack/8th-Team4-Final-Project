@@ -5,7 +5,6 @@
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
-class UGameplayEffect;
 class URogueGameplayAbility;
 
 
@@ -127,20 +126,6 @@ struct FAugmentConditionalDamageRule
     bool bAppliesToHeadshotBonusOnly = false;
 };
 
-// 증강 하나가 부여하는 GE
-USTRUCT(BlueprintType)
-struct FAugmentGrantedEffect
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment")
-    TSoftClassPtr<UGameplayEffect> EffectClass;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
-        meta = (Categories = "Data.Magnitude", ForceInlineRow))
-    TMap<FGameplayTag, float> SetByCallerMagnitudes;
-};
-
 // 증강 하나가 부여하는 어빌리티
 USTRUCT(BlueprintType)
 struct FAugmentGrantedAbility
@@ -157,15 +142,43 @@ struct FAugmentGrantedAbility
     FGameplayTag InputTag;
 };
 
+// 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1
+USTRUCT(BlueprintType)
+struct FAugmentLevelData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level", meta = (MultiLine = "true"))
+    FText Description;
+
+    // 레벨이 오르며 등급도 오르는 계열 표현
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
+    EAugmentTier Tier = EAugmentTier::Common;
+
+	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller. Magnitude 는 레벨마다 다르게 설정
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
+        meta = (Categories = "Data.Magnitude", ForceInlineRow))
+    TMap<FGameplayTag, float> SetByCallerMagnitudes;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
+    TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
+};
+
 // 보유 증강 한 칸
 USTRUCT(BlueprintType)
 struct FAugmentInventoryEntry
 {
     GENERATED_BODY()
 
+    // 정의 애셋 = 계열 하나
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
     FPrimaryAssetId DefinitionId;
 
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
+    int32 Level = 1;
+
+    // 레벨은 비교 X
+	// 동일한 DefinitionId 를 가진 항목이 이미 있으면 교체
     bool operator==(const FAugmentInventoryEntry& Other) const
     {
         return DefinitionId == Other.DefinitionId;

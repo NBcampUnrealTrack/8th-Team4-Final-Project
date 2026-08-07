@@ -3,7 +3,6 @@
 
 #include "Augment/AugmentRegistrySubsystem.h"
 
-#include "Algo/Sort.h"
 #include "Augment/AugmentDefinition.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
@@ -34,7 +33,6 @@ void UAugmentRegistrySubsystem::Deinitialize()
 	}
 
 	DefinitionsById.Reset();
-	LinesByTag.Reset();
 	bReady = false;
 
 	Super::Deinitialize();
@@ -57,26 +55,6 @@ TArray<UAugmentDefinition*> UAugmentRegistrySubsystem::GetAllDefinitions() const
 	}
 
 	return Result;
-}
-
-UAugmentDefinition* UAugmentRegistrySubsystem::FindNextLevelInLine(FGameplayTag LineTag, int32 CurrentLevel) const
-{
-	const FAugmentLine* Line = LinesByTag.Find(LineTag);
-	if (!Line)
-	{
-		return nullptr;
-	}
-
-	for (const TObjectPtr<UAugmentDefinition>& Definition : Line->ByLevel)
-	{
-		if (Definition->Level == CurrentLevel + 1)
-		{
-			return Definition;
-		}
-	}
-
-	// 최고 레벨까지 올린 계열
-	return nullptr;
 }
 
 void UAugmentRegistrySubsystem::StartAsyncLoad()
@@ -102,14 +80,13 @@ void UAugmentRegistrySubsystem::OnCatalogLoaded()
 	bReady = true;
 	OnRegistryReady.Broadcast();
 
-	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 %d종 / 계열 %d개 로드 완료"),
-		DefinitionsById.Num(), LinesByTag.Num());
+	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 계열 %d개 로드 완료"),
+		DefinitionsById.Num());
 }
 
 void UAugmentRegistrySubsystem::BuildIndex()
 {
 	DefinitionsById.Reset();
-	LinesByTag.Reset();
 
 	UAssetManager& Manager = UAssetManager::Get();
 
@@ -124,6 +101,9 @@ void UAugmentRegistrySubsystem::BuildIndex()
 			*UAugmentDefinition::AugmentAssetType.ToString());
 		return;
 	}
+
+	// 계열별로 하나만 있어야 함
+	TMap<FGameplayTag, FPrimaryAssetId> LineOwners;
 
 	for (const FPrimaryAssetId& Id : Ids)
 	{
@@ -142,49 +122,15 @@ void UAugmentRegistrySubsystem::BuildIndex()
 			continue;
 		}
 
+		if (const FPrimaryAssetId* Owner = LineOwners.Find(Definition->LineTag))
+		{
+			UE_LOG(LogAugmentRegistry, Error,
+				TEXT("[AugmentRegistry] 계열 '%s' 를 %s 와 %s 가 함께 쓰고 있습니다. %s 를 제외합니다"),
+				*Definition->LineTag.ToString(), *Owner->ToString(), *Id.ToString(), *Id.ToString());
+			continue;
+		}
+
+		LineOwners.Add(Definition->LineTag, Id);
 		DefinitionsById.Add(Id, Definition);
-		LinesByTag.FindOrAdd(Definition->LineTag).ByLevel.Add(Definition);
-	}
-
-	for (TPair<FGameplayTag, FAugmentLine>& Pair : LinesByTag)
-	{
-		Algo::Sort(Pair.Value.ByLevel,
-			[](const TObjectPtr<UAugmentDefinition>& A, const TObjectPtr<UAugmentDefinition>& B)
-			{
-				return A->Level < B->Level;
-			});
-
-		ValidateLine(Pair.Key, Pair.Value);
-	}
-}
-
-void UAugmentRegistrySubsystem::ValidateLine(const FGameplayTag& LineTag, const FAugmentLine& Line)
-{
-	// 시작이 1레벨이 아닌 경우
-	if (Line.ByLevel[0]->Level != 1)
-	{
-		UE_LOG(LogAugmentRegistry, Error,
-			TEXT("[AugmentRegistry] 계열 '%s' 에 1레벨이 없습니다 (최저 %d). 이 계열은 상점에 나오지 않습니다"),
-			*LineTag.ToString(), Line.ByLevel[0]->Level);
-	}
-
-	for (int32 Index = 1; Index < Line.ByLevel.Num(); ++Index)
-	{
-		const int32 Previous = Line.ByLevel[Index - 1]->Level;
-		const int32 Current  = Line.ByLevel[Index]->Level;
-
-		if (Current == Previous)
-		{
-			// 같은 레벨이 둘 이상인 경우
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] 계열 '%s' 에 %d레벨이 둘 이상입니다"), *LineTag.ToString(), Current);
-		}
-		else if (Current != Previous + 1)
-		{
-			// 다음 레벨이 순차적이지 않은 경우
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] 계열 '%s' 의 레벨이 끊겼습니다 (%d → %d). %d레벨 이상은 획득할 수 없습니다"),
-				*LineTag.ToString(), Previous, Current, Current);
-		}
 	}
 }
