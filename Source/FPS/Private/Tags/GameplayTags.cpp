@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Tags/GameplayTags.h"
 
@@ -69,6 +69,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsFiring,    "State.Combat.IsFiring",    "사격 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsSwapping,  "State.Combat.IsSwapping",  "무기 교체 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Revealed,    "State.Combat.Revealed",    "발각됨");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -123,6 +124,7 @@ namespace RogueTags
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
 
-	// 액티브 증강 쿨타임. 어빌리티마다 하나씩 필요하다
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash, "Cooldown.Augment.Dash", "대시 쿨타임");
+	// 액티브 증강 쿨타임
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
 }

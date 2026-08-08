@@ -8,14 +8,13 @@
 #include "ScalableFloat.h"
 #include "RogueGameplayAbility.generated.h"
 
-// 액티브 증강의 쿨타임 GE
 UCLASS(HideDropdown)
-class URogueCooldownEffect : public UGameplayEffect
+class URogueTimedTagEffect : public UGameplayEffect
 {
 	GENERATED_BODY()
 
 public:
-	URogueCooldownEffect();
+	URogueTimedTagEffect();
 };
 
 

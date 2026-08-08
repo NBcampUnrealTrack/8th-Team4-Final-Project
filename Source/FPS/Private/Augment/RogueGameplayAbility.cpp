@@ -8,7 +8,7 @@
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Tags/GameplayTags.h"
 
-URogueCooldownEffect::URogueCooldownEffect()
+URogueTimedTagEffect::URogueTimedTagEffect()
 {
 	DurationPolicy = EGameplayEffectDurationType::HasDuration;
 
@@ -118,7 +118,7 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
 
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
 		Handle, ActorInfo, ActivationInfo,
-		URogueCooldownEffect::StaticClass(), Level);
+		URogueTimedTagEffect::StaticClass(), Level);
 
 	if (!SpecHandle.IsValid())
 	{
