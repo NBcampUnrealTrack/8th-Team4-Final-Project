@@ -122,4 +122,7 @@ namespace RogueTags
 
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
+
+	// 액티브 증강 쿨타임. 어빌리티마다 하나씩 필요하다
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash, "Cooldown.Augment.Dash", "대시 쿨타임");
 }

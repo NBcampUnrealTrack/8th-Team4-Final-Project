@@ -127,4 +127,7 @@ namespace RogueTags
 
 	// 어빌리티 입력 슬롯 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
+
+	// 액티브 증강 쿨타임
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
 }

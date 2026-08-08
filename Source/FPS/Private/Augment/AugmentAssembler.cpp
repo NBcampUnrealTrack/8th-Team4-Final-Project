@@ -67,6 +67,7 @@ namespace RogueAugmentAssembler
 
 		void GiveGrantedAbilities(UAbilitySystemComponent& ASC,
 		                          const UAugmentDefinition& Definition,
+		                          int32 Level,
 		                          FAugmentGrantHandles& OutHandles)
 		{
 			for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
@@ -86,8 +87,8 @@ namespace RogueAugmentAssembler
 				// GAS 가 non-const 를 요구해서 const_cast
 				UObject* SourceObject = const_cast<UAugmentDefinition*>(&Definition);
 
-				// 입력 방식은 태그. InputID 사용 X
-				FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, SourceObject);
+				// 어빌리티 레벨 = 증강 레벨
+				FGameplayAbilitySpec Spec(AbilityClass, Level, INDEX_NONE, SourceObject);
 
 				if (Granted.InputTag.IsValid())
 				{
@@ -125,7 +126,7 @@ FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent
 	}
 
 	ApplyGrantedEffects(ASC, Definition, *LevelData, Handles);
-	GiveGrantedAbilities(ASC, Definition, Handles);
+	GiveGrantedAbilities(ASC, Definition, Level, Handles);
 
 	return Handles;
 }
