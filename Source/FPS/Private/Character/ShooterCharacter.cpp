@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Character/ShooterCharacter.h"
@@ -9,6 +9,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
+#include "Player/ShooterPlayerState.h"
 #include "Weapon/WeaponBase.h"
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
@@ -48,6 +49,13 @@ void AShooterCharacter::BeginPlay()
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+UAbilitySystemComponent* AShooterCharacter::GetAbilitySystemComponent() const
+{
+	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
+
+	return ShooterPlayerState ? ShooterPlayerState->GetAbilitySystemComponent() : nullptr;
 }
 
 USkeletalMeshComponent* AShooterCharacter::GetMesh1P_Implementation() const

@@ -13,7 +13,7 @@ namespace
 		const TArray<UGameplayAbility*> Instances = Spec.GetAbilityInstances();
 
 		return Instances.IsEmpty()
-			? Spec.ActivationInfo.GetActivationPredictionKey()
+			? FPredictionKey()
 			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
 	}
 }

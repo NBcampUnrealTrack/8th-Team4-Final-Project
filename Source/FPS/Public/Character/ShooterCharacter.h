@@ -1,12 +1,14 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "ShooterCharacter.generated.h"
 
+class UAbilitySystemComponent;
 class UCameraComponent;
 class UCombatComponent;
 class UInputAction;
@@ -16,17 +18,20 @@ class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
-class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface
+class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	AShooterCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	// ASC 는 AShooterPlayerState 소유
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 protected:
 	virtual void BeginPlay() override;
 
-public:	
+public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
