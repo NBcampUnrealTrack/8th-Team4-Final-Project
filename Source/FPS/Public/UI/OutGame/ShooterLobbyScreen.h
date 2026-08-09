@@ -2,13 +2,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "CommonActivatableWidget.h"
+#include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterLobbyScreen.generated.h"
 
 class UCommonButtonBase;
 
 UCLASS()
-class FPS_API UShooterLobbyScreen : public UCommonActivatableWidget{
+class FPS_API UShooterLobbyScreen : public UShooterActivatableWidget{
 	GENERATED_BODY()
 	
 protected:
