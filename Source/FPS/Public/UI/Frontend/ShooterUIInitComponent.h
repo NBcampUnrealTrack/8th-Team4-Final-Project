@@ -1,28 +1,29 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
+﻿// ShooterUIInitComponent.h
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
+#include "CommonActivatableWidget.h"
+#include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "ShooterUIInitComponent.generated.h"
 
-
+// UI 초기화 트리거
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class FPS_API UShooterUIInitComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-public:
-	// Sets default values for this component's properties
-	UShooterUIInitComponent();
-
 protected:
-	// Called when the game starts
 	virtual void BeginPlay() override;
-
-public:
-	// Called every frame
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-
+	
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
+	
+	// 이 Controller가 뜰 때 처음 띄울 화면
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UCommonActivatableWidget> InitialWidgetClass;
+	// 처음 띄울 화면 Tag
+	UPROPERTY(EditAnywhere, Category = "UI", meta = (Categories = "UI.Layer"))
+	FGameplayTag InitialWidgetLayer;
 };

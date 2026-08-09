@@ -1,33 +1,42 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
+﻿// ShooterUIInitComponent.cpp
 #include "UI/Frontend/ShooterUIInitComponent.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/GameInstance.h"
 
-
-// Sets default values for this component's properties
-UShooterUIInitComponent::UShooterUIInitComponent()
-{
-	// Set this component to be initialized when the game starts, and to be ticked every frame.  You can turn these features
-	// off to improve performance if you don't need them.
-	PrimaryComponentTick.bCanEverTick = true;
-
-	// ...
-}
-
-
-// Called when the game starts
-void UShooterUIInitComponent::BeginPlay()
-{
+void UShooterUIInitComponent::BeginPlay(){
 	Super::BeginPlay();
+	
+	APlayerController* PC = Cast<APlayerController>(GetOwner());
+	if (!ensure(PC))
+	{
+		return;
+	}
+	
+	if (!PC->IsLocalController())
+	{
+		return;
+	}
+	
+	UGameInstance* GameInstance = PC->GetGameInstance();
+	if (IsValid(GameInstance) == false)
+	{
+		return;
+	}
+	
+	UShooterUIManagerSubsystem* UIManager = GameInstance->GetSubsystem<UShooterUIManagerSubsystem>();
+	if (IsValid(UIManager) == false)
+	{
+		return;
+	}
+	
+	UIManager->InitializeUI(PC, RootLayoutClass);
+	
+	// BP에서 지정
+	if (!ensure(InitialWidgetClass))
+	{
+		return;
+	}
 
-	// ...
-
-}
-
-
-// Called every frame
-void UShooterUIInitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	// ...
+	UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass);
 }

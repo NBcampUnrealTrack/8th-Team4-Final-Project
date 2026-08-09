@@ -14,7 +14,7 @@ class UCommonActivatableWidgetContainerBase;
  * RegisterLayer로 Tag에 등록하고 컨테이너에 등록한다.
  * PushWidgetToLayer로 태그로 Stack을 찾아 화면을 Stack하고 PopWidgetFromLayer로 pop한다.
  */
-UCLASS()
+UCLASS(Abstract)
 class FPS_API UShooterPrimaryGameLayout : public UCommonActivatableWidget
 {
 	GENERATED_BODY()
