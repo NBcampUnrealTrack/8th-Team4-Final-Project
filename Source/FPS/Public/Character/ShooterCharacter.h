@@ -1,40 +1,53 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "ShooterCharacter.generated.h"
 
+class UAbilitySystemComponent;
 class UCameraComponent;
+class UCombatComponent;
 class UInputAction;
+class UPlayerCustomizationComponent;
 class USpringArmComponent;
+class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
-class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface
+class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
 public:
 	AShooterCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	// ASC 는 AShooterPlayerState 소유
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 protected:
 	virtual void BeginPlay() override;
 
-public:	
-	virtual void Tick(float DeltaTime) override;
-	
+public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
 	virtual USkeletalMeshComponent* GetMesh3P_Implementation() const override;
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
+	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
+	bool HasCurrentWeapon() const;
+
+	UPROPERTY(BlueprintReadWrite, Category = "FPS|FABRIK")
+	FTransform FabricSocketTransform;
 
 	void HandleMoveInput(const FInputActionValue& Value);
 	void HandleLookInput(const FInputActionValue& Value);
@@ -53,23 +66,24 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Avatar")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> MoveAction;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
+	TObjectPtr<UCombatComponent> Combat;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> LookAction;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> JumpAction;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
-	TObjectPtr<UInputAction> SprintAction;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
+	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
-	void Input_Move(const FInputActionValue& Value);
-	void Input_Look(const FInputActionValue& Value);
-	void Input_JumpPressed();
-	void Input_JumpReleased();
-	void Input_SprintPressed();
-	void Input_SprintReleased();
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> CycleWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> FireWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> ReloadWeaponAction;
+
+	UPROPERTY(EditAnywhere, Category = "FPS|Input")
+	TObjectPtr<UInputAction> AimWeaponAction;
+
+
 };
