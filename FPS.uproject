@@ -9,7 +9,9 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
-				"Engine"
+				"Engine",
+				"CommonUI",
+				"GameplayAbilities"
 			]
 		}
 	],
@@ -31,6 +33,10 @@
 		},
 		{
 			"Name": "CommonUI",
+			"Enabled": true
+		},
+		{
+			"Name": "Mutable",
 			"Enabled": true
 		}
 	]
