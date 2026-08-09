@@ -10,14 +10,12 @@ void UShooterUIManagerSubsystem::InitializeUI(
 {
 	if (!OwningController)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("!OwningController Subsystem Is not Valid"));
 		return;
 	}
 	
 	// 이미 이 컨트롤러로 RootLayout이 객체에 올라와있으면 아무것도 안 한다
 	if (IsValid(RootLayoutInstance) && RootLayoutInstance->IsInViewport() )
 	{
-		UE_LOG(LogTemp, Warning, TEXT("IsValid(RootLayoutInstance) && RootLayoutInstance->GetOwningPlayer() == OwningController Subsystem Is not Valid"));
 		return;
 	}
 	
@@ -25,7 +23,6 @@ void UShooterUIManagerSubsystem::InitializeUI(
 	// 뷰포트에선 제거되고 그대로 두면 살아있는데 화면에 없는 상태가 되므로 버리고 다시 만든다
 	if (IsValid(RootLayoutInstance))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("RootLayoutInstance is Valid, RemoveFromParent."));
 		RootLayoutInstance->RemoveFromParent();
 		RootLayoutInstance = nullptr;
 	}
@@ -33,12 +30,10 @@ void UShooterUIManagerSubsystem::InitializeUI(
 	RootLayoutInstance = CreateWidget<UShooterPrimaryGameLayout>(OwningController, RootLayoutClass);
 	if (!RootLayoutInstance)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("RootLayoutInstance is not Valid"));
 		return;
 	}
 	
 	RootLayoutInstance->AddToViewport(-1);
-	UE_LOG(LogTemp, Warning, TEXT("Subsystem Is Valid"));
 }
 
 UCommonActivatableWidget* UShooterUIManagerSubsystem::PushWidgetToLayer(
