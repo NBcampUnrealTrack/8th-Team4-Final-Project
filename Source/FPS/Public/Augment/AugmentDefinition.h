@@ -66,6 +66,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
 	EAugmentCategory AugmentCategory = EAugmentCategory::Stat;
 
+	// 티어는 각 증강의 레벨 공통
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
+	EAugmentTier Tier = EAugmentTier::Common;
+
 	// --------------------------------------------------
 	// 출현 조건
 

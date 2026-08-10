@@ -14,6 +14,7 @@ class UAugmentDefinition;
 class UAugmentRegistrySubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentInventoryChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentOffersChanged);
 
 UCLASS(ClassGroup = (Rogue), meta = (BlueprintSpawnableComponent))
 class FPS_API UAugmentInventoryComponent : public UActorComponent
@@ -42,6 +43,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
 	void ServerRemoveAllAugments();
 
+	// 이번 라운드 후보를 뽑아 Offers 에 채움, 서버 전용
+	// 카드마다 등급을 굴리고, 그 등급 버킷에서 균등 추출
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
+	bool ServerRollOffers(const FAugmentDraftContext& DraftContext, int32 CardCount = 3);
+
+	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
+	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음
+	UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Rogue|Augment")
+	void ServerSelectOffer(int32 OfferIndex);
+
+	// 미선택자 자동 선택. 서버 전용
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
+	bool ServerAutoSelectOffer();
+
+	// 이번 라운드에 제시된 후보
+	// 비어있는 경우 = 선택 완료
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	TArray<FAugmentInventoryEntry> GetOffers() const { return Offers; }
+
+	// 이 라운드의 등급 가중치
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	static float GetTierDraftWeight(EAugmentTier Tier, int32 RoundNumber);
+
 	// 현재 보유한 증강 목록, 서버에서만 변경하며 클라이언트에게 복제
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	TArray<FAugmentInventoryEntry> GetEntries() const { return Entries; }
@@ -69,6 +93,9 @@ private:
 	void OnRep_Entries();
 
 	UFUNCTION()
+	void OnRep_Offers();
+
+	UFUNCTION()
 	void HandleRegistryReady();
 
 	UAugmentRegistrySubsystem* GetRegistry() const;
@@ -77,12 +104,26 @@ private:
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
 	void RebuildConditionalRuleCache();
 
+	// 등급별 후보. 인덱스가 EAugmentTier 값이고 크기는 항상 MAX
+	void GatherCandidatesByTier(TArray<TArray<FAugmentInventoryEntry>>& OutBuckets) const;
+
+	// 선택한 후보를 보유 목록에 추가. 서버 전용
+	bool AcquireFromOffer(int32 OfferIndex, const TCHAR* Reason);
+
+	// 플레이어별로 다른 시드 생성
+	int32 MakeDraftSeed(const FAugmentDraftContext& DraftContext) const;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
 	// 보유 목록. 서버에서만 변경하고 소유자에게만 복제
+	// 수명은 매치 내내. 비어 있다 = 증강 없음
 	UPROPERTY(ReplicatedUsing = OnRep_Entries)
 	TArray<FAugmentInventoryEntry> Entries;
+
+	// 이번 라운드 후보. 서버에서만 변경하고 소유자에게만 복제
+	UPROPERTY(ReplicatedUsing = OnRep_Offers)
+	TArray<FAugmentInventoryEntry> Offers;
 
 	// 서버 전용. 계열별 해제 핸들
 	UPROPERTY()
@@ -90,8 +131,16 @@ private:
 
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
 
+	// 서버 전용. 마지막 추첨에 쓴 시드.
+	// 자동 선택이 이걸 재사용해야 "이 라운드에 왜 이 카드가 자동 선택됐나" 를 재현 가능
+	int32 LastDraftSeed = 0;
+
 public:
-	// 증강 획득/해제 시점에 브로드캐스트. 서버에서만 발생
+	// 보유 목록이 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
 	UPROPERTY(BlueprintAssignable, Category = "Rogue|Augment")
 	FOnAugmentInventoryChanged OnInventoryChanged;
+
+	// 후보가 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
+	UPROPERTY(BlueprintAssignable, Category = "Rogue|Augment")
+	FOnAugmentOffersChanged OnOffersChanged;
 };
