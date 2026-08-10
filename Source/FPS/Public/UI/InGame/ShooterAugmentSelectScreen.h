@@ -33,6 +33,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "UI")
 	FOnAugmentSelected OnAugmentSelected;
 
+	/** 테스트 후 삭제 */
 #if WITH_EDITOR
 	UFUNCTION(BlueprintCallable, Category = "UI|Debug")
 	void DebugFillWithFirstOffers(int32 Count);

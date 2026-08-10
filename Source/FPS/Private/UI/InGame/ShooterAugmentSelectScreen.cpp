@@ -14,7 +14,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 void UShooterAugmentSelectScreen::NativeOnActivated()
 {
 	Super::NativeOnActivated();
-
+	
+	/** 테스트 후 삭제 */
 #if !UE_BUILD_SHIPPING
 	DebugFillWithFirstOffers(3);
 #endif
@@ -94,11 +95,16 @@ void UShooterAugmentSelectScreen::HandleIconsLoaded()
 		UAugmentDefinition* Def = Registry->FindDefinition(Offers[i].DefinitionId);
 		if (IsValid(Def) == false)
 		{
-			UE_LOG(LogShooterAugmentSelectScreen, Error, TEXT("%s는 레지스트리에 없습니다."), *Offers[i].DefinitionId.ToString());
+			UE_LOG(LogShooterAugmentSelectScreen, Error, TEXT("HandleIconsLoaded | %s는 레지스트리에 없습니다."), *Offers[i].DefinitionId.ToString());
 			continue;
 		}
 		
 		UShooterAugmentCard* CardInstance = CreateWidget<UShooterAugmentCard>(this, CardClass);
+		if (IsValid(CardInstance) == false)
+		{
+			UE_LOG(LogShooterAugmentSelectScreen, Error, TEXT("HandleIconsLoaded | AugmentCardClass가 지정되지 않았습니다."), *Offers[i].DefinitionId.ToString());
+			continue;
+		}
 		
 		CardInstance->SetData(Def, Offers[i].Level, i);
 		CardInstance->OnAugmentCardClicked.AddUObject(this, &ThisClass::HandleCardClicked);
@@ -122,6 +128,7 @@ UAugmentRegistrySubsystem* UShooterAugmentSelectScreen::GetRegistry() const
 	return GetGameInstance() ? GetGameInstance()->GetSubsystem<UAugmentRegistrySubsystem>() : nullptr;
 }
 
+/** 테스트 후 삭제 */
 #if !UE_BUILD_SHIPPING
 void UShooterAugmentSelectScreen::DebugFillWithFirstOffers(int32 Count)
 {

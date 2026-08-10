@@ -31,6 +31,7 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 		return;
 	}
 
+	// Text_Name과 MakeLevelSuffix에서 로마어로 변환한 Level
 	Text_Name->SetText(FText::Format(INVTEXT("{0}{1}"), InDefinition->DisplayName, MakeLevelSuffix(InLevel)));
 
 	// Icon은 선택 화면이 UI 번들을 미리 올려둔 것을 꺼내 쓴다
@@ -58,8 +59,7 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	const FShooterAugmentTierStyle* TierStyle = TierStyles->FindStyle(LevelData->Tier);
 	if (TierStyle == nullptr)
 	{
-		UE_LOG(LogShooterAugmentCard, Error, TEXT("%s에 맞는 Style이 정의되지않았습니다."),
-		       *UEnum::GetValueAsString(LevelData->Tier))
+		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentStyle에 %s에 맞는 Style이 정의되지않았습니다."), *UEnum::GetValueAsString(LevelData->Tier))
 		return;
 	}
 
@@ -75,8 +75,7 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 			? ESlateVisibility::HitTestInvisible
 			: ESlateVisibility::Collapsed);
 	}
-
-
+	
 	// 특수 애니메이션 진입 조건
 	// 1. Anim_Highlight 할당
 	// 2. 해당 TierStyle에서 bPlayHighlightIntro가 True
@@ -92,7 +91,7 @@ void UShooterAugmentCard::NativeOnClicked()
 
 	if (OfferIndex == INDEX_NONE)
 	{
-		UE_LOG(LogShooterAugmentCard, Error, TEXT("ShooterAugmentCard::SetData를 거치지않은 카드입니다."));
+		UE_LOG(LogShooterAugmentCard, Error, TEXT("동기화 되지않은 카드입니다."));
 		return;
 	}
 
