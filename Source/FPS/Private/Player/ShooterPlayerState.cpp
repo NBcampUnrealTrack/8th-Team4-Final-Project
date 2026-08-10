@@ -39,6 +39,13 @@ void AShooterPlayerState::PostInitializeComponents()
 	// 폰이 붙는 시점을 PlayerState에서 확인 가능
 	OnPawnSet.AddDynamic(this, &AShooterPlayerState::HandlePawnSet);
 
+	// 생존 상태의 원본은 URogueHealthComponent
+	// bIsAlive는 URogueHealthComponent의 데이터를 파생
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeathStateChanged.AddDynamic(this, &AShooterPlayerState::HandleDeathStateChanged);
+	}
+
 	// 구독보다 폰 연결이 먼저였다면 브로드캐스트를 놓친 것이므로 여기서 처리
 	if (APawn* ExistingPawn = GetPawn())
 	{
@@ -53,6 +60,11 @@ void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, AP
 	{
 		InitializeForAvatar(NewPawn);
 	}
+}
+
+void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
+{
+	SetAlive(!bNewIsDead);
 }
 
 void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
@@ -74,6 +86,9 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 	{
 		bVitalsInitialized = true;
 		ServerResetVitals();
+
+		// 베이스의 bIsAlive 기본값인 false에 맞춰 초기화
+		SetAlive(!HealthComponent->IsDead());
 	}
 
 	if (HasAuthority() && !bStartupAbilitiesGranted)

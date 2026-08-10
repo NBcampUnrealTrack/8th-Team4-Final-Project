@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "GameFramework/PlayerState.h"
+#include "GameFlow/Common/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
 
@@ -15,7 +15,7 @@ class URogueHealthComponent;
 class URogueVitalAttributeSet;
 
 UCLASS()
-class FPS_API AShooterPlayerState : public APlayerState, public IAbilitySystemInterface
+class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -54,11 +54,11 @@ private:
 	UFUNCTION()
 	void HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn);
 
+	UFUNCTION()
+	void HandleDeathStateChanged(bool bNewIsDead);
+
 	void ServerResetVitals();
 
-	// 매치당 한 번. 무기 어빌리티는 무기마다 부여/해제하지 않는다 —
-	// ASC 가 캐릭터보다 오래 살아서 리스폰마다 주면 스펙이 쌓인다.
-	// 사망 중 차단은 어빌리티 쪽 ActivationBlockedTags(State.Combat.IsDead)가 맡는다
 	void ServerGrantStartupAbilities();
 
 protected:

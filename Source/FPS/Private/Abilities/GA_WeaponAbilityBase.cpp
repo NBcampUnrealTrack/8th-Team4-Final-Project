@@ -1,0 +1,49 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "Abilities/GA_WeaponAbilityBase.h"
+
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GameplayTagContainer.h"
+#include "Weapon/WeaponBase.h"
+
+UGA_WeaponAbilityBase::UGA_WeaponAbilityBase()
+{
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+}
+
+AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const
+{
+	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!AvatarActor)
+	{
+		return nullptr;
+	}
+
+	TArray<AActor*> AttachedActors;
+	AvatarActor->GetAttachedActors(AttachedActors);
+
+	for (AActor* AttachedActor : AttachedActors)
+	{
+		if (AWeaponBase* Weapon = Cast<AWeaponBase>(AttachedActor))
+		{
+			return Weapon;
+		}
+	}
+
+	return nullptr;
+}
+
+void UGA_WeaponAbilityBase::SendWeaponGameplayEvent(FGameplayTag EventTag) const
+{
+	if (!EventTag.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEventData Payload;
+	Payload.EventTag = EventTag;
+	Payload.Instigator = GetAvatarActorFromActorInfo();
+
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(GetAvatarActorFromActorInfo(), EventTag, Payload);
+}

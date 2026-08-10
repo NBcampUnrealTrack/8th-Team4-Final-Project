@@ -32,12 +32,13 @@
 			"Enabled": true
 		},
 		{
-			"Name": "CommonUI",
+			"Name": "Mutable",
 			"Enabled": true
 		},
 		{
-			"Name": "Mutable",
+			"Name": "CommonUI",
 			"Enabled": true
 		}
+
 	]
 }
