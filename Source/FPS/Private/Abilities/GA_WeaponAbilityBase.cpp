@@ -34,9 +34,12 @@ AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const
 	return nullptr;
 }
 
-void UGA_WeaponAbilityBase::SendWeaponGameplayEvent(const TCHAR* EventTagString) const
+void UGA_WeaponAbilityBase::SendWeaponGameplayEvent(FGameplayTag EventTag) const
 {
-	const FGameplayTag EventTag = FGameplayTag::RequestGameplayTag(FName(EventTagString));
+	if (!EventTag.IsValid())
+	{
+		return;
+	}
 
 	FGameplayEventData Payload;
 	Payload.EventTag = EventTag;
