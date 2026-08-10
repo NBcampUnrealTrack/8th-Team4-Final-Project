@@ -1,4 +1,4 @@
-#include "Animation/ShooterAnimInstance.h"
+﻿#include "Animation/ShooterAnimInstance.h"
 
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
@@ -108,7 +108,10 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bAiming = IsValid(Combat) && Combat->bAiming;
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
-	CurrentWeaponType = bHasCurrentWeapon ? CurrentWeapon->WeaponType : ShooterTags::TAG_WeaponType_None;
+
+	// dev 머지 대응 임시 스텁
+	// 지금은 항상 None
+	CurrentWeaponType = ShooterTags::TAG_WeaponType_None;
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)

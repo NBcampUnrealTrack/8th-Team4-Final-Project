@@ -19,10 +19,6 @@ namespace
 		1,
 		TEXT("발각된 캐릭터 위에 디버그 원을 그린다. 실루엣 렌더링이 붙으면 이 서브시스템을 삭제한다"),
 		ECVF_Cheat);
-
-	constexpr float SphereRadius = 30.f;
-	constexpr int32 SphereSegments = 12;
-	constexpr float HeightAboveHead = 40.f;
 }
 
 void URogueRevealDebugDrawer::Tick(float DeltaTime)
@@ -30,6 +26,12 @@ void URogueRevealDebugDrawer::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 #if ENABLE_DRAW_DEBUG
+	// 유니티 빌드에서 .cpp 들이 한 번역 단위로 합쳐지므로, 파일 스코프에 두면
+	// 엔진 헤더의 같은 이름을 가려 C4459(경고=에러)가 난다. 함수 안에 둔다
+	constexpr float SphereRadius = 30.f;
+	constexpr int32 SphereSegments = 12;
+	constexpr float HeightAboveHead = 40.f;
+
 	if (CVarDebugReveal.GetValueOnGameThread() == 0)
 	{
 		return;
