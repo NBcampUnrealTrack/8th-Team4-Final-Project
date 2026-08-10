@@ -1,10 +1,11 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Abilities/GA_RangedAttack.h"
 
 #include "AbilitySystemComponent.h"
-#include "Abilities/RPMUtils.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -36,10 +37,10 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		return;
 	}
 
-	// AWeaponBase가 유일하게 GAS 영향을 받는 경로: GA_RangedAttack이 대신 계산해서 꽂아준다.
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	// ASC 가 없으면 BaseRPM 을 그대로 반환
+	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 	{
-		const float FinalRPM = URPMUtils::GetFinalRPM(ASC, Weapon->GetBaseRPM());
+		const float FinalRPM = URogueAugmentStatResolver::GetFinalRPM(Avatar, Weapon->GetBaseRPM());
 		Weapon->SetEffectiveRPM(FinalRPM);
 	}
 
@@ -55,7 +56,7 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 
 	if (bFired)
 	{
-		SendWeaponGameplayEvent(TEXT("Event.Weapon.Fired"));
+		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);

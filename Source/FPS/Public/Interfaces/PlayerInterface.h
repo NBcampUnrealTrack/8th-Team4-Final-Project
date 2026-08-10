@@ -9,6 +9,7 @@
 
 class UCameraComponent;
 class USkeletalMeshComponent;
+class AWeaponBase;
 
 UINTERFACE()
 class UPlayerInterface : public UInterface
@@ -32,4 +33,7 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FPS|Player")
 	FRotator GetFixedAimRotation() const;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FPS|Player")
+	AWeaponBase* GetCurrentWeapon() const;
 };

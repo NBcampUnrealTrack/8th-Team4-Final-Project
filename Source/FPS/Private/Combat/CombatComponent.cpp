@@ -2,6 +2,9 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "Net/UnrealNetwork.h"
+#include "Weapon/WeaponBase.h"
+
 // Sets default values for this component's properties
 UCombatComponent::UCombatComponent()
 {
@@ -12,6 +15,22 @@ UCombatComponent::UCombatComponent()
 	// ...
 }
 
+void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
+	DOREPLIFETIME(UCombatComponent, bAiming);
+}
+
+void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
+{
+	CurrentWeapon = NewWeapon;
+}
+
+void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
+{
+}
 
 // Called when the game starts
 void UCombatComponent::BeginPlay()
