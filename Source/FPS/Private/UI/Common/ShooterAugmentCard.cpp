@@ -51,7 +51,7 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 
 	if (TierStyles == nullptr)
 	{
-		UE_LOG(LogShooterAugmentCard, Error, TEXT("할당된 TierStyles가 없습니다."));
+		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentCard에 UI|TierStyles가 없습니다. 지정해주세요"));
 		return;
 	}
 
@@ -68,17 +68,14 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	Text_TierLabel->SetColorAndOpacity(TierStyle->AccentColor);
 	Text_TierLabel->SetText(TierStyle->TierDisplayName);
 
-	// 특수 효과 진입 조건
-	// 1. Image_AlertBadge 할당
-	// 2. 해당 TierStyle에서 bShowAlertBadge가 True
-	if (IsValid(Image_AlertBadge) && TierStyle->bShowAlertBadge == true)
+
+	if (IsValid(Image_AlertBadge))
 	{
-		Image_AlertBadge->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Image_AlertBadge->SetVisibility(TierStyle->bShowAlertBadge
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
 	}
-	else
-	{
-		Image_AlertBadge->SetVisibility(ESlateVisibility::Collapsed);
-	}
+
 
 	// 특수 애니메이션 진입 조건
 	// 1. Anim_Highlight 할당
