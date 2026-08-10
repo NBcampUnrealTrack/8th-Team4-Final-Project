@@ -70,6 +70,9 @@ struct FHitscanTraceSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Debug")
 	bool bDrawDebugTrace = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Debug")
+	bool bLogResolvedDamage = false;
 };
 
 USTRUCT(BlueprintType)
@@ -77,8 +80,7 @@ struct FHitscanShotRequest
 {
 	GENERATED_BODY()
 
-	// TODO(A 담당): 서버에서 발사 가능 여부와 탄약/RPM 검증이 끝난 뒤 한 번만 전달한다.
-	// 기존 AWeaponBase Trace와 동시에 실행하면 판정 및 대미지가 중복될 수 있다.
+	// AWeaponBase에서 발사 가능 여부와 탄약/RPM 검증, Spread 방향 생성이 끝난 뒤 사격 1회당 한 번 전달한다.
 	UPROPERTY(BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Shot")
 	TObjectPtr<AActor> InstigatorActor = nullptr;
 
@@ -115,6 +117,11 @@ struct FHitscanShotRequest
 
 	UPROPERTY(BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Shot")
 	TObjectPtr<UHitscanSurfaceDefinition> SurfaceDefinition = nullptr;
+
+	// 기존 무기 BP의 EPhysicalSurface별 Hardness 설정을 Resolver 경로에서도 유지한다.
+	// PenetrableSurfaceComponent의 명시적 값이 있으면 해당 값이 최종 우선순위를 가진다.
+	UPROPERTY(BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Shot")
+	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessOverrides;
 
 	UPROPERTY(BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Shot")
 	TArray<TObjectPtr<AActor>> AdditionalIgnoredActors;

@@ -50,6 +50,25 @@ FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 		Result.DamageCoreResult = FHitscanDamageCore::ResolveShot(DamageCoreRequest);
 	}
 
+	if (Request.TraceSettings.bLogResolvedDamage)
+	{
+		for (const FHitscanTargetDamageAggregate& TargetAggregate : Result.DamageCoreResult.TargetAggregates)
+		{
+			UE_LOG(
+				LogHitscanResolver,
+				Log,
+				TEXT("Shot=%s Target=%s Damage=%.2f HeadshotDamage=%.2f Pellets=%d Distance=%.2fm HitZone=%s"),
+				*Result.ShotId.ToString(EGuidFormats::DigitsWithHyphens),
+				*GetNameSafe(TargetAggregate.TargetActor.Get()),
+				TargetAggregate.BaseDamage,
+				TargetAggregate.HeadshotDamage,
+				TargetAggregate.PelletsHit,
+				TargetAggregate.DistanceMeters,
+				*TargetAggregate.RepresentativeHitZoneTag.ToString());
+		}
+	}
+
+	// TODO(GAS 연동): TargetAggregates를 FRogueDamageRequest로 변환해 대상별 한 번 ApplyDamage를 호출한다.
 	Result.bProcessed = true;
 	return Result;
 }
@@ -391,11 +410,21 @@ FHitscanSurfaceRule UHitscanResolverSubsystem::ResolveSurfaceRule(
 	const FHitResult& HitResult,
 	const FHitscanShotRequest& Request) const
 {
+	const TEnumAsByte<EPhysicalSurface> SurfaceType =
+		UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+
 	FHitscanSurfaceRule SurfaceRule = Request.TraceSettings.DefaultSurfaceRule;
 	if (IsValid(Request.SurfaceDefinition.Get()))
 	{
-		SurfaceRule = Request.SurfaceDefinition->ResolveSurfaceRule(
-			UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get()));
+		SurfaceRule = Request.SurfaceDefinition->ResolveSurfaceRule(SurfaceType);
+	}
+
+	if (const float* HardnessOverride = Request.SurfaceHardnessOverrides.Find(SurfaceType))
+	{
+		if (FMath::IsFinite(*HardnessOverride) && *HardnessOverride >= 0.0f)
+		{
+			SurfaceRule.Hardness = *HardnessOverride;
+		}
 	}
 
 	if (Request.TraceSettings.bUsePenetrableSurfaceComponentOverrides)

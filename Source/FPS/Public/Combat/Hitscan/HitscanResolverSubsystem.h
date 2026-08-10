@@ -14,8 +14,7 @@ class FPS_API UHitscanResolverSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	// 서버에서 승인된 한 번의 사격을 처리한다.
-	// TODO(A 담당): AWeaponBase에서 펠릿별 최종 방향을 만든 뒤 이 함수를 한 번만 호출한다.
+	// AWeaponBase에서 승인된 한 번의 사격을 서버 권한으로 처리한다.
 	FHitscanShotResult ResolveServerShot(const FHitscanShotRequest& Request) const;
 
 private:

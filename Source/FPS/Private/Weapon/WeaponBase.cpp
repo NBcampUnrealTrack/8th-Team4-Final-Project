@@ -3,12 +3,15 @@
 #include "Weapon/WeaponBase.h"
 
 #include "Camera/CameraComponent.h"
+#include "Combat/Hitscan/HitscanResolverSubsystem.h"
+#include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Curves/CurveFloat.h"
 #include "Engine/DataTable.h"
-#include "Weapon/PenetrableSurfaceComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/KismetMathLibrary.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
 AWeaponBase::AWeaponBase()
 {
@@ -133,6 +136,10 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	LastFireTime = World->GetTimeSeconds();
 	LastFireInterval = 60.f / RPMUsed;
 
+	const int32 ShotIndexInMagazine = bUsesAmmo
+		? FMath::Max(0, MagazineSize - CurrentAmmo)
+		: 0;
+
 	if (bUsesAmmo)
 	{
 		CurrentAmmo--;
@@ -147,11 +154,14 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
 	const int32 PelletCount = FMath::Max(PelletCountPerShot, 1);
 
+	TArray<FVector> PelletDirections;
+	PelletDirections.Reserve(PelletCount);
 	for (int32 PelletIndex = 0; PelletIndex < PelletCount; ++PelletIndex)
 	{
-		const FVector TraceDirection = CalculateTraceDirection(AimDirection);
-		PerformPenetratingLineTrace(TraceStart, TraceDirection, PelletIndex, ShotDamage);
+		PelletDirections.Add(CalculateTraceDirection(AimDirection));
 	}
+
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
 
 	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
 	if (bIsADS)
@@ -293,109 +303,77 @@ FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 	return UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
 }
 
-float AWeaponBase::GetSurfaceThickness(const FHitResult& Hit) const
-{
-	if (const AActor* HitActor = Hit.GetActor())
-	{
-		if (const UPenetrableSurfaceComponent* SurfaceComp = HitActor->FindComponentByClass<UPenetrableSurfaceComponent>())
-		{
-			return SurfaceComp->PenetrationThickness;
-		}
-	}
-
-	return DefaultSurfaceThickness;
-}
-
-float AWeaponBase::GetSurfaceHardness(const FHitResult& Hit) const
-{
-	if (const AActor* HitActor = Hit.GetActor())
-	{
-		if (const UPenetrableSurfaceComponent* SurfaceComp = HitActor->FindComponentByClass<UPenetrableSurfaceComponent>())
-		{
-			return SurfaceComp->SurfaceHardness;
-		}
-	}
-
-	if (Hit.PhysMaterial.IsValid())
-	{
-		if (const float* FoundHardness = SurfaceHardnessMap.Find(Hit.PhysMaterial->SurfaceType))
-		{
-			return *FoundHardness;
-		}
-	}
-
-	return DefaultSurfaceHardness;
-}
-
-float AWeaponBase::CalculateHitAngleDegrees(const FHitResult& Hit, const FVector& TraceDirection)
-{
-	const AActor* HitActor = Hit.GetActor();
-	if (!HitActor)
-	{
-		return 0.f;
-	}
-
-	const FVector TargetForward = HitActor->GetActorForwardVector();
-	const float DotProduct = FVector::DotProduct(TargetForward, TraceDirection.GetSafeNormal());
-	return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(DotProduct, -1.f, 1.f)));
-}
-
-void AWeaponBase::PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex, float ShotDamage)
+void AWeaponBase::ResolveHitscanShot(
+	const FVector& TraceStart,
+	const TArray<FVector>& PelletDirections,
+	const float ShotDamage,
+	const int32 ShotIndexInMagazine)
 {
 	UWorld* World = GetWorld();
-	if (!World)
+	if (!IsValid(World))
 	{
 		return;
 	}
 
-	const FVector TraceEnd = TraceStart + TraceDirection * TraceRange;
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WeaponBase_Fire), /*bTraceComplex=*/true, this);
-	QueryParams.AddIgnoredActor(GetOwner());
-
-	TArray<FHitResult> HitResults;
-	World->LineTraceMultiByChannel(HitResults, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
-
-	float CurrentDamage = ShotDamage;
-	float RemainingPower = PenetrationPower;
-
-	for (const FHitResult& Hit : HitResults)
+	UHitscanResolverSubsystem* Resolver = World->GetSubsystem<UHitscanResolverSubsystem>();
+	if (!IsValid(Resolver))
 	{
-		if (RemainingPower <= 0.f)
+		if (HasAuthority())
 		{
-			break;
+			UE_LOG(LogWeaponHitscanBridge, Warning, TEXT("Hitscan Resolver subsystem is unavailable. Weapon=%s"), *GetNameSafe(this));
 		}
+		return;
+	}
 
-		const float DistanceMeters = FVector::Dist(TraceStart, Hit.Location) / 100.f;
-		const float Thickness = GetSurfaceThickness(Hit);
-		const float Hardness = GetSurfaceHardness(Hit);
+	FHitscanShotRequest Request;
+	if (IsValid(HitscanDefinition.Get()))
+	{
+		Request.WeaponTag = HitscanDefinition->GetWeaponTag();
+		Request.DamageSettings = HitscanDefinition->GetDamageSettings();
+		Request.PenetrationSettings = HitscanDefinition->GetPenetrationSettings();
+		Request.TraceSettings = HitscanDefinition->GetTraceSettings();
+		Request.SurfaceDefinition = HitscanDefinition->GetSurfaceDefinition();
+	}
 
-		// 1. 관통 가능 여부 판정 (Penetration Power > Surface Hardness)
-		const bool bCanPenetrate = RemainingPower > Hardness;
+	Request.InstigatorActor = GetOwner();
+	Request.CauserActor = this;
+	Request.TraceStart = TraceStart;
+	Request.PelletDirections = PelletDirections;
+	Request.ShotId = FGuid::NewGuid();
+	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
+	Request.InitialPenetrationPower = FMath::Max(0.0f, PenetrationPower);
+	Request.SurfaceHardnessOverrides = SurfaceHardnessMap;
 
-		RemainingPower = FMath::Max(RemainingPower - Thickness, 0.f);
+	Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
+	const float MaximumRangeMeters = FMath::Max(0.0f, TraceRange / 100.0f);
+	Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = MaximumRangeMeters;
+	Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters = FMath::Clamp(
+		Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters,
+		0.0f,
+		MaximumRangeMeters);
 
-		FWeaponHitResult WeaponHit;
-		WeaponHit.SourceActor = GetOwner();
-		WeaponHit.TargetActor = Hit.GetActor();
-		WeaponHit.BaseDamage = CurrentDamage;
-		WeaponHit.DistanceMeters = DistanceMeters;
-		WeaponHit.HitLocation = Hit.Location;
-		WeaponHit.HitAngleDegrees = CalculateHitAngleDegrees(Hit, TraceDirection);
-		WeaponHit.HitBoneName = Hit.BoneName;
-		WeaponHit.bPenetratedWall = bCanPenetrate;
-		WeaponHit.RemainingPenetrationPower = RemainingPower;
-		WeaponHit.PelletIndex = PelletIndex;
+	Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
+	Request.TraceSettings.MaximumPelletCount = FMath::Max(
+		Request.TraceSettings.MaximumPelletCount,
+		PelletDirections.Num());
+	Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(
+		0.1f,
+		DefaultSurfaceThickness);
+	if (DefaultSurfaceHardness > KINDA_SMALL_NUMBER)
+	{
+		Request.TraceSettings.DefaultSurfaceRule.Hardness = DefaultSurfaceHardness;
+	}
 
-		OnWeaponHit.Broadcast(WeaponHit);
-
-		if (!bCanPenetrate)
-		{
-			break;
-		}
-
-		// 2. 관통 두께 연산에 따른 대미지 감쇠: Rremain = 1 - (두께 / 무기 관통력)
-		const float PenetrationRatio = FMath::Clamp(1.f - (Thickness / FMath::Max(PenetrationPower, KINDA_SMALL_NUMBER)), 0.f, 1.f);
-		CurrentDamage *= PenetrationRatio;
+	const FHitscanShotResult ShotResult = Resolver->ResolveServerShot(Request);
+	if (HasAuthority() && !ShotResult.bProcessed)
+	{
+		UE_LOG(
+			LogWeaponHitscanBridge,
+			Warning,
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.2f"),
+			*GetNameSafe(this),
+			PelletDirections.Num(),
+			TraceRange,
+			ShotDamage);
 	}
 }
