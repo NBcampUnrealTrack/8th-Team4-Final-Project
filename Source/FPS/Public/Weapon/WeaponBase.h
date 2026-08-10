@@ -12,6 +12,7 @@
 class UCameraComponent;
 class UCurveFloat;
 class UDataTable;
+class USkeletalMeshComponent;
 struct FHitResult;
 
 // 무기 사격 파이프라인 담당 클래스.
@@ -96,6 +97,23 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
+
+	// 1인칭(캐릭터 팔)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh1P에 붙인다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
+
+	// 3인칭(다른 플레이어에게 보이는 몸통)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh3P에 붙인다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	USkeletalMeshComponent* GetMesh3P() const { return Mesh3P; }
+
+	// CombatComponent가 Mesh1P를 부착할 때 사용할, 캐릭터 팔 스켈레톤 쪽 소켓 이름
+	// (예: 권총 PistolGripPoint, 소총 RifleGripPoint). 무기마다 그립 위치가 다르므로 무기 쪽에서 값을 갖는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	FName GetGripSocketName1P() const { return GripSocketName1P; }
+
+	// CombatComponent가 Mesh3P를 부착할 때 사용할, 캐릭터 바디 스켈레톤 쪽 소켓 이름.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	FName GetGripSocketName3P() const { return GripSocketName3P; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -258,6 +276,28 @@ protected:
 	// 재질 기반 폴백으로 쓰인다(GetSurfaceHardness 우선순위: 컴포넌트 값 > 이 맵 > DefaultSurfaceHardness).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
+
+	// --- 메쉬 ---
+	// 1인칭(로컬 플레이어 본인 시점) 전용 메쉬. bOnlyOwnerSee로 오너만 본다.
+	// CombatComponent가 장착 시 오너 캐릭터의 Mesh1P 산하 GripSocketName1P에 붙인다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	TObjectPtr<USkeletalMeshComponent> Mesh1P;
+
+	// 3인칭(다른 플레이어 시점) 전용 메쉬. bOwnerNoSee로 오너 본인에게는 숨긴다.
+	// CombatComponent가 장착 시 오너 캐릭터의 Mesh3P 산하 GripSocketName3P에 붙인다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	TObjectPtr<USkeletalMeshComponent> Mesh3P;
+
+	// 무기별로 다른 1인칭 그립 소켓 이름 (예: 권총 PistolGripPoint, 소총 RifleGripPoint).
+	// 캐릭터 팔 스켈레톤(SK_Mannequin_Arms_Skeleton)에 미리 정의되어 있어야 한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FName GripSocketName1P;
+
+	// 3인칭 그립 소켓 이름. 대부분의 무기가 공용 소켓을 쓰므로 기본값을 채워둔다.
+	// weapon_r "본" 자체가 아니라, 그 본 밑에 자식으로 추가한 "소켓"을 가리켜야 한다 - 본을 직접
+	// 가리키면 캐릭터 애니메이션이 매 프레임 그 본의 회전을 덮어써서 소켓 보정 회전이 무시된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FName GripSocketName3P = TEXT("Weapon_R_Socket");
 
 private:
 	// 사격 위치/방향 계산에 사용하는 카메라. 소유 액터에서 BeginPlay 시 캐싱한다.
