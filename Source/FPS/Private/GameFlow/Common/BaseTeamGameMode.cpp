@@ -7,13 +7,14 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Player/ShooterPlayerState.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseTeamGameMode, Log, All);
 
 ABaseTeamGameMode::ABaseTeamGameMode()
 {
 	GameStateClass = ABaseTeamGameState::StaticClass();
-	PlayerStateClass = ABaseTeamPlayerState::StaticClass();
+	PlayerStateClass = AShooterPlayerState::StaticClass();
 	DefaultPawnClass = nullptr;
 }
 

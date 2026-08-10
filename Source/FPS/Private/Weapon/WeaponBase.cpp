@@ -328,38 +328,31 @@ void AWeaponBase::ResolveHitscanShot(
 	FHitscanShotRequest Request;
 	if (IsValid(HitscanDefinition.Get()))
 	{
-		Request.WeaponTag = HitscanDefinition->GetWeaponTag();
-		Request.DamageSettings = HitscanDefinition->GetDamageSettings();
-		Request.PenetrationSettings = HitscanDefinition->GetPenetrationSettings();
-		Request.TraceSettings = HitscanDefinition->GetTraceSettings();
-		Request.SurfaceDefinition = HitscanDefinition->GetSurfaceDefinition();
+		HitscanDefinition->ConfigureShotRequest(
+			Request,
+			ShotDamage,
+			TraceRange,
+			DefaultSurfaceThickness,
+			DefaultSurfaceHardness);
+	}
+	else
+	{
+		// Definition이 없는 레거시 무기도 기본 사격은 동작하되, 정적 정책은 기본값을 사용한다.
+		Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
+		Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = FMath::Max(0.0f, TraceRange / 100.0f);
+		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
+		Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(0.1f, DefaultSurfaceThickness);
+		Request.TraceSettings.DefaultSurfaceRule.Hardness = FMath::Max(0.0f, DefaultSurfaceHardness);
 	}
 
 	Request.InstigatorActor = GetOwner();
 	Request.CauserActor = this;
 	Request.TraceStart = TraceStart;
-	Request.PelletDirections = PelletDirections;
+	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
 	Request.InitialPenetrationPower = FMath::Max(0.0f, PenetrationPower);
-	Request.SurfaceHardnessOverrides = SurfaceHardnessMap;
-
-	Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
-	const float MaximumRangeMeters = FMath::Max(0.0f, TraceRange / 100.0f);
-	Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = MaximumRangeMeters;
-	Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters = FMath::Clamp(
-		Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters,
-		0.0f,
-		MaximumRangeMeters);
-
-	Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
-	Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(
-		0.1f,
-		DefaultSurfaceThickness);
-	if (DefaultSurfaceHardness > KINDA_SMALL_NUMBER)
-	{
-		Request.TraceSettings.DefaultSurfaceRule.Hardness = DefaultSurfaceHardness;
-	}
+	Request.SurfaceHardnessOverrides = &SurfaceHardnessMap;
 
 	const FHitscanShotResult ShotResult = Resolver->ResolveServerShot(Request);
 	if (HasAuthority() && !ShotResult.bProcessed)

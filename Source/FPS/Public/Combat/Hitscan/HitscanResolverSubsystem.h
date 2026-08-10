@@ -5,43 +5,15 @@
 #include "Combat/Hitscan/HitscanShotTypes.h"
 #include "HitscanResolverSubsystem.generated.h"
 
-struct FHitResult;
-class UPrimitiveComponent;
-
 UCLASS()
 class FPS_API UHitscanResolverSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
 
 public:
-	// AWeaponBase에서 승인된 한 번의 사격을 서버 권한으로 처리한다.
+	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
+
+	// 서버 Trace -> 거리/관통 계산 -> HitZone 메타데이터 집계 -> RogueDamageSubsystem 전달.
+	// Resolver는 부위 배율을 곱하지 않는다. 실제 부위 배율/증강/방어/Shield 계산은 ExecCalc_Damage가 담당한다.
 	FHitscanShotResult ResolveServerShot(const FHitscanShotRequest& Request) const;
-
-private:
-	bool IsRequestValid(const FHitscanShotRequest& Request) const;
-
-	FHitscanPelletTraceResult ResolvePellet(
-		const FHitscanShotRequest& Request,
-		const FVector& PelletDirection,
-		int32 PelletIndex) const;
-
-	bool IsDamageTarget(
-		const FHitResult& HitResult,
-		const FHitscanDamageTargetSettings& TargetSettings) const;
-
-	bool FindSurfaceExit(
-		const FHitResult& EntryHit,
-		const FVector& TraceDirection,
-		const FHitscanTraceSettings& TraceSettings,
-		FVector& OutExitPoint,
-		float& OutThicknessCentimeters,
-		bool& bOutUsedFallbackThickness) const;
-
-	FHitscanSurfaceRule ResolveSurfaceRule(
-		const FHitResult& HitResult,
-		const FHitscanShotRequest& Request) const;
-
-	float ResolveFallbackThickness(
-		const FHitResult& HitResult,
-		const FHitscanTraceSettings& TraceSettings) const;
 };

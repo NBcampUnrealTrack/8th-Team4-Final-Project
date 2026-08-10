@@ -1,6 +1,6 @@
 #include "Combat/Hitscan/HitZoneDefinition.h"
 
-FHitscanResolvedHitZoneInfo FHitscanHitZoneResolver::Resolve(
+FHitscanResolvedHitZoneInfo UHitscanHitZoneDefinition::ResolveRules(
 	const TArray<FHitscanHitZoneRule>& Rules,
 	const FName BoneName,
 	const FGameplayTag FallbackTag)
@@ -8,33 +8,39 @@ FHitscanResolvedHitZoneInfo FHitscanHitZoneResolver::Resolve(
 	FHitscanResolvedHitZoneInfo Result;
 	Result.HitZoneTag = FallbackTag;
 
+	const FHitscanHitZoneRule* BestRule = nullptr;
 	if (!BoneName.IsNone())
 	{
 		for (const FHitscanHitZoneRule& Rule : Rules)
 		{
-			if (Rule.BoneNames.Contains(BoneName))
+			if (Rule.BoneNames.Contains(BoneName)
+				&& (!BestRule || Rule.Priority > BestRule->Priority))
 			{
-				// GameplayTag가 아직 등록되지 않았어도 Bone 규칙의 Priority/Headshot 정보는 유지한다.
-				// 매칭된 Rule의 Tag가 비어 있으면 잘못된 Fallback Tag로 위장하지 않고 비어 있는 상태를 유지한다.
-				Result.HitZoneTag = Rule.HitZoneTag;
-				Result.Priority = Rule.Priority;
-				Result.bHeadshot = Rule.bCountsAsHeadshot;
-				return Result;
+				BestRule = &Rule;
 			}
 		}
 	}
 
-	if (FallbackTag.IsValid())
+	if (!BestRule && FallbackTag.IsValid())
 	{
 		for (const FHitscanHitZoneRule& Rule : Rules)
 		{
-			if (Rule.HitZoneTag.IsValid() && Rule.HitZoneTag.MatchesTagExact(FallbackTag))
+			if (Rule.HitZoneTag.IsValid()
+				&& Rule.HitZoneTag.MatchesTagExact(FallbackTag)
+				&& (!BestRule || Rule.Priority > BestRule->Priority))
 			{
-				Result.Priority = Rule.Priority;
-				Result.bHeadshot = Rule.bCountsAsHeadshot;
-				break;
+				BestRule = &Rule;
 			}
 		}
+	}
+
+	if (BestRule)
+	{
+		Result.HitZoneTag = BestRule->HitZoneTag.IsValid()
+			? BestRule->HitZoneTag
+			: FallbackTag;
+		Result.Priority = BestRule->Priority;
+		Result.bHeadshot = BestRule->bCountsAsHeadshot;
 	}
 
 	return Result;
@@ -44,7 +50,7 @@ FHitscanResolvedHitZoneInfo UHitscanHitZoneDefinition::ResolveHitZoneInfo(
 	const FName BoneName,
 	const FGameplayTag FallbackTag) const
 {
-	return FHitscanHitZoneResolver::Resolve(HitZoneRules, BoneName, FallbackTag);
+	return ResolveRules(HitZoneRules, BoneName, FallbackTag);
 }
 
 FGameplayTag UHitscanHitZoneDefinition::ResolveHitZone(
@@ -61,15 +67,16 @@ int32 UHitscanHitZoneDefinition::GetHitZonePriority(const FGameplayTag HitZoneTa
 		return 0;
 	}
 
+	int32 HighestPriority = 0;
 	for (const FHitscanHitZoneRule& Rule : HitZoneRules)
 	{
 		if (Rule.HitZoneTag.IsValid() && Rule.HitZoneTag.MatchesTagExact(HitZoneTag))
 		{
-			return Rule.Priority;
+			HighestPriority = FMath::Max(HighestPriority, Rule.Priority);
 		}
 	}
 
-	return 0;
+	return HighestPriority;
 }
 
 bool UHitscanHitZoneDefinition::IsHeadshotZone(const FGameplayTag HitZoneTag) const
@@ -81,9 +88,11 @@ bool UHitscanHitZoneDefinition::IsHeadshotZone(const FGameplayTag HitZoneTag) co
 
 	for (const FHitscanHitZoneRule& Rule : HitZoneRules)
 	{
-		if (Rule.HitZoneTag.IsValid() && Rule.HitZoneTag.MatchesTagExact(HitZoneTag))
+		if (Rule.HitZoneTag.IsValid()
+			&& Rule.HitZoneTag.MatchesTagExact(HitZoneTag)
+			&& Rule.bCountsAsHeadshot)
 		{
-			return Rule.bCountsAsHeadshot;
+			return true;
 		}
 	}
 
