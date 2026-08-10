@@ -1,9 +1,10 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Abilities/GA_Reload.h"
 
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Animation/AnimInstance.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -35,7 +36,7 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	}
 
 	Weapon->StartReload();
-	SendWeaponGameplayEvent(TEXT("Event.Weapon.ReloadStart"));
+	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadStart);
 
 	if (ReloadMontage && ActorInfo)
 	{
@@ -60,6 +61,6 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 
 void UGA_Reload::HandleReloadFinished()
 {
-	SendWeaponGameplayEvent(TEXT("Event.Weapon.ReloadComplete"));
+	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadComplete);
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
 }
