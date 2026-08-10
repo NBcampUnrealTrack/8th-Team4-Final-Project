@@ -128,7 +128,7 @@ struct FHitscanSurfaceSample
 {
 	GENERATED_BODY()
 
-	// TODO : 실제 Trace의 진입점과 출구점으로 측정한 두께를 전달한다.
+	// 실제 Trace의 진입점과 출구점으로 측정한 두께를 전달한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Penetration", meta = (ClampMin = "0.0"))
 	float ThicknessCentimeters = 0.0f;
 
@@ -174,7 +174,7 @@ struct FHitscanImpactSample
 {
 	GENERATED_BODY()
 
-	// TODO: 서버에서 승인된 한 발의 Hit 결과를 이 중립 구조로 변환한다.
+	// 서버에서 승인된 Hit 결과를 Resolver 또는 경계 Adapter가 이 중립 구조로 변환한다.
 	UPROPERTY(BlueprintReadWrite, Category = "FPS|Combat|Hitscan")
 	TObjectPtr<AActor> TargetActor = nullptr;
 
@@ -241,7 +241,7 @@ struct FHitscanTargetDamageAggregate
 {
 	GENERATED_BODY()
 
-	// TODO: 이 결과를 FRogueDamageRequest로 변환해 ApplyDamage를 대상별 한 번 호출한다.
+	// GAS 연동 시 이 결과를 FRogueDamageRequest로 변환해 대상별 한 번 ApplyDamage를 호출한다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan")
 	TObjectPtr<AActor> TargetActor = nullptr;
 

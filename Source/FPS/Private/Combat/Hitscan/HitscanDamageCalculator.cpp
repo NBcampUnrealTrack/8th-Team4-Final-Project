@@ -19,7 +19,7 @@ FHitscanImpactSample FHitscanDamageCalculator::MakeImpactSample(
 	ImpactSample.BoneName = HitResult.BoneName;
 	ImpactSample.ShotDirection = ShotDirection.GetSafeNormal();
 	ImpactSample.DistanceMeters = FMath::Max(0.0f, DistanceMeters);
-	ImpactSample.PenetrationDamageMultiplier = FMath::Max(0.0f, PenetrationDamageMultiplier);
+	ImpactSample.PenetrationDamageMultiplier = FMath::Clamp(PenetrationDamageMultiplier, 0.0f, 1.0f);
 	ImpactSample.PelletIndex = FMath::Max(0, PelletIndex);
 	return ImpactSample;
 }
@@ -69,7 +69,7 @@ bool FHitscanDamageCalculator::ResolvePelletDamage(
 		0.0f,
 		DamageSettings.BaseDamagePerPellet
 		* DistanceMultiplier
-		* ImpactSample.PenetrationDamageMultiplier);
+		* FMath::Clamp(ImpactSample.PenetrationDamageMultiplier, 0.0f, 1.0f));
 	const float FinalDamage = DamageBeforeHitZoneMultiplier * HitZoneMultiplier;
 
 	if (!FMath::IsFinite(FinalDamage) || FinalDamage <= 0.0f)
