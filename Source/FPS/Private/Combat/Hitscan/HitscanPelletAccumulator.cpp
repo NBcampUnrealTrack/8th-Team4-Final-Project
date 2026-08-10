@@ -8,9 +8,14 @@ bool FHitscanPelletAccumulator::AddPellet(const FHitscanResolvedPelletDamage& Re
 	AActor* TargetActor = ResolvedPelletDamage.TargetActor.Get();
 	if (!IsValid(TargetActor)
 		|| ResolvedPelletDamage.PelletIndex < 0
-		|| ResolvedPelletDamage.FinalDamage <= 0.0f
+		|| !FMath::IsFinite(ResolvedPelletDamage.DamageBeforeHitZoneMultiplier)
+		|| ResolvedPelletDamage.DamageBeforeHitZoneMultiplier <= 0.0f
 		|| !FMath::IsFinite(ResolvedPelletDamage.FinalDamage)
-		|| !FMath::IsFinite(ResolvedPelletDamage.DistanceMeters))
+		|| ResolvedPelletDamage.FinalDamage <= 0.0f
+		|| !FMath::IsFinite(ResolvedPelletDamage.HitZoneMultiplier)
+		|| ResolvedPelletDamage.HitZoneMultiplier <= 0.0f
+		|| !FMath::IsFinite(ResolvedPelletDamage.DistanceMeters)
+		|| ResolvedPelletDamage.DistanceMeters < 0.0f)
 	{
 		return false;
 	}
@@ -45,7 +50,7 @@ bool FHitscanPelletAccumulator::AddPellet(const FHitscanResolvedPelletDamage& Re
 		TargetEntry.HeadshotBaseDamage += ResolvedPelletDamage.DamageBeforeHitZoneMultiplier;
 	}
 
-	if (!TargetEntry.RepresentativeHitZoneTag.IsValid()
+	if (TargetEntry.RepresentativeHitZonePriority == MIN_int32
 		|| ResolvedPelletDamage.HitZonePriority > TargetEntry.RepresentativeHitZonePriority)
 	{
 		TargetEntry.RepresentativeHitZoneTag = ResolvedPelletDamage.HitZoneTag;
@@ -70,15 +75,23 @@ void FHitscanPelletAccumulator::BuildTargetAggregates(
 			continue;
 		}
 
+		if (!FMath::IsFinite(TargetEntry.TotalDamage)
+			|| !FMath::IsFinite(TargetEntry.HeadshotDamage)
+			|| !FMath::IsFinite(TargetEntry.HeadshotBaseDamage)
+			|| !FMath::IsFinite(TargetEntry.TotalDistanceMeters))
+		{
+			continue;
+		}
+
 		const float RoundedBaseDamage = FHitscanDamageCalculator::RoundDamage(
 			TargetEntry.TotalDamage,
 			RoundingSettings);
 		const float RoundedHeadshotDamage = FMath::Min(
 			RoundedBaseDamage,
 			FHitscanDamageCalculator::RoundDamage(TargetEntry.HeadshotDamage, RoundingSettings));
-		const float RoundedHeadshotBaseDamage = FHitscanDamageCalculator::RoundDamage(
-			TargetEntry.HeadshotBaseDamage,
-			RoundingSettings);
+		const float AppliedHeadshotMultiplier = TargetEntry.HeadshotBaseDamage > KINDA_SMALL_NUMBER
+			? TargetEntry.HeadshotDamage / TargetEntry.HeadshotBaseDamage
+			: 1.0f;
 		if (RoundedBaseDamage <= 0.0f)
 		{
 			continue;
@@ -88,8 +101,8 @@ void FHitscanPelletAccumulator::BuildTargetAggregates(
 		TargetAggregate.TargetActor = TargetActor;
 		TargetAggregate.BaseDamage = RoundedBaseDamage;
 		TargetAggregate.HeadshotDamage = RoundedHeadshotDamage;
-		TargetAggregate.AppliedHeadshotMultiplier = RoundedHeadshotBaseDamage > KINDA_SMALL_NUMBER
-			? FMath::Max(KINDA_SMALL_NUMBER, RoundedHeadshotDamage / RoundedHeadshotBaseDamage)
+		TargetAggregate.AppliedHeadshotMultiplier = FMath::IsFinite(AppliedHeadshotMultiplier)
+			? FMath::Max(1.0f, AppliedHeadshotMultiplier)
 			: 1.0f;
 		TargetAggregate.RepresentativeHitZoneTag = TargetEntry.RepresentativeHitZoneTag;
 		TargetAggregate.DistanceMeters = TargetEntry.TotalDistanceMeters / static_cast<float>(PelletsHit);

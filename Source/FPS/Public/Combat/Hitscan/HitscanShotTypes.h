@@ -15,8 +15,8 @@ struct FHitscanDamageTargetSettings
 {
 	GENERATED_BODY()
 
-	// TODO(Character/GAS 담당): GAS의 Damageable 인터페이스가 dev에 반영되면
-	// Bone/ActorTag 기반 판정 대신 해당 인터페이스를 최종 기준으로 연결한다.
+	// 현재는 Trace 단계에서 Skeletal Mesh Bone 또는 명시적 ActorTag를 피격 후보 기준으로 사용한다.
+	// 최종 GAS 적용 단계에서 ASC/Vital 유효성은 RogueDamageSubsystem이 다시 검증한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Target")
 	bool bAcceptBoneHits = true;
 

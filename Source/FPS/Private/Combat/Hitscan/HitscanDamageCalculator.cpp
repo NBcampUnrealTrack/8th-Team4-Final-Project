@@ -33,8 +33,12 @@ bool FHitscanDamageCalculator::ResolvePelletDamage(
 
 	if (!IsValid(ImpactSample.TargetActor.Get())
 		|| ImpactSample.PelletIndex < 0
+		|| !FMath::IsFinite(ImpactSample.DistanceMeters)
 		|| ImpactSample.DistanceMeters < 0.0f
+		|| !FMath::IsFinite(ImpactSample.PenetrationDamageMultiplier)
 		|| ImpactSample.PenetrationDamageMultiplier < 0.0f
+		|| ImpactSample.PenetrationDamageMultiplier > 1.0f
+		|| !FMath::IsFinite(DamageSettings.BaseDamagePerPellet)
 		|| DamageSettings.BaseDamagePerPellet <= 0.0f
 		|| ImpactSample.ShotDirection.ContainsNaN()
 		|| ImpactSample.ShotDirection.IsNearlyZero())
@@ -48,11 +52,14 @@ bool FHitscanDamageCalculator::ResolvePelletDamage(
 
 	if (IsValid(DamageSettings.HitZoneDefinition.Get()))
 	{
-		HitZoneTag = DamageSettings.HitZoneDefinition->ResolveHitZone(
-			ImpactSample.BoneName,
-			DamageSettings.DefaultHitZoneTag);
-		HitZonePriority = DamageSettings.HitZoneDefinition->GetHitZonePriority(HitZoneTag);
-		bHeadshot = DamageSettings.HitZoneDefinition->IsHeadshotZone(HitZoneTag);
+		const FHitscanResolvedHitZoneInfo HitZoneInfo =
+			DamageSettings.HitZoneDefinition->ResolveHitZoneInfo(
+				ImpactSample.BoneName,
+				DamageSettings.DefaultHitZoneTag);
+
+		HitZoneTag = HitZoneInfo.HitZoneTag;
+		HitZonePriority = HitZoneInfo.Priority;
+		bHeadshot = HitZoneInfo.bHeadshot;
 	}
 	else if (DamageSettings.HeadshotHitZoneTag.IsValid())
 	{
@@ -72,7 +79,10 @@ bool FHitscanDamageCalculator::ResolvePelletDamage(
 		* FMath::Clamp(ImpactSample.PenetrationDamageMultiplier, 0.0f, 1.0f));
 	const float FinalDamage = DamageBeforeHitZoneMultiplier * HitZoneMultiplier;
 
-	if (!FMath::IsFinite(FinalDamage) || FinalDamage <= 0.0f)
+	if (!FMath::IsFinite(DamageBeforeHitZoneMultiplier)
+		|| !FMath::IsFinite(HitZoneMultiplier)
+		|| !FMath::IsFinite(FinalDamage)
+		|| FinalDamage <= 0.0f)
 	{
 		return false;
 	}

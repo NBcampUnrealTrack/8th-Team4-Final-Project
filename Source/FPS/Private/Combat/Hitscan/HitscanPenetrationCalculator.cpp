@@ -16,9 +16,20 @@ FHitscanPenetrationStepResult FHitscanPenetrationCalculator::ResolveSurface(
 		|| !FMath::IsFinite(CurrentState.AccumulatedDamageMultiplier)
 		|| CurrentState.RemainingPenetrationPower < 0.0f
 		|| CurrentState.AccumulatedDamageMultiplier < 0.0f
+		|| CurrentState.AccumulatedDamageMultiplier > 1.0f
 		|| CurrentState.PenetrationCount < 0
 		|| PenetrationSettings.MaximumPenetrationCount <= 0
-		|| CurrentState.PenetrationCount >= PenetrationSettings.MaximumPenetrationCount)
+		|| CurrentState.PenetrationCount >= PenetrationSettings.MaximumPenetrationCount
+		|| !FMath::IsFinite(PenetrationSettings.MinimumDamageMultiplierToContinue)
+		|| PenetrationSettings.MinimumDamageMultiplierToContinue < 0.0f
+		|| PenetrationSettings.MinimumDamageMultiplierToContinue > 1.0f
+		|| !FMath::IsFinite(SurfaceRule.Hardness)
+		|| SurfaceRule.Hardness < 0.0f
+		|| !FMath::IsFinite(SurfaceRule.PenetrationCostPerCentimeter)
+		|| SurfaceRule.PenetrationCostPerCentimeter < 0.0f
+		|| !FMath::IsFinite(SurfaceRule.DamageRetentionPerCentimeter)
+		|| SurfaceRule.DamageRetentionPerCentimeter < 0.0f
+		|| SurfaceRule.DamageRetentionPerCentimeter > 1.0f)
 	{
 		return Result;
 	}

@@ -241,7 +241,7 @@ struct FHitscanTargetDamageAggregate
 {
 	GENERATED_BODY()
 
-	// GAS 연동 시 이 결과를 FRogueDamageRequest로 변환해 대상별 한 번 ApplyDamage를 호출한다.
+	// GAS 연동 계약상 한 Shot에서 같은 Target에 맞은 펠릿은 이 결과 1건으로 묶어 ApplyDamage를 1회 호출한다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan")
 	TObjectPtr<AActor> TargetActor = nullptr;
 
@@ -251,6 +251,7 @@ struct FHitscanTargetDamageAggregate
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan")
 	float HeadshotDamage = 0.0f;
 
+	// HeadshotDamage에 이미 적용된 무기 부위 배율. GAS가 헤드샷 보너스를 분리/복원할 때 사용한다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan")
 	float AppliedHeadshotMultiplier = 1.0f;
 

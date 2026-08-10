@@ -13,6 +13,13 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogHitscanResolver, Log, All);
 
+namespace
+{
+	constexpr int32 MaxTraceIterationsPerPellet = 128;
+	constexpr int32 MaxPelletsPerShot = 128;
+	constexpr int32 MaxPenetrationsPerPellet = 64;
+}
+
 FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 	const FHitscanShotRequest& Request) const
 {
@@ -57,18 +64,26 @@ FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 			UE_LOG(
 				LogHitscanResolver,
 				Log,
-				TEXT("Shot=%s Target=%s Damage=%.2f HeadshotDamage=%.2f Pellets=%d Distance=%.2fm HitZone=%s"),
+				TEXT("Shot=%s Target=%s Damage=%.2f HeadshotDamage=%.2f HeadMultiplier=%.3f Pellets=%d Distance=%.2fm HitZone=%s Backstab=%s ShotIndex=%d WeaponTag=%s"),
 				*Result.ShotId.ToString(EGuidFormats::DigitsWithHyphens),
 				*GetNameSafe(TargetAggregate.TargetActor.Get()),
 				TargetAggregate.BaseDamage,
 				TargetAggregate.HeadshotDamage,
+				TargetAggregate.AppliedHeadshotMultiplier,
 				TargetAggregate.PelletsHit,
 				TargetAggregate.DistanceMeters,
-				*TargetAggregate.RepresentativeHitZoneTag.ToString());
+				*TargetAggregate.RepresentativeHitZoneTag.ToString(),
+				TargetAggregate.bIsBackstab ? TEXT("Y") : TEXT("N"),
+				Result.ShotIndexInMagazine,
+				*Result.WeaponTag.ToString());
 		}
 	}
 
-	// TODO(GAS 연동): TargetAggregates를 FRogueDamageRequest로 변환해 대상별 한 번 ApplyDamage를 호출한다.
+	// GAS 연동 경계는 TargetAggregates 이후다.
+	// 확정된 계약: 대상별 1회 ApplyDamage, BaseDamage/HeadshotDamage/AppliedHeadshotMultiplier/
+	// DistanceMeters/PelletsHit/ShotIndexInMagazine 전달.
+	// 보류: 혼합 HitZone 산탄의 대표 HitZoneTag 정책 확정과 GAS 코드 병합 후 직접 연결한다.
+
 	Result.bProcessed = true;
 	return Result;
 }
@@ -82,10 +97,14 @@ bool UHitscanResolverSubsystem::IsRequestValid(const FHitscanShotRequest& Reques
 		|| !Request.InstigatorActor->HasAuthority()
 		|| Request.TraceStart.ContainsNaN()
 		|| Request.PelletDirections.IsEmpty()
-		|| Request.PelletDirections.Num() > FMath::Max(1, Request.TraceSettings.MaximumPelletCount)
+		|| Request.ShotIndexInMagazine < 0
+		|| Request.TraceSettings.MaximumPelletCount <= 0
+		|| Request.TraceSettings.MaximumPelletCount > MaxPelletsPerShot
+		|| Request.PelletDirections.Num() > Request.TraceSettings.MaximumPelletCount
 		|| !FMath::IsFinite(Request.TraceSettings.MaximumRangeCentimeters)
 		|| Request.TraceSettings.MaximumRangeCentimeters <= 0.0f
 		|| Request.TraceSettings.MaximumTraceIterations <= 0
+		|| Request.TraceSettings.MaximumTraceIterations > MaxTraceIterationsPerPellet
 		|| !FMath::IsFinite(Request.TraceSettings.SurfaceExitSearchDistanceCentimeters)
 		|| Request.TraceSettings.SurfaceExitSearchDistanceCentimeters <= 0.0f
 		|| !FMath::IsFinite(Request.TraceSettings.TraceAdvanceEpsilonCentimeters)
@@ -94,10 +113,44 @@ bool UHitscanResolverSubsystem::IsRequestValid(const FHitscanShotRequest& Reques
 		|| Request.TraceSettings.FallbackSurfaceThicknessCentimeters <= 0.0f
 		|| !FMath::IsFinite(Request.DamageSettings.BaseDamagePerPellet)
 		|| Request.DamageSettings.BaseDamagePerPellet <= 0.0f
+		|| !FMath::IsFinite(Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters)
+		|| Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters < 0.0f
+		|| !FMath::IsFinite(Request.DamageSettings.DistanceFalloff.MaximumRangeMeters)
+		|| Request.DamageSettings.DistanceFalloff.MaximumRangeMeters < 0.0f
+		|| !FMath::IsFinite(Request.DamageSettings.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange)
+		|| Request.DamageSettings.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange < 0.0f
+		|| Request.DamageSettings.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange > 1.0f
+		|| (Request.DamageSettings.bEnableBackstab
+			&& !FMath::IsFinite(Request.DamageSettings.BackstabRearConeHalfAngleDegrees))
+		|| (IsValid(Request.DamageSettings.DistanceFalloff.DamageMultiplierCurve.Get())
+			&& Request.DamageSettings.DistanceFalloff.EffectiveRangeMeters <= 0.0f)
+		|| (Request.DamageSettings.Rounding.Mode != EHitscanDamageRoundingMode::None
+			&& (!FMath::IsFinite(Request.DamageSettings.Rounding.Step)
+				|| Request.DamageSettings.Rounding.Step <= 0.0f))
+		|| Request.PenetrationSettings.MaximumPenetrationCount < 0
+		|| Request.PenetrationSettings.MaximumPenetrationCount > MaxPenetrationsPerPellet
+		|| !FMath::IsFinite(Request.PenetrationSettings.MinimumDamageMultiplierToContinue)
+		|| Request.PenetrationSettings.MinimumDamageMultiplierToContinue < 0.0f
+		|| Request.PenetrationSettings.MinimumDamageMultiplierToContinue > 1.0f
+		|| !FMath::IsFinite(Request.TraceSettings.DefaultSurfaceRule.Hardness)
+		|| Request.TraceSettings.DefaultSurfaceRule.Hardness < 0.0f
+		|| !FMath::IsFinite(Request.TraceSettings.DefaultSurfaceRule.PenetrationCostPerCentimeter)
+		|| Request.TraceSettings.DefaultSurfaceRule.PenetrationCostPerCentimeter < 0.0f
+		|| !FMath::IsFinite(Request.TraceSettings.DefaultSurfaceRule.DamageRetentionPerCentimeter)
+		|| Request.TraceSettings.DefaultSurfaceRule.DamageRetentionPerCentimeter < 0.0f
+		|| Request.TraceSettings.DefaultSurfaceRule.DamageRetentionPerCentimeter > 1.0f
 		|| !FMath::IsFinite(Request.InitialPenetrationPower)
 		|| Request.InitialPenetrationPower < 0.0f)
 	{
 		return false;
+	}
+
+	for (const TPair<FGameplayTag, float>& HitZoneMultiplier : Request.DamageSettings.HitZoneDamageMultipliers)
+	{
+		if (!FMath::IsFinite(HitZoneMultiplier.Value) || HitZoneMultiplier.Value < 0.0f)
+		{
+			return false;
+		}
 	}
 
 	for (const FVector& PelletDirection : Request.PelletDirections)

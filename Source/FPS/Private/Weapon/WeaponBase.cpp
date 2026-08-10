@@ -353,9 +353,6 @@ void AWeaponBase::ResolveHitscanShot(
 		MaximumRangeMeters);
 
 	Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
-	Request.TraceSettings.MaximumPelletCount = FMath::Max(
-		Request.TraceSettings.MaximumPelletCount,
-		PelletDirections.Num());
 	Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(
 		0.1f,
 		DefaultSurfaceThickness);
