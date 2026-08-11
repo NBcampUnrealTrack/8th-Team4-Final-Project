@@ -3,8 +3,9 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 
 #include "GAS/RogueAbilitySet.h"
+#include "Tags/GameplayTags.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
 namespace
 {
@@ -15,6 +16,22 @@ namespace
 		return Instances.IsEmpty()
 			? FPredictionKey()
 			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
+	}
+
+	// 무기 종류를 장착 상태 태그로
+	FGameplayTag WeaponTypeToEquippedStateTag(EWeaponType WeaponType)
+	{
+		switch (WeaponType)
+		{
+		case EWeaponType::None:    return FGameplayTag();
+		case EWeaponType::AR:      return RogueTags::State_Weapon_Equipped_Firearm_Rifle;
+		case EWeaponType::Pistol:  return RogueTags::State_Weapon_Equipped_Firearm_Pistol;
+		case EWeaponType::Shotgun: return RogueTags::State_Weapon_Equipped_Firearm_Shotgun;
+		case EWeaponType::Sniper:  return RogueTags::State_Weapon_Equipped_Firearm_Sniper;
+		case EWeaponType::Knife:   return RogueTags::State_Weapon_Equipped_Melee_Knife;
+		}
+
+		return FGameplayTag();
 	}
 }
 
@@ -33,6 +50,7 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 	}
 
 	TArray<FGameplayAbilitySpecHandle> ToActivate;
+	int32 MatchedSpecCount = 0;
 
 	{
 		ABILITYLIST_SCOPE_LOCK();
@@ -43,6 +61,8 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 			{
 				continue;
 			}
+
+			++MatchedSpecCount;
 
 			if (Spec.IsActive())
 			{
@@ -61,9 +81,32 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		}
 	}
 
+	// 이 태그를 가진 어빌리티가 없는 경우
+	if (MatchedSpecCount == 0)
+	{
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 입력 태그 %s 를 가진 어빌리티가 없습니다. "
+			     "AbilitySet 에 등록했는지, InputTags.ini 의 태그 이름과 같은지 확인하세요"),
+			*InputTag.ToString());
+		return;
+	}
+
+	int32 ActivatedCount = 0;
 	for (const FGameplayAbilitySpecHandle& Handle : ToActivate)
 	{
-		TryActivateAbility(Handle);
+		if (TryActivateAbility(Handle))
+		{
+			++ActivatedCount;
+		}
+	}
+
+	// 스펙은 있지만 GA가 활성화되지 않은 경우
+	if (ActivatedCount == 0 && !ToActivate.IsEmpty())
+	{
+		UE_LOG(LogRogueAbility, Log,
+			TEXT("[RogueAbility] %s: 후보 %d개가 전부 활성화를 거절했습니다. "
+			     "장착 태그(State.Weapon.Equipped.*)와 쿨다운/코스트를 확인하세요"),
+			*InputTag.ToString(), ToActivate.Num());
 	}
 }
 
@@ -96,6 +139,33 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
 			Spec.Handle, GetInstanceActivationPredictionKey(Spec));
 	}
+}
+
+void URogueAbilitySystemComponent::SetEquippedWeaponType(EWeaponType WeaponType)
+{
+	const FGameplayTag NewTag = WeaponTypeToEquippedStateTag(WeaponType);
+
+	if (NewTag == CurrentEquippedWeaponTag)
+	{
+		return;
+	}
+
+	// AddLoose/RemoveLoose 가 아니라 개수를 직접 세팅
+	if (CurrentEquippedWeaponTag.IsValid())
+	{
+		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0);
+	}
+
+	CurrentEquippedWeaponTag = NewTag;
+
+	if (NewTag.IsValid())
+	{
+		SetLooseGameplayTagCount(NewTag, 1);
+	}
+
+	UE_LOG(LogRogueAbility, Log,
+		TEXT("[RogueAbility] 장착 태그 -> %s"),
+		NewTag.IsValid() ? *NewTag.ToString() : TEXT("(없음 - 맨몸)"));
 }
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)
