@@ -3,14 +3,20 @@
 
 #include "Character/ShooterCharacter.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFlow/Round/BaseRoundGameMode.h"
+#include "GameFlow/Round/BaseRoundPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -44,6 +50,46 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (HasAuthority())
+	{
+		InitializeDefaultWeaponLoadout();
+	}
+}
+
+bool AShooterCharacter::InitializeDefaultWeaponLoadout()
+{
+	if (!HasAuthority() || !IsValid(Combat) || !DefaultPrimaryWeaponClass)
+	{
+		return false;
+	}
+
+	if (IsValid(Combat->GetWeaponInSlot(EWeaponSlot::Primary)))
+	{
+		return true;
+	}
+
+	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
+	{
+		UE_LOG(
+			LogShooterCharacter,
+			Error,
+			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
+			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+		return false;
+	}
+
+	UE_LOG(
+		LogShooterCharacter,
+		Log,
+		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+
+	return true;
 }
 
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -81,6 +127,22 @@ FRotator AShooterCharacter::GetFixedAimRotation_Implementation() const
 AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
 {
 	return IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
+}
+
+void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AController* OwningController = GetController();
+	UWorld* World = GetWorld();
+	ABaseRoundGameMode* RoundGameMode = IsValid(World) ? World->GetAuthGameMode<ABaseRoundGameMode>() : nullptr;
+	if (IsValid(OwningController) && IsValid(RoundGameMode))
+	{
+		RoundGameMode->NotifyPlayerEliminated(OwningController);
+	}
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const
@@ -145,4 +207,51 @@ void AShooterCharacter::HandleSprintReleased()
 	{
 		ShooterMovement->StopSprint();
 	}
+}
+
+void AShooterCharacter::HandleWeaponSlotPressed(const EWeaponSlot WeaponSlot)
+{
+	if (HasAuthority())
+	{
+		TrySwitchWeaponSlot(WeaponSlot);
+		return;
+	}
+
+	ServerSwitchWeaponSlot(WeaponSlot);
+}
+
+void AShooterCharacter::ServerSwitchWeaponSlot_Implementation(const EWeaponSlot WeaponSlot)
+{
+	TrySwitchWeaponSlot(WeaponSlot);
+}
+
+bool AShooterCharacter::TrySwitchWeaponSlot(const EWeaponSlot WeaponSlot)
+{
+	if (!HasAuthority() || !IsValid(Combat))
+	{
+		return false;
+	}
+
+	const ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(GetController());
+	if (IsValid(RoundPlayerController) && !RoundPlayerController->CanUseCombatInput())
+	{
+		return false;
+	}
+
+	const AWeaponBase* PreviousWeapon = Combat->GetCurrentWeapon();
+	if (!Combat->SwitchWeaponSlot(WeaponSlot))
+	{
+		return false;
+	}
+
+	if (Combat->GetCurrentWeapon() != PreviousWeapon)
+	{
+		FGameplayEventData Payload;
+		Payload.EventTag = RogueTags::Event_Weapon_Swap;
+		Payload.Instigator = this;
+		Payload.Target = this;
+		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, RogueTags::Event_Weapon_Swap, Payload);
+	}
+
+	return true;
 }

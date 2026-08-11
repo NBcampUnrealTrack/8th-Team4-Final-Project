@@ -16,7 +16,7 @@ URogueDashAbility::URogueDashAbility()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
 	CooldownTag = RogueTags::Cooldown_Augment_Dash;
-	BaseCooldown = 12.f;
+	BaseCooldown = 10.f;
 
 	// 사망 태그가 존재하면 사용 불가
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);

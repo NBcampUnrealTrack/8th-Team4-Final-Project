@@ -33,6 +33,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual bool PrepareRound() override;
+	virtual void HandlePreparedRoundAborted() override;
 	virtual void HandleGameFlowReset() override;
 	virtual void HandleRoundStarted() override;
 	virtual void HandleRoundEnded(EGameTeam WinningTeam, ERoundEndReason EndReason) override;

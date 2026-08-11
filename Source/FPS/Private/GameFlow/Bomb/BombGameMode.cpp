@@ -12,6 +12,7 @@
 #include "GameFlow/Round/BaseRoundGameState.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBombGameMode, Log, All);
@@ -22,9 +23,9 @@ ABombGameMode::ABombGameMode()
 	PlayerControllerClass = ABombPlayerController::StaticClass();
 	MinimumPlayersToStart = 2;
 	RoundDuration = 100.0f;
-	SideSwitchRound = 7;
-	RoundsToWin = 7;
-	MaxRounds = 13;
+	SideSwitchRound = 0;
+	RoundsToWin = 2;
+	MaxRounds = 3;
 	StartingTeamARole = ETeamRole::Attackers;
 	StartingTeamBRole = ETeamRole::Defenders;
 }
@@ -166,6 +167,11 @@ void ABombGameMode::NotifyDataJackDefused(ADataJack* DataJack)
 
 AActor* ABombGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
+	if (APlayerController* PlayerController = Cast<APlayerController>(Player))
+	{
+		EnsurePlayerTeamAssigned(PlayerController);
+	}
+
 	const ABaseTeamPlayerState* TeamPlayerState = IsValid(Player) ? Player->GetPlayerState<ABaseTeamPlayerState>() : nullptr;
 	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
 	if (!IsValid(TeamPlayerState) || !IsValid(RoundGameState))
@@ -213,6 +219,13 @@ AActor* ABombGameMode::ChoosePlayerStart_Implementation(AController* Player)
 bool ABombGameMode::PrepareRound()
 {
 	return Super::PrepareRound() && SpawnDataJackForRound();
+}
+
+void ABombGameMode::HandlePreparedRoundAborted()
+{
+	Super::HandlePreparedRoundAborted();
+	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
+	DestroyDataJackForRound();
 }
 
 void ABombGameMode::HandleGameFlowReset()
@@ -297,9 +310,8 @@ bool ABombGameMode::IsGameFlowConfigurationValid() const
 		&& !DataJackClass->HasAnyClassFlags(CLASS_Abstract)
 		&& MinimumPlayersToStart >= 2
 		&& RoundDuration > 0.0f
-		&& SideSwitchRound > 1
 		&& MaxRounds > 0
-		&& SideSwitchRound <= MaxRounds
+		&& (SideSwitchRound == 0 || (SideSwitchRound > 1 && SideSwitchRound <= MaxRounds))
 		&& RoundsToWin > 0
 		&& MaxRounds >= MinimumRoundsForWinningScore
 		&& PlantDuration > 0.0f

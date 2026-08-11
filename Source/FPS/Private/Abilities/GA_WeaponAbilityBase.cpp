@@ -5,12 +5,43 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Combat/CombatComponent.h"
 #include "GameplayTagContainer.h"
+#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "Weapon/WeaponBase.h"
 
 UGA_WeaponAbilityBase::UGA_WeaponAbilityBase()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+}
+
+bool UGA_WeaponAbilityBase::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const ABaseRoundPlayerController* RoundPlayerController = IsValid(AvatarPawn)
+		? Cast<ABaseRoundPlayerController>(AvatarPawn->GetController())
+		: nullptr;
+
+	if (IsValid(RoundPlayerController) && !RoundPlayerController->CanUseCombatInput())
+	{
+		return false;
+	}
+
+	const UCombatComponent* CombatComponent = IsValid(AvatarPawn)
+		? AvatarPawn->FindComponentByClass<UCombatComponent>()
+		: nullptr;
+
+	return !IsValid(CombatComponent) || CombatComponent->IsWeaponReady();
 }
 
 AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const

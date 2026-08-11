@@ -19,6 +19,10 @@ class FPS_API UGA_WeaponAbilityBase : public UGameplayAbility
 public:
 	UGA_WeaponAbilityBase();
 
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	                                const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
+	                                FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 protected:
 	// Avatar의 UCombatComponent::GetEquippedWeapon()을 그대로 위임한다 (무기 탐색/부착 로직은
 	// CombatComponent가 전담 - 이 클래스는 GAS 쪽에서 쓰기 편하게 짧은 이름으로 감싸주는 것뿐).

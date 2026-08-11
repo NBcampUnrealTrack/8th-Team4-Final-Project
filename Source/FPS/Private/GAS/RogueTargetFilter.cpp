@@ -5,7 +5,38 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
+
+namespace
+{
+	const ABaseTeamPlayerState* ResolveTeamPlayerState(const AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return nullptr;
+		}
+
+		if (const ABaseTeamPlayerState* PlayerState = Cast<ABaseTeamPlayerState>(Actor))
+		{
+			return PlayerState;
+		}
+
+		if (const APawn* Pawn = Cast<APawn>(Actor))
+		{
+			return Pawn->GetPlayerState<ABaseTeamPlayerState>();
+		}
+
+		if (const AController* Controller = Cast<AController>(Actor))
+		{
+			return Controller->GetPlayerState<ABaseTeamPlayerState>();
+		}
+
+		return nullptr;
+	}
+}
 
 ERogueTargetRelation URogueTargetFilter::GetRelation(const AActor* Source, const AActor* Target)
 {
@@ -31,8 +62,18 @@ ERogueTargetRelation URogueTargetFilter::GetRelation(const AActor* Source, const
 		return ERogueTargetRelation::Self;
 	}
 
-	// TODO: 팀 분간은 게임 플로우에서
-	return ERogueTargetRelation::TeamUnknown;
+	const ABaseTeamPlayerState* SourcePlayerState = ResolveTeamPlayerState(Source);
+	const ABaseTeamPlayerState* TargetPlayerState = ResolveTeamPlayerState(Target);
+	if (!IsValid(SourcePlayerState) || !IsValid(TargetPlayerState)
+		|| SourcePlayerState->GetTeam() == EGameTeam::None
+		|| TargetPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return ERogueTargetRelation::TeamUnknown;
+	}
+
+	return SourcePlayerState->GetTeam() == TargetPlayerState->GetTeam()
+		? ERogueTargetRelation::Friendly
+		: ERogueTargetRelation::Hostile;
 }
 
 bool URogueTargetFilter::IsAlive(const AActor* Target)

@@ -1,6 +1,5 @@
 #include "GameFlow/Bomb/BombPlayerController.h"
 
-#include "Blueprint/UserWidget.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -12,7 +11,6 @@
 #include "GameFramework/PawnMovementComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "UI/GameFlow/BaseBombGameFlowWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBombPlayerController, Log, All);
 
@@ -32,20 +30,16 @@ void ABombPlayerController::BeginPlay()
 			UE_LOG(LogBombPlayerController, Error, TEXT("%s requires a complete DataJackInputConfig."), *GetNameSafe(this));
 		}
 
-		if (!GameFlowWidgetClass)
-		{
-			UE_LOG(LogBombPlayerController, Error, TEXT("%s requires a GameFlowWidgetClass."), *GetNameSafe(this));
-		}
 	}
 
-	CreateGameFlowWidget();
+	// 인게임 HUD는 ShooterUIInitComponent -> RootLayout -> WBP_PlayerHUD 단일 경로에서만 생성한다.
+	// Bomb HUD는 WBP_PlayerHUD의 자식으로 구성하므로 여기서 별도 AddToPlayerScreen을 하지 않는다.
 }
 
 void ABombPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ApplyObjectiveInteractionActive(false);
 	SetDataJackMappingContextEnabled(false);
-	RemoveGameFlowWidget();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -56,12 +50,7 @@ bool ABombPlayerController::IsObjectiveInteractionActive() const
 
 bool ABombPlayerController::CanUseCombatInput() const
 {
-	const ABaseTeamPlayerState* TeamPlayerState = GetPlayerState<ABaseTeamPlayerState>();
-	return IsRoundInputEnabled()
-		&& !bIsObjectiveInteractionActive
-		&& IsValid(GetPawn())
-		&& IsValid(TeamPlayerState)
-		&& TeamPlayerState->IsAlive();
+	return Super::CanUseCombatInput() && !bIsObjectiveInteractionActive;
 }
 
 void ABombPlayerController::SetObjectiveInteractionActive(const bool bActive)
@@ -161,31 +150,6 @@ void ABombPlayerController::ServerStopDataJackDrop_Implementation()
 	{
 		BombGameMode->StopDataJackDrop(this);
 	}
-}
-
-void ABombPlayerController::CreateGameFlowWidget()
-{
-	if (!IsLocalController() || IsValid(GameFlowWidget) || !GameFlowWidgetClass)
-	{
-		return;
-	}
-
-	GameFlowWidget = CreateWidget<UBaseBombGameFlowWidget>(this, GameFlowWidgetClass);
-	if (IsValid(GameFlowWidget))
-	{
-		GameFlowWidget->AddToPlayerScreen();
-	}
-}
-
-void ABombPlayerController::RemoveGameFlowWidget()
-{
-	if (!IsValid(GameFlowWidget))
-	{
-		return;
-	}
-
-	GameFlowWidget->RemoveFromParent();
-	GameFlowWidget = nullptr;
 }
 
 void ABombPlayerController::ApplyObjectiveInteractionActive(const bool bActive)

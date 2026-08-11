@@ -113,12 +113,17 @@ void AShooterPlayerState::ServerRespawnReset()
 		return;
 	}
 
-	ServerResetVitals();
-
-	if (HealthComponent)
+	if (!HealthComponent)
 	{
-		HealthComponent->ServerResetDeathState();
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] %s: HealthComponent 가 없어 리스폰 초기화를 완료할 수 없습니다"), *GetName());
+		SetAlive(false);
+		return;
 	}
+
+	ServerResetVitals();
+	HealthComponent->ServerResetDeathState();
+	SetAlive(!HealthComponent->IsDead());
 }
 
 void AShooterPlayerState::ServerGrantStartupAbilities()
@@ -152,12 +157,19 @@ void AShooterPlayerState::ServerResetVitals()
 		return;
 	}
 
-	// 체력/보호막 최대치와 현재치를 초기화
+	// 최대치의 베이스만 초기값으로 되돌린다. Infinite GE 증강의 modifier 는 ASC aggregator 에 남는다.
 	VitalSet->SetMaxHealth(InitialMaxHealth);
 	VitalSet->SetMaxShield(InitialMaxShield);
 
-	VitalSet->SetHealth(FMath::Clamp(InitialHealth, 0.f, InitialMaxHealth));
-	VitalSet->SetShield(FMath::Clamp(InitialShield, 0.f, InitialMaxShield));
+	// MaxHealth 증강이 유지된 라운드에서는 증가분만큼 현재 체력도 복구한다.
+	// InitialHealth < InitialMaxHealth 로 설정한 게임도 같은 시작 결손량을 유지한다.
+	const float EffectiveMaxHealth = VitalSet->GetMaxHealth();
+	const float EffectiveMaxShield = VitalSet->GetMaxShield();
+	const float HealthBonusFromPersistentEffects = EffectiveMaxHealth - InitialMaxHealth;
+
+	VitalSet->SetHealth(FMath::Clamp(InitialHealth + HealthBonusFromPersistentEffects, 0.f, EffectiveMaxHealth));
+	// 보호막은 기존 설계대로 라운드 시작값(기본 0)을 유지한다. 최대 보호막 증가는 용량만 늘린다.
+	VitalSet->SetShield(FMath::Clamp(InitialShield, 0.f, EffectiveMaxShield));
 
 	UE_LOG(LogShooterPlayerState, Log,
 		TEXT("[ShooterPlayerState] %s: 바이탈 초기화 체력 %.0f/%.0f 보호막 %.0f/%.0f"),

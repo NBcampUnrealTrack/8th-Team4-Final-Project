@@ -496,8 +496,9 @@ namespace
 					UE_LOG(
 						LogHitscanResolver,
 						Log,
-						TEXT("Applied hitscan damage. Target=%s BallisticDamage=%.2f HealthDamage=%.2f ShieldDamage=%.2f Zones=%d Pellets=%d Distance=%.2fm"),
+						TEXT("Applied hitscan damage. Target=%s WeaponTag=%s BallisticDamage=%.2f HealthDamage=%.2f ShieldDamage=%.2f Zones=%d Pellets=%d Distance=%.2fm"),
 						*GetNameSafe(Aggregate.TargetActor.Get()),
+						*DamageRequest.WeaponTag.ToString(),
 						Aggregate.BaseDamage,
 						DamageResult.HealthDamage,
 						DamageResult.ShieldDamage,

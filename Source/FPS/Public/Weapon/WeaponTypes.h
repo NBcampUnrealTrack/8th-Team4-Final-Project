@@ -22,6 +22,16 @@ enum class EWeaponType : uint8
 	Knife
 };
 
+// 런타임 무기 슬롯 식별용. EWeaponType(무기 종류)과 역할이 다르다.
+// 슬롯은 1번/2번 입력 및 Primary/Secondary 인스턴스 보관에만 사용한다.
+UENUM(BlueprintType)
+enum class EWeaponSlot : uint8
+{
+	None UMETA(Hidden),
+	Primary UMETA(DisplayName = "Primary"),
+	Secondary UMETA(DisplayName = "Secondary")
+};
+
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
 // GAS 타입(FGameplayTag, AbilitySystemComponent 등)을 절대 포함하지 않는다.
 // 다른 팀원이 이 구조체를 FRogueDamageRequest로 변환하는 Adapter를 별도로 작성할 예정이므로,

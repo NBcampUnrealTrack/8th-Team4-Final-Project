@@ -2,6 +2,7 @@
 
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "GameFlow/Common/BaseTeamPlayerState.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Input/ShooterInputConfig.h"
@@ -28,6 +29,15 @@ void ABaseRoundPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 bool ABaseRoundPlayerController::IsRoundInputEnabled() const
 {
 	return bIsRoundInputEnabled;
+}
+
+bool ABaseRoundPlayerController::CanUseCombatInput() const
+{
+	const ABaseTeamPlayerState* TeamPlayerState = GetPlayerState<ABaseTeamPlayerState>();
+	return bIsRoundInputEnabled
+		&& IsValid(GetPawn())
+		&& IsValid(TeamPlayerState)
+		&& TeamPlayerState->IsAlive();
 }
 
 void ABaseRoundPlayerController::SetRoundInputEnabled(const bool bEnabled)

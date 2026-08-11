@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GameplayTagContainer.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "TimerManager.h"
 #include "Weapon/WeaponTypes.h"
@@ -28,6 +29,7 @@ public:
 	AWeaponBase();
 
 	virtual void Tick(float DeltaTime) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 이전 펠릿별 Hit 이벤트와의 블루프린트 호환을 위해 유지한다.
 	// 현재 서버 판정 경로는 B의 UHitscanResolverSubsystem을 사용하며 이 이벤트는 더 이상 발신하지 않는다.
@@ -98,6 +100,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
+
+	// Hitscan Definition의 Weapon.Type.* 태그를 그대로 노출한다.
+	// 스왑/애니메이션/로그가 DamageRequest와 동일한 태그 원본을 사용하게 하기 위한 접근자다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	FGameplayTag GetWeaponTag() const;
 
 	// 1인칭(캐릭터 팔)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh1P에 붙인다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
@@ -193,7 +200,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
 	bool bIsReloading = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|ADS")

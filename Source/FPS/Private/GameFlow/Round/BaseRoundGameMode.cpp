@@ -1,5 +1,9 @@
 #include "GameFlow/Round/BaseRoundGameMode.h"
 
+#include "Augment/AugmentInventoryComponent.h"
+#include "Augment/AugmentRegistrySubsystem.h"
+#include "Augment/AugmentTypes.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
 #include "GameFlow/Round/BaseRoundGameState.h"
@@ -8,6 +12,7 @@
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseRoundGameMode, Log, All);
@@ -44,12 +49,27 @@ void ABaseRoundGameMode::NotifyPlayerEliminated(AController* EliminatedControlle
 	}
 
 	ABaseTeamPlayerState* EliminatedPlayerState = EliminatedController->GetPlayerState<ABaseTeamPlayerState>();
-	if (!IsValid(EliminatedPlayerState) || !EliminatedPlayerState->IsAlive())
+	if (!IsValid(EliminatedPlayerState))
 	{
 		return;
 	}
 
+	const TWeakObjectPtr<ABaseTeamPlayerState> PlayerKey(EliminatedPlayerState);
+	if (EliminatedPlayersThisRound.Contains(PlayerKey))
+	{
+		return;
+	}
+
+	EliminatedPlayersThisRound.Add(PlayerKey);
 	EliminatedPlayerState->SetAlive(false);
+
+	// 2v2처럼 라운드가 계속되는 경우 사망한 플레이어만 즉시 입력을 잠근다.
+	// 다음 라운드의 StartRoundCombat()에서 전 플레이어 입력을 다시 활성화한다.
+	if (ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(EliminatedController))
+	{
+		RoundPlayerController->SetRoundInputEnabled(false);
+	}
+
 	HandlePlayerEliminated(EliminatedPlayerState);
 }
 
@@ -67,9 +87,11 @@ void ABaseRoundGameMode::RestartGameFlow()
 	}
 
 	GetWorldTimerManager().ClearTimer(RoundStartTimerHandle);
+	GetWorldTimerManager().ClearTimer(AugmentSelectionTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundEndTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundTimeTimerHandle);
 	SetRoundPlayerInputEnabled(false);
+	EliminatedPlayersThisRound.Reset();
 	HandleGameFlowReset();
 
 	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
@@ -83,6 +105,7 @@ void ABaseRoundGameMode::RestartGameFlow()
 	RoundGameState->SetCurrentRoundNumber(0);
 	RoundGameState->SetTeamRoles(StartingTeamARole, StartingTeamBRole);
 	bSidesSwitched = false;
+	bLoggedWaitingForAugmentRegistry = false;
 	RoundGameState->ClearRoundResult();
 	RoundGameState->SetMatchWinner(EGameTeam::None);
 	RoundGameState->ClearRoundTimer();
@@ -94,6 +117,8 @@ void ABaseRoundGameMode::RestartGameFlow()
 void ABaseRoundGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+
+	RegenerateMatchSeed();
 
 	if (!DefaultPawnClass)
 	{
@@ -114,14 +139,39 @@ void ABaseRoundGameMode::BeginPlay()
 		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s requires a GameState derived from ABaseRoundGameState."), *GetNameSafe(this));
 	}
 
-	if (!PlayerStateClass || !PlayerStateClass->IsChildOf(ABaseTeamPlayerState::StaticClass()))
+	if (!PlayerStateClass || !PlayerStateClass->IsChildOf(AShooterPlayerState::StaticClass()))
 	{
-		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s requires a PlayerState derived from ABaseTeamPlayerState."), *GetNameSafe(this));
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s requires AShooterPlayerState (or a derived class) for round/GAS integration."), *GetNameSafe(this));
 	}
 
 	if (!IsGameFlowConfigurationValid())
 	{
 		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s has an invalid round game-flow configuration."), *GetNameSafe(this));
+	}
+
+	if (bEnableAugmentDraft)
+	{
+		UAugmentRegistrySubsystem* Registry = nullptr;
+		if (UWorld* World = GetWorld())
+		{
+			if (UGameInstance* GameInstance = World->GetGameInstance())
+			{
+				Registry = GameInstance->GetSubsystem<UAugmentRegistrySubsystem>();
+			}
+		}
+
+		if (IsValid(Registry))
+		{
+			BoundAugmentRegistry = Registry;
+			if (!Registry->IsReady())
+			{
+				Registry->OnRegistryReady.AddUniqueDynamic(this, &ABaseRoundGameMode::HandleAugmentRegistryReady);
+			}
+		}
+		else
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s cannot find UAugmentRegistrySubsystem."), *GetNameSafe(this));
+		}
 	}
 
 	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
@@ -131,6 +181,22 @@ void ABaseRoundGameMode::BeginPlay()
 	}
 
 	EvaluateRoundStart();
+}
+
+void ABaseRoundGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(RoundStartTimerHandle);
+	GetWorldTimerManager().ClearTimer(AugmentSelectionTimerHandle);
+	GetWorldTimerManager().ClearTimer(RoundEndTimerHandle);
+	GetWorldTimerManager().ClearTimer(RoundTimeTimerHandle);
+
+	if (UAugmentRegistrySubsystem* Registry = BoundAugmentRegistry.Get())
+	{
+		Registry->OnRegistryReady.RemoveDynamic(this, &ABaseRoundGameMode::HandleAugmentRegistryReady);
+	}
+	BoundAugmentRegistry.Reset();
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABaseRoundGameMode::InitGameState()
@@ -156,9 +222,22 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 
 	EnsurePlayerTeamAssigned(NewPlayer);
 
-	if (ABaseTeamPlayerState* TeamPlayerState = NewPlayer->GetPlayerState<ABaseTeamPlayerState>())
+	if (AShooterPlayerState* ShooterPlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
-		TeamPlayerState->SetAlive(false);
+		// 새 매치의 시작 경계에서는 PlayerState가 seamless travel로 재사용되더라도
+		// 이전 매치의 증강/미선택 후보가 남지 않도록 GAS 쪽 공개 초기화 API를 사용한다.
+		const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+		if (IsValid(RoundGameState)
+			&& RoundGameState->GetCurrentRoundNumber() == 0
+			&& RoundGameState->GetGameFlowPhase() == EGameFlowPhase::WaitingForPlayers)
+		{
+			if (UAugmentInventoryComponent* Inventory = ShooterPlayerState->GetAugmentInventory())
+			{
+				Inventory->ServerRemoveAllAugments();
+			}
+		}
+
+		ShooterPlayerState->SetAlive(false);
 	}
 
 	if (APawn* ExistingPawn = NewPlayer->GetPawn())
@@ -196,11 +275,17 @@ bool ABaseRoundGameMode::ShouldSpawnAtStartSpot(AController*)
 
 void ABaseRoundGameMode::HandleGameFlowReset()
 {
+	ResetAllPlayerAugments();
+	RegenerateMatchSeed();
 }
 
 bool ABaseRoundGameMode::PrepareRound()
 {
 	return true;
+}
+
+void ABaseRoundGameMode::HandlePreparedRoundAborted()
+{
 }
 
 void ABaseRoundGameMode::HandleRoundStarted()
@@ -297,6 +382,7 @@ bool ABaseRoundGameMode::PreparePlayersForRound()
 {
 	TArray<APlayerController*> RoundPlayers;
 	bool bAllPlayersReady = true;
+	EliminatedPlayersThisRound.Reset();
 
 	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
@@ -337,16 +423,19 @@ bool ABaseRoundGameMode::PreparePlayersForRound()
 	{
 		RestartPlayer(PlayerController);
 
-		ABaseTeamPlayerState* TeamPlayerState = PlayerController->GetPlayerState<ABaseTeamPlayerState>();
 		const bool bSpawnedSuccessfully = IsValid(PlayerController->GetPawn());
-		if (IsValid(TeamPlayerState))
+		AShooterPlayerState* ShooterPlayerState = PlayerController->GetPlayerState<AShooterPlayerState>();
+		if (!bSpawnedSuccessfully || !IsValid(ShooterPlayerState))
 		{
-			TeamPlayerState->SetAlive(bSpawnedSuccessfully);
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Failed to prepare %s for the round. Check DefaultPawnClass, PlayerStart and AShooterPlayerState."), *GetNameSafe(PlayerController));
+			bAllPlayersReady = false;
+			continue;
 		}
 
-		if (!bSpawnedSuccessfully)
+		ShooterPlayerState->ServerRespawnReset();
+		if (!ShooterPlayerState->IsAlive())
 		{
-			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Failed to spawn a round pawn for %s. Check DefaultPawnClass and PlayerStart configuration."), *GetNameSafe(PlayerController));
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s remained dead after ServerRespawnReset()."), *GetNameSafe(ShooterPlayerState));
 			bAllPlayersReady = false;
 		}
 	}
@@ -385,13 +474,33 @@ void ABaseRoundGameMode::EvaluateRoundStart()
 			GetWorldTimerManager().ClearTimer(RoundStartTimerHandle);
 			RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
 		}
+		else if (RoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting)
+		{
+			// 선택 완료자가 일부 생긴 뒤 인원이 빠지면 같은 라운드를 롤백해 재추첨할 경우
+			// 증강을 중복 획득할 수 있다. 재접속 복구가 CUT인 프로토타입에서는 세션 흐름을
+			// 초기화하는 편이 상태 일관성을 보장한다.
+			RestartGameFlow();
+		}
 		return;
 	}
 
-	if (RoundGameState->GetGameFlowPhase() == EGameFlowPhase::WaitingForPlayers)
+	if (RoundGameState->GetGameFlowPhase() != EGameFlowPhase::WaitingForPlayers)
 	{
-		ScheduleRoundStart(InitialRoundStartDelay);
+		return;
 	}
+
+	if (bEnableAugmentDraft && !IsAugmentRegistryReady())
+	{
+		if (!bLoggedWaitingForAugmentRegistry)
+		{
+			bLoggedWaitingForAugmentRegistry = true;
+			UE_LOG(LogBaseRoundGameMode, Display, TEXT("Waiting for the augment registry before opening the first round."));
+		}
+		return;
+	}
+
+	bLoggedWaitingForAugmentRegistry = false;
+	ScheduleRoundStart(InitialRoundStartDelay);
 }
 
 void ABaseRoundGameMode::ScheduleRoundStart(const float Delay)
@@ -443,9 +552,7 @@ void ABaseRoundGameMode::BeginNextRound()
 	RoundGameState->ClearRoundResult();
 	if (!PreparePlayersForRound() || !PrepareRound())
 	{
-		SetRoundPlayerInputEnabled(false);
-		ResetAllPlayerPawns();
-		RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
+		AbortPreparedRound(false);
 		return;
 	}
 
@@ -455,6 +562,89 @@ void ABaseRoundGameMode::BeginNextRound()
 	}
 
 	RoundGameState->SetCurrentRoundNumber(NextRoundNumber);
+
+	if (bEnableAugmentDraft)
+	{
+		if (!RollAugmentOffersForPlayers(NextRoundNumber))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Round %d was not opened because augment offer generation failed."), NextRoundNumber);
+			AbortPreparedRound(true);
+			return;
+		}
+
+		BeginAugmentSelectionPhase();
+		return;
+	}
+
+	StartRoundCombat();
+}
+
+void ABaseRoundGameMode::BeginAugmentSelectionPhase()
+{
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	SetRoundPlayerInputEnabled(false);
+	RoundGameState->ClearRoundTimer();
+	RoundGameState->SetGameFlowPhase(EGameFlowPhase::AugmentSelecting, AugmentSelectionDuration);
+
+	if (AugmentSelectionDuration <= 0.0f)
+	{
+		FinishAugmentSelectionPhase();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		AugmentSelectionTimerHandle,
+		this,
+		&ABaseRoundGameMode::FinishAugmentSelectionPhase,
+		AugmentSelectionDuration,
+		false);
+}
+
+void ABaseRoundGameMode::FinishAugmentSelectionPhase()
+{
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState) || RoundGameState->GetGameFlowPhase() != EGameFlowPhase::AugmentSelecting)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(AugmentSelectionTimerHandle);
+
+	if (!HasEnoughPlayersToStart())
+	{
+		RestartGameFlow();
+		return;
+	}
+
+	if (!AutoSelectAugmentOffersForPlayers())
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("One or more players still have augment offers after auto selection. Combat will remain locked; check [AugmentInventory] errors."));
+		return;
+	}
+
+	StartRoundCombat();
+}
+
+void ABaseRoundGameMode::StartRoundCombat()
+{
+	if (!HasEnoughPlayersToStart())
+	{
+		AbortPreparedRound(true);
+		return;
+	}
+
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::RoundInProgress);
 	SetRoundTimer(RoundDuration);
 	HandleRoundStarted();
@@ -491,6 +681,7 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	}
 
 	GetWorldTimerManager().ClearTimer(RoundStartTimerHandle);
+	GetWorldTimerManager().ClearTimer(AugmentSelectionTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundEndTimerHandle);
 	GetWorldTimerManager().ClearTimer(RoundTimeTimerHandle);
 	SetRoundPlayerInputEnabled(false);
@@ -499,6 +690,30 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	RoundGameState->SetMatchWinner(WinningTeam);
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::MatchEnded);
 	EndMatch();
+}
+
+void ABaseRoundGameMode::AbortPreparedRound(const bool bRollbackRoundNumber)
+{
+	GetWorldTimerManager().ClearTimer(AugmentSelectionTimerHandle);
+	SetRoundPlayerInputEnabled(false);
+	HandlePreparedRoundAborted();
+	ResetAllPlayerPawns();
+	EliminatedPlayersThisRound.Reset();
+
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	if (bRollbackRoundNumber && RoundGameState->GetCurrentRoundNumber() > 0)
+	{
+		RoundGameState->SetCurrentRoundNumber(RoundGameState->GetCurrentRoundNumber() - 1);
+	}
+
+	RoundGameState->ClearRoundTimer();
+	RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
+	EvaluateRoundStart();
 }
 
 void ABaseRoundGameMode::ResetAllPlayerPawns()
@@ -520,6 +735,26 @@ void ABaseRoundGameMode::ResetAllPlayerPawns()
 		{
 			PlayerController->UnPossess();
 			ExistingPawn->Destroy();
+		}
+	}
+}
+
+void ABaseRoundGameMode::ResetAllPlayerAugments()
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		{
+			if (UAugmentInventoryComponent* Inventory = ShooterPlayerState->GetAugmentInventory())
+			{
+				Inventory->ServerRemoveAllAugments();
+			}
 		}
 	}
 }
@@ -550,6 +785,144 @@ void ABaseRoundGameMode::SetRoundPlayerInputEnabled(const bool bEnabled)
 	}
 }
 
+bool ABaseRoundGameMode::RollAugmentOffersForPlayers(const int32 RoundNumber)
+{
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState) || !IsAugmentRegistryReady())
+	{
+		return false;
+	}
+
+	const int32 RoundSeed = MakeRoundSeed(RoundNumber);
+	bool bFoundPlayer = false;
+	bool bAllRolled = true;
+
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Round %d contains a PlayerState that is not AShooterPlayerState."), RoundNumber);
+			bAllRolled = false;
+			continue;
+		}
+
+		bFoundPlayer = true;
+		UAugmentInventoryComponent* Inventory = ShooterPlayerState->GetAugmentInventory();
+		if (!IsValid(Inventory))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s has no AugmentInventoryComponent."), *GetNameSafe(ShooterPlayerState));
+			bAllRolled = false;
+			continue;
+		}
+
+		FAugmentDraftContext DraftContext;
+		DraftContext.RoundNumber = RoundNumber;
+		DraftContext.RoundSeed = RoundSeed;
+
+		const EGameTeam PlayerTeam = ShooterPlayerState->GetTeam();
+		if (PlayerTeam == EGameTeam::TeamA)
+		{
+			DraftContext.TeamScore = RoundGameState->GetTeamAScore();
+			DraftContext.OpponentScore = RoundGameState->GetTeamBScore();
+		}
+		else if (PlayerTeam == EGameTeam::TeamB)
+		{
+			DraftContext.TeamScore = RoundGameState->GetTeamBScore();
+			DraftContext.OpponentScore = RoundGameState->GetTeamAScore();
+		}
+
+		if (!Inventory->ServerRollOffers(DraftContext, AugmentOfferCount))
+		{
+			bAllRolled = false;
+			continue;
+		}
+
+		const int32 RolledOfferCount = Inventory->GetOffers().Num();
+		if (RolledOfferCount != AugmentOfferCount)
+		{
+			UE_LOG(LogBaseRoundGameMode, Error,
+				TEXT("%s rolled %d/%d augment offers; the round will not open with an incomplete draft."),
+				*GetNameSafe(ShooterPlayerState), RolledOfferCount, AugmentOfferCount);
+			bAllRolled = false;
+		}
+	}
+
+	UE_LOG(LogBaseRoundGameMode, Log, TEXT("Round %d augment draft opened. MatchSeed=%d RoundSeed=%d"), RoundNumber, MatchSeed, RoundSeed);
+	return bFoundPlayer && bAllRolled;
+}
+
+bool ABaseRoundGameMode::AutoSelectAugmentOffersForPlayers()
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return false;
+	}
+
+	bool bAllFinalized = true;
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		UAugmentInventoryComponent* Inventory = IsValid(ShooterPlayerState) ? ShooterPlayerState->GetAugmentInventory() : nullptr;
+		if (!IsValid(Inventory))
+		{
+			bAllFinalized = false;
+			continue;
+		}
+
+		if (!Inventory->GetOffers().IsEmpty())
+		{
+			Inventory->ServerAutoSelectOffer();
+		}
+
+		if (!Inventory->GetOffers().IsEmpty())
+		{
+			bAllFinalized = false;
+		}
+	}
+
+	return bAllFinalized;
+}
+
+bool ABaseRoundGameMode::IsAugmentRegistryReady() const
+{
+	if (!bEnableAugmentDraft)
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
+	const UAugmentRegistrySubsystem* Registry = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAugmentRegistrySubsystem>()
+		: nullptr;
+
+	return IsValid(Registry) && Registry->IsReady();
+}
+
+int32 ABaseRoundGameMode::MakeRoundSeed(const int32 RoundNumber) const
+{
+	uint32 Seed = HashCombine(static_cast<uint32>(MatchSeed), static_cast<uint32>(FMath::Max(1, RoundNumber)));
+	Seed &= 0x7fffffffu;
+	return Seed == 0u ? 1 : static_cast<int32>(Seed);
+}
+
+void ABaseRoundGameMode::RegenerateMatchSeed()
+{
+	MatchSeed = FMath::Rand();
+	if (MatchSeed == 0)
+	{
+		MatchSeed = 1;
+	}
+}
+
+void ABaseRoundGameMode::HandleAugmentRegistryReady()
+{
+	bLoggedWaitingForAugmentRegistry = false;
+	EvaluateRoundStart();
+}
+
 bool ABaseRoundGameMode::IsGameFlowConfigurationValid() const
 {
 	return DefaultPawnClass != nullptr
@@ -559,13 +932,14 @@ bool ABaseRoundGameMode::IsGameFlowConfigurationValid() const
 		&& GameStateClass != nullptr
 		&& GameStateClass->IsChildOf(ABaseRoundGameState::StaticClass())
 		&& PlayerStateClass != nullptr
-		&& PlayerStateClass->IsChildOf(ABaseTeamPlayerState::StaticClass())
+		&& PlayerStateClass->IsChildOf(AShooterPlayerState::StaticClass())
 		&& SpawnClearanceRadius >= 0.0f
 		&& MinimumPlayersToStart > 0
 		&& InitialRoundStartDelay >= 0.0f
 		&& RoundStartDelay >= 0.0f
 		&& RoundEndDelay >= 0.0f
 		&& RoundDuration > 0.0f
+		&& (!bEnableAugmentDraft || (AugmentSelectionDuration > 0.0f && AugmentOfferCount > 0))
 		&& SideSwitchRound >= 0
 		&& RoundsToWin >= 0
 		&& MaxRounds >= 0;

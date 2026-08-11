@@ -86,10 +86,8 @@ void URogueReconDroneAbility::ActivateAbility(const FGameplayAbilitySpecHandle H
 		const ERogueTargetRelation Relation = URogueTargetFilter::GetRelation(Avatar, HitActor);
 
 
-		// 적이거나 팀이 없는 경우만 감지
-		// TODO : 추후 팀 로직이 연결되면 팀이 없는 경우는 감지하지 않도록 수정
-		const bool bHostile = Relation == ERogueTargetRelation::Hostile
-		                   || Relation == ERogueTargetRelation::TeamUnknown;
+		// 게임플로우 팀 판정이 연결된 대상 중 적만 감지한다.
+		const bool bHostile = Relation == ERogueTargetRelation::Hostile;
 
 		if (!bHostile || !URogueTargetFilter::IsAlive(HitActor))
 		{

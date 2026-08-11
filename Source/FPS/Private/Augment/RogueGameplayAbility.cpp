@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Augment/RogueAugmentStatResolver.h"
+#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
 
 URogueTimedTagEffect::URogueTimedTagEffect()
@@ -16,6 +18,29 @@ URogueTimedTagEffect::URogueTimedTagEffect()
 	Duration.DataTag = RogueTags::Data_Magnitude_Duration;
 
 	DurationMagnitude = FGameplayEffectModifierMagnitude(Duration);
+}
+
+bool URogueGameplayAbility::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayTagContainer* SourceTags,
+	const FGameplayTagContainer* TargetTags,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도 라운드 상태를 반영한다.
+	// 현재 이 베이스의 실사용자는 Dash/Recon이라 라운드 전/선택/종료/사망/폭탄 상호작용 중에는
+	// 액티브 증강도 무기 어빌리티와 동일하게 차단된다.
+	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
+	const ABaseRoundPlayerController* RoundPlayerController = IsValid(AvatarPawn)
+		? Cast<ABaseRoundPlayerController>(AvatarPawn->GetController())
+		: nullptr;
+
+	return !IsValid(RoundPlayerController) || RoundPlayerController->CanUseCombatInput();
 }
 
 int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const

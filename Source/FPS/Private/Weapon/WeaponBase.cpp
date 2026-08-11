@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Net/UnrealNetwork.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
@@ -43,6 +44,14 @@ AWeaponBase::AWeaponBase()
 	Mesh3P->SetOwnerNoSee(true);
 	Mesh3P->bReceivesDecals = false;
 	Mesh3P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+
+void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AWeaponBase, bIsReloading);
 }
 
 void AWeaponBase::BeginPlay()
@@ -133,6 +142,11 @@ void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 	MovementSpreadMultiplier = NewMultiplier;
 }
 
+FGameplayTag AWeaponBase::GetWeaponTag() const
+{
+	return IsValid(HitscanDefinition.Get()) ? HitscanDefinition->GetWeaponTag() : FGameplayTag();
+}
+
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
 	bIsADS = bCanADS && bNewIsADS;
@@ -210,6 +224,10 @@ void AWeaponBase::StartReload()
 	}
 
 	bIsReloading = true;
+	if (HasAuthority())
+	{
+		ForceNetUpdate();
+	}
 
 	if (UWorld* World = GetWorld())
 	{
@@ -221,6 +239,10 @@ void AWeaponBase::FinishReload()
 {
 	CurrentAmmo = MagazineSize;
 	bIsReloading = false;
+	if (HasAuthority())
+	{
+		ForceNetUpdate();
+	}
 }
 
 float AWeaponBase::CalculateCurrentSpreadDegrees() const
