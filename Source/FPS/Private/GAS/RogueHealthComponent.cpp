@@ -167,7 +167,12 @@ void URogueHealthComponent::NotifyDeath(const FGameplayEffectContextHandle& Cont
 	{
 		DeathContext.WeaponTag  = Ctx->WeaponTag;
 		DeathContext.HitZoneTag = Ctx->HitZoneTag;
-		DeathContext.bHeadshot  = (Ctx->HeadshotDamage > 0.f);
+		DeathContext.bHeadshot = Ctx->HitZoneDamageParts.ContainsByPredicate(
+			[](const FRogueHitZoneDamagePart& Part)
+			{
+				return Part.bHeadshot && Part.BaseDamage > 0.0f;
+			})
+			|| Ctx->HeadshotDamage > 0.f;
 	}
 
 	IRogueDamageableTarget::Execute_HandleDeath(Victim, DeathContext);

@@ -20,7 +20,6 @@ ABombGameMode::ABombGameMode()
 {
 	GameStateClass = ABombGameState::StaticClass();
 	PlayerControllerClass = ABombPlayerController::StaticClass();
-	PlayerStateClass = ABaseTeamPlayerState::StaticClass();
 	MinimumPlayersToStart = 2;
 	RoundDuration = 100.0f;
 	SideSwitchRound = 7;
