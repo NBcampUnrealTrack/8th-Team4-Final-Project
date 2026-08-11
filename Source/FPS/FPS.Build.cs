@@ -26,6 +26,9 @@ public class FPS : ModuleRules
 			"CustomizableObject",
 			"AnimGraphRuntime",
 			"DeveloperSettings",
+			"OnlineSubsystem",
+			"OnlineSubsystemSteam",
+			"OnlineSubsystemUtils",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
