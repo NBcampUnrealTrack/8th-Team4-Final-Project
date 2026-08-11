@@ -1,12 +1,15 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
 
 #include "ShooterPlayerController.generated.h"
 
+class UEnhancedInputComponent;
+class URogueAbilitySystemComponent;
 class UShooterInputConfig;
 struct FInputActionValue;
 
@@ -32,4 +35,11 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
+
+	void BindAbilityActions(UEnhancedInputComponent* EnhancedInputComponent);
+
+	void Input_AbilityPressed(FGameplayTag InputTag);
+	void Input_AbilityReleased(FGameplayTag InputTag);
+
+	URogueAbilitySystemComponent* GetRogueAbilitySystem() const;
 };

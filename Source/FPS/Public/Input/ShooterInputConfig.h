@@ -1,11 +1,25 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "ShooterInputConfig.generated.h"
 
 class UInputAction;
 class UInputMappingContext;
+
+USTRUCT(BlueprintType)
+struct FShooterAbilityInputAction
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
+	TObjectPtr<UInputAction> InputAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input",
+		meta = (Categories = "InputTag.Ability"))
+	FGameplayTag InputTag;
+};
 
 UCLASS(BlueprintType)
 class FPS_API UShooterInputConfig : public UDataAsset
@@ -32,4 +46,7 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> SprintAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Abilities")
+	TArray<FShooterAbilityInputAction> AbilityActions;
 };
