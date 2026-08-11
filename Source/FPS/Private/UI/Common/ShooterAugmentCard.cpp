@@ -56,10 +56,10 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 		return;
 	}
 
-	const FShooterAugmentTierStyle* TierStyle = TierStyles->FindStyle(LevelData->Tier);
+	const FShooterAugmentTierStyle* TierStyle = TierStyles->FindStyle(InDefinition->Tier);
 	if (TierStyle == nullptr)
 	{
-		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentStyle에 %s에 맞는 Style이 정의되지않았습니다."), *UEnum::GetValueAsString(LevelData->Tier))
+		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentStyle에 %s에 맞는 Style이 정의되지않았습니다."), *UEnum::GetValueAsString(InDefinition->Tier))
 		return;
 	}
 
@@ -67,7 +67,6 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	Text_Name->SetColorAndOpacity(TierStyle->AccentColor);
 	Text_TierLabel->SetColorAndOpacity(TierStyle->AccentColor);
 	Text_TierLabel->SetText(TierStyle->TierDisplayName);
-
 
 	if (IsValid(Image_AlertBadge))
 	{

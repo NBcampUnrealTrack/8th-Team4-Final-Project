@@ -11,6 +11,7 @@
 class UShooterUIManagerSubsystem;
 struct FAugmentInventoryEntry;
 class UShooterAugmentSelectScreen;
+class UAugmentInventoryComponent;   
 
 // 3개의 카드 증강 중 선택한 카드 증강은 어떤 것인지 전달
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAugmentSelectedFromUI, int32, OfferIndex);
@@ -49,6 +50,12 @@ protected:
 	
 	UFUNCTION()
 	void HandleAugmentSelected(int32 OfferIndex);
+
+	UFUNCTION()
+	void HandleOffersChanged();
+
+	// 구독해 둔 인벤토리. 남의 PlayerState 것이라 소유하지 않는다
+	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	

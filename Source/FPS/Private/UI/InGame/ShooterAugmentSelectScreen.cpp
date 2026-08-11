@@ -11,16 +11,6 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
-void UShooterAugmentSelectScreen::NativeOnActivated()
-{
-	Super::NativeOnActivated();
-
-	/** 테스트 후 삭제 */
-#if !UE_BUILD_SHIPPING
-	DebugFillWithFirstOffers(3);
-#endif
-}
-
 void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers)
 {
 	// 이전 아이콘 로드가 진행 중이면 취소

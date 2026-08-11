@@ -24,9 +24,6 @@ class FPS_API UShooterAugmentSelectScreen : public UShooterActivatableWidget
 	GENERATED_BODY()
 
 public:
-	/** 테스트 후 삭제 */
-	virtual void NativeOnActivated() override;
-	
 	// 서버가 제시한 목록을 넣고, 순서가 곧 인덱스이므로 재정렬 하지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void SetOffers(const TArray<FAugmentInventoryEntry>& InOffers);

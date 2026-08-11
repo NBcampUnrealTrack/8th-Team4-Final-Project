@@ -7,6 +7,7 @@
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
+#include "Augment/AugmentInventoryComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterUIInitComp, Log, All);
 
@@ -44,9 +45,10 @@ void UShooterUIInitComponent::BeginPlay()
 
 void UShooterUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UWorld* World = GetWorld())
+	if (BoundInventory.IsValid())
 	{
-		World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
+		BoundInventory->OnOffersChanged.RemoveDynamic(this, &ThisClass::HandleOffersChanged);
+		BoundInventory.Reset();
 	}
 	
 	Super::EndPlay(EndPlayReason);
@@ -60,7 +62,7 @@ void UShooterUIInitComponent::TryStartInGameUI()
 		return;
 	}
 	
-	APlayerState* PS = GetOwner<APlayerController>()->GetPlayerState<AShooterPlayerState>();
+	AShooterPlayerState* PS = GetOwner<APlayerController>()->GetPlayerState<AShooterPlayerState>();
 	if (!PS)
 	{
 		if (!World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
@@ -86,6 +88,22 @@ void UShooterUIInitComponent::TryStartInGameUI()
 	}
 	
 	UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass);
+	
+	UAugmentInventoryComponent* Inventory = PS->GetAugmentInventory();
+	if (Inventory == nullptr)
+	{
+		return;
+	}
+
+	BoundInventory = Inventory;
+	Inventory->OnOffersChanged.AddDynamic(this, &ThisClass::HandleOffersChanged);
+
+	// ⚠️ 구독하기 전에 후보가 이미 와 있을 수 있다.
+	//    이 줄이 없으면 그 라운드만 화면이 안 뜨고, 다음 라운드부터 정상 동작해서 원인을 못 찾는다
+	if (!Inventory->GetOffers().IsEmpty())
+	{
+		HandleOffersChanged();
+	}
 }
 
 void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers)
@@ -130,9 +148,28 @@ void UShooterUIInitComponent::HideAugmentSelect()
 
 void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 {
-	OnAugmentSelected.Broadcast(OfferIndex);
-	// DeactivateWidget은 SelectScreen에서 처리 했으므로 Instance만 비움
+	if (BoundInventory.IsValid())
+	{
+		BoundInventory->ServerSelectOffer(OfferIndex);
+	}
 	AugmentSelectInstance = nullptr;
+}
+
+void UShooterUIInitComponent::HandleOffersChanged()
+{
+	if (!BoundInventory.IsValid())
+	{
+		return;
+	}
+	
+	const TArray<FAugmentInventoryEntry> Offers = BoundInventory->GetOffers();
+	if (Offers.IsEmpty())
+	{
+		HideAugmentSelect();
+		return;
+	}
+	
+	ShowAugmentSelect(Offers);
 }
 
 UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const
