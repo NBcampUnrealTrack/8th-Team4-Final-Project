@@ -6,6 +6,7 @@ IDE
 *.user
 *.userosscache
 *.sln.docstates
+*.sln
 
 Unreal generated folders
 
@@ -13,6 +14,7 @@ Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
+Plugins/Developer/RiderLink
 
 Ignored project content
 
