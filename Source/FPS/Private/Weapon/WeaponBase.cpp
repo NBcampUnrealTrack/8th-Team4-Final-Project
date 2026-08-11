@@ -5,6 +5,7 @@
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveFloat.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
@@ -16,6 +17,32 @@ DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 AWeaponBase::AWeaponBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// 데디케이티드/리슨 서버에서 CombatComponent가 스폰한 이 액터가 클라이언트에도 존재해야
+	// OnRep_EquippedWeapon에서 각자 로컬로 부착할 대상이 생긴다.
+	bReplicates = true;
+
+	// 부착 지점 역할만 하는 빈 루트. Mesh1P/Mesh3P는 CombatComponent가 장착 시 각자 다른
+	// 캐릭터 컴포넌트(Mesh1P/Mesh3P)로 재부착하므로 서로의 부모-자식이 되면 안 된다.
+	USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	SetRootComponent(SceneRoot);
+
+	// 1인칭 전용: 오너 본인만 본다.
+	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh1P"));
+	Mesh1P->SetupAttachment(SceneRoot);
+	Mesh1P->SetOnlyOwnerSee(true);
+	Mesh1P->SetOwnerNoSee(false);
+	Mesh1P->SetCastShadow(false);
+	Mesh1P->bReceivesDecals = false;
+	Mesh1P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 3인칭 전용: 오너 본인에게는 숨기고 다른 플레이어에게만 보인다.
+	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P"));
+	Mesh3P->SetupAttachment(SceneRoot);
+	Mesh3P->SetOnlyOwnerSee(false);
+	Mesh3P->SetOwnerNoSee(true);
+	Mesh3P->bReceivesDecals = false;
+	Mesh3P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AWeaponBase::BeginPlay()
