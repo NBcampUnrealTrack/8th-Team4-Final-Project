@@ -88,8 +88,6 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
 
-	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
 private:
 	// Weapon의 Mesh1P/Mesh3P를 오너 캐릭터(IPlayerInterface)의 Mesh1P/Mesh3P에서
 	// Weapon이 지정한 그립 소켓(GetGripSocketName1P/3P)으로 재부착한다.
