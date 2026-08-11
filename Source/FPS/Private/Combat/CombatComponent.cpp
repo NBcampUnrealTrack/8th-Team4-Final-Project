@@ -19,6 +19,22 @@ UCombatComponent::UCombatComponent()
 	SetIsReplicatedByDefault(true);
 }
 
+void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
+	DOREPLIFETIME(UCombatComponent, bAiming);
+}
+
+void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
+{
+	CurrentWeapon = NewWeapon;
+}
+
+void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
+{
+}
 
 // Called when the game starts
 void UCombatComponent::BeginPlay()

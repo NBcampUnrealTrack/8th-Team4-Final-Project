@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -24,9 +24,6 @@ protected:
 	// CombatComponent가 전담 - 이 클래스는 GAS 쪽에서 쓰기 편하게 짧은 이름으로 감싸주는 것뿐).
 	AWeaponBase* GetEquippedWeapon() const;
 
-	// TODO(GAS 팀): feat-BaseAugment 브랜치가 main에 정식 머지되면 RogueTags::Event_Weapon_XXX 같은
-	// 네이티브 태그로 교체할 것. 지금은 그 브랜치가 없어 문자열을 동적으로 요청해서 쓴다.
-	// (참고: RequestGameplayTag는 그 문자열이 프로젝트 어딘가에 네이티브로 등록돼 있어야 유효한 태그가 되므로,
-	//  머지 전까지는 이 이벤트들이 실질적으로 무동작일 수 있다.)
-	void SendWeaponGameplayEvent(const TCHAR* EventTagString) const;
+	// 태그 기반으로 수정
+	void SendWeaponGameplayEvent(FGameplayTag EventTag) const;
 };

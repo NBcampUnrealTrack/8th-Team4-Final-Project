@@ -8,6 +8,7 @@
 #include "CombatComponent.generated.h"
 
 class AWeaponBase;
+class UWeaponData;
 
 // CombatComponent의 Cycling(무기 교체) 상태가 바뀔 때 알리는 델리게이트. CombatComponent는 GAS를
 // 전혀 모르므로(WeaponBase와 동일한 원칙) 태그를 직접 붙이지 않는다 - 이 델리게이트를 구독하는
@@ -26,7 +27,6 @@ class FPS_API UCombatComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this component's properties
 	UCombatComponent();
 
 	// WeaponClass를 스폰해서 장착한다. 이미 장착 중인 무기가 있으면 먼저 해제(Destroy)한다.
@@ -57,17 +57,34 @@ public:
 	// GAS Adapter가 구독해서 Cycling 시작/종료에 맞춰 사격 차단 태그를 붙였다 뗀다.
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
 	FOnCyclingStateChanged OnCyclingStateChanged;
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	AWeaponBase* GetCurrentWeapon() const { return CurrentWeapon; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	void SetCurrentWeapon(AWeaponBase* NewWeapon);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon")
+	TObjectPtr<UWeaponData> WeaponData;
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Combat")
+	bool bAiming = false;
 
 protected:
-	// Called when the game starts
 	virtual void BeginPlay() override;
 
 	// 오너가 파괴되는 등으로 컴포넌트가 종료될 때, 부착만 해제되고 액터로 남는(고아가 되는) 것을
 	// 막기 위해 장착 무기를 정리한다.
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentWeapon)
+	TObjectPtr<AWeaponBase> CurrentWeapon;
+
+private:
+	UFUNCTION()
+	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);
 
 public:
-	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
 
