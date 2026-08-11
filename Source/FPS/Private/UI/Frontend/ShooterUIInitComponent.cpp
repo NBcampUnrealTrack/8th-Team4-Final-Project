@@ -4,6 +4,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 
@@ -29,7 +30,7 @@ void UShooterUIInitComponent::BeginPlay()
 	{
 		return;
 	}
-
+	
 	UIManager->InitializeUI(PC, RootLayoutClass);
 
 	// BP에서 지정
@@ -38,13 +39,59 @@ void UShooterUIInitComponent::BeginPlay()
 		return;
 	}
 
+	TryStartInGameUI();
+}
+
+void UShooterUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
+	}
+	
+	Super::EndPlay(EndPlayReason);
+}
+
+void UShooterUIInitComponent::TryStartInGameUI()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	
+	APlayerState* PS = GetOwner<APlayerController>()->GetPlayerState<AShooterPlayerState>();
+	if (!PS)
+	{
+		if (!World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
+		{
+			GetWorld()->GetTimerManager().SetTimer(
+			PlayerStateWaitTimerHandle,
+			this,
+			&ThisClass::TryStartInGameUI,
+			0.1f,
+			true
+			);
+		}
+		
+		return;
+	}
+
+	GetWorld()->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
+	
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (IsValid(UIManager) == false)
+	{
+		return;
+	}
+	
 	UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass);
 }
 
 void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers)
 {
 	// 이미 증강이 떠있으면 return
-	if (AugmentSelectInstance)
+	if (AugmentSelectInstance && AugmentSelectInstance->IsInViewport())
 	{
 		AugmentSelectInstance->SetOffers(InOffers);
 		return;

@@ -39,6 +39,13 @@ public:
 	
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	
+	// Player State가 준비 된 후에 화면을 띄운다.
+	// 준비가 안 됐으면 Timer로 다시 들어온다.
+	void TryStartInGameUI();
+	
+	FTimerHandle PlayerStateWaitTimerHandle;
 	
 	UFUNCTION()
 	void HandleAugmentSelected(int32 OfferIndex);
