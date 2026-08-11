@@ -1,17 +1,23 @@
-﻿#include "Animation/ShooterAnimInstance.h"
+#include "Animation/ShooterAnimInstance.h"
 
+#include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
+#include "Data/WeaponData.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
 
 void UShooterAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
 
 	CacheReferences();
+	LastAnimationWeapon.Reset();
+	UpdateWeaponValues();
 	if (ShooterCharacter)
 	{
 		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetBaseAimRotation().Yaw, 0.f);
@@ -26,6 +32,8 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		CacheReferences();
 	}
+
+	UpdateWeaponValues();
 }
 
 void UShooterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -39,7 +47,6 @@ void UShooterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 
 	UpdateMovementValues();
 	UpdateAimValues(DeltaSeconds);
-	UpdateWeaponValues();
 }
 
 void UShooterAnimInstance::CacheReferences()
@@ -54,6 +61,7 @@ void UShooterAnimInstance::CacheReferences()
 
 	CharacterMovementComponent = ShooterCharacter->GetCharacterMovement();
 	Combat = ShooterCharacter->FindComponentByClass<UCombatComponent>();
+	bFirstPersonAnimation = GetSkelMeshComponent() == ShooterCharacter->GetMesh1P_Implementation();
 }
 
 void UShooterAnimInstance::UpdateMovementValues()
@@ -108,10 +116,70 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bAiming = IsValid(Combat) && Combat->bAiming;
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
+	bIsCycling = IsValid(Combat) && Combat->IsCycling();
+	bWeaponReady = IsValid(Combat) && Combat->IsWeaponReady();
 
-	// dev 머지 대응 임시 스텁
-	// 지금은 항상 None
-	CurrentWeaponType = ShooterTags::TAG_WeaponType_None;
+	const FGameplayTag WeaponTag = IsValid(CurrentWeapon) ? CurrentWeapon->GetWeaponTag() : FGameplayTag();
+	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : ShooterTags::TAG_WeaponType_None;
+
+	UpdateWeaponAnimationData();
+
+	if (CurrentWeapon.Get() != LastAnimationWeapon.Get())
+	{
+		LastAnimationWeapon = CurrentWeapon.Get();
+		PlayEquipMontageForCurrentWeapon();
+	}
+}
+
+void UShooterAnimInstance::UpdateWeaponAnimationData()
+{
+	CurrentIdleAnim = nullptr;
+	CurrentAimIdleAnim = nullptr;
+
+	const UWeaponData* WeaponData = IsValid(Combat) ? Combat->GetWeaponData() : nullptr;
+	if (!IsValid(WeaponData) || !CurrentWeaponType.IsValid())
+	{
+		return;
+	}
+
+	if (const FPlayerAnims* PlayerAnims = WeaponData->FindPlayerAnims(CurrentWeaponType, bFirstPersonAnimation))
+	{
+		CurrentIdleAnim = PlayerAnims->IdleAnim;
+		CurrentAimIdleAnim = PlayerAnims->AimIdleAnim;
+	}
+}
+
+void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
+	{
+		return;
+	}
+
+	const UWeaponData* WeaponData = Combat->GetWeaponData();
+	if (!IsValid(WeaponData))
+	{
+		return;
+	}
+
+	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
+	if (!MontageData || !IsValid(MontageData->EquipMontage))
+	{
+		return;
+	}
+
+	const float PlayedDuration = Montage_Play(MontageData->EquipMontage);
+	if (PlayedDuration <= 0.f)
+	{
+		UE_LOG(
+			LogShooterAnimation,
+			Warning,
+			TEXT("[ShooterAnimInstance] Equip montage could not be played. Owner=%s WeaponTag=%s View=%s Montage=%s"),
+			*GetNameSafe(ShooterCharacter.Get()),
+			*CurrentWeaponType.ToString(),
+			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
+			*GetNameSafe(MontageData->EquipMontage));
+	}
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)

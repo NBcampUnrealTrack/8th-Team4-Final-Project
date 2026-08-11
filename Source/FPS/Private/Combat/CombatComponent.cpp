@@ -3,40 +3,33 @@
 #include "Combat/CombatComponent.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
 
-// Sets default values for this component's properties
+DEFINE_LOG_CATEGORY_STATIC(LogCombatComponent, Log, All);
+
 UCombatComponent::UCombatComponent()
 {
-	// 지금은 매 프레임 갱신할 로직이 없다 (이동 탄퍼짐 배율 소비 등이 추가되면 다시 켤 것).
 	PrimaryComponentTick.bCanEverTick = false;
-
-	// EquippedWeapon을 리플리케이트하려면 컴포넌트 자체가 리플리케이트 대상으로 등록되어 있어야 한다.
 	SetIsReplicatedByDefault(true);
 }
 
-void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
+void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
+	DOREPLIFETIME(UCombatComponent, PrimaryWeapon);
+	DOREPLIFETIME(UCombatComponent, SecondaryWeapon);
+	DOREPLIFETIME(UCombatComponent, bIsCycling);
 	DOREPLIFETIME(UCombatComponent, bAiming);
 }
 
-void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
-{
-	CurrentWeapon = NewWeapon;
-}
-
-void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
-{
-}
-
-// Called when the game starts
 void UCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -44,100 +37,428 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UnequipWeapon();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WeaponSwitchTimerHandle);
+	}
 
+	ClearWeaponLoadout();
 	Super::EndPlay(EndPlayReason);
 }
 
-// Called every frame
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                      FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 }
 
-void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)
 {
-	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-
-	DOREPLIFETIME(UCombatComponent, EquippedWeapon);
-}
-
-AWeaponBase* UCombatComponent::EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass)
-{
-	if (!WeaponClass)
-	{
-		return nullptr;
-	}
-
 	AActor* OwnerActor = GetOwner();
 	UWorld* World = GetWorld();
-	if (!OwnerActor || !World || !OwnerActor->HasAuthority())
+	if (!WeaponClass || !IsValid(OwnerActor) || !IsValid(World) || !OwnerActor->HasAuthority())
 	{
 		return nullptr;
 	}
-
-	// 무기 교체 시작 - 애니메이션(템포)이 끝날 때까지 사격을 막고 싶은 GAS 쪽이 이 신호를 구독한다.
-	bIsCycling = true;
-	OnCyclingStateChanged.Broadcast(true);
-
-	UnequipWeapon();
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = OwnerActor;
 	SpawnParams.Instigator = Cast<APawn>(OwnerActor);
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	EquippedWeapon = World->SpawnActor<AWeaponBase>(WeaponClass, OwnerActor->GetActorTransform(), SpawnParams);
-	if (!EquippedWeapon)
+	AWeaponBase* SpawnedWeapon = World->SpawnActor<AWeaponBase>(
+		WeaponClass,
+		OwnerActor->GetActorTransform(),
+		SpawnParams);
+
+	if (IsValid(SpawnedWeapon))
+	{
+		SpawnedWeapon->SetActorHiddenInGame(true);
+	}
+
+	return SpawnedWeapon;
+}
+
+AWeaponBase* UCombatComponent::EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!WeaponClass || !IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return nullptr;
 	}
 
-	// 서버(리슨 서버면 호스트 자신 포함) 로컬 부착. 원격 클라이언트는 EquippedWeapon 리플리케이션이
-	// 도착하면 OnRep_EquippedWeapon에서 동일하게 부착한다.
-	AttachWeaponMeshesToOwner(EquippedWeapon);
-	return EquippedWeapon;
+	ClearWeaponLoadout();
+
+	AWeaponBase* SpawnedWeapon = SpawnWeaponInstance(WeaponClass);
+	if (!IsValid(SpawnedWeapon))
+	{
+		FinishCycling();
+		return nullptr;
+	}
+
+	ApplyCurrentWeapon(SpawnedWeapon);
+	BeginEquipCycle(CurrentWeapon.Get());
+	return CurrentWeapon;
 }
 
 void UCombatComponent::UnequipWeapon()
 {
 	AActor* OwnerActor = GetOwner();
-	if (!EquippedWeapon || !OwnerActor || !OwnerActor->HasAuthority())
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(CurrentWeapon.Get()))
 	{
 		return;
 	}
 
-	EquippedWeapon->Destroy();
-	EquippedWeapon = nullptr;
+	AWeaponBase* WeaponToDestroy = CurrentWeapon;
+	if (PrimaryWeapon.Get() == WeaponToDestroy)
+	{
+		PrimaryWeapon = nullptr;
+	}
+	if (SecondaryWeapon.Get() == WeaponToDestroy)
+	{
+		SecondaryWeapon = nullptr;
+	}
+
+	ApplyCurrentWeapon(nullptr);
+	WeaponToDestroy->Destroy();
+}
+
+bool UCombatComponent::InitializeWeaponLoadout(
+	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
+	TSubclassOf<AWeaponBase> SecondaryWeaponClass)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !PrimaryWeaponClass)
+	{
+		return false;
+	}
+
+	ClearWeaponLoadout();
+
+	PrimaryWeapon = SpawnWeaponInstance(PrimaryWeaponClass);
+	if (!IsValid(PrimaryWeapon.Get()))
+	{
+		ClearWeaponLoadout();
+		return false;
+	}
+
+	if (SecondaryWeaponClass)
+	{
+		SecondaryWeapon = SpawnWeaponInstance(SecondaryWeaponClass);
+		if (!IsValid(SecondaryWeapon.Get()))
+		{
+			ClearWeaponLoadout();
+			return false;
+		}
+	}
+
+	ApplyCurrentWeapon(PrimaryWeapon.Get());
+	BeginEquipCycle(CurrentWeapon.Get());
+
+	UE_LOG(
+		LogCombatComponent,
+		Log,
+		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Tag=%s Secondary=%s Tag=%s"),
+		*GetNameSafe(OwnerActor),
+		*GetNameSafe(PrimaryWeapon.Get()),
+		*PrimaryWeapon->GetWeaponTag().ToString(),
+		*GetNameSafe(SecondaryWeapon.Get()),
+		IsValid(SecondaryWeapon.Get()) ? *SecondaryWeapon->GetWeaponTag().ToString() : TEXT("None"));
+
+	return true;
+}
+
+bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || bIsCycling)
+	{
+		return false;
+	}
+
+	AWeaponBase* TargetWeapon = GetWeaponInSlot(WeaponSlot);
+	if (!IsValid(TargetWeapon))
+	{
+		return false;
+	}
+
+	if (TargetWeapon == CurrentWeapon.Get())
+	{
+		return true;
+	}
+
+	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon->IsReloading())
+	{
+		return false;
+	}
+
+	AWeaponBase* PreviousWeapon = CurrentWeapon.Get();
+	if (IsValid(PreviousWeapon))
+	{
+		PreviousWeapon->SetADS(false);
+	}
+
+	ApplyCurrentWeapon(TargetWeapon);
+	BeginEquipCycle(CurrentWeapon.Get());
+
+	UE_LOG(
+		LogCombatComponent,
+		Log,
+		TEXT("[CombatComponent] %s weapon swap. Slot=%s Previous=%s Current=%s WeaponTag=%s PrimaryAmmo=%d SecondaryAmmo=%d"),
+		*GetNameSafe(OwnerActor),
+		WeaponSlot == EWeaponSlot::Primary ? TEXT("Primary") : TEXT("Secondary"),
+		*GetNameSafe(PreviousWeapon),
+		*GetNameSafe(CurrentWeapon.Get()),
+		*GetCurrentWeaponTag().ToString(),
+		IsValid(PrimaryWeapon.Get()) ? PrimaryWeapon->GetCurrentAmmo() : INDEX_NONE,
+		IsValid(SecondaryWeapon.Get()) ? SecondaryWeapon->GetCurrentAmmo() : INDEX_NONE);
+
+	return true;
+}
+
+AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) const
+{
+	switch (WeaponSlot)
+	{
+	case EWeaponSlot::Primary:
+		return PrimaryWeapon.Get();
+	case EWeaponSlot::Secondary:
+		return SecondaryWeapon.Get();
+	default:
+		return nullptr;
+	}
+}
+
+EWeaponSlot UCombatComponent::GetCurrentWeaponSlot() const
+{
+	if (CurrentWeapon.Get() == PrimaryWeapon.Get())
+	{
+		return EWeaponSlot::Primary;
+	}
+	if (CurrentWeapon.Get() == SecondaryWeapon.Get())
+	{
+		return EWeaponSlot::Secondary;
+	}
+	return EWeaponSlot::None;
+}
+
+FGameplayTag UCombatComponent::GetCurrentWeaponTag() const
+{
+	return IsValid(CurrentWeapon.Get()) ? CurrentWeapon->GetWeaponTag() : FGameplayTag();
+}
+
+bool UCombatComponent::IsWeaponReady() const
+{
+	return IsValid(CurrentWeapon.Get()) && !bIsCycling;
+}
+
+void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	ApplyCurrentWeapon(NewWeapon);
+}
+
+void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
+{
+	AActor* OwnerActor = GetOwner();
+	CurrentWeapon = NewWeapon;
+
+	if (IsValid(CurrentWeapon.Get()) && IsValid(OwnerActor))
+	{
+		CurrentWeapon->SetOwner(OwnerActor);
+	}
+
+	RefreshWeaponPresentation();
+}
+
+void UCombatComponent::ClearWeaponLoadout()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	AWeaponBase* CurrentToDestroy = CurrentWeapon.Get();
+	AWeaponBase* PrimaryToDestroy = PrimaryWeapon.Get();
+	AWeaponBase* SecondaryToDestroy = SecondaryWeapon.Get();
+
+	CurrentWeapon = nullptr;
+	PrimaryWeapon = nullptr;
+	SecondaryWeapon = nullptr;
+
+	if (IsValid(PrimaryToDestroy))
+	{
+		PrimaryToDestroy->Destroy();
+	}
+	if (IsValid(SecondaryToDestroy) && SecondaryToDestroy != PrimaryToDestroy)
+	{
+		SecondaryToDestroy->Destroy();
+	}
+	if (IsValid(CurrentToDestroy) && CurrentToDestroy != PrimaryToDestroy && CurrentToDestroy != SecondaryToDestroy)
+	{
+		CurrentToDestroy->Destroy();
+	}
+}
+
+void UCombatComponent::BeginEquipCycle(AWeaponBase* Weapon)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(Weapon))
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WeaponSwitchTimerHandle);
+	}
+
+	SetCyclingState(true);
+
+	const float EquipDuration = ResolveEquipDuration(Weapon);
+	UE_LOG(
+		LogCombatComponent,
+		Log,
+		TEXT("[CombatComponent] %s equip started. Weapon=%s WeaponTag=%s Duration=%.3fs"),
+		*GetNameSafe(OwnerActor),
+		*GetNameSafe(Weapon),
+		*Weapon->GetWeaponTag().ToString(),
+		EquipDuration);
+	if (EquipDuration <= 0.f)
+	{
+		FinishCycling();
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			WeaponSwitchTimerHandle,
+			this,
+			&ThisClass::FinishCycling,
+			EquipDuration,
+			false);
+	}
+}
+
+float UCombatComponent::ResolveEquipDuration(AWeaponBase* Weapon) const
+{
+	if (IsValid(WeaponData) && IsValid(Weapon))
+	{
+		const float MontageDuration = WeaponData->GetEquipDuration(Weapon->GetWeaponTag());
+		if (MontageDuration > 0.f)
+		{
+			return MontageDuration;
+		}
+	}
+
+	return FMath::Max(0.f, WeaponSwitchDuration);
 }
 
 void UCombatComponent::FinishCycling()
 {
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WeaponSwitchTimerHandle);
+	}
+
 	if (!bIsCycling)
 	{
 		return;
 	}
 
-	bIsCycling = false;
-	OnCyclingStateChanged.Broadcast(false);
+	SetCyclingState(false);
+	UE_LOG(
+		LogCombatComponent,
+		Log,
+		TEXT("[CombatComponent] %s weapon ready. Weapon=%s WeaponTag=%s"),
+		*GetNameSafe(OwnerActor),
+		*GetNameSafe(CurrentWeapon.Get()),
+		*GetCurrentWeaponTag().ToString());
 }
 
-void UCombatComponent::OnRep_EquippedWeapon(AWeaponBase* PreviousWeapon)
+void UCombatComponent::SetCyclingState(const bool bNewIsCycling)
 {
-	// 서버(권위) 자신은 EquipWeapon에서 이미 직접 부착했으므로 OnRep이 불리지 않는다 - 여기는
-	// 원격 클라이언트 전용 경로다. EquippedWeapon이 null이면(무기 해제) 별도 처리가 필요 없다 -
-	// 이전 무기 액터는 서버 Destroy()가 리플리케이트되어 알아서 사라진다.
-	if (EquippedWeapon)
+	if (bIsCycling == bNewIsCycling)
 	{
-		AttachWeaponMeshesToOwner(EquippedWeapon);
+		return;
+	}
+
+	bIsCycling = bNewIsCycling;
+	OnCyclingStateChanged.Broadcast(bIsCycling);
+}
+
+void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
+{
+	if (IsValid(LastWeapon) && LastWeapon != CurrentWeapon.Get())
+	{
+		SetWeaponPresentationActive(LastWeapon, false);
+	}
+
+	RefreshWeaponPresentation();
+}
+
+void UCombatComponent::OnRep_WeaponSlots()
+{
+	RefreshWeaponPresentation();
+}
+
+void UCombatComponent::OnRep_IsCycling()
+{
+	OnCyclingStateChanged.Broadcast(bIsCycling);
+}
+
+void UCombatComponent::RefreshWeaponPresentation()
+{
+	SetWeaponPresentationActive(PrimaryWeapon.Get(), PrimaryWeapon.Get() == CurrentWeapon.Get());
+	SetWeaponPresentationActive(SecondaryWeapon.Get(), SecondaryWeapon.Get() == CurrentWeapon.Get());
+
+	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != PrimaryWeapon.Get() && CurrentWeapon.Get() != SecondaryWeapon.Get())
+	{
+		SetWeaponPresentationActive(CurrentWeapon.Get(), true);
+	}
+}
+
+void UCombatComponent::SetWeaponPresentationActive(AWeaponBase* Weapon, const bool bActive) const
+{
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	Weapon->SetActorHiddenInGame(!bActive);
+
+	if (USkeletalMeshComponent* WeaponMesh1P = Weapon->GetMesh1P())
+	{
+		WeaponMesh1P->SetVisibility(bActive, true);
+	}
+	if (USkeletalMeshComponent* WeaponMesh3P = Weapon->GetMesh3P())
+	{
+		WeaponMesh3P->SetVisibility(bActive, true);
+	}
+
+	if (bActive)
+	{
+		AttachWeaponMeshesToOwner(Weapon);
 	}
 }
 
 void UCombatComponent::AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const
 {
 	AActor* OwnerActor = GetOwner();
-	if (!Weapon || !OwnerActor || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	if (!IsValid(Weapon) || !IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
 	{
 		return;
 	}
@@ -145,16 +466,15 @@ void UCombatComponent::AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const
 	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
 	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 
-	if (CharacterMesh1P && Weapon->GetMesh1P())
+	if (IsValid(CharacterMesh1P) && IsValid(Weapon->GetMesh1P()))
 	{
-		Weapon->GetMesh1P()->AttachToComponent(CharacterMesh1P,
-			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName1P());
+		Weapon->GetMesh1P()->AttachToComponent(
+			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName1P());
 	}
 
-	if (CharacterMesh3P && Weapon->GetMesh3P())
+	if (IsValid(CharacterMesh3P) && IsValid(Weapon->GetMesh3P()))
 	{
-		Weapon->GetMesh3P()->AttachToComponent(CharacterMesh3P,
-			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName3P());
+		Weapon->GetMesh3P()->AttachToComponent(
+			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName3P());
 	}
 }
-

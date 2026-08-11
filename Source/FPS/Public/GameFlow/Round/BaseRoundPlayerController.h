@@ -16,6 +16,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Round")
 	bool IsRoundInputEnabled() const;
 
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Round")
+	virtual bool CanUseCombatInput() const;
+
 	void SetRoundInputEnabled(bool bEnabled);
 
 protected:

@@ -9,7 +9,7 @@
 
 namespace
 {
-	void ShowDebugMessage(const FString& Message, const FColor& Color)
+	void ShowWeaponTesterDebugMessage(const FString& Message, const FColor& Color)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[DebugWeaponTester] %s"), *Message);
 		if (GEngine)
@@ -30,7 +30,7 @@ void ADebugWeaponTester::BeginPlay()
 
 	if (!WeaponClassToTest)
 	{
-		ShowDebugMessage(TEXT("WeaponClassToTest가 비어있음 - 배치한 액터의 Details에서 지정할 것"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("WeaponClassToTest가 비어있음 - 배치한 액터의 Details에서 지정할 것"), FColor::Red);
 		return;
 	}
 
@@ -38,7 +38,7 @@ void ADebugWeaponTester::BeginPlay()
 	APawn* PlayerPawn = PC ? PC->GetPawn() : nullptr;
 	if (!PC || !PlayerPawn)
 	{
-		ShowDebugMessage(TEXT("PlayerController/Pawn을 못 찾음 - PIE로 실행 중인지 확인할 것"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("PlayerController/Pawn을 못 찾음 - PIE로 실행 중인지 확인할 것"), FColor::Red);
 		return;
 	}
 
@@ -50,7 +50,7 @@ void ADebugWeaponTester::BeginPlay()
 	TestWeapon = GetWorld()->SpawnActor<AWeaponBase>(WeaponClassToTest, PlayerPawn->GetActorTransform(), SpawnParams);
 	if (!TestWeapon)
 	{
-		ShowDebugMessage(TEXT("무기 스폰 실패"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("무기 스폰 실패"), FColor::Red);
 		return;
 	}
 
@@ -60,7 +60,7 @@ void ADebugWeaponTester::BeginPlay()
 	EnableInput(PC);
 	if (!InputComponent)
 	{
-		ShowDebugMessage(TEXT("InputComponent 생성 실패 (EnableInput 이후에도 null)"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("InputComponent 생성 실패 (EnableInput 이후에도 null)"), FColor::Red);
 		return;
 	}
 
@@ -70,19 +70,19 @@ void ADebugWeaponTester::BeginPlay()
 	InputComponent->BindKey(ADSKey, IE_Released, this, &ADebugWeaponTester::HandleADSReleased);
 	InputComponent->BindKey(ReloadKey, IE_Pressed, this, &ADebugWeaponTester::HandleReloadPressed);
 
-	ShowDebugMessage(FString::Printf(TEXT("준비 완료: %s 장착, 좌클릭 약공격/휠클릭 강공격/우클릭 ADS/R 재장전"), *WeaponClassToTest->GetName()), FColor::Green);
+	ShowWeaponTesterDebugMessage(FString::Printf(TEXT("준비 완료: %s 장착, 좌클릭 약공격/휠클릭 강공격/우클릭 ADS/R 재장전"), *WeaponClassToTest->GetName()), FColor::Green);
 }
 
 void ADebugWeaponTester::HandleFirePressed()
 {
 	if (!TestWeapon)
 	{
-		ShowDebugMessage(TEXT("Fire 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("Fire 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
 		return;
 	}
 
 	const bool bFired = TestWeapon->Fire();
-	ShowDebugMessage(FString::Printf(TEXT("Fire() 호출 -> %s (탄약 %d, 재장전중 %s)"),
+	ShowWeaponTesterDebugMessage(FString::Printf(TEXT("Fire() 호출 -> %s (탄약 %d, 재장전중 %s)"),
 		bFired ? TEXT("성공") : TEXT("실패(쿨다운/탄약/재장전 확인)"),
 		TestWeapon->GetCurrentAmmo(),
 		TestWeapon->IsReloading() ? TEXT("Y") : TEXT("N")),
@@ -93,12 +93,12 @@ void ADebugWeaponTester::HandleHeavyFirePressed()
 {
 	if (!TestWeapon)
 	{
-		ShowDebugMessage(TEXT("Heavy Fire 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("Heavy Fire 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
 		return;
 	}
 
 	const bool bFired = TestWeapon->Fire(true);
-	ShowDebugMessage(FString::Printf(TEXT("Fire(true) 호출 -> %s (탄약 %d, 재장전중 %s)"),
+	ShowWeaponTesterDebugMessage(FString::Printf(TEXT("Fire(true) 호출 -> %s (탄약 %d, 재장전중 %s)"),
 		bFired ? TEXT("성공") : TEXT("실패(쿨다운/탄약/재장전 확인)"),
 		TestWeapon->GetCurrentAmmo(),
 		TestWeapon->IsReloading() ? TEXT("Y") : TEXT("N")),
@@ -109,12 +109,12 @@ void ADebugWeaponTester::HandleADSPressed()
 {
 	if (!TestWeapon)
 	{
-		ShowDebugMessage(TEXT("ADS 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
+		ShowWeaponTesterDebugMessage(TEXT("ADS 입력 들어왔지만 TestWeapon이 null"), FColor::Red);
 		return;
 	}
 
 	TestWeapon->SetADS(true);
-	ShowDebugMessage(FString::Printf(TEXT("ADS Pressed -> IsADS()=%s"), TestWeapon->IsADS() ? TEXT("true") : TEXT("false (bCanADS 확인)")), FColor::Cyan);
+	ShowWeaponTesterDebugMessage(FString::Printf(TEXT("ADS Pressed -> IsADS()=%s"), TestWeapon->IsADS() ? TEXT("true") : TEXT("false (bCanADS 확인)")), FColor::Cyan);
 }
 
 void ADebugWeaponTester::HandleADSReleased()
@@ -125,7 +125,7 @@ void ADebugWeaponTester::HandleADSReleased()
 	}
 
 	TestWeapon->SetADS(false);
-	ShowDebugMessage(TEXT("ADS Released"), FColor::Cyan);
+	ShowWeaponTesterDebugMessage(TEXT("ADS Released"), FColor::Cyan);
 }
 
 void ADebugWeaponTester::HandleReloadPressed()
@@ -133,6 +133,6 @@ void ADebugWeaponTester::HandleReloadPressed()
 	if (TestWeapon)
 	{
 		TestWeapon->StartReload();
-		ShowDebugMessage(TEXT("StartReload() 호출"), FColor::Cyan);
+		ShowWeaponTesterDebugMessage(TEXT("StartReload() 호출"), FColor::Cyan);
 	}
 }

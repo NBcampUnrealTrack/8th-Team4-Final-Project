@@ -21,7 +21,9 @@ enum class EGameFlowPhase : uint8
 	RoundStarting UMETA(DisplayName = "Round Starting"),
 	RoundInProgress UMETA(DisplayName = "Round In Progress"),
 	RoundEnding UMETA(DisplayName = "Round Ending"),
-	MatchEnded UMETA(DisplayName = "Match Ended")
+	MatchEnded UMETA(DisplayName = "Match Ended"),
+	// 기존 enum 값(0~4)을 보존해 기존 Blueprint/직렬화 자산과의 호환성을 유지한다.
+	AugmentSelecting UMETA(DisplayName = "Augment Selecting")
 };
 
 // Generic round results let objective modes report outcomes without coupling the base layer.

@@ -23,8 +23,7 @@ public:
 
 	// Integration point for combat: fire and reload must query this gate.
 	// Sustained fire must also stop when objective interaction becomes active.
-	UFUNCTION(BlueprintPure, Category = "Game Flow|Data Jack")
-	bool CanUseCombatInput() const;
+	virtual bool CanUseCombatInput() const override;
 
 	void SetObjectiveInteractionActive(bool bActive);
 

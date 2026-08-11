@@ -6,6 +6,8 @@
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
+#include "Interfaces/RogueDamageableTarget.h"
+#include "Weapon/WeaponTypes.h"
 #include "ShooterCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -18,7 +20,7 @@ class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
-class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface
+class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface, public IRogueDamageableTarget
 {
 	GENERATED_BODY()
 
@@ -39,6 +41,7 @@ public:
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
+	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
@@ -55,8 +58,21 @@ public:
 	void HandleJumpReleased();
 	void HandleSprintPressed();
 	void HandleSprintReleased();
+	void HandleWeaponSlotPressed(EWeaponSlot WeaponSlot);
 
 protected:
+	bool InitializeDefaultWeaponLoadout();
+	bool TrySwitchWeaponSlot(EWeaponSlot WeaponSlot);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSwitchWeaponSlot(EWeaponSlot WeaponSlot);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
+	TSubclassOf<AWeaponBase> DefaultPrimaryWeaponClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
+	TSubclassOf<AWeaponBase> DefaultSecondaryWeaponClass;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Camera")
 	TObjectPtr<USpringArmComponent> SpringArm;
 

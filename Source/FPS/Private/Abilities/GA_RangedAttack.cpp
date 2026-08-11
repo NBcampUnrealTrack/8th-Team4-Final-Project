@@ -23,8 +23,10 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 		return false;
 	}
 
-	// RPM 쿨다운은 AWeaponBase::CanFireNow() 내부에서 처리하므로 여기서는 중복 체크하지 않는다.
-	return !Weapon->IsReloading() && Weapon->GetCurrentAmmo() > 0;
+	// 연사 입력은 Enhanced Input의 Triggered 동안 매 프레임 활성화를 재시도한다.
+	// CanFireNow()를 여기서도 게이트해 실제 발사 간격이 되기 전의 불필요한 LocalPredicted
+	// 어빌리티 활성화/RPC를 줄이고, Fire()의 동일 검증은 최종 권위 안전망으로 그대로 둔다.
+	return Weapon->CanFireNow();
 }
 
 void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -44,18 +46,19 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		Weapon->SetEffectiveRPM(FinalRPM);
 	}
 
-	if (FireMontage && ActorInfo)
-	{
-		if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
-		{
-			AnimInstance->Montage_Play(FireMontage);
-		}
-	}
-
 	const bool bFired = Weapon->Fire();
 
 	if (bFired)
 	{
+		// 연사 입력은 Triggered 동안 반복 활성화되므로 실제 발사가 승인된 프레임에만 몽타주를 재생한다.
+		if (FireMontage && ActorInfo)
+		{
+			if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
+			{
+				AnimInstance->Montage_Play(FireMontage);
+			}
+		}
+
 		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
 	}
 

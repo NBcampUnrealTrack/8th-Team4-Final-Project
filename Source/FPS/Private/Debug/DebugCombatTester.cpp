@@ -12,7 +12,7 @@
 
 namespace
 {
-	void ShowDebugMessage(const FString& Message, const FColor& Color)
+	void ShowCombatTesterDebugMessage(const FString& Message, const FColor& Color)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[DebugCombatTester] %s"), *Message);
 		if (GEngine)
@@ -71,13 +71,13 @@ void ADebugCombatTester::BeginPlay()
 
 	if (!WeaponClassToTest)
 	{
-		ShowDebugMessage(TEXT("WeaponClassToTest가 비어있음 - 배치한 액터의 Details에서 지정할 것"), FColor::Red);
+		ShowCombatTesterDebugMessage(TEXT("WeaponClassToTest가 비어있음 - 배치한 액터의 Details에서 지정할 것"), FColor::Red);
 		return;
 	}
 
 	if (!Mesh1P->GetSkeletalMeshAsset() || !Mesh3P->GetSkeletalMeshAsset())
 	{
-		ShowDebugMessage(TEXT("Mesh1P/Mesh3P에 스켈레탈 메쉬가 없음 - SK_Mannequin_Arms / SK_Mannequin을 지정할 것"), FColor::Red);
+		ShowCombatTesterDebugMessage(TEXT("Mesh1P/Mesh3P에 스켈레탈 메쉬가 없음 - SK_Mannequin_Arms / SK_Mannequin을 지정할 것"), FColor::Red);
 	}
 
 	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
@@ -101,19 +101,19 @@ void ADebugCombatTester::BeginPlay()
 		else
 		{
 			AttachToActor(PlayerPawn, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
-			ShowDebugMessage(TEXT("PlayerPawn에 CameraComponent가 없음 - Pawn 루트에 그대로 붙임(위치가 어색할 수 있음)"), FColor::Yellow);
+			ShowCombatTesterDebugMessage(TEXT("PlayerPawn에 CameraComponent가 없음 - Pawn 루트에 그대로 붙임(위치가 어색할 수 있음)"), FColor::Yellow);
 		}
 	}
 	else
 	{
-		ShowDebugMessage(TEXT("PlayerPawn을 못 찾음 - Owner 미설정으로 Mesh1P(OnlyOwnerSee)가 안 보일 수 있음"), FColor::Yellow);
+		ShowCombatTesterDebugMessage(TEXT("PlayerPawn을 못 찾음 - Owner 미설정으로 Mesh1P(OnlyOwnerSee)가 안 보일 수 있음"), FColor::Yellow);
 	}
 
 	EquipTestWeapon();
 
 	if (!PC)
 	{
-		ShowDebugMessage(TEXT("PlayerController를 못 찾음 - RequipKey 재검증은 불가 (PIE 확인)"), FColor::Yellow);
+		ShowCombatTesterDebugMessage(TEXT("PlayerController를 못 찾음 - RequipKey 재검증은 불가 (PIE 확인)"), FColor::Yellow);
 		return;
 	}
 
@@ -134,11 +134,11 @@ void ADebugCombatTester::EquipTestWeapon()
 	AWeaponBase* Weapon = CombatComponent->EquipWeapon(WeaponClassToTest);
 	if (!Weapon)
 	{
-		ShowDebugMessage(TEXT("EquipWeapon 실패"), FColor::Red);
+		ShowCombatTesterDebugMessage(TEXT("EquipWeapon 실패"), FColor::Red);
 		return;
 	}
 
-	ShowDebugMessage(FString::Printf(TEXT("EquipWeapon 성공: %s (GripSocket1P=%s, GripSocket3P=%s)"),
+	ShowCombatTesterDebugMessage(FString::Printf(TEXT("EquipWeapon 성공: %s (GripSocket1P=%s, GripSocket3P=%s)"),
 		*WeaponClassToTest->GetName(),
 		*Weapon->GetGripSocketName1P().ToString(),
 		*Weapon->GetGripSocketName3P().ToString()),
@@ -147,6 +147,6 @@ void ADebugCombatTester::EquipTestWeapon()
 
 void ADebugCombatTester::HandleRequipPressed()
 {
-	ShowDebugMessage(TEXT("RequipKey 입력 -> Unequip 후 재장착"), FColor::Cyan);
+	ShowCombatTesterDebugMessage(TEXT("RequipKey 입력 -> Unequip 후 재장착"), FColor::Cyan);
 	EquipTestWeapon();
 }

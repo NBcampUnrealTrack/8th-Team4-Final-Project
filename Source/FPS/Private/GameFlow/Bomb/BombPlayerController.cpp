@@ -56,12 +56,7 @@ bool ABombPlayerController::IsObjectiveInteractionActive() const
 
 bool ABombPlayerController::CanUseCombatInput() const
 {
-	const ABaseTeamPlayerState* TeamPlayerState = GetPlayerState<ABaseTeamPlayerState>();
-	return IsRoundInputEnabled()
-		&& !bIsObjectiveInteractionActive
-		&& IsValid(GetPawn())
-		&& IsValid(TeamPlayerState)
-		&& TeamPlayerState->IsAlive();
+	return Super::CanUseCombatInput() && !bIsObjectiveInteractionActive;
 }
 
 void ABombPlayerController::SetObjectiveInteractionActive(const bool bActive)

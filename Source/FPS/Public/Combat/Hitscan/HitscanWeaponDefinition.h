@@ -54,6 +54,9 @@ public:
 		}
 	}
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|Weapon")
+	FGameplayTag GetWeaponTag() const { return WeaponTag; }
+
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Weapon", meta = (AllowPrivateAccess = "true"))
 	FGameplayTag WeaponTag;

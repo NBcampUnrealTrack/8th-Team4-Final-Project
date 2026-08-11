@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GameplayTagContainer.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "TimerManager.h"
 #include "Weapon/WeaponTypes.h"
@@ -98,6 +99,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
+
+	// Hitscan Definition의 Weapon.Type.* 태그를 그대로 노출한다.
+	// 스왑/애니메이션/로그가 DamageRequest와 동일한 태그 원본을 사용하게 하기 위한 접근자다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	FGameplayTag GetWeaponTag() const;
 
 	// 1인칭(캐릭터 팔)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh1P에 붙인다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")

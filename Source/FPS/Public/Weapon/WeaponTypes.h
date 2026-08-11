@@ -9,6 +9,14 @@
 class AActor;
 class UCurveFloat;
 
+UENUM(BlueprintType)
+enum class EWeaponSlot : uint8
+{
+	None UMETA(Hidden),
+	Primary UMETA(DisplayName = "Primary"),
+	Secondary UMETA(DisplayName = "Secondary")
+};
+
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
 // GAS 타입(FGameplayTag, AbilitySystemComponent 등)을 절대 포함하지 않는다.
 // 다른 팀원이 이 구조체를 FRogueDamageRequest로 변환하는 Adapter를 별도로 작성할 예정이므로,

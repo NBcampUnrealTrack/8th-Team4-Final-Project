@@ -8,6 +8,8 @@
 
 class AShooterCharacter;
 class AWeaponBase;
+class UAnimMontage;
+class UAnimSequence;
 class UCharacterMovementComponent;
 class UCombatComponent;
 
@@ -39,6 +41,21 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
 	FGameplayTag CurrentWeaponType;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	TObjectPtr<UAnimSequence> CurrentIdleAnim;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	TObjectPtr<UAnimSequence> CurrentAimIdleAnim;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	bool bIsCycling = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	bool bWeaponReady = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	bool bFirstPersonAnimation = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Combat")
 	bool bAiming = false;
@@ -78,8 +95,11 @@ private:
 	void UpdateMovementValues();
 	void UpdateAimValues(float DeltaSeconds);
 	void UpdateWeaponValues();
+	void UpdateWeaponAnimationData();
+	void PlayEquipMontageForCurrentWeapon();
 	void TurnInPlace(float DeltaSeconds);
 
 	FRotator StartingAimRotation = FRotator::ZeroRotator;
 	float InterpAO_Yaw = 0.f;
+	TWeakObjectPtr<AWeaponBase> LastAnimationWeapon;
 };

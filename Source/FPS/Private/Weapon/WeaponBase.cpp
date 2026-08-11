@@ -133,6 +133,11 @@ void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 	MovementSpreadMultiplier = NewMultiplier;
 }
 
+FGameplayTag AWeaponBase::GetWeaponTag() const
+{
+	return IsValid(HitscanDefinition.Get()) ? HitscanDefinition->GetWeaponTag() : FGameplayTag();
+}
+
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
 	bIsADS = bCanADS && bNewIsADS;
