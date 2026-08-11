@@ -9,7 +9,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
-#include "GAS/RogueGASSettings.h"
+#include "Augment/RogueAugmentSettings.h"
 #include "Net/UnrealNetwork.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
@@ -64,6 +64,9 @@ void UAugmentInventoryComponent::BeginPlay()
 		if (!Registry->IsReady())
 		{
 			Registry->OnRegistryReady.AddDynamic(this, &UAugmentInventoryComponent::HandleRegistryReady);
+
+			// 해제할 때 쓸 참조를 지금 잡아둔다
+			BoundRegistry = Registry;
 		}
 	}
 }
@@ -75,6 +78,9 @@ void UAugmentInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemCompo
 		return;
 	}
 
+	// ASC 교체 시 기존 부여 효과 제거
+	RemoveAllGrants();
+
 	UninitializeFromAbilitySystem();
 
 	AbilitySystemComponent = InASC;
@@ -82,8 +88,32 @@ void UAugmentInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemCompo
 
 void UAugmentInventoryComponent::UninitializeFromAbilitySystem()
 {
+	// 참조만 제거. 효과 제거는 InitializeWithAbilitySystem
 	GrantHandlesByLine.Reset();
 	AbilitySystemComponent = nullptr;
+}
+
+void UAugmentInventoryComponent::RemoveAllGrants()
+{
+	if (!IsValid(AbilitySystemComponent))
+	{
+		if (!GrantHandlesByLine.IsEmpty())
+		{
+			UE_LOG(LogAugmentInventory, Warning,
+				TEXT("[AugmentInventory] %s: ASC 가 없어 %d개 계열의 효과를 걷어내지 못했습니다"),
+				*GetNameSafe(GetOwner()), GrantHandlesByLine.Num());
+		}
+
+		GrantHandlesByLine.Reset();
+		return;
+	}
+
+	for (TPair<FGameplayTag, FAugmentGrantHandles>& Pair : GrantHandlesByLine)
+	{
+		RogueAugmentAssembler::RemoveAugment(*AbilitySystemComponent, Pair.Value);
+	}
+
+	GrantHandlesByLine.Reset();
 }
 
 bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Definition, int32 Level)
@@ -130,6 +160,15 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
+	// 증강을 등록할 수 없으면 획득을 취소
+	if (!RogueAugmentAssembler::CanApplyAugment(*Definition, Level))
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s %d레벨을 부여할 수 없어 획득을 취소합니다. 보유 상태는 그대로입니다"),
+			*Definition->GetName(), Level);
+		return false;
+	}
+
 	// 하위 레벨 증강 제거
 	if (FAugmentGrantHandles* Existing = GrantHandlesByLine.Find(Definition->LineTag))
 	{
@@ -149,11 +188,7 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 
 	VerifyGrantResult(*Definition, Level, Granted);
 
-	FAugmentInventoryEntry Entry;
-	Entry.DefinitionId = Definition->GetPrimaryAssetId();
-	Entry.LineTag      = Definition->LineTag;
-	Entry.Level        = Level;
-	Entries.Add(Entry);
+	Entries.Add(FAugmentInventoryEntry::Make(*Definition, Level));
 
 	RebuildConditionalRuleCache();
 
@@ -194,11 +229,12 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 		return false;
 	}
 
-	// 지난 라운드 후보가 남아 있는 경우, OnOffersChanged.Broadcast() 를 호출하지 않고 페이즈를 종료한 것
+	// 후보가 남아 있는 경우
 	if (!Offers.IsEmpty())
 	{
 		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 지난 라운드 후보 %d개가 남아 있습니다. 페이즈 종료 시 자동 선택 호출이 빠졌습니다"),
+			TEXT("[AugmentInventory] %s: 지난 라운드 후보 %d개가 남아 있습니다. ")
+			TEXT("페이즈 종료 시 자동 선택 호출이 빠졌거나, 획득이 계속 실패했습니다"),
 			*GetNameSafe(Owner), Offers.Num());
 	}
 
@@ -212,8 +248,6 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 	{
 		CandidateCount += Buckets[TierIndex].Num();
 
-		// 등급별 개수가 곧 "풀이 제대로 구성됐는가" 다.
-		// 애셋 등급을 잘못 넣으면 총 후보 수는 그대로라 총계만으로는 드러나지 않는다
 		BucketSummary += FString::Printf(TEXT("%s%s %d"),
 			BucketSummary.IsEmpty() ? TEXT("") : TEXT(" / "),
 			*UEnum::GetDisplayValueAsText(static_cast<EAugmentTier>(TierIndex)).ToString(),
@@ -242,13 +276,19 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 
 	Offers.Reset();
 
+	// 등급 후보가 비어 있거나 가중치가 0이면 뽑을 수 없음
+	auto IsDrawable = [&](int32 TierIndex)
+	{
+		return !Buckets[TierIndex].IsEmpty()
+			&& GetTierDraftWeight(static_cast<EAugmentTier>(TierIndex), DraftContext.RoundNumber) > 0.f;
+	};
+
 	for (int32 Card = 0; Card < CardCount; ++Card)
 	{
-		// 등급별 가중치 합산
 		float TotalWeight = 0.f;
 		for (int32 TierIndex = 0; TierIndex < Buckets.Num(); ++TierIndex)
 		{
-			if (!Buckets[TierIndex].IsEmpty())
+			if (IsDrawable(TierIndex))
 			{
 				TotalWeight += GetTierDraftWeight(static_cast<EAugmentTier>(TierIndex), DraftContext.RoundNumber);
 			}
@@ -264,33 +304,21 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 
 		const float Roll = Stream.FRandRange(0.f, TotalWeight);
 
-		int32 PickedTier = INDEX_NONE;
+		int32 PickedTier  = INDEX_NONE;
 		float Accumulated = 0.f;
 		for (int32 TierIndex = 0; TierIndex < Buckets.Num(); ++TierIndex)
 		{
-			if (Buckets[TierIndex].IsEmpty())
+			if (!IsDrawable(TierIndex))
 			{
 				continue;
 			}
 
+			PickedTier   = TierIndex;
 			Accumulated += GetTierDraftWeight(static_cast<EAugmentTier>(TierIndex), DraftContext.RoundNumber);
+
 			if (Roll <= Accumulated)
 			{
-				PickedTier = TierIndex;
 				break;
-			}
-		}
-
-		if (PickedTier == INDEX_NONE)
-		{
-			for (int32 TierIndex = Buckets.Num() - 1; TierIndex >= 0; --TierIndex)
-			{
-				if (!Buckets[TierIndex].IsEmpty()
-					&& GetTierDraftWeight(static_cast<EAugmentTier>(TierIndex), DraftContext.RoundNumber) > 0.f)
-				{
-					PickedTier = TierIndex;
-					break;
-				}
 			}
 		}
 
@@ -301,15 +329,12 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 		Bucket.RemoveAt(PickedIndex);
 	}
 
+	const bool bRolled = !Offers.IsEmpty();
+
 	// 서버에는 OnRep 이 오지 않으므로 직접 발신
 	OnOffersChanged.Broadcast();
 
-	return !Offers.IsEmpty();
-}
-
-bool UAugmentInventoryComponent::ServerSelectOffer_Validate(int32 OfferIndex)
-{
-	return true;
+	return bRolled;
 }
 
 void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferIndex)
@@ -327,13 +352,12 @@ bool UAugmentInventoryComponent::ServerAutoSelectOffer()
 		return false;
 	}
 
-	// 이미 고른 플레이어. 페이즈 종료에 전원을 대상으로 부르므로 정상적인 경로다
+	// 이미 고른 플레이어
 	if (Offers.IsEmpty())
 	{
 		return false;
 	}
 
-	
 	// 자동 선택은 지난 라운드 추첨 시드에서 갈라져 나온다. 같은 시드에서 뽑으면 같은 결과
 	const uint32 AutoSelectSeed = HashCombine(static_cast<uint32>(LastDraftSeed), 0x9E3779B9u);
 	FRandomStream Stream(static_cast<int32>(AutoSelectSeed));
@@ -350,10 +374,6 @@ bool UAugmentInventoryComponent::ServerAutoSelectOffer()
 bool UAugmentInventoryComponent::AcquireFromOffer(int32 OfferIndex, const TCHAR* Reason)
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
-	{
-		return false;
-	}
 
 	// 후보가 비어 있는 경우는 이미 고른 경우
 	if (Offers.IsEmpty())
@@ -402,15 +422,8 @@ void UAugmentInventoryComponent::ServerRemoveAllAugments()
 		return;
 	}
 
-	if (AbilitySystemComponent)
-	{
-		for (TPair<FGameplayTag, FAugmentGrantHandles>& Pair : GrantHandlesByLine)
-		{
-			RogueAugmentAssembler::RemoveAugment(*AbilitySystemComponent, Pair.Value);
-		}
-	}
+	RemoveAllGrants();
 
-	GrantHandlesByLine.Reset();
 	Entries.Reset();
 	CachedConditionalRules.Reset();
 
@@ -472,6 +485,13 @@ UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbi
 
 void UAugmentInventoryComponent::OnUnregister()
 {
+	// 레지스트리 이벤트 해제
+	if (UAugmentRegistrySubsystem* Registry = BoundRegistry.Get())
+	{
+		Registry->OnRegistryReady.RemoveDynamic(this, &UAugmentInventoryComponent::HandleRegistryReady);
+		BoundRegistry.Reset();
+	}
+
 	UninitializeFromAbilitySystem();
 
 	Super::OnUnregister();
@@ -538,8 +558,6 @@ void UAugmentInventoryComponent::GatherCandidatesByTier(TArray<TArray<FAugmentIn
 		return;
 	}
 
-	bool bWarnedEmptyTier = false;
-
 	for (UAugmentDefinition* Definition : Registry->GetAllDefinitions())
 	{
 		if (!Definition || !Definition->LineTag.IsValid())
@@ -573,17 +591,13 @@ void UAugmentInventoryComponent::GatherCandidatesByTier(TArray<TArray<FAugmentIn
 			continue;
 		}
 
-		FAugmentInventoryEntry Candidate;
-		Candidate.DefinitionId = Definition->GetPrimaryAssetId();
-		Candidate.LineTag      = Definition->LineTag;
-		Candidate.Level        = NextLevel;
-
-		OutBuckets[TierIndex].Add(Candidate);
+		OutBuckets[TierIndex].Add(FAugmentInventoryEntry::Make(*Definition, NextLevel));
 	}
 
-	// 후보가 없는 등급이 있으면 경고, 추첨 시 다른 등급
-	// 현재는 증강이 부족해 발생 가능
-	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+	// 후보가 없는 등급이 있으면 경고. 그 등급의 확률은 다른 등급으로 재분배됨
+	const URogueAugmentSettings* Settings = GetDefault<URogueAugmentSettings>();
+
+	bool bWarnedEmptyTier = false;
 
 	for (int32 TierIndex = 0; TierIndex < TierCount && !bWarnedEmptyTier; ++TierIndex)
 	{
@@ -605,7 +619,7 @@ void UAugmentInventoryComponent::GatherCandidatesByTier(TArray<TArray<FAugmentIn
 
 float UAugmentInventoryComponent::GetTierDraftWeight(EAugmentTier Tier, int32 RoundNumber)
 {
-	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+	const URogueAugmentSettings* Settings = GetDefault<URogueAugmentSettings>();
 	const FAugmentTierDraftWeight* Weight = Settings ? Settings->TierDraftWeights.Find(Tier) : nullptr;
 
 	if (!Weight)

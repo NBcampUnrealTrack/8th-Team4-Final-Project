@@ -31,9 +31,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
 	void InitializeWithAbilitySystem(UAbilitySystemComponent* InASC);
 
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
-	void UninitializeFromAbilitySystem();
-
 	// 증강 획득. 서버 전용
 	// 같은 계열을 이미 보유하고 있으면 하위 레벨을 걷어내고 교체
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
@@ -50,7 +47,7 @@ public:
 
 	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
 	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음
-	UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category = "Rogue|Augment")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rogue|Augment")
 	void ServerSelectOffer(int32 OfferIndex);
 
 	// 미선택자 자동 선택. 서버 전용
@@ -110,6 +107,12 @@ private:
 	// 선택한 후보를 보유 목록에 추가. 서버 전용
 	bool AcquireFromOffer(int32 OfferIndex, const TCHAR* Reason);
 
+	// 참조만 끊는다. 효과 제거는 교체 경로가
+	void UninitializeFromAbilitySystem();
+
+	// 부여한 GE/GA 를 현재 ASC 에서 전부 제거
+	void RemoveAllGrants();
+
 	// 플레이어별로 다른 시드 생성
 	int32 MakeDraftSeed(const FAugmentDraftContext& DraftContext) const;
 
@@ -130,6 +133,9 @@ private:
 	TMap<FGameplayTag, FAugmentGrantHandles> GrantHandlesByLine;
 
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
+
+	// 구독해 둔 레지스트리
+	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 서버 전용. 마지막 추첨에 쓴 시드.
 	// 자동 선택이 이걸 재사용해야 "이 라운드에 왜 이 카드가 자동 선택됐나" 를 재현 가능

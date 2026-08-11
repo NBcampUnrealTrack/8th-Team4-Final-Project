@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Augment/AugmentTypes.h"
 #include "Engine/DeveloperSettings.h"
 
 #include "RogueGASSettings.generated.h"
@@ -17,8 +16,6 @@ class FPS_API URogueGASSettings : public UDeveloperSettings
 	GENERATED_BODY()
 
 public:
-	URogueGASSettings();
-
 	// 대미지 캐리어 GE
 	// URogueDamageSubsystem 이 스펙을 만들 때 사용
 	UPROPERTY(Config, EditAnywhere, Category = "Damage")
@@ -28,8 +25,4 @@ public:
 	// AShooterPlayerState 가 최초 아바타 연결 시 한 번만 부여
 	UPROPERTY(Config, EditAnywhere, Category = "Ability")
 	TSoftObjectPtr<URogueAbilitySet> StartupAbilitySet;
-
-	// 라운드 증강의 등급 추첨 가중치
-	UPROPERTY(Config, EditAnywhere, Category = "Augment")
-	TMap<EAugmentTier, FAugmentTierDraftWeight> TierDraftWeights;
 };

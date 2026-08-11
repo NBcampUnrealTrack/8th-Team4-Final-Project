@@ -96,10 +96,61 @@ namespace RogueAugmentAssembler
 					Spec.GetDynamicSpecSourceTags().AddTag(Granted.InputTag);
 				}
 
-				OutHandles.AbilityHandles.Add(ASC.GiveAbility(Spec));
+				const FGameplayAbilitySpecHandle Handle = ASC.GiveAbility(Spec);
+				if (!Handle.IsValid())
+				{
+					UE_LOG(LogAugmentAssembler, Error,
+						TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 부여에 실패했습니다"),
+						*Definition.GetName(), Index);
+					continue;
+				}
+
+				OutHandles.AbilityHandles.Add(Handle);
 			}
 		}
+
+		bool CanLoadAllAssets(const UAugmentDefinition& Definition)
+		{
+			bool bLoadable = true;
+
+			for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
+			{
+				if (!Definition.GrantedEffects[Index].LoadSynchronous())
+				{
+					UE_LOG(LogAugmentAssembler, Error,
+						TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 를 로드하지 못했습니다"),
+						*Definition.GetName(), Index);
+					bLoadable = false;
+				}
+			}
+
+			for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
+			{
+				if (!Definition.GrantedAbilities[Index].AbilityClass.LoadSynchronous())
+				{
+					UE_LOG(LogAugmentAssembler, Error,
+						TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 를 로드하지 못했습니다"),
+						*Definition.GetName(), Index);
+					bLoadable = false;
+				}
+			}
+
+			return bLoadable;
+		}
 	}
+}
+
+bool RogueAugmentAssembler::CanApplyAugment(const UAugmentDefinition& Definition, int32 Level)
+{
+	if (!Definition.FindLevel(Level))
+	{
+		UE_LOG(LogAugmentAssembler, Error,
+			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
+			*Definition.GetName(), Level, Definition.GetMaxLevel());
+		return false;
+	}
+
+	return CanLoadAllAssets(Definition);
 }
 
 FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent& ASC,

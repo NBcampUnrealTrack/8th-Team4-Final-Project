@@ -5,6 +5,7 @@
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
+class UAugmentDefinition;
 class URogueGameplayAbility;
 
 
@@ -214,10 +215,5 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
     int32 Level = 1;
 
-    // 레벨은 비교 X
-	// 동일한 DefinitionId 를 가진 항목이 이미 있으면 교체
-    bool operator==(const FAugmentInventoryEntry& Other) const
-    {
-        return DefinitionId == Other.DefinitionId;
-    }
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level);
 };
