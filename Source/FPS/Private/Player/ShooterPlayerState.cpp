@@ -11,6 +11,7 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
+#include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
 
@@ -88,6 +89,9 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
+
+	// TODO: 임시로 권총 장착 태그
+	AbilitySystemComponent->SetEquippedWeaponType(EWeaponType::Pistol);
 
 	// 초기화는 한번만 수행
 	if (HasAuthority() && !bVitalsInitialized)
