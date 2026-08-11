@@ -1,24 +1,27 @@
-# IDE
+IDE
+
 .vs/
 .idea/
 *.suo
 *.user
 *.userosscache
-*.sln
 *.sln.docstates
 
-# Unreal generated folders
+Unreal generated folders
+
 Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
 
-# Ignored project content
+Ignored project content
+
 Content/PhysicsMaterials/
 Content/UI/
 Content/Effects/
 Content/Audio/
 
-# Logs and temp
+Logs and temp
+
 *.log
 *.tmp

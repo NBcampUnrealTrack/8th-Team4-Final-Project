@@ -147,7 +147,7 @@ namespace
 	{
 		return Value >= Min && Value <= Max;
 	}
-	
+
 	bool DoesRuleApply(const FAugmentConditionalDamageRule& Rule, const FRogueRuleContext& RC)
 	{
 		if (!RC.Ctx)
@@ -299,29 +299,17 @@ namespace
 		return Totals;
 	}
 
-	// 헤드샷 보너스 적용
-	float ApplyHeadshotCoefficients(const FRogueDamageEval& E,
-	                                const FRogueDamageSource& Source,
-	                                const FRogueGameplayEffectContext* Ctx,
-	                                const FRogueConditionalTotals& Totals,
-	                                float Damage)
+	float ApplyHeadshotBonusModifiers(const FRogueDamageEval& E,
+	                                  const FRogueDamageSource& Source,
+	                                  const FRogueConditionalTotals& Totals,
+	                                  const float OriginalBonus)
 	{
-		if (!Ctx || Ctx->HeadshotDamage <= 0.f)
+		if (OriginalBonus <= 0.0f)
 		{
-			return Damage;
-		}
-
-		const float AppliedMultiplier = FMath::Max(1.f, Ctx->AppliedHeadshotMultiplier);
-		const float TorsoEquivalent   = Ctx->HeadshotDamage / AppliedMultiplier;
-		const float OriginalBonus     = Ctx->HeadshotDamage - TorsoEquivalent;
-
-		if (OriginalBonus <= 0.f)
-		{
-			return Damage;
+			return 0.0f;
 		}
 
 		float Bonus = OriginalBonus;
-
 		if (Source.bIsOffensive)
 		{
 			Bonus *= FMath::Max(0.f, E.Read(E.Capture.SourceHeadshotDamageMultiplierDef, 1.f));
@@ -332,9 +320,102 @@ namespace
 			Bonus *= FMath::Max(0.f, E.Read(E.Capture.TargetHeadshotDamageTakenRateDef, 1.f));
 		}
 
-		Bonus = FMath::Max(0.f, Bonus * Totals.HeadMultiplier + Totals.HeadFlat);
+		return FMath::Max(0.f, Bonus * Totals.HeadMultiplier + Totals.HeadFlat);
+	}
 
-		return FMath::Max(0.f, Damage + (Bonus - OriginalBonus));
+	// 신규 Hitscan 계약: BaseDamage는 거리/관통까지만 적용된 값이다.
+	// 부위 배율과 헤드샷 보너스 증강은 ExecCalc에서 한 번만 적용한다.
+	float ApplyHitZoneCoefficients(const FRogueDamageEval& E,
+	                               const FRogueDamageSource& Source,
+	                               const FRogueGameplayEffectContext* Ctx,
+	                               const FRogueConditionalTotals& Totals,
+	                               float Damage)
+	{
+		if (!Ctx)
+		{
+			return Damage;
+		}
+
+		if (!Ctx->HitZoneDamageParts.IsEmpty())
+		{
+			float TotalPartBaseDamage = 0.0f;
+			for (const FRogueHitZoneDamagePart& Part : Ctx->HitZoneDamageParts)
+			{
+				if (FMath::IsFinite(Part.BaseDamage) && Part.BaseDamage > 0.0f)
+				{
+					TotalPartBaseDamage += Part.BaseDamage;
+				}
+			}
+
+			if (TotalPartBaseDamage <= KINDA_SMALL_NUMBER)
+			{
+				return Damage;
+			}
+
+			// 잘못된 요청이 부위 배열로 BaseDamage를 부풀리지 못하도록 전체 합을 SetByCaller BaseDamage에 맞춘다.
+			const float PartScale = TotalPartBaseDamage > Damage + KINDA_SMALL_NUMBER
+				? Damage / TotalPartBaseDamage
+				: 1.0f;
+			const float CoveredBaseDamage = FMath::Min(Damage, TotalPartBaseDamage * PartScale);
+			float ZonedDamage = FMath::Max(0.0f, Damage - CoveredBaseDamage);
+			float OriginalHeadshotBonus = 0.0f;
+
+			for (const FRogueHitZoneDamagePart& Part : Ctx->HitZoneDamageParts)
+			{
+				if (!FMath::IsFinite(Part.BaseDamage)
+					|| !FMath::IsFinite(Part.HitZoneMultiplier)
+					|| Part.BaseDamage <= 0.0f
+					|| Part.HitZoneMultiplier < 0.0f)
+				{
+					continue;
+				}
+
+				const float PartBaseDamage = Part.BaseDamage * PartScale;
+				const float PartDamage = PartBaseDamage * FMath::Max(0.0f, Part.HitZoneMultiplier);
+				if (!FMath::IsFinite(PartBaseDamage) || !FMath::IsFinite(PartDamage))
+				{
+					// 데이터 오류가 무한/NaN 피해로 번지지 않게 부위 보정 전체를 포기하고 원본 피해로 복귀한다.
+					return Damage;
+				}
+
+				ZonedDamage += PartDamage;
+				if (!FMath::IsFinite(ZonedDamage))
+				{
+					return Damage;
+				}
+
+				if (Part.bHeadshot)
+				{
+					OriginalHeadshotBonus += FMath::Max(0.0f, PartDamage - PartBaseDamage);
+				}
+			}
+
+			if (OriginalHeadshotBonus > 0.0f)
+			{
+				const float AdjustedHeadshotBonus = ApplyHeadshotBonusModifiers(
+					E, Source, Totals, OriginalHeadshotBonus);
+				ZonedDamage += AdjustedHeadshotBonus - OriginalHeadshotBonus;
+			}
+
+			return FMath::Max(0.0f, ZonedDamage);
+		}
+
+		// 레거시 호출자 호환: 이미 헤드 배율이 적용된 HeadshotDamage를 역산해 보너스만 조정한다.
+		if (Ctx->HeadshotDamage <= 0.f)
+		{
+			return Damage;
+		}
+
+		const float AppliedMultiplier = FMath::Max(KINDA_SMALL_NUMBER, Ctx->AppliedHeadshotMultiplier);
+		const float TorsoEquivalent = Ctx->HeadshotDamage / AppliedMultiplier;
+		const float OriginalBonus = Ctx->HeadshotDamage - TorsoEquivalent;
+		if (OriginalBonus <= 0.f)
+		{
+			return Damage;
+		}
+
+		const float AdjustedBonus = ApplyHeadshotBonusModifiers(E, Source, Totals, OriginalBonus);
+		return FMath::Max(0.f, Damage + (AdjustedBonus - OriginalBonus));
 	}
 
 	// 공격 측 배율
@@ -467,7 +548,7 @@ void UExecCalc_Damage::Execute_Implementation(
 	const FRogueConditionalTotals Totals = GatherConditionalTotals(E, RC, Source);
 
 
-	Damage = ApplyHeadshotCoefficients(E, Source, Ctx, Totals, Damage);
+	Damage = ApplyHitZoneCoefficients(E, Source, Ctx, Totals, Damage);
 	Damage = ApplyOffenseCoefficients(E, Source, Damage);
 	Damage = FMath::Max(0.f, Damage * Totals.DealtMultiplier + Totals.DealtFlat);
 	Damage = ApplyDefense(E, Source, Totals, Damage);

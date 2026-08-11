@@ -9,7 +9,6 @@
 #include "AugmentDefinition.generated.h"
 
 class UGameplayEffect;
-class URogueGameplayAbility;
 class UTexture2D;
 
 // 증강 계열 하나. 레벨은 Levels 배열의 인덱스로 표현한다
@@ -40,7 +39,6 @@ public:
 		return Levels.IsValidIndex(Level - 1) ? &Levels[Level - 1] : nullptr;
 	}
 
-public:
 	// AssetManager 에 등록하는 타입 이름.
 	static const FPrimaryAssetType AugmentAssetType;
 
@@ -65,6 +63,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
 	EAugmentCategory AugmentCategory = EAugmentCategory::Stat;
+
+	// 티어는 각 증강의 레벨 공통
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
+	EAugmentTier Tier = EAugmentTier::Common;
 
 	// --------------------------------------------------
 	// 출현 조건

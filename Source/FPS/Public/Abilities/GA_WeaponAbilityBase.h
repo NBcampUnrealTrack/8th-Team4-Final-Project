@@ -20,9 +20,8 @@ public:
 	UGA_WeaponAbilityBase();
 
 protected:
-	// TODO(연동 필요 - CombatComponent 담당자): CombatComponent에 현재 장착 무기를 반환하는
-	// Getter(예: GetEquippedWeapon())가 추가되면 그 API를 호출하도록 이 함수 하나만 교체하면 된다.
-	// (Slack 논의: "Current 무기 Getter" 관련) 지금은 임시로 Avatar에 Attach된 AWeaponBase를 직접 탐색한다.
+	// Avatar의 UCombatComponent::GetEquippedWeapon()을 그대로 위임한다 (무기 탐색/부착 로직은
+	// CombatComponent가 전담 - 이 클래스는 GAS 쪽에서 쓰기 편하게 짧은 이름으로 감싸주는 것뿐).
 	AWeaponBase* GetEquippedWeapon() const;
 
 	// 태그 기반으로 수정

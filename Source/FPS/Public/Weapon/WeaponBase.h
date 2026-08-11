@@ -12,11 +12,12 @@
 class UCameraComponent;
 class UCurveFloat;
 class UDataTable;
+class UHitscanWeaponDefinition;
+class USkeletalMeshComponent;
 struct FHitResult;
 
-// 무기 사격 파이프라인 담당 클래스.
-// GAS(GameplayAbilitySystem)의 존재를 전혀 모른다 - AbilitySystemComponent, GameplayTag,
-// GameplayEffect 등 GAS 관련 타입/include를 절대 사용하지 않는다.
+// 무기 발사 상태와 최종 발사 방향 생성까지 담당한다.
+// GAS 내부 구현에는 의존하지 않으며, 서버 Hit 판정은 B의 Hitscan Resolver 공개 계약으로 전달한다.
 // EffectiveRPM처럼 GAS 쪽 영향이 필요한 값은 외부(GA_RangedAttack)가 계산해서 Setter로 꽂아준다.
 UCLASS()
 class FPS_API AWeaponBase : public AActor
@@ -28,12 +29,13 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
-	// 다른 팀원의 GAS Adapter가 구독해서 FRogueDamageRequest 등으로 변환한다.
+	// 이전 펠릿별 Hit 이벤트와의 블루프린트 호환을 위해 유지한다.
+	// 현재 서버 판정 경로는 B의 UHitscanResolverSubsystem을 사용하며 이 이벤트는 더 이상 발신하지 않는다.
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
 	FOnWeaponHit OnWeaponHit;
 
-	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> 탄퍼짐 반영 라인트레이스(PelletCountPerShot만큼 반복) -> 히트 브로드캐스트
-	// -> 반동 적용 -> 연사 카운트 증가.
+	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> Spread가 반영된 펠릿별 최종 방향 생성
+	// -> B Hitscan Resolver에 사격 1회 전달 -> 반동 적용 -> 연사 카운트 증가.
 	// bHeavyAttack: 전술 칼처럼 좌/우클릭 대미지가 다른 무기용. AltBaseDamage가 0이면 무시되고 BaseDamage를 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
@@ -97,6 +99,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
 
+	// 1인칭(캐릭터 팔)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh1P에 붙인다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
+
+	// 3인칭(다른 플레이어에게 보이는 몸통)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh3P에 붙인다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	USkeletalMeshComponent* GetMesh3P() const { return Mesh3P; }
+
+	// CombatComponent가 Mesh1P를 부착할 때 사용할, 캐릭터 팔 스켈레톤 쪽 소켓 이름
+	// (예: 권총 PistolGripPoint, 소총 RifleGripPoint). 무기마다 그립 위치가 다르므로 무기 쪽에서 값을 갖는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	FName GetGripSocketName1P() const { return GripSocketName1P; }
+
+	// CombatComponent가 Mesh3P를 부착할 때 사용할, 캐릭터 바디 스켈레톤 쪽 소켓 이름.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
+	FName GetGripSocketName3P() const { return GripSocketName3P; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -112,13 +131,14 @@ protected:
 	void ApplyProceduralRecoil();
 	void TickRecoilRecovery(float DeltaTime);
 
-	// --- 관통 라인트레이스 ---
+	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;
 	FVector CalculateTraceDirection(const FVector& AimDirection) const;
-	void PerformPenetratingLineTrace(const FVector& TraceStart, const FVector& TraceDirection, int32 PelletIndex, float ShotDamage);
-	float GetSurfaceThickness(const FHitResult& Hit) const;
-	float GetSurfaceHardness(const FHitResult& Hit) const;
-	static float CalculateHitAngleDegrees(const FHitResult& Hit, const FVector& TraceDirection);
+	void ResolveHitscanShot(
+		const FVector& TraceStart,
+		const TArray<FVector>& PelletDirections,
+		float ShotDamage,
+		int32 ShotIndexInMagazine);
 
 	// --- 재장전 ---
 	void FinishReload();
@@ -235,29 +255,55 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoverySpeed = 10.f;
 
+	// --- B Hitscan Resolver 설정 ---
+	// 부위, 거리 감쇄, 연속 관통, Trace 안전 설정을 담는 B 전용 DataAsset.
+	// 미지정 시 직접 Hit는 기본 1배 대미지로 처리되며 표면 관통은 비활성화된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Hitscan")
+	TObjectPtr<UHitscanWeaponDefinition> HitscanDefinition;
+
 	// --- 관통 튜닝 값 ---
-	// 무기 기본 관통력. 벽 두께 대비 남은 관통력 판정 및 데미지 감쇠 계산에 사용.
+	// B Resolver에 전달할 무기 기본 관통력.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float PenetrationPower = 70.f;
 
-	// 라인트레이스 최대 사거리 (cm)
+	// B Resolver의 최대 Trace 사거리 (cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float TraceRange = 4000.f;
 
-	// UPenetrableSurfaceComponent가 없는 액터에 적용할 기본 관통 두께
+	// 실제 출구점을 찾지 못했고 UPenetrableSurfaceComponent도 없는 표면에 적용할 Fallback 두께
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float DefaultSurfaceThickness = 10.f;
 
-	// 히트 액터에 UPenetrableSurfaceComponent가 없고, SurfaceHardnessMap에도 해당 표면 타입이 없을 때
-	// 적용할 최종 기본 경도(관통 난이도).
+	// SurfaceDefinition, SurfaceHardnessMap, PenetrableSurfaceComponent에 별도 값이 없을 때 사용할 기본 경도.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float DefaultSurfaceHardness = 0.f;
 
-	// 표면 타입(EPhysicalSurface)별 경도. 남은 관통력이 이 값보다 커야 관통 가능.
-	// 레벨 디자인이 벽마다 UPenetrableSurfaceComponent::SurfaceHardness를 직접 지정하지 않은 경우의
-	// 재질 기반 폴백으로 쓰인다(GetSurfaceHardness 우선순위: 컴포넌트 값 > 이 맵 > DefaultSurfaceHardness).
+	// 기존 무기 BP의 EPhysicalSurface별 경도 오버라이드.
+	// 최종 우선순위는 PenetrableSurfaceComponent > 이 맵 > HitscanDefinition/기본 규칙이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
+
+	// --- 메쉬 ---
+	// 1인칭(로컬 플레이어 본인 시점) 전용 메쉬. bOnlyOwnerSee로 오너만 본다.
+	// CombatComponent가 장착 시 오너 캐릭터의 Mesh1P 산하 GripSocketName1P에 붙인다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	TObjectPtr<USkeletalMeshComponent> Mesh1P;
+
+	// 3인칭(다른 플레이어 시점) 전용 메쉬. bOwnerNoSee로 오너 본인에게는 숨긴다.
+	// CombatComponent가 장착 시 오너 캐릭터의 Mesh3P 산하 GripSocketName3P에 붙인다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	TObjectPtr<USkeletalMeshComponent> Mesh3P;
+
+	// 무기별로 다른 1인칭 그립 소켓 이름 (예: 권총 PistolGripPoint, 소총 RifleGripPoint).
+	// 캐릭터 팔 스켈레톤(SK_Mannequin_Arms_Skeleton)에 미리 정의되어 있어야 한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FName GripSocketName1P;
+
+	// 3인칭 그립 소켓 이름. 대부분의 무기가 공용 소켓을 쓰므로 기본값을 채워둔다.
+	// weapon_r "본" 자체가 아니라, 그 본 밑에 자식으로 추가한 "소켓"을 가리켜야 한다 - 본을 직접
+	// 가리키면 캐릭터 애니메이션이 매 프레임 그 본의 회전을 덮어써서 소켓 보정 회전이 무시된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FName GripSocketName3P = TEXT("Weapon_R_Socket");
 
 private:
 	// 사격 위치/방향 계산에 사용하는 카메라. 소유 액터에서 BeginPlay 시 캐싱한다.
