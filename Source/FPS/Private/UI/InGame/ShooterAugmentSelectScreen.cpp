@@ -119,46 +119,6 @@ UAugmentRegistrySubsystem* UShooterAugmentSelectScreen::GetRegistry() const
 	return GetGameInstance() ? GetGameInstance()->GetSubsystem<UAugmentRegistrySubsystem>() : nullptr;
 }
 
-/** 테스트 후 삭제 */
-#if !UE_BUILD_SHIPPING
-void UShooterAugmentSelectScreen::DebugFillWithFirstOffers(int32 Count)
-{
-	UAugmentRegistrySubsystem* Registry = GetRegistry();
-	if (!IsValid(Registry))
-	{
-		return;
-	}
-
-	TArray<UAugmentDefinition*> All = Registry->GetAllDefinitions();
-	if (All.IsEmpty())
-	{
-		UE_LOG(LogShooterAugmentSelectScreen, Error,
-		       TEXT("레지스트리가 비어 있습니다."));
-		return;
-	}
-
-	TArray<FAugmentInventoryEntry> DebugOffers;
-	const int32 Num = FMath::Min(Count, All.Num());
-
-	for (int32 i = 0; i < Num; ++i)
-	{
-		UAugmentDefinition* Def = All[FMath::RandRange(0, All.Num() - 1)];
-		if (!Def)
-		{
-			continue;
-		}
-
-		FAugmentInventoryEntry Entry;
-		Entry.DefinitionId = Def->GetPrimaryAssetId();
-		Entry.Level = FMath::RandRange(1, FMath::Max(1, Def->GetMaxLevel()));
-
-		DebugOffers.Add(Entry);
-	}
-
-	SetOffers(DebugOffers);
-}
-#endif
-
 void UShooterAugmentSelectScreen::NativeDestruct()
 {
 	if (IconLoadHandle.IsValid())
