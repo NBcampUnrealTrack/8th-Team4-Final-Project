@@ -7,6 +7,20 @@
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
 
+static void ConfigureCenteredCanvasSlot(UWidget* Widget)
+{
+	if (!Widget)
+	{
+		return;
+	}
+
+	if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget->Slot))
+	{
+		Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+		Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+	}
+}
+
 static void SetSlotPosition(UWidget* Widget, const FVector2D& Position)
 {
 	if (!Widget)
@@ -18,6 +32,19 @@ static void SetSlotPosition(UWidget* Widget, const FVector2D& Position)
 	{
 		Slot->SetPosition(Position);
 	}
+}
+
+void UShooterReticle::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	ConfigureCenteredCanvasSlot(Image_Top);
+	ConfigureCenteredCanvasSlot(Image_Bottom);
+	ConfigureCenteredCanvasSlot(Image_Left);
+	ConfigureCenteredCanvasSlot(Image_Right);
+	ConfigureCenteredCanvasSlot(Image_Center);
+
+	SetSlotPosition(Image_Center, FVector2D::ZeroVector);
 }
 
 float UShooterReticle::ComputeSpreadRadius() const

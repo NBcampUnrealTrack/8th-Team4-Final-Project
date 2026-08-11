@@ -55,6 +55,9 @@ protected:
 	bool bWeaponReady = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	bool bIsReloading = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
 	bool bFirstPersonAnimation = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Combat")
@@ -97,9 +100,11 @@ private:
 	void UpdateWeaponValues();
 	void UpdateWeaponAnimationData();
 	void PlayEquipMontageForCurrentWeapon();
+	void PlayReloadMontageForCurrentWeapon();
 	void TurnInPlace(float DeltaSeconds);
 
 	FRotator StartingAimRotation = FRotator::ZeroRotator;
 	float InterpAO_Yaw = 0.f;
 	TWeakObjectPtr<AWeaponBase> LastAnimationWeapon;
+	bool bWasReloading = false;
 };

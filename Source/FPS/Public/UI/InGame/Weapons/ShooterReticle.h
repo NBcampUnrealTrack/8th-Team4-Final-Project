@@ -27,6 +27,7 @@ public:
 	bool IsPerfectAccuracy() const;
 	
 protected:
+	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	
 	/** 테스트용 더미 데이터 탄퍼짐이 오면 지운다.*/ 

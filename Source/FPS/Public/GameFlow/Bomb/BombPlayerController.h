@@ -4,7 +4,6 @@
 #include "GameFlow/Round/BaseRoundPlayerController.h"
 #include "BombPlayerController.generated.h"
 
-class UBaseBombGameFlowWidget;
 class UDataJackInputConfig;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnObjectiveInteractionStateChangedSignature, bool, bIsActive);
@@ -47,8 +46,6 @@ protected:
 	void ServerStopDataJackDrop();
 
 private:
-	void CreateGameFlowWidget();
-	void RemoveGameFlowWidget();
 	void ApplyObjectiveInteractionActive(bool bActive);
 	void SetObjectiveMovementInputLockApplied(bool bApplied);
 	void SetDataJackMappingContextEnabled(bool bEnabled);
@@ -60,12 +57,6 @@ private:
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Data Jack|Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UDataJackInputConfig> DataJackInputConfig;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Game Flow|UI")
-	TSubclassOf<UBaseBombGameFlowWidget> GameFlowWidgetClass;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBaseBombGameFlowWidget> GameFlowWidget;
 
 	bool bIsObjectiveInteractionActive = false;
 	bool bIsObjectiveMovementInputLockApplied = false;

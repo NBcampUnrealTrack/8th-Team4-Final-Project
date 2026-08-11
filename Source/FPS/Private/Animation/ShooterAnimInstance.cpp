@@ -17,6 +17,7 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 
 	CacheReferences();
 	LastAnimationWeapon.Reset();
+	bWasReloading = false;
 	UpdateWeaponValues();
 	if (ShooterCharacter)
 	{
@@ -118,6 +119,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
 	bIsCycling = IsValid(Combat) && Combat->IsCycling();
 	bWeaponReady = IsValid(Combat) && Combat->IsWeaponReady();
+	bIsReloading = IsValid(CurrentWeapon) && CurrentWeapon->IsReloading();
 
 	const FGameplayTag WeaponTag = IsValid(CurrentWeapon) ? CurrentWeapon->GetWeaponTag() : FGameplayTag();
 	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : ShooterTags::TAG_WeaponType_None;
@@ -127,8 +129,16 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	if (CurrentWeapon.Get() != LastAnimationWeapon.Get())
 	{
 		LastAnimationWeapon = CurrentWeapon.Get();
+		bWasReloading = false;
 		PlayEquipMontageForCurrentWeapon();
 	}
+
+	if (bIsReloading && !bWasReloading)
+	{
+		PlayReloadMontageForCurrentWeapon();
+	}
+
+	bWasReloading = bIsReloading;
 }
 
 void UShooterAnimInstance::UpdateWeaponAnimationData()
@@ -179,6 +189,44 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 			*CurrentWeaponType.ToString(),
 			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
 			*GetNameSafe(MontageData->EquipMontage));
+	}
+}
+
+void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
+	{
+		return;
+	}
+
+	const UWeaponData* WeaponData = Combat->GetWeaponData();
+	if (!IsValid(WeaponData))
+	{
+		return;
+	}
+
+	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
+	if (!MontageData || !IsValid(MontageData->ReloadMontage))
+	{
+		return;
+	}
+
+	if (Montage_IsPlaying(MontageData->ReloadMontage))
+	{
+		return;
+	}
+
+	const float PlayedDuration = Montage_Play(MontageData->ReloadMontage);
+	if (PlayedDuration <= 0.f)
+	{
+		UE_LOG(
+			LogShooterAnimation,
+			Warning,
+			TEXT("[ShooterAnimInstance] Reload montage could not be played. Owner=%s WeaponTag=%s View=%s Montage=%s"),
+			*GetNameSafe(ShooterCharacter.Get()),
+			*CurrentWeaponType.ToString(),
+			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
+			*GetNameSafe(MontageData->ReloadMontage));
 	}
 }
 

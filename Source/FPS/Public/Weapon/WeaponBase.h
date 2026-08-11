@@ -29,6 +29,7 @@ public:
 	AWeaponBase();
 
 	virtual void Tick(float DeltaTime) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 이전 펠릿별 Hit 이벤트와의 블루프린트 호환을 위해 유지한다.
 	// 현재 서버 판정 경로는 B의 UHitscanResolverSubsystem을 사용하며 이 이벤트는 더 이상 발신하지 않는다.
@@ -199,7 +200,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
 	bool bIsReloading = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|ADS")

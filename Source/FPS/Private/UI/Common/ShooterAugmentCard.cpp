@@ -59,7 +59,7 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	const FShooterAugmentTierStyle* TierStyle = TierStyles->FindStyle(InDefinition->Tier);
 	if (TierStyle == nullptr)
 	{
-		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentStyle에 %s에 맞는 Style이 정의되지않았습니다."), *UEnum::GetValueAsString(InDefinition->Tier))
+		UE_LOG(LogShooterAugmentCard, Error, TEXT("AugmentStyle에 %s에 맞는 Style이 정의되지않았습니다."), *UEnum::GetValueAsString(InDefinition->Tier));
 		return;
 	}
 
