@@ -36,6 +36,17 @@ public:
 	void SetEquippedWeaponType(EWeaponType WeaponType);
 
 private:
+	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그
+	void ReportInputResult(const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount);
+
 	// 지금 붙여둔 장착 태그. 교체 시 정확히 이것만 걷어내려고 들고 있는다
 	FGameplayTag CurrentEquippedWeaponTag;
+
+	// 로그를 나누기 위한 시간 기록
+	struct FInputDiagnostic
+	{
+		double LastActivatedTime = 0.0;
+		double LastLogTime       = 0.0;
+	};
+	TMap<FGameplayTag, FInputDiagnostic> InputDiagnostics;
 };

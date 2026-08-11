@@ -81,16 +81,6 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		}
 	}
 
-	// 이 태그를 가진 어빌리티가 없는 경우
-	if (MatchedSpecCount == 0)
-	{
-		UE_LOG(LogRogueAbility, Error,
-			TEXT("[RogueAbility] 입력 태그 %s 를 가진 어빌리티가 없습니다. "
-			     "AbilitySet 에 등록했는지, InputTags.ini 의 태그 이름과 같은지 확인하세요"),
-			*InputTag.ToString());
-		return;
-	}
-
 	int32 ActivatedCount = 0;
 	for (const FGameplayAbilitySpecHandle& Handle : ToActivate)
 	{
@@ -100,14 +90,56 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		}
 	}
 
-	// 스펙은 있지만 GA가 활성화되지 않은 경우
-	if (ActivatedCount == 0 && !ToActivate.IsEmpty())
+	ReportInputResult(InputTag, MatchedSpecCount, ToActivate.Num(), ActivatedCount);
+}
+
+void URogueAbilitySystemComponent::ReportInputResult(
+	const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount)
+{
+	// 이 태그를 가진 어빌리티가 아예 없는 경우
+	if (MatchedSpecCount == 0)
 	{
-		UE_LOG(LogRogueAbility, Log,
-			TEXT("[RogueAbility] %s: 후보 %d개가 전부 활성화를 거절했습니다. "
-			     "장착 태그(State.Weapon.Equipped.*)와 쿨다운/코스트를 확인하세요"),
-			*InputTag.ToString(), ToActivate.Num());
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 입력 태그 %s 를 가진 어빌리티가 없습니다. "
+			     "AbilitySet 에 등록했는지, InputTags.ini 의 태그 이름과 같은지 확인하세요"),
+			*InputTag.ToString());
+		return;
 	}
+
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	FInputDiagnostic& Diagnostic = InputDiagnostics.FindOrAdd(InputTag);
+
+	if (ActivatedCount > 0)
+	{
+		Diagnostic.LastActivatedTime = Now;
+		return;
+	}
+
+	// 후보가 없으면 매칭된 스펙이 전부 이미 활성 상태라는 뜻이라 정상이다
+	if (CandidateCount == 0)
+	{
+		return;
+	}
+
+	constexpr double RecentActivationWindow = 1.0;   
+	constexpr double RejectLogInterval      = 1.0;
+
+	const bool bRecentlyActivated = Diagnostic.LastActivatedTime > 0.0
+		&& (Now - Diagnostic.LastActivatedTime) < RecentActivationWindow;
+	const bool bLogIntervalPassed = Diagnostic.LastLogTime <= 0.0
+		|| (Now - Diagnostic.LastLogTime) >= RejectLogInterval;
+
+	if (bRecentlyActivated || !bLogIntervalPassed)
+	{
+		return;
+	}
+
+	Diagnostic.LastLogTime = Now;
+
+	UE_LOG(LogRogueAbility, Log,
+		TEXT("[RogueAbility] %s: 후보 %d개가 전부 활성화를 거절했습니다. "
+		     "장착 태그(State.Weapon.Equipped.*)와 쿨다운/코스트를 확인하세요"),
+		*InputTag.ToString(), CandidateCount);
 }
 
 void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
