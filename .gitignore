@@ -13,6 +13,7 @@ Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
+Windows/
 
 Ignored project content
 
@@ -25,3 +26,4 @@ Logs and temp
 
 *.log
 *.tmp
+service/
