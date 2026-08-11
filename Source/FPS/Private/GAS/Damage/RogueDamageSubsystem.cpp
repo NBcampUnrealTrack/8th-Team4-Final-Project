@@ -9,6 +9,30 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
 
+namespace
+{
+	constexpr int32 MaxContextHitZoneParts = 16;
+
+	float ResolveHeadshotEventMagnitude(const FRogueDamageRequest& Request)
+	{
+		float HeadshotDamage = 0.0f;
+		for (const FRogueHitZoneDamagePart& Part : Request.HitZoneDamageParts)
+		{
+			if (!Part.bHeadshot
+				|| !FMath::IsFinite(Part.BaseDamage)
+				|| Part.BaseDamage <= 0.0f)
+			{
+				continue;
+			}
+
+			// 이벤트는 헤드 적중량만 알린다. 부위 배율 적용은 ExecCalc_Damage 단일 책임으로 유지한다.
+			HeadshotDamage += Part.BaseDamage;
+		}
+
+		return HeadshotDamage > 0.0f ? HeadshotDamage : FMath::Max(0.0f, Request.HeadshotDamage);
+	}
+}
+
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
@@ -16,7 +40,7 @@ UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 
 FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest& Request)
 {
-	// 검증 
+	// 검증
 	FRogueDamageTarget Target;
 	if (!ResolveDamageTarget(Request, Target))
 	{
@@ -64,7 +88,9 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest&
 bool URogueDamageSubsystem::ResolveDamageTarget(const FRogueDamageRequest& Request,
                                                 FRogueDamageTarget& OutTarget) const
 {
-	if (!Request.TargetActor || Request.BaseDamage <= 0.f)
+	if (!Request.TargetActor
+		|| !FMath::IsFinite(Request.BaseDamage)
+		|| Request.BaseDamage <= 0.f)
 	{
 		return false;
 	}
@@ -130,13 +156,37 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 
 	FRogueGameplayEffectContext* Ctx = static_cast<FRogueGameplayEffectContext*>(RawContext);
 
-	Ctx->SourceTag                 = Request.SourceTag;
-	Ctx->WeaponTag                 = Request.WeaponTag;
-	Ctx->HitZoneTag                = Request.HitZoneTag;
-	Ctx->HitDistanceMeters         = Request.DistanceMeters;
-	Ctx->PelletsHit                = FMath::Max(1, Request.PelletsHit);
-	Ctx->ShotIndexInMagazine       = Request.ShotIndexInMagazine;
-	Ctx->HeadshotDamage            = Request.HeadshotDamage;
+	Ctx->SourceTag           = Request.SourceTag;
+	Ctx->WeaponTag           = Request.WeaponTag;
+	Ctx->HitZoneTag          = Request.HitZoneTag;
+	Ctx->HitDistanceMeters   = Request.DistanceMeters;
+	Ctx->PelletsHit          = FMath::Max(1, Request.PelletsHit);
+	Ctx->ShotIndexInMagazine = Request.ShotIndexInMagazine;
+
+	Ctx->HitZoneDamageParts.Reset(FMath::Min(Request.HitZoneDamageParts.Num(), MaxContextHitZoneParts));
+	for (const FRogueHitZoneDamagePart& Part : Request.HitZoneDamageParts)
+	{
+		if (Ctx->HitZoneDamageParts.Num() >= MaxContextHitZoneParts)
+		{
+			break;
+		}
+		if (!FMath::IsFinite(Part.BaseDamage)
+			|| !FMath::IsFinite(Part.HitZoneMultiplier)
+			|| Part.BaseDamage <= 0.0f
+			|| Part.HitZoneMultiplier < 0.0f)
+		{
+			continue;
+		}
+
+		FRogueHitZoneDamagePart& Sanitized = Ctx->HitZoneDamageParts.AddDefaulted_GetRef();
+		Sanitized = Part;
+		Sanitized.BaseDamage = FMath::Max(0.0f, Part.BaseDamage);
+		Sanitized.HitZoneMultiplier = FMath::Max(0.0f, Part.HitZoneMultiplier);
+		Sanitized.PelletsHit = FMath::Max(1, Part.PelletsHit);
+	}
+
+	// 기존 비-Hitscan 호출자 호환용 경로.
+	Ctx->HeadshotDamage = FMath::Max(0.0f, Request.HeadshotDamage);
 	Ctx->AppliedHeadshotMultiplier = FMath::Max(KINDA_SMALL_NUMBER, Request.AppliedHeadshotMultiplier);
 
 	BuildContextTags(Request, TargetVital, Ctx->ContextTags);
@@ -219,10 +269,10 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageRequest& Req
 	Send(Src, RogueTags::Event_Combat_DamageDealt, Tgt, Result.HealthDamage);
 	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Src, Result.HealthDamage);
 
-	// 헤드샷 데미지가 존재하면 헤드샷 이벤트 발신
-	if (Request.HeadshotDamage > 0.f)
+	const float HeadshotEventMagnitude = ResolveHeadshotEventMagnitude(Request);
+	if (HeadshotEventMagnitude > 0.0f)
 	{
-		Send(Src, RogueTags::Event_Combat_Headshot, Tgt, Request.HeadshotDamage);
+		Send(Src, RogueTags::Event_Combat_Headshot, Tgt, HeadshotEventMagnitude);
 	}
 
 	if (Result.bShieldBroken)
