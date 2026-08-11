@@ -10,6 +10,7 @@
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
 				"Engine",
+				"CommonUI",
 				"GameplayAbilities"
 			]
 		}
@@ -33,6 +34,11 @@
 		{
 			"Name": "Mutable",
 			"Enabled": true
+		},
+		{
+			"Name": "CommonUI",
+			"Enabled": true
 		}
+
 	]
 }

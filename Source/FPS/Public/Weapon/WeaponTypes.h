@@ -9,12 +9,17 @@
 class AActor;
 class UCurveFloat;
 
+// 무기 종류 식별용. GAS 쪽 TAG_WeaponType_*(GameplayTags.h)와는 별개 - AWeaponBase는 GAS 타입을
+// 모르므로, 순수 C++/블루프린트에서 무기 종류를 식별해야 할 때 이 enum을 쓴다.
 UENUM(BlueprintType)
-enum class EWeaponSlot : uint8
+enum class EWeaponType : uint8
 {
-	None UMETA(Hidden),
-	Primary UMETA(DisplayName = "Primary"),
-	Secondary UMETA(DisplayName = "Secondary")
+	None,
+	AR,
+	Pistol,
+	Shotgun,
+	Sniper,
+	Knife
 };
 
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
