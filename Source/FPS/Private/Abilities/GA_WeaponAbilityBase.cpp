@@ -3,6 +3,7 @@
 #include "Abilities/GA_WeaponAbilityBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "Combat/CombatComponent.h"
 #include "GameplayTagContainer.h"
 #include "Weapon/WeaponBase.h"
 
@@ -20,18 +21,8 @@ AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const
 		return nullptr;
 	}
 
-	TArray<AActor*> AttachedActors;
-	AvatarActor->GetAttachedActors(AttachedActors);
-
-	for (AActor* AttachedActor : AttachedActors)
-	{
-		if (AWeaponBase* Weapon = Cast<AWeaponBase>(AttachedActor))
-		{
-			return Weapon;
-		}
-	}
-
-	return nullptr;
+	const UCombatComponent* CombatComponent = AvatarActor->FindComponentByClass<UCombatComponent>();
+	return CombatComponent ? CombatComponent->GetEquippedWeapon() : nullptr;
 }
 
 void UGA_WeaponAbilityBase::SendWeaponGameplayEvent(FGameplayTag EventTag) const
