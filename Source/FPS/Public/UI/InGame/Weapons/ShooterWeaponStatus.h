@@ -32,7 +32,7 @@ protected:
 	
 	void RefreshAmmo(AWeaponBase* Weapon);
 	
-	UPROPERTY(meta = (BindWIdget))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Ammo;
 	
 	// 무기이름 없으면 비워둠
