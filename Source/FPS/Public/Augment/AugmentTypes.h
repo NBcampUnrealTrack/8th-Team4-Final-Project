@@ -5,6 +5,7 @@
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
+class UAugmentDefinition;
 class URogueGameplayAbility;
 
 
@@ -151,10 +152,6 @@ struct FAugmentLevelData
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level", meta = (MultiLine = "true"))
     FText Description;
 
-    // 레벨이 오르며 등급도 오르는 계열 표현
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
-    EAugmentTier Tier = EAugmentTier::Common;
-
 	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller. Magnitude 는 레벨마다 다르게 설정
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
         meta = (Categories = "Data.Magnitude", ForceInlineRow))
@@ -162,6 +159,43 @@ struct FAugmentLevelData
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
     TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
+};
+
+// 등급 추첨 가중치
+USTRUCT()
+struct FAugmentTierDraftWeight
+{
+    GENERATED_BODY()
+
+    // 1라운드 가중치
+    UPROPERTY(EditAnywhere, Category = "Rogue|Augment")
+    float BaseWeight = 0.f;
+
+    // 라운드당 증감
+    UPROPERTY(EditAnywhere, Category = "Rogue|Augment")
+    float PerRoundDelta = 0.f;
+};
+
+// 추첨 입력
+USTRUCT(BlueprintType)
+struct FAugmentDraftContext
+{
+    GENERATED_BODY()
+
+    // 1부터. 등급 가중치 스케일
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RoundNumber = 1;
+
+    // 0 이면 서버가 만들어 로그
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RoundSeed = 0;
+
+	// 팀 점수, 패배팅 보정, 현재 적용 X
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 TeamScore = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 OpponentScore = 0;
 };
 
 // 보유 증강 한 칸
@@ -174,13 +208,12 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
     FPrimaryAssetId DefinitionId;
 
+    // 증강 계열
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "Augment.Line"))
+    FGameplayTag LineTag;
+
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
     int32 Level = 1;
 
-    // 레벨은 비교 X
-	// 동일한 DefinitionId 를 가진 항목이 이미 있으면 교체
-    bool operator==(const FAugmentInventoryEntry& Other) const
-    {
-        return DefinitionId == Other.DefinitionId;
-    }
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level);
 };

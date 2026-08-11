@@ -20,6 +20,16 @@ FPrimaryAssetId UAugmentDefinition::GetPrimaryAssetId() const
 	return FPrimaryAssetId(AugmentAssetType, GetFName());
 }
 
+FAugmentInventoryEntry FAugmentInventoryEntry::Make(const UAugmentDefinition& Definition, int32 Level)
+{
+	FAugmentInventoryEntry Entry;
+	Entry.DefinitionId = Definition.GetPrimaryAssetId();
+	Entry.LineTag      = Definition.LineTag;
+	Entry.Level        = Level;
+
+	return Entry;
+}
+
 #if WITH_EDITOR
 
 namespace
@@ -37,6 +47,12 @@ namespace
 		if (Rule.bUseDistanceRange && Rule.MinDistanceMeters > Rule.MaxDistanceMeters)
 		{
 			Reject(LOCTEXT("BadDistanceRange", "거리 범위가 뒤집혀 있습니다"));
+		}
+
+		if (Rule.bUseDistanceRange && Rule.MaxDistanceMeters <= 0.f)
+		{
+			Reject(LOCTEXT("ZeroDistanceMax",
+				"거리 조건을 켜고 최대 거리를 채우지 않았습니다. 이 규칙은 영영 발동하지 않습니다 (상한이 없으면 큰 수를 넣으세요)"));
 		}
 
 		if (Rule.bUseTargetHealthRange && Rule.TargetHealthMinPct > Rule.TargetHealthMaxPct)
