@@ -20,9 +20,15 @@ class FPS_API AShooterPlayerController : public APlayerController
 public:
 	AShooterPlayerController();
 
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void SetLobbyReady(bool bNewLobbyReady);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetLobbyReady(bool bNewLobbyReady);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;

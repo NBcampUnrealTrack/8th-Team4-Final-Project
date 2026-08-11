@@ -92,6 +92,28 @@ void AShooterPlayerController::SetupInputComponent()
 	}
 }
 
+void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
+{
+	if (HasAuthority())
+	{
+		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+		{
+			ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+		}
+		return;
+	}
+
+	ServerSetLobbyReady(bNewLobbyReady);
+}
+
+void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
+{
+	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+	{
+		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+	}
+}
+
 void AShooterPlayerController::Input_Move(const FInputActionValue& Value)
 {
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())

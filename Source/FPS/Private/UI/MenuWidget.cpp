@@ -10,13 +10,18 @@
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "GameFramework/PlayerController.h"
+#include "Player/ShooterPlayerController.h"
 #include "Session/SessionSubSystem.h"
 #include "UI/RoomEntryWidget.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogMenuWidget, Log, All);
+
 void UMenuWidget::MenuSetup(int32 InMaxPlayers, const FString& InMapName, const FString& InMatchType)
 {
+	UE_LOG(LogMenuWidget, Log, TEXT("MenuSetup: Widget=%s MapName=%s MatchType=%s"), *GetNameSafe(this), *InMapName, *InMatchType);
+
 	MaxPlayers = InMaxPlayers;
-	MapName = InMapName.IsEmpty() ? TEXT("FPSMap") : InMapName;
+	MapName = InMapName.IsEmpty() ? TEXT("BombMap") : InMapName;
 	MatchType = InMatchType.IsEmpty() ? TEXT("FreeForAll") : InMatchType;
 
 	AddToViewport();
@@ -64,7 +69,7 @@ void UMenuWidget::HostRoomWithOptions(int32 InMaxPlayers, const FString& InRoomN
 {
 	MaxPlayers = FMath::Max(1, InMaxPlayers);
 	RoomName = InRoomName;
-	MapName = InMapName.IsEmpty() ? TEXT("FPSMap") : InMapName;
+	MapName = InMapName.IsEmpty() ? TEXT("BombMap") : InMapName;
 	MatchType = InMatchType.IsEmpty() ? TEXT("FreeForAll") : InMatchType;
 
 	HostRoom();
@@ -127,6 +132,38 @@ void UMenuWidget::JoinLocalHost()
 	OnJoinRoomResult(true);
 }
 
+void UMenuWidget::SetLobbyReady(bool bNewLobbyReady)
+{
+	AShooterPlayerController* PlayerController = GetGameInstance()
+		? Cast<AShooterPlayerController>(GetGameInstance()->GetFirstLocalPlayerController())
+		: nullptr;
+	if (!PlayerController)
+	{
+		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
+		return;
+	}
+
+	PlayerController->SetLobbyReady(bNewLobbyReady);
+	SetStatusMessage(bNewLobbyReady
+		? FText::FromString(TEXT("Ready."))
+		: FText::FromString(TEXT("Ready canceled.")));
+}
+
+void UMenuWidget::StartRoomGame()
+{
+	CacheSessionSubsystem();
+
+	if (!SessionSubsystem)
+	{
+		SetStatusMessage(FText::FromString(TEXT("Session subsystem is not available.")));
+		OnStartRoomGameResult(false);
+		return;
+	}
+
+	SetStatusMessage(FText::FromString(TEXT("Starting game...")));
+	SessionSubsystem->StartRoomGame(MapName);
+}
+
 bool UMenuWidget::Initialize()
 {
 	if (!Super::Initialize())
@@ -136,17 +173,40 @@ bool UMenuWidget::Initialize()
 
 	if (HostButton)
 	{
+		UE_LOG(LogMenuWidget, Log, TEXT("Initialize: Bind HostButton on %s"), *GetNameSafe(this));
 		HostButton->OnClicked.AddDynamic(this, &ThisClass::HostButtonClicked);
 	}
 
 	if (JoinButton)
 	{
+		UE_LOG(LogMenuWidget, Log, TEXT("Initialize: Bind JoinButton on %s"), *GetNameSafe(this));
 		JoinButton->OnClicked.AddDynamic(this, &ThisClass::JoinButtonClicked);
 	}
 
 	if (LocalJoinButton)
 	{
+		UE_LOG(LogMenuWidget, Log, TEXT("Initialize: Bind LocalJoinButton on %s"), *GetNameSafe(this));
 		LocalJoinButton->OnClicked.AddDynamic(this, &ThisClass::LocalJoinButtonClicked);
+	}
+
+	if (ReadyButton)
+	{
+		UE_LOG(LogMenuWidget, Log, TEXT("Initialize: Bind ReadyButton on %s"), *GetNameSafe(this));
+		ReadyButton->OnClicked.AddDynamic(this, &ThisClass::ReadyButtonClicked);
+	}
+	else
+	{
+		UE_LOG(LogMenuWidget, Warning, TEXT("Initialize: ReadyButton is not bound on %s"), *GetNameSafe(this));
+	}
+
+	if (StartButton)
+	{
+		UE_LOG(LogMenuWidget, Log, TEXT("Initialize: Bind StartButton on %s"), *GetNameSafe(this));
+		StartButton->OnClicked.AddDynamic(this, &ThisClass::StartButtonClicked);
+	}
+	else
+	{
+		UE_LOG(LogMenuWidget, Warning, TEXT("Initialize: StartButton is not bound on %s"), *GetNameSafe(this));
 	}
 
 	if (CreateButton)
@@ -192,6 +252,23 @@ void UMenuWidget::JoinButtonClicked()
 void UMenuWidget::LocalJoinButtonClicked()
 {
 	JoinLocalHost();
+}
+
+void UMenuWidget::ReadyButtonClicked()
+{
+	UE_LOG(LogMenuWidget, Log, TEXT("ReadyButtonClicked: Widget=%s"), *GetNameSafe(this));
+	SetLobbyReady(true);
+
+	if (ReadyButton)
+	{
+		ReadyButton->SetIsEnabled(false);
+	}
+}
+
+void UMenuWidget::StartButtonClicked()
+{
+	UE_LOG(LogMenuWidget, Log, TEXT("StartButtonClicked: Widget=%s"), *GetNameSafe(this));
+	StartRoomGame();
 }
 
 void UMenuWidget::CreateButtonClicked()
@@ -273,6 +350,16 @@ void UMenuWidget::HandleLeaveRoomComplete(bool bWasSuccessful)
 	OnLeaveRoomResult(bWasSuccessful);
 }
 
+void UMenuWidget::HandleStartRoomGameComplete(bool bWasSuccessful)
+{
+	if (!bWasSuccessful)
+	{
+		SetStatusMessage(FText::FromString(TEXT("Cannot start until every client is ready.")));
+	}
+
+	OnStartRoomGameResult(bWasSuccessful);
+}
+
 void UMenuWidget::CacheSessionSubsystem()
 {
 	if (!SessionSubsystem)
@@ -280,6 +367,7 @@ void UMenuWidget::CacheSessionSubsystem()
 		if (UGameInstance* GameInstance = GetGameInstance())
 		{
 			SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>();
+			UE_LOG(LogMenuWidget, Log, TEXT("CacheSessionSubsystem: %s"), *GetNameSafe(SessionSubsystem));
 		}
 	}
 }
@@ -295,6 +383,7 @@ void UMenuWidget::BindSessionDelegates()
 	SessionSubsystem->OnFindRoomsComplete.AddDynamic(this, &ThisClass::HandleFindRoomsComplete);
 	SessionSubsystem->OnJoinRoomComplete.AddDynamic(this, &ThisClass::HandleJoinRoomComplete);
 	SessionSubsystem->OnLeaveRoomComplete.AddDynamic(this, &ThisClass::HandleLeaveRoomComplete);
+	SessionSubsystem->OnStartRoomGameComplete.AddDynamic(this, &ThisClass::HandleStartRoomGameComplete);
 
 	bSessionDelegatesBound = true;
 }
@@ -310,6 +399,7 @@ void UMenuWidget::UnbindSessionDelegates()
 	SessionSubsystem->OnFindRoomsComplete.RemoveDynamic(this, &ThisClass::HandleFindRoomsComplete);
 	SessionSubsystem->OnJoinRoomComplete.RemoveDynamic(this, &ThisClass::HandleJoinRoomComplete);
 	SessionSubsystem->OnLeaveRoomComplete.RemoveDynamic(this, &ThisClass::HandleLeaveRoomComplete);
+	SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
 
 	bSessionDelegatesBound = false;
 }

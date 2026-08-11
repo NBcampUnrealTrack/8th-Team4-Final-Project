@@ -3,12 +3,16 @@
 
 #include "Session/SessionSubSystem.h"
 
+#include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
 #include "GameFramework/PlayerController.h"
 #include "Interfaces/OnlineIdentityInterface.h"
 #include "Online/OnlineSessionNames.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
+#include "Player/ShooterPlayerState.h"
 
 namespace SessionSettingKeys
 {
@@ -36,7 +40,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 
 	CachedMaxPlayers = MaxPlayers;
 	CachedRoomName = RoomName.IsEmpty() ? BuildDefaultRoomName() : RoomName;
-	CachedMapName = MapName.IsEmpty() ? TEXT("FPSMap") : MapName;
+	CachedMapName = MapName.IsEmpty() ? TEXT("BombMap") : MapName;
 	CachedMatchType = MatchType.IsEmpty() ? TEXT("FreeForAll") : MatchType;
 	CachedMapPath = ResolveMapPathFromName(CachedMapName);
 
@@ -168,6 +172,39 @@ void USessionSubSystem::LeaveRoom()
 	}
 }
 
+void USessionSubSystem::StartRoomGame(const FString& GameMapName)
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client)
+	{
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	if (!CanStartRoomGame())
+	{
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	if (!GameMapName.IsEmpty())
+	{
+		CachedMapName = GameMapName;
+		CachedMapPath = ResolveMapPathFromName(CachedMapName);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: ServerTravel %s"), *CachedMapPath);
+
+	OnStartRoomGameComplete.Broadcast(true);
+	World->ServerTravel(CachedMapPath + TEXT("?listen"));
+}
+
+bool USessionSubSystem::CanStartRoomGame() const
+{
+	UWorld* World = GetWorld();
+	return World && World->GetNetMode() != NM_Client && AreAllClientsReady();
+}
+
 bool USessionSubSystem::EnsureSessionInterface()
 {
 	if (!SessionInterface)
@@ -209,7 +246,7 @@ FString USessionSubSystem::ResolveMapPathFromName(const FString& MapName) const
 
 	if (MapName.IsEmpty())
 	{
-		return TEXT("/Game/Maps/FPSMap");
+		return TEXT("/Game/Maps/BombMap");
 	}
 
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);
@@ -259,6 +296,41 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 	return Rooms;
 }
 
+bool USessionSubSystem::AreAllClientsReady() const
+{
+	UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (!GameState)
+	{
+		return false;
+	}
+
+	bool bHasClientPlayer = false;
+	for (APlayerState* PlayerState : GameState->PlayerArray)
+	{
+		if (!IsValid(PlayerState) || IsHostPlayerState(PlayerState))
+		{
+			continue;
+		}
+
+		bHasClientPlayer = true;
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
+		{
+			return false;
+		}
+	}
+
+	return bHasClientPlayer;
+}
+
+bool USessionSubSystem::IsHostPlayerState(const APlayerState* PlayerState) const
+{
+	UWorld* World = GetWorld();
+	const APlayerController* HostController = World ? World->GetFirstPlayerController() : nullptr;
+	return IsValid(PlayerState) && IsValid(HostController) && HostController->PlayerState == PlayerState;
+}
+
 void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
 {
 	if (SessionInterface)
@@ -272,7 +344,7 @@ void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSucc
 	{
 		if (UWorld* World = GetWorld())
 		{
-			World->ServerTravel(CachedMapPath + TEXT("?listen"));
+			World->ServerTravel(LobbyMapPath + TEXT("?listen"));
 		}
 	}
 }

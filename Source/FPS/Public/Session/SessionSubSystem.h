@@ -8,10 +8,13 @@
 #include "Session/RoomInfo.h"
 #include "SessionSubSystem.generated.h"
 
+class APlayerState;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCreateRoomComplete, bool, bWasSuccessful);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFindRoomsComplete, const TArray<FRoomInfo>&, Rooms, bool, bWasSuccessful);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnJoinRoomComplete, bool, bWasSuccessful);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLeaveRoomComplete, bool, bWasSuccessful);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnStartRoomGameComplete, bool, bWasSuccessful);
 
 UCLASS()
 class FPS_API USessionSubSystem : public UGameInstanceSubsystem
@@ -34,6 +37,12 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void LeaveRoom();
 
+	UFUNCTION(BlueprintCallable)
+	void StartRoomGame(const FString& GameMapName = TEXT(""));
+
+	UFUNCTION(BlueprintPure)
+	bool CanStartRoomGame() const;
+
 	UPROPERTY(BlueprintAssignable)
 	FOnCreateRoomComplete OnCreateRoomComplete;
 
@@ -46,6 +55,9 @@ public:
 	UPROPERTY(BlueprintAssignable)
 	FOnLeaveRoomComplete OnLeaveRoomComplete;
 
+	UPROPERTY(BlueprintAssignable)
+	FOnStartRoomGameComplete OnStartRoomGameComplete;
+
 protected:
 	virtual void Deinitialize() override;
 
@@ -55,6 +67,8 @@ private:
 	FString BuildDefaultRoomName() const;
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
+	bool AreAllClientsReady() const;
+	bool IsHostPlayerState(const APlayerState* PlayerState) const;
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
@@ -83,7 +97,10 @@ private:
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");
-	FString CachedMapName = TEXT("FPSMap");
+	FString CachedMapName = TEXT("BombMap");
 	FString CachedMatchType = TEXT("FreeForAll");
-	FString CachedMapPath = TEXT("/Game/Maps/FPSMap");
+	FString CachedMapPath = TEXT("/Game/Maps/BombMap");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Session|Travel")
+	FString LobbyMapPath = TEXT("/Game/Maps/Lobby");
 };

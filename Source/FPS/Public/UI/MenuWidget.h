@@ -23,7 +23,7 @@ class FPS_API UMenuWidget : public UUserWidget
 
 public:
 	UFUNCTION(BlueprintCallable)
-	void MenuSetup(int32 InMaxPlayers = 4, const FString& InMapName = TEXT("FPSMap"), const FString& InMatchType = TEXT("FreeForAll"));
+	void MenuSetup(int32 InMaxPlayers = 4, const FString& InMapName = TEXT("BombMap"), const FString& InMatchType = TEXT("FreeForAll"));
 
 	UFUNCTION(BlueprintCallable)
 	void HostRoom();
@@ -39,6 +39,12 @@ public:
 
 	UFUNCTION(BlueprintCallable)
 	void JoinLocalHost();
+
+	UFUNCTION(BlueprintCallable)
+	void SetLobbyReady(bool bNewLobbyReady);
+
+	UFUNCTION(BlueprintCallable)
+	void StartRoomGame();
 
 protected:
 	virtual bool Initialize() override;
@@ -57,6 +63,9 @@ protected:
 	void OnLeaveRoomResult(bool bWasSuccessful);
 
 	UFUNCTION(BlueprintImplementableEvent)
+	void OnStartRoomGameResult(bool bWasSuccessful);
+
+	UFUNCTION(BlueprintImplementableEvent)
 	void OnMenuStatusMessage(const FText& Message);
 
 private:
@@ -68,6 +77,12 @@ private:
 
 	UFUNCTION()
 	void LocalJoinButtonClicked();
+
+	UFUNCTION()
+	void ReadyButtonClicked();
+
+	UFUNCTION()
+	void StartButtonClicked();
 
 	UFUNCTION()
 	void CreateButtonClicked();
@@ -87,6 +102,9 @@ private:
 	UFUNCTION()
 	void HandleLeaveRoomComplete(bool bWasSuccessful);
 
+	UFUNCTION()
+	void HandleStartRoomGameComplete(bool bWasSuccessful);
+
 	void CacheSessionSubsystem();
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();
@@ -105,6 +123,12 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> LocalJoinButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> ReadyButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> StartButton;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CreateButton;
@@ -140,6 +164,6 @@ private:
 
 	int32 MaxPlayers = 4;
 	FString RoomName = TEXT("");
-	FString MapName = TEXT("FPSMap");
+	FString MapName = TEXT("BombMap");
 	FString MatchType = TEXT("FreeForAll");
 };

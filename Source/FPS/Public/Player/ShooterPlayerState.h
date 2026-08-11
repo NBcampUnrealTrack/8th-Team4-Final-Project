@@ -22,6 +22,8 @@ class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbility
 public:
 	AShooterPlayerState();
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|GAS")
@@ -47,6 +49,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Vitals")
 	void ServerRespawnReset();
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Lobby")
+	bool IsLobbyReady() const { return bIsLobbyReady; }
+
+	void SetLobbyReady(bool bNewLobbyReady);
+
 protected:
 	virtual void PostInitializeComponents() override;
 
@@ -56,6 +63,9 @@ private:
 
 	UFUNCTION()
 	void HandleDeathStateChanged(bool bNewIsDead);
+
+	UFUNCTION()
+	void OnRep_LobbyReady();
 
 	void ServerResetVitals();
 
@@ -100,4 +110,7 @@ private:
 	// 증강 인벤토리
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Augment")
 	TObjectPtr<UAugmentInventoryComponent> AugmentInventory;
+
+	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
+	bool bIsLobbyReady = false;
 };

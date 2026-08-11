@@ -10,6 +10,7 @@
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "GameFramework/Pawn.h"
+#include "Net/UnrealNetwork.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
 
@@ -30,6 +31,13 @@ AShooterPlayerState::AShooterPlayerState()
 UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -124,6 +132,22 @@ void AShooterPlayerState::ServerRespawnReset()
 	ServerResetVitals();
 	HealthComponent->ServerResetDeathState();
 	SetAlive(!HealthComponent->IsDead());
+}
+
+void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
+{
+	if (!HasAuthority() || bIsLobbyReady == bNewLobbyReady)
+	{
+		return;
+	}
+
+	bIsLobbyReady = bNewLobbyReady;
+	OnRep_LobbyReady();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_LobbyReady()
+{
 }
 
 void AShooterPlayerState::ServerGrantStartupAbilities()
