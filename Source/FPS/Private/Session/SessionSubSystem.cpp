@@ -23,6 +23,34 @@ namespace SessionSettingKeys
 	const FName MatchType(TEXT("MatchType"));
 }
 
+namespace
+{
+	const TCHAR* SessionStateToString(const EOnlineSessionState::Type SessionState)
+	{
+		switch (SessionState)
+		{
+		case EOnlineSessionState::NoSession:
+			return TEXT("NoSession");
+		case EOnlineSessionState::Creating:
+			return TEXT("Creating");
+		case EOnlineSessionState::Pending:
+			return TEXT("Pending");
+		case EOnlineSessionState::Starting:
+			return TEXT("Starting");
+		case EOnlineSessionState::InProgress:
+			return TEXT("InProgress");
+		case EOnlineSessionState::Ending:
+			return TEXT("Ending");
+		case EOnlineSessionState::Ended:
+			return TEXT("Ended");
+		case EOnlineSessionState::Destroying:
+			return TEXT("Destroying");
+		default:
+			return TEXT("Unknown");
+		}
+	}
+}
+
 USessionSubSystem::USessionSubSystem()
 	: CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete))
 	, FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
@@ -179,18 +207,25 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartRoomGame blocked: world is invalid or this is a client."));
 		OnStartRoomGameComplete.Broadcast(false);
 		return;
 	}
 
 	if (!CanStartRoomGame())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartRoomGame blocked: not every client is ready."));
 		OnStartRoomGameComplete.Broadcast(false);
 		return;
 	}
 
 	if (!EnsureSessionInterface() || SessionInterface->GetNamedSession(NAME_GameSession) == nullptr || bStartRoomGamePending)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] StartRoomGame blocked: SessionInterface=%s NamedSession=%s Pending=%s"),
+			SessionInterface.IsValid() ? TEXT("Valid") : TEXT("Invalid"),
+			SessionInterface.IsValid() && SessionInterface->GetNamedSession(NAME_GameSession) ? TEXT("Valid") : TEXT("None"),
+			bStartRoomGamePending ? TEXT("true") : TEXT("false"));
 		OnStartRoomGameComplete.Broadcast(false);
 		return;
 	}
@@ -207,9 +242,22 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 	StartSessionCompleteDelegateHandle = SessionInterface->AddOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegate);
 	if (!SessionInterface->StartSession(NAME_GameSession))
 	{
+		const EOnlineSessionState::Type SessionState = SessionInterface->GetSessionState(NAME_GameSession);
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] StartSession returned false. State=%s Target=%s"),
+			SessionStateToString(SessionState),
+			*CachedMapPath);
+
 		bStartRoomGamePending = false;
 		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
-		OnStartRoomGameComplete.Broadcast(false);
+		if (SessionState == EOnlineSessionState::InProgress)
+		{
+			TravelToCachedGameMap();
+		}
+		else
+		{
+			OnStartRoomGameComplete.Broadcast(false);
+		}
 	}
 }
 
@@ -316,14 +364,23 @@ bool USessionSubSystem::AreAllClientsReady() const
 	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
 	if (!GameState)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Ready check failed: GameState is invalid."));
 		return false;
 	}
 
 	bool bHasClientPlayer = false;
 	for (APlayerState* PlayerState : GameState->PlayerArray)
 	{
-		if (!IsValid(PlayerState) || IsHostPlayerState(PlayerState))
+		if (!IsValid(PlayerState))
 		{
+			UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Ready check: invalid PlayerState in PlayerArray."));
+			continue;
+		}
+
+		const bool bIsHost = IsHostPlayerState(PlayerState);
+		if (bIsHost)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check: host ignored. Player=%s"), *GetNameSafe(PlayerState));
 			continue;
 		}
 
@@ -331,10 +388,18 @@ bool USessionSubSystem::AreAllClientsReady() const
 		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
 		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
 		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[SessionSubSystem] Ready check failed: Player=%s ShooterPS=%s Ready=%s"),
+				*GetNameSafe(PlayerState),
+				*GetNameSafe(ShooterPlayerState),
+				IsValid(ShooterPlayerState) && ShooterPlayerState->IsLobbyReady() ? TEXT("true") : TEXT("false"));
 			return false;
 		}
+
+		UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check: client ready. Player=%s"), *GetNameSafe(ShooterPlayerState));
 	}
 
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check result: HasClient=%s"), bHasClientPlayer ? TEXT("true") : TEXT("false"));
 	return bHasClientPlayer;
 }
 
@@ -343,6 +408,24 @@ bool USessionSubSystem::IsHostPlayerState(const APlayerState* PlayerState) const
 	UWorld* World = GetWorld();
 	const APlayerController* HostController = World ? World->GetFirstPlayerController() : nullptr;
 	return IsValid(PlayerState) && IsValid(HostController) && HostController->PlayerState == PlayerState;
+}
+
+void USessionSubSystem::TravelToCachedGameMap()
+{
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client)
+	{
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] ServerTravel %s"), *CachedMapPath);
+	OnStartRoomGameComplete.Broadcast(true);
+	if (AGameModeBase* GameMode = World->GetAuthGameMode())
+	{
+		GameMode->bUseSeamlessTravel = true;
+	}
+	World->ServerTravel(CachedMapPath + TEXT("?listen"));
 }
 
 void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
@@ -438,25 +521,28 @@ void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSucce
 
 	if (!bWasSuccessful)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartSession failed. Session=%s Target=%s"), *SessionName.ToString(), *CachedMapPath);
-		OnStartRoomGameComplete.Broadcast(false);
+		const EOnlineSessionState::Type SessionState = SessionInterface.IsValid()
+			? SessionInterface->GetSessionState(NAME_GameSession)
+			: EOnlineSessionState::NoSession;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] StartSession failed. Session=%s State=%s Target=%s"),
+			*SessionName.ToString(),
+			SessionStateToString(SessionState),
+			*CachedMapPath);
+
+		if (SessionState == EOnlineSessionState::InProgress)
+		{
+			TravelToCachedGameMap();
+		}
+		else
+		{
+			OnStartRoomGameComplete.Broadcast(false);
+		}
 		return;
 	}
 
-	UWorld* World = GetWorld();
-	if (!World || World->GetNetMode() == NM_Client)
-	{
-		OnStartRoomGameComplete.Broadcast(false);
-		return;
-	}
-
-	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartSession succeeded. ServerTravel %s"), *CachedMapPath);
-	OnStartRoomGameComplete.Broadcast(true);
-	if (AGameModeBase* GameMode = World->GetAuthGameMode())
-	{
-		GameMode->bUseSeamlessTravel = true;
-	}
-	World->ServerTravel(CachedMapPath + TEXT("?listen"));
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartSession succeeded. Target=%s"), *CachedMapPath);
+	TravelToCachedGameMap();
 }
 
 void USessionSubSystem::Deinitialize()

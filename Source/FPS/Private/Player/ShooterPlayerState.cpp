@@ -142,6 +142,10 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 	}
 
 	bIsLobbyReady = bNewLobbyReady;
+	UE_LOG(LogShooterPlayerState, Log,
+		TEXT("[ShooterPlayerState] %s lobby ready changed: %s"),
+		*GetNameSafe(this),
+		bIsLobbyReady ? TEXT("true") : TEXT("false"));
 	OnRep_LobbyReady();
 	ForceNetUpdate();
 }

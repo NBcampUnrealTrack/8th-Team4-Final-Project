@@ -69,6 +69,7 @@ private:
 	TArray<FRoomInfo> BuildRoomInfoList() const;
 	bool AreAllClientsReady() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;
+	void TravelToCachedGameMap();
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
