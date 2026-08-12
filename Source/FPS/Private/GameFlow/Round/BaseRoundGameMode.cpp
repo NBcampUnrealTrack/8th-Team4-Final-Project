@@ -12,6 +12,8 @@
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
 
@@ -110,6 +112,24 @@ void ABaseRoundGameMode::RestartGameFlow()
 	RoundGameState->SetMatchWinner(EGameTeam::None);
 	RoundGameState->ClearRoundTimer();
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
+
+	EvaluateRoundStart();
+}
+
+void ABaseRoundGameMode::NotifyPlayerLoadedIntoMatch(APlayerController* PlayerController)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AShooterPlayerState* ShooterPlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<AShooterPlayerState>()
+		: nullptr;
+	if (IsValid(ShooterPlayerState))
+	{
+		ShooterPlayerState->SetLoadedIntoMatch(true);
+	}
 
 	EvaluateRoundStart();
 }
@@ -224,6 +244,8 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 
 	if (AShooterPlayerState* ShooterPlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
+		ShooterPlayerState->SetLoadedIntoMatch(false);
+
 		// 새 매치의 시작 경계에서는 PlayerState가 seamless travel로 재사용되더라도
 		// 이전 매치의 증강/미선택 후보가 남지 않도록 GAS 쪽 공개 초기화 API를 사용한다.
 		const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
@@ -255,7 +277,7 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s is not derived from ABaseRoundPlayerController."), *GetNameSafe(NewPlayer));
 	}
 
-	EvaluateRoundStart();
+	NotifyPlayerLoadedIntoMatch(NewPlayer);
 }
 
 bool ABaseRoundGameMode::ReadyToStartMatch_Implementation()
@@ -443,6 +465,74 @@ bool ABaseRoundGameMode::PreparePlayersForRound()
 	return bAllPlayersReady;
 }
 
+bool ABaseRoundGameMode::AreAllPlayersLoadedIntoMatch() const
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState) || RoundGameState->PlayerArray.IsEmpty())
+	{
+		return false;
+	}
+
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLoadedIntoMatch())
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void ABaseRoundGameMode::SetAllLoadingScreensVisible(const float Progress)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
+		{
+			ShooterPlayerController->ClientShowLoadingScreen(Progress);
+		}
+	}
+}
+
+void ABaseRoundGameMode::SetAllLoadingScreenProgress(const float Progress)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
+		{
+			ShooterPlayerController->ClientSetLoadingProgress(Progress);
+		}
+	}
+}
+
+void ABaseRoundGameMode::HideAllLoadingScreens()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
+		{
+			ShooterPlayerController->ClientHideLoadingScreen();
+		}
+	}
+}
+
 ABaseRoundGameState* ABaseRoundGameMode::GetBaseRoundGameState() const
 {
 	return GetGameState<ABaseRoundGameState>();
@@ -486,6 +576,12 @@ void ABaseRoundGameMode::EvaluateRoundStart()
 
 	if (RoundGameState->GetGameFlowPhase() != EGameFlowPhase::WaitingForPlayers)
 	{
+		return;
+	}
+
+	if (!AreAllPlayersLoadedIntoMatch())
+	{
+		SetAllLoadingScreensVisible(0.7f);
 		return;
 	}
 
@@ -648,6 +744,8 @@ void ABaseRoundGameMode::StartRoundCombat()
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::RoundInProgress);
 	SetRoundTimer(RoundDuration);
 	HandleRoundStarted();
+	SetAllLoadingScreenProgress(1.0f);
+	HideAllLoadingScreens();
 
 	if (RoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress)
 	{

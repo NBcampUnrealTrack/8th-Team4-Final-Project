@@ -39,6 +39,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -155,6 +156,22 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 }
 
 void AShooterPlayerState::OnRep_LobbyReady()
+{
+}
+
+void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
+{
+	if (!HasAuthority() || bLoadedIntoMatch == bNewLoadedIntoMatch)
+	{
+		return;
+	}
+
+	bLoadedIntoMatch = bNewLoadedIntoMatch;
+	OnRep_LoadedIntoMatch();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_LoadedIntoMatch()
 {
 }
 

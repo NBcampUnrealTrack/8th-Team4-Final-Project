@@ -100,6 +100,7 @@ private:
 	bool bCreateRoomAfterDestroy = false;
 	bool bLeaveAfterDestroy = false;
 	bool bStartRoomGamePending = false;
+	bool bTravelingToGameMap = false;
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");

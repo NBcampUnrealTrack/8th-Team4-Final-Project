@@ -5,9 +5,9 @@
 
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
-#include "UI/MenuWidget.h"
+#include "UI/MainMenuWidget.h"
 
-void URoomEntryWidget::SetupRoomEntry(const FRoomInfo& InRoomInfo, UMenuWidget* InOwningMenu)
+void URoomEntryWidget::SetupRoomEntry(const FRoomInfo& InRoomInfo, UMainMenuWidget* InOwningMenu)
 {
 	RoomInfo = InRoomInfo;
 	OwningMenu = InOwningMenu;

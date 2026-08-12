@@ -13,6 +13,7 @@
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
+#include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 
 namespace SessionSettingKeys
@@ -209,6 +210,11 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartRoomGame blocked: world is invalid or this is a client."));
 		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	if (bTravelingToGameMap)
+	{
 		return;
 	}
 
@@ -419,8 +425,23 @@ void USessionSubSystem::TravelToCachedGameMap()
 		return;
 	}
 
+	if (bTravelingToGameMap)
+	{
+		return;
+	}
+
+	bTravelingToGameMap = true;
+
 	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] ServerTravel %s"), *CachedMapPath);
 	OnStartRoomGameComplete.Broadcast(true);
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
+		{
+			ShooterPlayerController->ClientShowLoadingScreen(0.2f);
+		}
+	}
+
 	if (AGameModeBase* GameMode = World->GetAuthGameMode())
 	{
 		GameMode->bUseSeamlessTravel = true;

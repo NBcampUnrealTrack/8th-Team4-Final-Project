@@ -7,6 +7,7 @@
 
 class ABaseRoundGameState;
 class ABaseTeamPlayerState;
+class APlayerController;
 class UAugmentRegistrySubsystem;
 
 UCLASS(Abstract)
@@ -23,6 +24,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Match")
 	void RestartGameFlow();
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Loading")
+	void NotifyPlayerLoadedIntoMatch(APlayerController* PlayerController);
 
 protected:
 	virtual void BeginPlay() override;
@@ -47,6 +51,10 @@ protected:
 	void SetRoundTimer(float Duration);
 	void FreezeRoundTimer();
 	bool PreparePlayersForRound();
+	bool AreAllPlayersLoadedIntoMatch() const;
+	void SetAllLoadingScreensVisible(float Progress);
+	void SetAllLoadingScreenProgress(float Progress);
+	void HideAllLoadingScreens();
 
 	ABaseRoundGameState* GetBaseRoundGameState() const;
 	EGameTeam GetTeamForRole(ETeamRole TeamRole) const;

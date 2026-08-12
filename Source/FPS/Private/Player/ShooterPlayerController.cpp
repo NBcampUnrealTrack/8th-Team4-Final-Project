@@ -6,7 +6,10 @@
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GameFlow/Round/BaseRoundGameMode.h"
 #include "Player/ShooterPlayerState.h"
+#include "TimerManager.h"
+#include "UI/LoadingScreenWidget.h"
 #include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
@@ -92,6 +95,25 @@ void AShooterPlayerController::SetupInputComponent()
 	}
 }
 
+void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopMatchLoadReadyCheck();
+	HideLoadingScreen();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
+{
+	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
+
+	if (bFinalDest && LoadingScreenWidget)
+	{
+		SetLoadingProgress(0.7f);
+		StartMatchLoadReadyCheck();
+	}
+}
+
 void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 {
 	if (HasAuthority())
@@ -104,6 +126,125 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	}
 
 	ServerSetLobbyReady(bNewLobbyReady);
+}
+
+void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (InitialProgress <= 0.3f)
+	{
+		bNotifiedLoadedIntoMatch = false;
+	}
+
+	if (!LoadingScreenWidget && LoadingScreenWidgetClass)
+	{
+		LoadingScreenWidget = CreateWidget<ULoadingScreenWidget>(this, LoadingScreenWidgetClass);
+		if (LoadingScreenWidget)
+		{
+			LoadingScreenWidget->AddToViewport(10000);
+		}
+	}
+
+	SetLoadingProgress(InitialProgress);
+}
+
+void AShooterPlayerController::SetLoadingProgress(const float Progress)
+{
+	if (LoadingScreenWidget)
+	{
+		LoadingScreenWidget->SetLoadingProgress(Progress);
+	}
+}
+
+void AShooterPlayerController::HideLoadingScreen()
+{
+	if (LoadingScreenWidget)
+	{
+		LoadingScreenWidget->RemoveFromParent();
+		LoadingScreenWidget = nullptr;
+	}
+}
+
+void AShooterPlayerController::ClientShowLoadingScreen_Implementation(float InitialProgress)
+{
+	ShowLoadingScreen(InitialProgress);
+}
+
+void AShooterPlayerController::ClientSetLoadingProgress_Implementation(float Progress)
+{
+	SetLoadingProgress(Progress);
+}
+
+void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
+{
+	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
+{
+	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+	{
+		ShooterPlayerState->SetLoadedIntoMatch(true);
+	}
+
+	if (ABaseRoundGameMode* RoundGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ABaseRoundGameMode>() : nullptr)
+	{
+		RoundGameMode->NotifyPlayerLoadedIntoMatch(this);
+	}
+}
+
+void AShooterPlayerController::StartMatchLoadReadyCheck()
+{
+	if (!IsLocalController() || bNotifiedLoadedIntoMatch)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		MatchLoadReadyCheckTimerHandle,
+		this,
+		&ThisClass::CheckMatchLoadReady,
+		0.2f,
+		true);
+}
+
+void AShooterPlayerController::StopMatchLoadReadyCheck()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MatchLoadReadyCheckTimerHandle);
+	}
+}
+
+void AShooterPlayerController::CheckMatchLoadReady()
+{
+	if (bNotifiedLoadedIntoMatch || !LoadingScreenWidget)
+	{
+		StopMatchLoadReadyCheck();
+		return;
+	}
+
+	if (!GetPlayerState<AShooterPlayerState>())
+	{
+		return;
+	}
+
+	SetLoadingProgress(0.9f);
+	bNotifiedLoadedIntoMatch = true;
+	StopMatchLoadReadyCheck();
+
+	if (HasAuthority())
+	{
+		ServerNotifyLoadedIntoMatch_Implementation();
+	}
+	else
+	{
+		ServerNotifyLoadedIntoMatch();
+	}
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
