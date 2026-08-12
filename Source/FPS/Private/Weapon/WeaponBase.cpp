@@ -13,6 +13,9 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 
+// ** 임시
+#include "Kismet/GameplayStatics.h"
+
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
 AWeaponBase::AWeaponBase()
@@ -204,6 +207,12 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
 
+	// ** 임시 - 담당자 코드로 수정해주세요
+	if (HasAuthority() && FireSound)
+	{
+		Multicast_PlayFireSound(TraceStart);
+	}
+
 	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
 	if (bIsADS)
 	{
@@ -214,6 +223,21 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	TimeSinceLastShot = 0.f;
 
 	return true;
+}
+
+// ** 임시 코드 - 담당자 코드로 수정해주세요
+void AWeaponBase::Multicast_PlayFireSound_Implementation(FVector Location)
+{
+	if (FireSound)
+	{
+		UGameplayStatics::SpawnSoundAttached(
+			FireSound,
+			GetRootComponent(),
+			NAME_None,
+			Location,
+			FRotator::ZeroRotator,
+			EAttachLocation::KeepWorldPosition);
+	}
 }
 
 void AWeaponBase::StartReload()
