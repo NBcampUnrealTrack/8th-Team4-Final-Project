@@ -54,6 +54,8 @@ protected:
 	UFUNCTION()
 	void HandleOffersChanged();
 
+	void SetAugmentSelectionInput(bool bSelecting);
+
 	// 구독해 둔 인벤토리. 남의 PlayerState 것이라 소유하지 않는다
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	

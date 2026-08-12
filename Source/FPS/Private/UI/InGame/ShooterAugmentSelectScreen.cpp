@@ -111,7 +111,6 @@ void UShooterAugmentSelectScreen::HandleIconsLoaded()
 void UShooterAugmentSelectScreen::HandleCardClicked(int32 InOfferIndex)
 {
 	OnAugmentSelected.Broadcast(InOfferIndex);
-	DeactivateWidget();
 }
 
 UAugmentRegistrySubsystem* UShooterAugmentSelectScreen::GetRegistry() const
