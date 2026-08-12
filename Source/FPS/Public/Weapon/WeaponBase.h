@@ -17,6 +17,10 @@ class UHitscanWeaponDefinition;
 class USkeletalMeshComponent;
 struct FHitResult;
 
+// ** 임시
+class USoundBase;
+
+
 // 무기 발사 상태와 최종 발사 방향 생성까지 담당한다.
 // GAS 내부 구현에는 의존하지 않으며, 서버 Hit 판정은 B의 Hitscan Resolver 공개 계약으로 전달한다.
 // EffectiveRPM처럼 GAS 쪽 영향이 필요한 값은 외부(GA_RangedAttack)가 계산해서 Setter로 꽂아준다.
@@ -150,10 +154,18 @@ protected:
 	// --- 재장전 ---
 	void FinishReload();
 
+	// ** 임시 - 담당자 코드로 수정해주세요
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayFireSound(FVector Location);
+
 protected:
 	// 발당 기본 대미지 (관통 감쇠 이전 값)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float BaseDamage = 26.f;
+	
+	// ** 임시 - 담당자 코드로 수정해주세요
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	TObjectPtr<USoundBase> FireSound;
 
 	// 강공격(예: 전술 칼 우클릭) 대미지. 0이면 강공격이 없는 무기로 취급해 BaseDamage를 그대로 쓴다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
