@@ -3,3 +3,7 @@
 
 #include "GameMode/ShooterGameMode.h"
 
+AShooterGameMode::AShooterGameMode()
+{
+	bUseSeamlessTravel = true;
+}

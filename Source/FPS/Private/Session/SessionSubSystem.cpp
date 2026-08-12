@@ -4,6 +4,7 @@
 #include "Session/SessionSubSystem.h"
 
 #include "Engine/World.h"
+#include "GameFramework/GameModeBase.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/PlayerController.h"
@@ -27,6 +28,7 @@ USessionSubSystem::USessionSubSystem()
 	, FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
 	, JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
 	, DestroySessionCompleteDelegate(FOnDestroySessionCompleteDelegate::CreateUObject(this, &ThisClass::OnDestroySessionComplete))
+	, StartSessionCompleteDelegate(FOnStartSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnStartSessionComplete))
 {
 }
 
@@ -187,16 +189,28 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		return;
 	}
 
+	if (!EnsureSessionInterface() || SessionInterface->GetNamedSession(NAME_GameSession) == nullptr || bStartRoomGamePending)
+	{
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
 	if (!GameMapName.IsEmpty())
 	{
 		CachedMapName = GameMapName;
 		CachedMapPath = ResolveMapPathFromName(CachedMapName);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: ServerTravel %s"), *CachedMapPath);
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: StartSession before travel. Target=%s"), *CachedMapPath);
 
-	OnStartRoomGameComplete.Broadcast(true);
-	World->ServerTravel(CachedMapPath + TEXT("?listen"));
+	bStartRoomGamePending = true;
+	StartSessionCompleteDelegateHandle = SessionInterface->AddOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegate);
+	if (!SessionInterface->StartSession(NAME_GameSession))
+	{
+		bStartRoomGamePending = false;
+		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
+		OnStartRoomGameComplete.Broadcast(false);
+	}
 }
 
 bool USessionSubSystem::CanStartRoomGame() const
@@ -413,6 +427,38 @@ void USessionSubSystem::OnDestroySessionComplete(FName SessionName, bool bWasSuc
 	OnLeaveRoomComplete.Broadcast(bWasSuccessful);
 }
 
+void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSuccessful)
+{
+	if (SessionInterface)
+	{
+		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
+	}
+
+	bStartRoomGamePending = false;
+
+	if (!bWasSuccessful)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartSession failed. Session=%s Target=%s"), *SessionName.ToString(), *CachedMapPath);
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() == NM_Client)
+	{
+		OnStartRoomGameComplete.Broadcast(false);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartSession succeeded. ServerTravel %s"), *CachedMapPath);
+	OnStartRoomGameComplete.Broadcast(true);
+	if (AGameModeBase* GameMode = World->GetAuthGameMode())
+	{
+		GameMode->bUseSeamlessTravel = true;
+	}
+	World->ServerTravel(CachedMapPath + TEXT("?listen"));
+}
+
 void USessionSubSystem::Deinitialize()
 {
 	if (SessionInterface.IsValid())
@@ -421,6 +467,7 @@ void USessionSubSystem::Deinitialize()
 		SessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegateHandle);
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
+		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
 	}
 
 	LastSessionSettings.Reset();

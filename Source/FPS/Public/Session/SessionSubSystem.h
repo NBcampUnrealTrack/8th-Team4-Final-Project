@@ -74,6 +74,7 @@ private:
 	void OnFindSessionsComplete(bool bWasSuccessful);
 	void OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
 	void OnDestroySessionComplete(FName SessionName, bool bWasSuccessful);
+	void OnStartSessionComplete(FName SessionName, bool bWasSuccessful);
 
 private:
 	IOnlineSessionPtr SessionInterface;
@@ -92,8 +93,12 @@ private:
 	FOnDestroySessionCompleteDelegate DestroySessionCompleteDelegate;
 	FDelegateHandle DestroySessionCompleteDelegateHandle;
 
+	FOnStartSessionCompleteDelegate StartSessionCompleteDelegate;
+	FDelegateHandle StartSessionCompleteDelegateHandle;
+
 	bool bCreateRoomAfterDestroy = false;
 	bool bLeaveAfterDestroy = false;
+	bool bStartRoomGamePending = false;
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");
