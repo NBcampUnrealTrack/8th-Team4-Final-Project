@@ -5,6 +5,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
+#include "Character/PlayerCustomizationComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -38,11 +39,18 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	Customization = CreateDefaultSubobject<UPlayerCustomizationComponent>(TEXT("Customization"));
 }
 
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (Customization)
+	{
+		Customization->InitializeForMeshComponent(GetMesh());
+	}
 }
 
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
