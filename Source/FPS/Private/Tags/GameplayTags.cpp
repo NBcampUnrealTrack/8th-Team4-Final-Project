@@ -24,7 +24,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Sniper,  "Weapon.Type.Sniper",  "저격소총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Shotgun, "Weapon.Type.Shotgun", "산탄총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Pistol,  "Weapon.Type.Pistol",  "기본 권총");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife,   "Weapon.Type.Knife",   "전술 칼");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife,       "Weapon.Type.Knife",       "전술 칼");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife_Light, "Weapon.Type.Knife.Light", "전술 칼 약공격");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife_Heavy, "Weapon.Type.Knife.Heavy", "전술 칼 강공격");
 
 	// 히트 문맥
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Head,  "Hit.Zone.Head",  "머리 피격");

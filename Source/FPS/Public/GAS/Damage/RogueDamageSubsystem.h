@@ -25,12 +25,10 @@ class FPS_API URogueDamageSubsystem : public UWorldSubsystem
 
 public:
 	// 신규 히트스캔 경로
-	// 미구현 스텁 구현 후 ApplyDamage 를 대체
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyHitscanDamage(const FRogueDamageParams& Params, const FRogueHitContext& Hit);
 
 	// 탄착 기하가 없는 피해, 스킬, 폭발, 자가피해
-	// 미구현 스텁
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyFlatDamage(const FRogueDamageParams& Params, AActor* Target, float Damage);
 
@@ -42,17 +40,24 @@ public:
 	FRogueDamageResult ApplyDamage(const FRogueDamageRequest& Request);
 
 private:
+	// 두 진입점의 공통 흐름
+	FRogueDamageResult ApplyDamageInternal(const FRogueDamageParams& Params,
+	                                       AActor* TargetActor,
+	                                       const FRogueHitContext* Hit,
+	                                       float FlatDamage);
+
 	// 액터로부터 ASC를 얻음
 	static UAbilitySystemComponent* ResolveASC(AActor* Actor);
 
 	// 데미지 적용 가능 여부 확인
-	bool ResolveDamageTarget(const FRogueDamageRequest& Request, FRogueDamageTarget& OutTarget) const;
+	static bool ResolveDamageTarget(AActor* TargetActor, FRogueDamageTarget& OutTarget);
 
 	// GE 클래스 결정
 	static UClass* ResolveDamageEffectClass();
 
-	// EffectContextHandle 생성
-	FGameplayEffectContextHandle MakeDamageContext(const FRogueDamageRequest& Request,
+	// EffectContextHandle 생성. Hit이 nullptr이면 FlatDamage
+	FGameplayEffectContextHandle MakeDamageContext(const FRogueDamageParams& Params,
+	                                               const FRogueHitContext* Hit,
 	                                               UAbilitySystemComponent& ContextASC,
 	                                               const URogueVitalAttributeSet* TargetVital) const;
 
@@ -61,13 +66,15 @@ private:
 	                                              float ShieldBefore,
 	                                              float HealthBefore);
 
-	// 데미지 요청의 태그 컨테이너 생성
-	void BuildContextTags(const FRogueDamageRequest& Request,
-	                      const URogueVitalAttributeSet* TargetVital,
-	                      FGameplayTagContainer& OutTags) const;
+	// 조건부 증강 규칙이 필요로 하는 태그 조립
+	static void BuildContextTags(const FRogueDamageParams& Params,
+	                             const FRogueHitContext* Hit,
+	                             const URogueVitalAttributeSet* TargetVital,
+	                             FGameplayTagContainer& OutTags);
 
 	// 최종 결과 이벤트 발신
-	void BroadcastCombatEvents(const FRogueDamageRequest& Request,
+	void BroadcastCombatEvents(const FRogueDamageParams& Params,
+	                           AActor* TargetActor,
 	                           const FRogueDamageResult& Result,
 	                           const FGameplayEffectContextHandle& ContextHandle) const;
 };

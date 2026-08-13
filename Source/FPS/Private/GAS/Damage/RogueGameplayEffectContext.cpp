@@ -4,28 +4,16 @@
 
 namespace
 {
-	constexpr int32 MaxSerializedHitZoneParts = 16;
+	constexpr int32 MaxSerializedHitGroups = 16;
 
-	void NetSerializeHitZonePart(
-		FArchive& Ar,
-		UPackageMap* Map,
-		FRogueHitZoneDamagePart& Part,
-		bool& bInOutSuccess)
+	void NetSerializeHitGroup(FArchive& Ar, UPackageMap* Map, FRogueHitGroup& Group, bool& bInOutSuccess)
 	{
 		bool bTagSuccess = true;
-		Part.HitZoneTag.NetSerialize(Ar, Map, bTagSuccess);
+		Group.HitZoneTag.NetSerialize(Ar, Map, bTagSuccess);
 		bInOutSuccess &= bTagSuccess;
 
-		Ar << Part.BaseDamage;
-		Ar << Part.HitZoneMultiplier;
-		Ar << Part.PelletsHit;
-
-		uint8 HeadshotBit = Part.bHeadshot ? 1 : 0;
-		Ar.SerializeBits(&HeadshotBit, 1);
-		if (Ar.IsLoading())
-		{
-			Part.bHeadshot = HeadshotBit != 0;
-		}
+		Ar << Group.WallRetentionSum;
+		Ar << Group.PelletCount;
 	}
 }
 
@@ -45,7 +33,6 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 
 	SerializeTag(SourceTag);
 	SerializeTag(WeaponTag);
-	SerializeTag(HitZoneTag);
 
 	bool bContainerSuccess = true;
 	ContextTags.NetSerialize(Ar, Map, bContainerSuccess);
@@ -55,24 +42,28 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 	Ar << PelletsHit;
 	Ar << ShotIndexInMagazine;
 
-	uint8 PartCount = Ar.IsSaving()
-		? static_cast<uint8>(FMath::Min(HitZoneDamageParts.Num(), MaxSerializedHitZoneParts))
+	uint8 HeadshotBit = bHeadshot ? 1 : 0;
+	Ar.SerializeBits(&HeadshotBit, 1);
+	if (Ar.IsLoading())
+	{
+		bHeadshot = HeadshotBit != 0;
+	}
+
+	uint8 GroupCount = Ar.IsSaving()
+		? static_cast<uint8>(FMath::Min(HitGroups.Num(), MaxSerializedHitGroups))
 		: 0;
-	Ar << PartCount;
+	Ar << GroupCount;
 
 	if (Ar.IsLoading())
 	{
-		HitZoneDamageParts.SetNum(PartCount);
+		HitGroups.SetNum(GroupCount);
 	}
 
-	for (int32 Index = 0; Index < static_cast<int32>(PartCount); ++Index)
+	for (int32 Index = 0; Index < static_cast<int32>(GroupCount); ++Index)
 	{
-		NetSerializeHitZonePart(Ar, Map, HitZoneDamageParts[Index], bSuccess);
+		NetSerializeHitGroup(Ar, Map, HitGroups[Index], bSuccess);
 	}
 
-	// 레거시 호출자 호환 데이터.
-	Ar << HeadshotDamage;
-	Ar << AppliedHeadshotMultiplier;
 	Ar << ReflectDepth;
 
 	bOutSuccess = bSuccess && !Ar.IsError();

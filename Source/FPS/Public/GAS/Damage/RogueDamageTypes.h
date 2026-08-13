@@ -113,9 +113,6 @@ struct FRogueDeathContext
     FGameplayTag WeaponTag;
 
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
-    FGameplayTag HitZoneTag;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
     bool bHeadshot = false;
 };
 
