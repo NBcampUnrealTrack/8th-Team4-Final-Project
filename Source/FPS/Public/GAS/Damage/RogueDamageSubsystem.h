@@ -24,6 +24,19 @@ class FPS_API URogueDamageSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	// 신규 히트스캔 경로
+	// 미구현 스텁 구현 후 ApplyDamage 를 대체
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
+	FRogueDamageResult ApplyHitscanDamage(const FRogueDamageParams& Params, const FRogueHitContext& Hit);
+
+	// 탄착 기하가 없는 피해, 스킬, 폭발, 자가피해
+	// 미구현 스텁
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
+	FRogueDamageResult ApplyFlatDamage(const FRogueDamageParams& Params, AActor* Target, float Damage);
+
+
+	// ----------------------------------------------------------------
+	// 레거시 코드 ApplyHitscanDamage / ApplyFlatDamage 로 대체 후 삭제
 	// 대미지 적용 요청 함수
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyDamage(const FRogueDamageRequest& Request);

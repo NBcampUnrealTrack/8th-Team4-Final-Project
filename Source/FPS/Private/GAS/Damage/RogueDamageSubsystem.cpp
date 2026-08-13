@@ -9,6 +9,10 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
 
+
+// ----------------------------------------------------------------
+// 레거시 코드 ApplyHitscanDamage / ApplyFlatDamage 로 대체 후 삭제
+
 namespace
 {
 	constexpr int32 MaxContextHitZoneParts = 16;
@@ -33,11 +37,6 @@ namespace
 	}
 }
 
-UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
-{
-	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
-}
-
 FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest& Request)
 {
 	// 검증
@@ -56,7 +55,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest&
 
 	// 컨텍스트 조립
 	// 가해자 ASC 가 없으면 타깃으로 대체
-	UAbilitySystemComponent* SourceASC  = ResolveASC(Request.InstigatorActor);
+	UAbilitySystemComponent* SourceASC = ResolveASC(Request.InstigatorActor);
 	UAbilitySystemComponent* ContextASC = SourceASC ? SourceASC : Target.ASC;
 
 	const FGameplayEffectContextHandle ContextHandle = MakeDamageContext(Request, *ContextASC, Target.Vital);
@@ -83,6 +82,32 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest&
 	BroadcastCombatEvents(Request, Result, ContextHandle);
 
 	return Result;
+}
+// ----------------------------------------------------------------
+
+
+UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
+{
+	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
+}
+
+// 신규 히트스캔 경로
+// 미구현 스텁 구현 후 ApplyDamage 를 대체
+FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageParams& Params,
+                                                             const FRogueHitContext& Hit)
+{
+
+	return FRogueDamageResult();
+}
+
+// 탄착 기하가 없는 피해, 스킬, 폭발, 자가피해
+// 미구현 스텁
+FRogueDamageResult URogueDamageSubsystem::ApplyFlatDamage(const FRogueDamageParams& Params,
+                                                          AActor* Target,
+                                                          float Damage)
+{
+
+	return FRogueDamageResult();
 }
 
 bool URogueDamageSubsystem::ResolveDamageTarget(const FRogueDamageRequest& Request,
@@ -290,3 +315,4 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageRequest& Req
 		// Event.Team.AllyDeath 는 팀 구성을 아는 GameState 가 처리
 	}
 }
+
