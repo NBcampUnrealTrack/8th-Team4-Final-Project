@@ -90,7 +90,8 @@ EDataValidationResult UWeaponDamageData::IsDataValid(FDataValidationContext& Con
 					FText::AsNumber(Entry.BaseDamagePerPellet)));
 			}
 
-			if (Entry.DamageFalloffPerMeter <= 0.f)
+			if (Entry.MaximumRangeMeters > Entry.EffectiveRangeMeters
+				&& Entry.DamageFalloffPerMeter <= 0.f)
 			{
 				AddWarning(LOCTEXT("ZeroFalloffRate",
 					"1m 당 감쇠량이 0 입니다. 최대 사거리에서 최소 대미지로 한 번에 떨어집니다."));
