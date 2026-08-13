@@ -1,0 +1,211 @@
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#include "Player/ShooterPlayerState.h"
+
+#include "Augment/AugmentInventoryComponent.h"
+#include "GAS/RogueAbilitySet.h"
+#include "GAS/RogueAbilitySystemComponent.h"
+#include "GAS/RogueGASSettings.h"
+#include "GAS/RogueAugmentAttributeSet.h"
+#include "GAS/RogueHealthComponent.h"
+#include "GAS/RogueVitalAttributeSet.h"
+#include "GameFramework/Pawn.h"
+#include "Net/UnrealNetwork.h"
+#include "Weapon/WeaponTypes.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
+
+AShooterPlayerState::AShooterPlayerState()
+{
+	AbilitySystemComponent = CreateDefaultSubobject<URogueAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+
+	VitalSet   = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
+	AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
+
+	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
+	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
+
+	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
+	SetNetUpdateFrequency(100.f);
+}
+
+UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+}
+
+void AShooterPlayerState::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// 폰이 붙는 시점을 PlayerState에서 확인 가능
+	OnPawnSet.AddDynamic(this, &AShooterPlayerState::HandlePawnSet);
+
+	// 생존 상태의 원본은 URogueHealthComponent
+	// bIsAlive는 URogueHealthComponent의 데이터를 파생
+	if (HealthComponent)
+	{
+		HealthComponent->OnDeathStateChanged.AddDynamic(this, &AShooterPlayerState::HandleDeathStateChanged);
+	}
+
+	// 구독보다 폰 연결이 먼저였다면 브로드캐스트를 놓친 것이므로 여기서 처리
+	if (APawn* ExistingPawn = GetPawn())
+	{
+		InitializeForAvatar(ExistingPawn);
+	}
+}
+
+void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn)
+{
+	// Pawn이 바뀌면 ASC를 새 Pawn에 연결
+	if (NewPawn)
+	{
+		InitializeForAvatar(NewPawn);
+	}
+}
+
+void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
+{
+	SetAlive(!bNewIsDead);
+}
+
+void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
+{
+	if (!Avatar)
+	{
+		UE_LOG(LogShooterPlayerState, Error, TEXT("[ShooterPlayerState] %s: Avatar 가 없습니다"), *GetName());
+		return;
+	}
+
+	// 소유자는 PlayerState, 아바타는 캐릭터.
+	AbilitySystemComponent->InitAbilityActorInfo(this, Avatar);
+
+	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
+	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
+
+	// TODO: 임시로 권총 장착 태그
+	AbilitySystemComponent->SetEquippedWeaponType(EWeaponType::Pistol);
+
+	// 초기화는 한번만 수행
+	if (HasAuthority() && !bVitalsInitialized)
+	{
+		bVitalsInitialized = true;
+		ServerResetVitals();
+
+		// 베이스의 bIsAlive 기본값인 false에 맞춰 초기화
+		SetAlive(!HealthComponent->IsDead());
+	}
+
+	if (HasAuthority() && !bStartupAbilitiesGranted)
+	{
+		bStartupAbilitiesGranted = true;
+		ServerGrantStartupAbilities();
+	}
+
+	UE_LOG(LogShooterPlayerState, Log,
+		TEXT("[ShooterPlayerState] [%s] %s(%p): 아바타 %s(%p) 연결 (%s)"),
+		*GetOutermost()->GetName(), *GetName(), this,
+		*Avatar->GetName(), Avatar,
+		HasAuthority() ? TEXT("서버") : TEXT("클라이언트"));
+}
+
+void AShooterPlayerState::ServerRespawnReset()
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] %s: 권한이 없는 곳에서 리스폰 초기화를 하려 했습니다"), *GetName());
+		return;
+	}
+
+	if (!HealthComponent)
+	{
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] %s: HealthComponent 가 없어 리스폰 초기화를 완료할 수 없습니다"), *GetName());
+		SetAlive(false);
+		return;
+	}
+
+	ServerResetVitals();
+	HealthComponent->ServerResetDeathState();
+	SetAlive(!HealthComponent->IsDead());
+}
+
+void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
+{
+	if (!HasAuthority() || bIsLobbyReady == bNewLobbyReady)
+	{
+		return;
+	}
+
+	bIsLobbyReady = bNewLobbyReady;
+	UE_LOG(LogShooterPlayerState, Log,
+		TEXT("[ShooterPlayerState] %s lobby ready changed: %s"),
+		*GetNameSafe(this),
+		bIsLobbyReady ? TEXT("true") : TEXT("false"));
+	OnRep_LobbyReady();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_LobbyReady()
+{
+}
+
+void AShooterPlayerState::ServerGrantStartupAbilities()
+{
+	const TSoftObjectPtr<URogueAbilitySet>& SetPtr = GetDefault<URogueGASSettings>()->StartupAbilitySet;
+
+	// 아직 목록을 안 만든 단계일 수 있으므로 미설정은 정상으로 본다
+	if (SetPtr.IsNull())
+	{
+		return;
+	}
+
+	const URogueAbilitySet* AbilitySet = SetPtr.LoadSynchronous();
+	if (!AbilitySet)
+	{
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] StartupAbilitySet 을 로드하지 못했습니다 (%s). "
+			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요"), *SetPtr.ToString());
+		return;
+	}
+
+	AbilitySystemComponent->GrantAbilitySet(AbilitySet);
+}
+
+void AShooterPlayerState::ServerResetVitals()
+{
+	if (!VitalSet)
+	{
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] %s: VitalSet 이 없습니다"), *GetName());
+		return;
+	}
+
+	// 최대치의 베이스만 초기값으로 되돌린다. Infinite GE 증강의 modifier 는 ASC aggregator 에 남는다.
+	VitalSet->SetMaxHealth(InitialMaxHealth);
+	VitalSet->SetMaxShield(InitialMaxShield);
+
+	// MaxHealth 증강이 유지된 라운드에서는 증가분만큼 현재 체력도 복구한다.
+	// InitialHealth < InitialMaxHealth 로 설정한 게임도 같은 시작 결손량을 유지한다.
+	const float EffectiveMaxHealth = VitalSet->GetMaxHealth();
+	const float EffectiveMaxShield = VitalSet->GetMaxShield();
+	const float HealthBonusFromPersistentEffects = EffectiveMaxHealth - InitialMaxHealth;
+
+	VitalSet->SetHealth(FMath::Clamp(InitialHealth + HealthBonusFromPersistentEffects, 0.f, EffectiveMaxHealth));
+	// 보호막은 기존 설계대로 라운드 시작값(기본 0)을 유지한다. 최대 보호막 증가는 용량만 늘린다.
+	VitalSet->SetShield(FMath::Clamp(InitialShield, 0.f, EffectiveMaxShield));
+
+	UE_LOG(LogShooterPlayerState, Log,
+		TEXT("[ShooterPlayerState] %s: 바이탈 초기화 체력 %.0f/%.0f 보호막 %.0f/%.0f"),
+		*GetName(),
+		VitalSet->GetHealth(), VitalSet->GetMaxHealth(),
+		VitalSet->GetShield(), VitalSet->GetMaxShield());
+}
