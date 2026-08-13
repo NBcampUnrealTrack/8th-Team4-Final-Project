@@ -4,9 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "GameplayTagContainer.h"
 
 #include "ShooterPlayerController.generated.h"
 
+class URogueAbilitySystemComponent;
 class UShooterInputConfig;
 struct FInputActionValue;
 
@@ -18,9 +20,15 @@ class FPS_API AShooterPlayerController : public APlayerController
 public:
 	AShooterPlayerController();
 
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void SetLobbyReady(bool bNewLobbyReady);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetLobbyReady(bool bNewLobbyReady);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
@@ -32,4 +40,9 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
+	void Input_PrimaryWeaponPressed();
+	void Input_SecondaryWeaponPressed();
+	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
+	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 };

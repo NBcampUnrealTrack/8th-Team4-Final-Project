@@ -4,11 +4,16 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
+#include "TimerManager.h"
+#include "Weapon/WeaponTypes.h"
 
 #include "CombatComponent.generated.h"
 
 class AWeaponBase;
 class UWeaponData;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCyclingStateChanged, bool, bIsCycling);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UCombatComponent : public UActorComponent
@@ -18,13 +23,61 @@ class FPS_API UCombatComponent : public UActorComponent
 public:
 	UCombatComponent();
 
-	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
+	// 기존 단일 무기 장착 API. Debug/레거시 호출자를 위해 의미를 유지한다.
+	// 호출 시 보관 중인 슬롯 무기를 정리하고 새 단일 무기를 생성한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat")
+	AWeaponBase* EquipWeapon(TSubclassOf<AWeaponBase> WeaponClass);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat")
+	void UnequipWeapon();
+
+	// 프로토타입 1/2번 슬롯용. 무기를 한 번만 생성해 보관하므로 스왑 후에도 탄약/런타임 상태가 유지된다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	bool InitializeWeaponLoadout(
+		TSubclassOf<AWeaponBase> PrimaryWeaponClass,
+		TSubclassOf<AWeaponBase> SecondaryWeaponClass);
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	bool SwitchWeaponSlot(EWeaponSlot WeaponSlot);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Loadout")
+	AWeaponBase* GetWeaponInSlot(EWeaponSlot WeaponSlot) const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Loadout")
+	EWeaponSlot GetCurrentWeaponSlot() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	AWeaponBase* GetEquippedWeapon() const { return CurrentWeapon; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
 	AWeaponBase* GetCurrentWeapon() const { return CurrentWeapon; }
 
-	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	FGameplayTag GetCurrentWeaponTag() const;
+
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat")
 	void SetCurrentWeapon(AWeaponBase* NewWeapon);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	bool IsCycling() const { return bIsCycling; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	bool IsWeaponReady() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	UWeaponData* GetWeaponData() const { return WeaponData; }
+
+	// 서버에서 스왑 종료 시 호출한다. WeaponSwitchDuration 타이머가 기본 경로이며,
+	// 추후 서버 권위 AnimNotify를 붙여도 같은 API를 사용할 수 있다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	void FinishCycling();
+
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
+	FOnCyclingStateChanged OnCyclingStateChanged;
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+	                           FActorComponentTickFunction* ThisTickFunction) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon")
 	TObjectPtr<UWeaponData> WeaponData;
@@ -34,15 +87,43 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentWeapon)
+	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentWeapon, Category = "FPS|Combat")
 	TObjectPtr<AWeaponBase> CurrentWeapon;
 
+	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponSlots, Category = "FPS|Combat|Loadout")
+	TObjectPtr<AWeaponBase> PrimaryWeapon;
+
+	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponSlots, Category = "FPS|Combat|Loadout")
+	TObjectPtr<AWeaponBase> SecondaryWeapon;
+
+	// 실제 Equip Montage가 연결되기 전에도 스왑 중 사격/재장전이 열리지 않도록 하는 서버 fallback 시간.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout", meta = (ClampMin = "0.0"))
+	float WeaponSwitchDuration = 0.35f;
+
 private:
+	AWeaponBase* SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass);
+	void ClearWeaponLoadout();
+	void ApplyCurrentWeapon(AWeaponBase* NewWeapon);
+	void RefreshWeaponPresentation();
+	void SetWeaponPresentationActive(AWeaponBase* Weapon, bool bActive) const;
+	void AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const;
+	void BeginEquipCycle(AWeaponBase* Weapon);
+	float ResolveEquipDuration(AWeaponBase* Weapon) const;
+	void SetCyclingState(bool bNewIsCycling);
+
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);
 
-public:
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* ThisTickFunction) override;
+	UFUNCTION()
+	void OnRep_WeaponSlots();
+
+	UFUNCTION()
+	void OnRep_IsCycling();
+
+	UPROPERTY(ReplicatedUsing = OnRep_IsCycling)
+	bool bIsCycling = false;
+
+	FTimerHandle WeaponSwitchTimerHandle;
 };

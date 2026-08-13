@@ -18,6 +18,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Movement")
 	void StopSprint();
 
+	virtual float GetMaxSpeed() const override;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
@@ -28,5 +29,5 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Movement")
 	bool bWantsToSprint = false;
-	
+
 };

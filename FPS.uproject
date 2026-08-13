@@ -9,7 +9,9 @@
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
 			"AdditionalDependencies": [
-				"Engine"
+				"Engine",
+				"CommonUI",
+				"GameplayAbilities"
 			]
 		}
 	],
@@ -34,8 +36,17 @@
 			"Enabled": true
 		},
 		{
-			"Name": "MetaHumanCharacter",
+			"Name": "CommonUI",
+			"Enabled": true
+		},
+		{
+			"Name": "OnlineSubsystemSteam",
+			"Enabled": true
+		},
+		{
+			"Name": "SteamSockets",
 			"Enabled": true
 		}
+
 	]
 }

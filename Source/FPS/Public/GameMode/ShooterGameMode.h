@@ -13,5 +13,8 @@ UCLASS()
 class FPS_API AShooterGameMode : public AGameMode
 {
 	GENERATED_BODY()
+
+public:
+	AShooterGameMode();
 	
 };

@@ -22,7 +22,13 @@ public class FPS : ModuleRules
 			"UMG",
 			"Slate",
 			"SlateCore",
-			"CustomizableObject"
+			"CommonUI",
+			"CustomizableObject",
+			"AnimGraphRuntime",
+			"DeveloperSettings",
+			"OnlineSubsystem",
+			"OnlineSubsystemSteam",
+			"OnlineSubsystemUtils",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
