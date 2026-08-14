@@ -291,7 +291,10 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		return;
 	}
 
-	auto Send = [&ContextHandle](AActor* To, const FGameplayTag& Tag, AActor* Other, float Magnitude)
+	AActor* Src = Params.Instigator;
+	AActor* Tgt = TargetActor;
+
+	auto Send = [&ContextHandle, Src, Tgt](AActor* To, const FGameplayTag& Tag, float Magnitude)
 	{
 		if (!To || !Tag.IsValid())
 		{
@@ -300,37 +303,34 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 
 		FGameplayEventData Payload;
 		Payload.EventTag       = Tag;
-		Payload.Instigator     = To;
-		Payload.Target         = Other;
+		Payload.Instigator     = Src;
+		Payload.Target         = Tgt;
 		Payload.EventMagnitude = Magnitude;
-		Payload.ContextHandle = ContextHandle;
+		Payload.ContextHandle  = ContextHandle;
 
 		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(To, Tag, Payload);
 	};
 
-	AActor* Src = Params.Instigator;
-	AActor* Tgt = TargetActor;
-
-	Send(Src, RogueTags::Event_Combat_DamageDealt, Tgt, Result.HealthDamage);
-	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Src, Result.HealthDamage);
+	Send(Src, RogueTags::Event_Combat_DamageDealt, Result.HealthDamage);
+	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Result.HealthDamage);
 
 	const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle);
 	if (Ctx && Ctx->bHeadshot)
 	{
-		Send(Src, RogueTags::Event_Combat_Headshot, Tgt, Result.HealthDamage);
+		Send(Src, RogueTags::Event_Combat_Headshot, Result.HealthDamage);
 	}
 
 	if (Result.bShieldBroken)
 	{
-		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Src, Result.ShieldDamage);
-		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Tgt, Result.ShieldDamage);
+		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Result.ShieldDamage);
+		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Result.ShieldDamage);
 	}
 
 	// 사망 이벤트 발신
 	if (Result.bHealthDepleted)
 	{
-		Send(Src, RogueTags::Event_Combat_Kill,  Tgt, Result.HealthDamage);
-		Send(Tgt, RogueTags::Event_Combat_Death, Src, Result.HealthDamage);
+		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
+		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);
 
 		// Event.Team.AllyDeath 는 팀 구성을 아는 GameState 가 처리
 	}
