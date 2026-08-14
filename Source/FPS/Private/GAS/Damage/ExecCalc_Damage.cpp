@@ -20,6 +20,7 @@ namespace
 	constexpr float MaxReductionRate  = 0.95f;   // 1.0 이면 무적
 	constexpr float MinPenetrationMul = 1.f;     // 관통력 감소 증강은 없음
 	constexpr float TorsoMultiplier   = 1.f;     // 미등록 부위의 기준값이자 헤드 초과분의 기준선
+	constexpr float MaxShopDamageAmplification = 0.25f; // 상점 기본 대미지 증폭 상한. +5% x 5회 = +25%
 
 	// ------------------------------------------------------------
 	// GAS 연동
@@ -39,6 +40,7 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition TargetMaxHealthDef;
 		FGameplayEffectAttributeCaptureDefinition SourceHealthDef;
 		FGameplayEffectAttributeCaptureDefinition SourceMaxHealthDef;
+		FGameplayEffectAttributeCaptureDefinition SourceShopDamageAmplificationDef;
 
 		// Augment / 공격 측
 		FGameplayEffectAttributeCaptureDefinition SourceHeadshotDamageMultiplierDef;
@@ -63,6 +65,9 @@ namespace
 			SourceHealthDef    = MakeDef(URogueVitalAttributeSet::GetHealthAttribute(),    ECaptureSource::Source);
 			SourceMaxHealthDef = MakeDef(URogueVitalAttributeSet::GetMaxHealthAttribute(), ECaptureSource::Source);
 
+			SourceShopDamageAmplificationDef =
+				MakeDef(URogueVitalAttributeSet::GetShopDamageAmplificationAttribute(), ECaptureSource::Source);
+
 			SourceHeadshotDamageMultiplierDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageMultiplierAttribute(), ECaptureSource::Source);
 			SourceDamageMultiplierDef =
@@ -79,7 +84,7 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetEffectiveRangeBonusAttribute(),    ECaptureSource::Source);
 			SourcePenetrationMultiplierDef =
 				MakeDef(URogueAugmentAttributeSet::GetPenetrationMultiplierAttribute(),  ECaptureSource::Source);
-
+				
 			TargetHeadshotDamageTakenRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageTakenRateAttribute(), ECaptureSource::Target);
 			TargetDamageReductionRateDef =
@@ -501,6 +506,11 @@ namespace
 		// 전체 피해량 배율
 		Acc.Scale(FMath::Max(0.f, E.Read(MultiplierDef, 1.f)));
 
+		// 상점 기본 대미지 증폭
+		const float ShopAmplification = FMath::Clamp(
+			E.Read(E.Capture.SourceShopDamageAmplificationDef, 0.f), 0.f, MaxShopDamageAmplification);
+		Acc.Scale(1.f + ShopAmplification);
+
 		// 헤드샷 대미지 배율
 		Acc.ScaleHeadshot(FMath::Max(0.f, E.Read(E.Capture.SourceHeadshotDamageMultiplierDef, 1.f)));
 
@@ -608,6 +618,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.TargetMaxHealthDef);
 	RelevantAttributesToCapture.Add(C.SourceHealthDef);
 	RelevantAttributesToCapture.Add(C.SourceMaxHealthDef);
+	RelevantAttributesToCapture.Add(C.SourceShopDamageAmplificationDef);
 
 	RelevantAttributesToCapture.Add(C.SourceHeadshotDamageMultiplierDef);
 	RelevantAttributesToCapture.Add(C.SourceDamageMultiplierDef);
