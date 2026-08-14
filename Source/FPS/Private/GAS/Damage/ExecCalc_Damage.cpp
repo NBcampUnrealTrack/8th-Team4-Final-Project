@@ -577,41 +577,44 @@ namespace
 	}
 
 	// 8. 최종 대미지를 보호막 대미지와 체력 대미지로 분리
-	FRogueDamageSplit SplitByShield(const FRogueDamageEval& E, const FRogueDamageSource& Source, float Damage)
+	FRogueDamageSplit SplitByShield(const FRogueDamageEval& E, const FRogueDamageSource& Source, const float RawDamage)
 	{
 		FRogueDamageSplit Split;
+
+		if (RawDamage <= 0.f)
+		{
+			return Split;
+		}
 
 		// 자가 피해는 전부 체력 대미지
 		if (Source.bIsSelfCost)
 		{
-			Split.HealthDamage = Damage;
+			Split.HealthDamage = FMath::FloorToFloat(RawDamage);
 			return Split;
 		}
 
 		// 보호막 관통 증강 적용
 		const float Penetration =
 			FMath::Clamp(E.Read(E.Capture.SourceShieldPenetrationRateDef, 0.f), 0.f, MaxPenetration);
-		const float ShieldPortion = Damage * (1.f - Penetration); // 보호막에 적용되는 대미지
-		const float PierceDamage = Damage * Penetration;		  // 보호막을 뚫고 체력에 적용되는 대미지
+		const float ShieldPortion = RawDamage * (1.f - Penetration); // 보호막에 적용되는 대미지
 
-		// 보호막 피해 배율
+		// 공격자 보호막 피해 배율
 		const float ShieldMultiplier = Source.bIsOffensive
 			? FMath::Max(0.f, E.Read(E.Capture.SourceShieldDamageMultiplierDef, 1.f))
 			: 1.f;
 
 		const float CurrentShield = FMath::Max(0.f, E.Read(E.Capture.TargetShieldDef, 0.f));
 
-		// 보호막이 흡수할 수 있는 대미지
-		const float ShieldCapacityInDamage = (ShieldMultiplier > KINDA_SMALL_NUMBER)
-			? CurrentShield / ShieldMultiplier
-			: ShieldPortion;
+		// 보호막이 실제로 잃는 양
+		Split.ShieldDamage = FMath::Min(FMath::FloorToFloat(ShieldPortion * ShieldMultiplier), CurrentShield);
 
-		// 보호막이 실제로 흡수한 대미지
-		const float AbsorbedDamage = FMath::Min(ShieldPortion, ShieldCapacityInDamage);
+		// 보호막이 대신 받아낸 몫을 원시 대미지 단위로 환산
+		const float RawAbsorbedDamage = (Split.ShieldDamage > 0.f)
+			? (Split.ShieldDamage / ShieldMultiplier)
+			: 0.f;
 
-		// 최종 대미지 분할 및 내림
-		Split.ShieldDamage = FMath::FloorToFloat(AbsorbedDamage * ShieldMultiplier);
-		Split.HealthDamage = FMath::FloorToFloat(PierceDamage + (ShieldPortion - AbsorbedDamage));
+		// 남은 원시 대미지를 체력 대미지로 전환하고 최종 정수화
+		Split.HealthDamage = FMath::Max(0.f, FMath::FloorToFloat(RawDamage - RawAbsorbedDamage));
 
 		return Split;
 	}
