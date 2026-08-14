@@ -140,15 +140,6 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
-	// 요청은 임의의 레벨로 올 수 있음
-	if (!Definition->HasLevel(Level))
-	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
-			*Definition->GetName(), Level, Definition->GetMaxLevel());
-		return false;
-	}
-
 	const int32 CurrentLevel = GetLevelInLine(Definition->LineTag);
 
 	// 레벨은 반드시 1씩 증가
@@ -160,8 +151,9 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
-	// 증강을 등록할 수 없으면 획득을 취소
-	if (!RogueAugmentAssembler::CanApplyAugment(*Definition, Level))
+	// 레벨 조회 및 에셋 로드
+	FAugmentResolvedGrant Resolved;
+	if (!RogueAugmentAssembler::ResolveAugment(*Definition, Level, Resolved))
 	{
 		UE_LOG(LogAugmentInventory, Error,
 			TEXT("[AugmentInventory] %s %d레벨을 부여할 수 없어 획득을 취소합니다. 보유 상태는 그대로입니다"),
@@ -184,7 +176,7 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 
 	// 새 증강 적용
 	const FAugmentGrantHandles& Granted = GrantHandlesByLine.Add(Definition->LineTag,
-		RogueAugmentAssembler::ApplyAugment(*AbilitySystemComponent, *Definition, Level));
+		RogueAugmentAssembler::ApplyResolved(*AbilitySystemComponent, Resolved));
 
 	VerifyGrantResult(*Definition, Level, Granted);
 
