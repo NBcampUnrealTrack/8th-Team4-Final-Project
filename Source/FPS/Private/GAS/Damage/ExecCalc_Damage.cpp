@@ -438,7 +438,7 @@ namespace
 		const float ZoneMultiplier = ReadHitZoneMultiplier(Entry, Group.HitZoneTag);
 
 		// 헤드샷 배율은 몸통 배율을 기준으로 초과분만 적용
-		const float BonusShare = Group.HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head)
+		const float BonusShare = RogueTags::IsHeadZone(Group.HitZoneTag)
 			? FMath::Max(0.f, ZoneMultiplier - TorsoMultiplier)
 			: 0.f;
 

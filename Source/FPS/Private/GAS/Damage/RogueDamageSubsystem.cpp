@@ -214,7 +214,7 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 			Sanitized.WallRetentionSum = FMath::Clamp(
 				Group.WallRetentionSum, 0.f, static_cast<float>(Group.PelletCount));
 
-			if (Sanitized.HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
+			if (RogueTags::IsHeadZone(Sanitized.HitZoneTag))
 			{
 				Ctx->bHeadshot = true;
 			}

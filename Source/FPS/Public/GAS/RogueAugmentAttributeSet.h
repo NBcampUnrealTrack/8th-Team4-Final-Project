@@ -8,11 +8,6 @@
 
 #include "RogueAugmentAttributeSet.generated.h"
 
-#define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 UCLASS()
 class FPS_API URogueAugmentAttributeSet : public UAttributeSet
@@ -81,176 +76,176 @@ public:
 	// 무기 피해 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageMultiplier, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData DamageMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, DamageMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,DamageMultiplier)
 
 	// 증강 스킬 피해 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_SkillDamageMultiplier, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData SkillDamageMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, SkillDamageMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,SkillDamageMultiplier)
 
 	// 헤드샷 추가 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HeadshotDamageMultiplier, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData HeadshotDamageMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, HeadshotDamageMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HeadshotDamageMultiplier)
 
 	// 보호막 관통률
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShieldPenetrationRate, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData ShieldPenetrationRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ShieldPenetrationRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ShieldPenetrationRate)
 
 	// 보호막에 주는 피해 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShieldDamageMultiplier, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData ShieldDamageMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ShieldDamageMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ShieldDamageMultiplier)
 
 	// 대상 최대 체력 비례 추가 피해
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealthPercentDamage, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData MaxHealthPercentDamage;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, MaxHealthPercentDamage)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,MaxHealthPercentDamage)
 
 	// 준 피해의 이 비율만큼 자신을 회복
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LifestealRate, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData LifestealRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, LifestealRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,LifestealRate)
 
 	// 준 피해의 이 비율만큼 보호막으로 전환. 체력 흡수와 별개로 적용
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShieldLeechRate, Category = "Rogue|Augment|Offense")
 	FGameplayAttributeData ShieldLeechRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ShieldLeechRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ShieldLeechRate)
 
 	// 방어 관련 --------------------------------------------------
 	// 받는 피해 감소 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReductionRate, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData DamageReductionRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, DamageReductionRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,DamageReductionRate)
 
 	// 받는 피해 고정 감소. 비율 감소 이후 적용
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FlatDamageReduction, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData FlatDamageReduction;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, FlatDamageReduction)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,FlatDamageReduction)
 
 	// 헤드샷 보너스 배율
 	// 0 이면 상체 피격과 동일
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HeadshotDamageTakenRate, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData HeadshotDamageTakenRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, HeadshotDamageTakenRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HeadshotDamageTakenRate)
 
 	// 반사 피해 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReflectRate, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData DamageReflectRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, DamageReflectRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,DamageReflectRate)
 
 	// 받는 회복량 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HealingReceivedMultiplier, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData HealingReceivedMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, HealingReceivedMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HealingReceivedMultiplier)
 
 	// 무기 관련 --------------------------------------------------
 	// 연사 속도 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireRateMultiplier, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData FireRateMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, FireRateMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,FireRateMultiplier)
 
 	// 재장전 속도 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ReloadSpeedMultiplier, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData ReloadSpeedMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ReloadSpeedMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ReloadSpeedMultiplier)
 
 	// 탄창 용량 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MagazineSizeMultiplier, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData MagazineSizeMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, MagazineSizeMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,MagazineSizeMultiplier)
 
 	// 산탄총 펠릿 추가 수
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_PelletCountBonus, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData PelletCountBonus;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, PelletCountBonus)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,PelletCountBonus)
 
 	// 유효 사거리 가산 (m)
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_EffectiveRangeBonus, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData EffectiveRangeBonus;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, EffectiveRangeBonus)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,EffectiveRangeBonus)
 
 	// 관통력 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_PenetrationMultiplier, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData PenetrationMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, PenetrationMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,PenetrationMultiplier)
 
 	// 근접 무기 사거리 가산 (m)
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MeleeRangeBonus, Category = "Rogue|Augment|Weapon")
 	FGameplayAttributeData MeleeRangeBonus;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, MeleeRangeBonus)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,MeleeRangeBonus)
 
 	// 탄퍼짐 배율. 조준 중에는 적용 X
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_SpreadMultiplier, Category = "Rogue|Augment|Accuracy")
 	FGameplayAttributeData SpreadMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, SpreadMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,SpreadMultiplier)
 
 	// 반동 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_RecoilMultiplier, Category = "Rogue|Augment|Accuracy")
 	FGameplayAttributeData RecoilMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, RecoilMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,RecoilMultiplier)
 
 	// 이동 관련 --------------------------------------------------
 	// 이동 속도 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MoveSpeedMultiplier, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData MoveSpeedMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, MoveSpeedMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,MoveSpeedMultiplier)
 
 	// 전력 질주 속도 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_SprintSpeedMultiplier, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData SprintSpeedMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, SprintSpeedMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,SprintSpeedMultiplier)
 
 	// 점프 높이 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_JumpHeightMultiplier, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData JumpHeightMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, JumpHeightMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,JumpHeightMultiplier)
 
 	// 추가 점프 횟수 (이단 점프 증강)
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ExtraJumpCount, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData ExtraJumpCount;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ExtraJumpCount)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ExtraJumpCount)
 
 	// 내가 내는 발소리 크기 배율. 1 미만이면 은신
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FootstepVolumeMultiplier, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData FootstepVolumeMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, FootstepVolumeMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,FootstepVolumeMultiplier)
 
 	// 내가 남의 소리를 듣는 범위 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HearingRangeMultiplier, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData HearingRangeMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, HearingRangeMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HearingRangeMultiplier)
 
 	// 스킬 관련 --------------------------------------------------
 	// 액티브 증강 쿨타임 감소 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CooldownReductionRate, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData CooldownReductionRate;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, CooldownReductionRate)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownReductionRate)
 
 	// 투척물 투척 거리 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ThrowRangeMultiplier, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData ThrowRangeMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ThrowRangeMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ThrowRangeMultiplier)
 
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CreditGainMultiplier, Category = "Rogue|Augment|Meta")
 	FGameplayAttributeData CreditGainMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, CreditGainMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CreditGainMultiplier)
 
 	// 상점 가격 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShopCostMultiplier, Category = "Rogue|Augment|Meta")
 	FGameplayAttributeData ShopCostMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, ShopCostMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ShopCostMultiplier)
 
 	// 희귀 이상 증강 출현 확률 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_RareOrAboveDrawMultiplier, Category = "Rogue|Augment|Meta")
 	FGameplayAttributeData RareOrAboveDrawMultiplier;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, RareOrAboveDrawMultiplier)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,RareOrAboveDrawMultiplier)
 
 	// 추가 무료 리롤 횟수
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BonusFreeRerolls, Category = "Rogue|Augment|Meta")
 	FGameplayAttributeData BonusFreeRerolls;
-	ATTRIBUTE_ACCESSORS(URogueAugmentAttributeSet, BonusFreeRerolls)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,BonusFreeRerolls)
 };
