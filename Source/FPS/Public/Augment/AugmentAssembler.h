@@ -23,8 +23,6 @@ struct FAugmentGrantHandles
 	UPROPERTY()
 	TArray<FGameplayAbilitySpecHandle> AbilityHandles;
 
-	bool IsEmpty() const { return EffectHandles.IsEmpty() && AbilityHandles.IsEmpty(); }
-
 	void Reset()
 	{
 		EffectHandles.Reset();

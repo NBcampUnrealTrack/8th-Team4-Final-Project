@@ -67,10 +67,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	TArray<FAugmentInventoryEntry> GetEntries() const { return Entries; }
 
-	// 정의까지 해석한 목록
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<UAugmentDefinition*> GetOwnedDefinitions() const;
-
 	// 이 계열의 보유 레벨. 미보유면 0.
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	int32 GetLevelInLine(FGameplayTag LineTag) const;

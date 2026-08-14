@@ -329,6 +329,7 @@ bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& Dr
 		Bucket.RemoveAt(PickedIndex);
 	}
 
+	// 브로드캐스트 전에 결과 확정
 	const bool bRolled = !Offers.IsEmpty();
 
 	// 서버에는 OnRep 이 오지 않으므로 직접 발신
@@ -440,22 +441,6 @@ int32 UAugmentInventoryComponent::GetLevelInLine(FGameplayTag LineTag) const
 
 	// 엔트리가 레벨을 의미함
 	return Index == INDEX_NONE ? 0 : Entries[Index].Level;
-}
-
-TArray<UAugmentDefinition*> UAugmentInventoryComponent::GetOwnedDefinitions() const
-{
-	TArray<UAugmentDefinition*> Result;
-	Result.Reserve(Entries.Num());
-
-	for (const FAugmentInventoryEntry& Entry : Entries)
-	{
-		if (UAugmentDefinition* Definition = ResolveDefinition(Entry.DefinitionId))
-		{
-			Result.Add(Definition);
-		}
-	}
-
-	return Result;
 }
 
 UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbilitySystemComponent* ASC)
