@@ -88,5 +88,5 @@ private:
 
 public:
 	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유
-	mutable FOnRogueOutOfHealth OnOutOfHealth;
+	FOnRogueOutOfHealth OnOutOfHealth;
 };

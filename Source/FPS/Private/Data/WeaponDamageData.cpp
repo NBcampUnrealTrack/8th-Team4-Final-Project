@@ -29,9 +29,17 @@ const FWeaponDamageEntry* UWeaponDamageData::FindEntry(const FGameplayTag Weapon
 	const FWeaponDamageEntry* Entry = DamageData->Weapons.Find(WeaponTag);
 	if (!Entry)
 	{
-		UE_LOG(LogWeaponDamageData, Warning,
-			TEXT("[RogueDamage] WeaponDamageData 에 등록되지 않은 무기 태그입니다. Tag=%s"),
-			*WeaponTag.ToString());
+		static TSet<FGameplayTag> WarnedTags;
+
+		bool bAlreadyWarned = false;
+		WarnedTags.Add(WeaponTag, &bAlreadyWarned);
+
+		if (!bAlreadyWarned)
+		{
+			UE_LOG(LogWeaponDamageData, Warning,
+				TEXT("[RogueDamage] WeaponDamageData 에 등록되지 않은 무기 태그입니다. Tag=%s"),
+				*WeaponTag.ToString());
+		}
 	}
 
 	return Entry;
