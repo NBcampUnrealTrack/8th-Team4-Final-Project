@@ -591,9 +591,9 @@ namespace
 		// 보호막이 실제로 흡수한 대미지
 		const float AbsorbedDamage = FMath::Min(ShieldPortion, ShieldCapacityInDamage);
 
-		// 최종 대미지 분할
-		Split.ShieldDamage = AbsorbedDamage * ShieldMultiplier;
-		Split.HealthDamage = PierceDamage + (ShieldPortion - AbsorbedDamage);
+		// 최종 대미지 분할 및 내림
+		Split.ShieldDamage = FMath::FloorToFloat(AbsorbedDamage * ShieldMultiplier);
+		Split.HealthDamage = FMath::FloorToFloat(PierceDamage + (ShieldPortion - AbsorbedDamage));
 
 		return Split;
 	}
