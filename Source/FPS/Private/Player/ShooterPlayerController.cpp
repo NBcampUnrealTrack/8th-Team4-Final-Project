@@ -3,10 +3,13 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
+#include "Engine/GameInstance.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameFlow/Round/BaseRoundGameMode.h"
+#include "GameFlow/Round/BaseRoundGameState.h"
+#include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
 #include "UI/LoadingScreenWidget.h"
@@ -19,6 +22,11 @@ AShooterPlayerController::AShooterPlayerController()
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+	}
 
 	if (!IsLocalController() || !InputConfig || !InputConfig->DefaultMappingContext)
 	{
@@ -107,9 +115,12 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 {
 	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
 
-	if (bFinalDest && LoadingScreenWidget)
+	if (bFinalDest)
 	{
-		SetLoadingProgress(0.7f);
+		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+		{
+			LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		}
 		StartMatchLoadReadyCheck();
 	}
 }
@@ -140,32 +151,26 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 		bNotifiedLoadedIntoMatch = false;
 	}
 
-	if (!LoadingScreenWidget && LoadingScreenWidgetClass)
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		LoadingScreenWidget = CreateWidget<ULoadingScreenWidget>(this, LoadingScreenWidgetClass);
-		if (LoadingScreenWidget)
-		{
-			LoadingScreenWidget->AddToViewport(10000);
-		}
+		LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
 	}
-
-	SetLoadingProgress(InitialProgress);
 }
 
 void AShooterPlayerController::SetLoadingProgress(const float Progress)
 {
-	if (LoadingScreenWidget)
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		LoadingScreenWidget->SetLoadingProgress(Progress);
+		LoadingScreenSubsystem->SetLoadingProgress(Progress);
 	}
 }
 
 void AShooterPlayerController::HideLoadingScreen()
 {
-	if (LoadingScreenWidget)
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		LoadingScreenWidget->RemoveFromParent();
-		LoadingScreenWidget = nullptr;
+		LoadingScreenSubsystem->HideLoadingScreen();
 	}
 }
 
@@ -222,7 +227,7 @@ void AShooterPlayerController::StopMatchLoadReadyCheck()
 
 void AShooterPlayerController::CheckMatchLoadReady()
 {
-	if (bNotifiedLoadedIntoMatch || !LoadingScreenWidget)
+	if (bNotifiedLoadedIntoMatch)
 	{
 		StopMatchLoadReadyCheck();
 		return;
@@ -245,6 +250,17 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	{
 		ServerNotifyLoadedIntoMatch();
 	}
+}
+
+ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() const
+{
+	if (!IsLocalController())
+	{
+		return nullptr;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetSubsystem<ULoadingScreenSubsystem>() : nullptr;
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)

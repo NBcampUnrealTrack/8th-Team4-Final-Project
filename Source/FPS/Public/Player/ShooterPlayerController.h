@@ -12,6 +12,7 @@
 class URogueAbilitySystemComponent;
 class ULoadingScreenWidget;
 class UShooterInputConfig;
+class ULoadingScreenSubsystem;
 struct FInputActionValue;
 
 UCLASS()
@@ -65,6 +66,7 @@ private:
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();
+	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
@@ -79,9 +81,6 @@ private:
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 
 private:
-	UPROPERTY(Transient)
-	TObjectPtr<ULoadingScreenWidget> LoadingScreenWidget;
-
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
 };

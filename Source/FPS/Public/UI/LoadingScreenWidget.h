@@ -18,6 +18,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loading")
 	void SetLoadingProgress(float InProgress);
 
+	UFUNCTION(BlueprintPure, Category = "Loading")
+	float GetLoadingProgress() const { return LoadingProgress; }
+
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Loading")
 	void OnLoadingProgressChanged(float InProgress);
@@ -28,4 +31,6 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> LoadingPercentText;
+
+	float LoadingProgress = 0.0f;
 };

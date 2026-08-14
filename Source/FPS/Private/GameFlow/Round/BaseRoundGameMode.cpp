@@ -131,6 +131,7 @@ void ABaseRoundGameMode::NotifyPlayerLoadedIntoMatch(APlayerController* PlayerCo
 		ShooterPlayerState->SetLoadedIntoMatch(true);
 	}
 
+	UpdateMatchLoadingStatus();
 	EvaluateRoundStart();
 }
 
@@ -197,6 +198,7 @@ void ABaseRoundGameMode::BeginPlay()
 	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
 	if (IsValid(RoundGameState))
 	{
+		RoundGameState->ClearLoadingStatus();
 		RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
 	}
 
@@ -277,7 +279,8 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		UE_LOG(LogBaseRoundGameMode, Error, TEXT("%s is not derived from ABaseRoundPlayerController."), *GetNameSafe(NewPlayer));
 	}
 
-	NotifyPlayerLoadedIntoMatch(NewPlayer);
+	UpdateMatchLoadingStatus();
+	EvaluateRoundStart();
 }
 
 bool ABaseRoundGameMode::ReadyToStartMatch_Implementation()
@@ -485,6 +488,36 @@ bool ABaseRoundGameMode::AreAllPlayersLoadedIntoMatch() const
 	return true;
 }
 
+void ABaseRoundGameMode::UpdateMatchLoadingStatus()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	int32 LoadedCount = 0;
+	int32 RequiredCount = 0;
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		if (const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		{
+			++RequiredCount;
+			if (ShooterPlayerState->IsLoadedIntoMatch())
+			{
+				++LoadedCount;
+			}
+		}
+	}
+
+	RoundGameState->SetLoadingStatus(LoadedCount, RequiredCount);
+}
+
 void ABaseRoundGameMode::SetAllLoadingScreensVisible(const float Progress)
 {
 	if (!HasAuthority())
@@ -497,38 +530,6 @@ void ABaseRoundGameMode::SetAllLoadingScreensVisible(const float Progress)
 		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
 		{
 			ShooterPlayerController->ClientShowLoadingScreen(Progress);
-		}
-	}
-}
-
-void ABaseRoundGameMode::SetAllLoadingScreenProgress(const float Progress)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
-	{
-		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
-		{
-			ShooterPlayerController->ClientSetLoadingProgress(Progress);
-		}
-	}
-}
-
-void ABaseRoundGameMode::HideAllLoadingScreens()
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
-	{
-		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
-		{
-			ShooterPlayerController->ClientHideLoadingScreen();
 		}
 	}
 }
@@ -581,6 +582,7 @@ void ABaseRoundGameMode::EvaluateRoundStart()
 
 	if (!AreAllPlayersLoadedIntoMatch())
 	{
+		UpdateMatchLoadingStatus();
 		SetAllLoadingScreensVisible(0.7f);
 		return;
 	}
@@ -744,8 +746,7 @@ void ABaseRoundGameMode::StartRoundCombat()
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::RoundInProgress);
 	SetRoundTimer(RoundDuration);
 	HandleRoundStarted();
-	SetAllLoadingScreenProgress(1.0f);
-	HideAllLoadingScreens();
+	UpdateMatchLoadingStatus();
 
 	if (RoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress)
 	{

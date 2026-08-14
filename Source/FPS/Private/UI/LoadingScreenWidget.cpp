@@ -8,6 +8,7 @@
 void ULoadingScreenWidget::SetLoadingProgress(const float InProgress)
 {
 	const float ClampedProgress = FMath::Clamp(InProgress, 0.0f, 1.0f);
+	LoadingProgress = ClampedProgress;
 
 	if (LoadingProgressBar)
 	{

@@ -53,8 +53,7 @@ protected:
 	bool PreparePlayersForRound();
 	bool AreAllPlayersLoadedIntoMatch() const;
 	void SetAllLoadingScreensVisible(float Progress);
-	void SetAllLoadingScreenProgress(float Progress);
-	void HideAllLoadingScreens();
+	void UpdateMatchLoadingStatus();
 
 	ABaseRoundGameState* GetBaseRoundGameState() const;
 	EGameTeam GetTeamForRole(ETeamRole TeamRole) const;
