@@ -37,7 +37,6 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 	bSuccess &= bContainerSuccess;
 
 	Ar << HitDistanceMeters;
-	Ar << PelletsHit;
 	Ar << ShotIndexInMagazine;
 
 	uint8 HeadshotBit = bHeadshot ? 1 : 0;

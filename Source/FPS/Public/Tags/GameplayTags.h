@@ -63,7 +63,6 @@ namespace RogueTags
 
 	// SetByCaller 키
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_Base);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_PelletsHit);
 
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Primary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);

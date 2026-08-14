@@ -195,7 +195,6 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 	{
 		Ctx->HitDistanceMeters = FMath::Max(0.f, Hit->DistanceMeters);
 
-		int32 TotalPellets = 0;
 		Ctx->HitGroups.Reset(FMath::Min(Hit->HitGroups.Num(), RogueMaxHitGroups));
 
 		for (const FRogueHitGroup& Group : Hit->HitGroups)
@@ -215,15 +214,11 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 			Sanitized.WallRetentionSum = FMath::Clamp(
 				Group.WallRetentionSum, 0.f, static_cast<float>(Group.PelletCount));
 
-			TotalPellets += Sanitized.PelletCount;
-
 			if (Sanitized.HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
 			{
 				Ctx->bHeadshot = true;
 			}
 		}
-
-		Ctx->PelletsHit = FMath::Max(1, TotalPellets);
 	}
 
 	BuildContextTags(Params, Hit, TargetVital, Ctx->ContextTags);

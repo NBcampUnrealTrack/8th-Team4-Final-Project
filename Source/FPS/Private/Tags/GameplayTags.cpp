@@ -57,8 +57,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_NoShield,   "Source.State.NoShield",   "가해자 보호막 없음");
 
 	// SetByCaller 키
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base,       "Data.Damage.Base",       "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_PelletsHit, "Data.Damage.PelletsHit", "이번 사격에서 이 대상에게 적중한 펠릿 수");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base, "Data.Damage.Base", "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");

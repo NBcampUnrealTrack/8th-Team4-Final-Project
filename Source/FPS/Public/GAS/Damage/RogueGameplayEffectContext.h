@@ -19,7 +19,6 @@ public:
 	UPROPERTY() FGameplayTag WeaponTag;
 	UPROPERTY() FGameplayTagContainer ContextTags;
 	UPROPERTY() float HitDistanceMeters = 0.f;
-	UPROPERTY() int32 PelletsHit = 1;
 	UPROPERTY() int32 ShotIndexInMagazine = 0;
 	UPROPERTY() bool bHeadshot = false;
 	UPROPERTY() TArray<FRogueHitGroup> HitGroups;
