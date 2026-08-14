@@ -4,6 +4,8 @@
 #include "GameplayTagContainer.h"
 #include "RogueDamageTypes.generated.h"
 
+// 한 히트에서 컨텍스트에 실을 수 있는 부위 그룹 수의 상한
+inline constexpr int32 RogueMaxHitGroups = 16;
 
 
 USTRUCT(BlueprintType)
