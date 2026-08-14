@@ -131,15 +131,20 @@ namespace
 		bool bIsOffensive = false;
 	};
 
-	// 조건부 규칙 결과 누산
+	// 조건부 증강 누산
+	struct FRogueRuleTotals
+	{
+		float Multiplier     = 1.f;
+		float Flat           = 0.f;
+		float HeadMultiplier = 1.f;
+		float HeadFlat       = 0.f;
+	};
+
+	// 공격 / 방어 조건부 규칙 결과 누산
 	struct FRogueConditionalTotals
 	{
-		float DealtMultiplier = 1.f;
-		float DealtFlat       = 0.f;
-		float TakenMultiplier = 1.f;
-		float TakenFlat       = 0.f;
-		float HeadMultiplier  = 1.f;
-		float HeadFlat        = 0.f;
+		FRogueRuleTotals Dealt;
+		FRogueRuleTotals Taken;
 	};
 
 	// 규칙 판정에 필요한 히트 정보
@@ -268,20 +273,18 @@ namespace
 				continue;
 			}
 
+			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
+			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
+
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Totals.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.HeadFlat       += Rule.FlatDamageBonus;
-			}
-			else if (Side == EAugmentDamageRuleSide::Dealt)
-			{
-				Totals.DealtMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.DealtFlat       += Rule.FlatDamageBonus;
+				Bucket.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
+				Bucket.HeadFlat       += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Totals.TakenMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.TakenFlat       += Rule.FlatDamageBonus;
+				Bucket.Multiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
+				Bucket.Flat       += Rule.FlatDamageBonus;
 			}
 		}
 	}
@@ -522,14 +525,20 @@ namespace
 		}
 	}
 
-	// 5. 공격 측 조건부 증강
-	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
+	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
+	void ApplyRuleTotals(const FRogueRuleTotals& Totals, FRogueDamageAccumulator& Acc)
 	{
-		Acc.Scale(Totals.DealtMultiplier);
-		Acc.AddFlat(Totals.DealtFlat);
+		Acc.Scale(Totals.Multiplier);
+		Acc.AddFlat(Totals.Flat);
 
 		Acc.ScaleHeadshot(Totals.HeadMultiplier);
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
+	}
+
+	// 5. 공격 측 조건부 증강
+	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
+	{
+		ApplyRuleTotals(Totals.Dealt, Acc);
 	}
 
 	// 6. 방어 측 상시 증강
@@ -564,8 +573,7 @@ namespace
 			return;
 		}
 
-		Acc.Scale(Totals.TakenMultiplier);
-		Acc.AddFlat(Totals.TakenFlat);
+		ApplyRuleTotals(Totals.Taken, Acc);
 	}
 
 	// 8. 최종 대미지를 보호막 대미지와 체력 대미지로 분리
