@@ -14,17 +14,6 @@ namespace
 	constexpr int32 MaxContextHitGroups = 16;
 }
 
-// ----------------------------------------------------------------
-// 레거시. 히트스캔이 ApplyHitscanDamage 로 전환하면 이 함수와 FRogueDamageRequest 를 함께 삭제
-// 컴파일 호환만 유지 대미지 적용 X
-
-FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest& Request)
-{
-	return FRogueDamageResult();
-}
-// ----------------------------------------------------------------
-
-
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
