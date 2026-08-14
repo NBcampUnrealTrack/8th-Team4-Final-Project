@@ -2,9 +2,19 @@
 
 #include "UI/LobbyWidget.h"
 
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "GameFlow/Lobby/LobbyGameState.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"
+#include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "UI/LobbyPlayerEntryWidget.h"
 
 void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
 {
@@ -59,8 +69,17 @@ bool ULobbyWidget::Initialize()
 	return true;
 }
 
+void ULobbyWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	BindLobbyGameState();
+	RefreshLobbyPlayerList();
+}
+
 void ULobbyWidget::NativeDestruct()
 {
+	UnbindLobbyGameState();
 	UnbindSessionDelegates();
 	Super::NativeDestruct();
 }
@@ -88,6 +107,7 @@ void ULobbyWidget::HandleStartRoomGameComplete(bool bWasSuccessful)
 	}
 
 	OnStartRoomGameResult(bWasSuccessful);
+	UpdateLobbyButtons();
 }
 
 void ULobbyWidget::BindSessionDelegates()
@@ -112,4 +132,162 @@ void ULobbyWidget::UnbindSessionDelegates()
 
 	SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
 	bSessionDelegatesBound = false;
+}
+
+void ULobbyWidget::BindLobbyGameState()
+{
+	ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr;
+	if (!IsValid(LobbyGameState) || BoundLobbyGameState == LobbyGameState)
+	{
+		return;
+	}
+
+	UnbindLobbyGameState();
+	BoundLobbyGameState = LobbyGameState;
+	BoundLobbyGameState->OnLobbyPlayerListChanged.AddUniqueDynamic(this, &ThisClass::HandleLobbyPlayerListChanged);
+}
+
+void ULobbyWidget::UnbindLobbyGameState()
+{
+	if (IsValid(BoundLobbyGameState))
+	{
+		BoundLobbyGameState->OnLobbyPlayerListChanged.RemoveDynamic(this, &ThisClass::HandleLobbyPlayerListChanged);
+	}
+
+	BoundLobbyGameState = nullptr;
+}
+
+void ULobbyWidget::RefreshLobbyPlayerList()
+{
+	UpdateLobbyButtons();
+
+	if (!PlayerListBox)
+	{
+		return;
+	}
+
+	const FString NewSignature = BuildLobbyListSignature();
+	if (CachedLobbyListSignature == NewSignature)
+	{
+		return;
+	}
+
+	CachedLobbyListSignature = NewSignature;
+	PlayerListBox->ClearChildren();
+
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return;
+	}
+
+	for (int32 PlayerIndex = 0; PlayerIndex < GameState->PlayerArray.Num(); ++PlayerIndex)
+	{
+		const APlayerState* PlayerState = GameState->PlayerArray[PlayerIndex];
+		if (!IsValid(PlayerState))
+		{
+			continue;
+		}
+
+		const bool bIsHost = PlayerIndex == 0;
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		const bool bIsReady = bIsHost || (ShooterPlayerState && ShooterPlayerState->IsLobbyReady());
+		const FString PlayerName = PlayerState->GetPlayerName().IsEmpty()
+			? GetNameSafe(PlayerState)
+			: PlayerState->GetPlayerName();
+
+		if (LobbyPlayerEntryWidgetClass)
+		{
+			ULobbyPlayerEntryWidget* EntryWidget = CreateWidget<ULobbyPlayerEntryWidget>(this, LobbyPlayerEntryWidgetClass);
+			if (EntryWidget)
+			{
+				EntryWidget->SetupLobbyPlayerEntry(PlayerName, bIsHost, bIsReady);
+				PlayerListBox->AddChild(EntryWidget);
+			}
+			continue;
+		}
+
+		if (WidgetTree)
+		{
+			UTextBlock* TextRow = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			if (TextRow)
+			{
+				TextRow->SetText(FText::FromString(FString::Printf(
+					TEXT("%s%s - %s"),
+					bIsHost ? TEXT("[Host] ") : TEXT(""),
+					*PlayerName,
+					bIsReady ? TEXT("Ready") : TEXT("Waiting"))));
+				PlayerListBox->AddChild(TextRow);
+			}
+		}
+	}
+}
+
+void ULobbyWidget::UpdateLobbyButtons()
+{
+	const bool bIsHost = IsLocalPlayerHost();
+
+	if (ReadyButton)
+	{
+		ReadyButton->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
+
+	if (StartButton)
+	{
+		StartButton->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		StartButton->SetIsEnabled(SessionSubsystem && SessionSubsystem->CanStartRoomGame());
+	}
+}
+
+bool ULobbyWidget::IsLocalPlayerHost() const
+{
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (!IsValid(GameState) || GameState->PlayerArray.IsEmpty())
+	{
+		return false;
+	}
+
+	APlayerController* PlayerController = GetOwningPlayer();
+	if (!PlayerController && GetGameInstance())
+	{
+		PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
+	}
+
+	const APlayerState* LocalPlayerState = PlayerController ? PlayerController->PlayerState : nullptr;
+	return IsValid(LocalPlayerState) && GameState->PlayerArray[0] == LocalPlayerState;
+}
+
+FString ULobbyWidget::BuildLobbyListSignature() const
+{
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return TEXT("");
+	}
+
+	FString Signature;
+	for (int32 PlayerIndex = 0; PlayerIndex < GameState->PlayerArray.Num(); ++PlayerIndex)
+	{
+		const APlayerState* PlayerState = GameState->PlayerArray[PlayerIndex];
+		if (!IsValid(PlayerState))
+		{
+			continue;
+		}
+
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		const bool bIsReady = PlayerIndex == 0 || (ShooterPlayerState && ShooterPlayerState->IsLobbyReady());
+		Signature += FString::Printf(
+			TEXT("%s:%d:%d|"),
+			*PlayerState->GetPlayerName(),
+			PlayerIndex,
+			bIsReady ? 1 : 0);
+	}
+
+	return Signature;
+}
+
+void ULobbyWidget::HandleLobbyPlayerListChanged()
+{
+	RefreshLobbyPlayerList();
 }

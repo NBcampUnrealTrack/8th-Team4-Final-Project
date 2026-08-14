@@ -9,6 +9,7 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "GameFlow/Lobby/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponTypes.h"
@@ -153,10 +154,19 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 		bIsLobbyReady ? TEXT("true") : TEXT("false"));
 	OnRep_LobbyReady();
 	ForceNetUpdate();
+
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->NotifyLobbyPlayerListChanged();
+	}
 }
 
 void AShooterPlayerState::OnRep_LobbyReady()
 {
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
 }
 
 void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)

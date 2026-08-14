@@ -80,6 +80,7 @@ struct FRogueDamageRequest
 
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     float AppliedHeadshotMultiplier = 1.f;
+    
 };
 
 USTRUCT(BlueprintType)

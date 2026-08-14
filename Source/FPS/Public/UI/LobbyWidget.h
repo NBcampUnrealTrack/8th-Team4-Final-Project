@@ -6,7 +6,10 @@
 #include "UI/SessionWidgetBase.h"
 #include "LobbyWidget.generated.h"
 
+class ALobbyGameState;
 class UButton;
+class ULobbyPlayerEntryWidget;
+class UVerticalBox;
 
 UCLASS(BlueprintType, Blueprintable)
 class FPS_API ULobbyWidget : public USessionWidgetBase
@@ -22,6 +25,7 @@ public:
 
 protected:
 	virtual bool Initialize() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 	UFUNCTION(BlueprintImplementableEvent)
@@ -39,6 +43,15 @@ private:
 
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();
+	void BindLobbyGameState();
+	void UnbindLobbyGameState();
+	void RefreshLobbyPlayerList();
+	void UpdateLobbyButtons();
+	bool IsLocalPlayerHost() const;
+	FString BuildLobbyListSignature() const;
+
+	UFUNCTION()
+	void HandleLobbyPlayerListChanged();
 
 private:
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -47,5 +60,15 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> StartButton;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UVerticalBox> PlayerListBox;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Lobby")
+	TSubclassOf<ULobbyPlayerEntryWidget> LobbyPlayerEntryWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<ALobbyGameState> BoundLobbyGameState;
+
+	FString CachedLobbyListSignature;
 	bool bSessionDelegatesBound = false;
 };

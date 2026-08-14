@@ -61,3 +61,4 @@ namespace HitscanBallistics
 		const FVector& Direction,
 		float& OutExitDistance);
 }
+
