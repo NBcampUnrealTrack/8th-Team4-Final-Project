@@ -6,18 +6,39 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Augment/RogueAugmentStatResolver.h"
+#include "GAS/RogueGASSettings.h"
 #include "GameFlow/Round/BaseRoundPlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
 
-URogueTimedTagEffect::URogueTimedTagEffect()
+DEFINE_LOG_CATEGORY_STATIC(LogAugmentAbility, Log, All);
+
+namespace
 {
-	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	// 설정에 등록된 GE 애셋을 로드 (쿨타임/지속 시간)
+	UClass* LoadConfiguredEffectClass(const TSoftClassPtr<UGameplayEffect>& SoftClass, const TCHAR* FieldName)
+	{
+		UClass* Loaded = SoftClass.LoadSynchronous();
+		if (!Loaded)
+		{
+			UE_LOG(LogAugmentAbility, Error,
+				TEXT("[AugmentAbility] %s 를 로드하지 못했습니다. DefaultGame.ini 의 [/Script/FPS.RogueGASSettings] 등록과 ")
+				TEXT("애셋 경로를 확인하세요 (Duration Policy = Has Duration, Duration = SetByCaller %s)"),
+				FieldName, *RogueTags::Data_Magnitude_Duration.GetTag().ToString());
+		}
 
-	FSetByCallerFloat Duration;
-	Duration.DataTag = RogueTags::Data_Magnitude_Duration;
+		return Loaded;
+	}
+}
 
-	DurationMagnitude = FGameplayEffectModifierMagnitude(Duration);
+UClass* URogueGameplayAbility::GetCooldownEffectClass()
+{
+	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->CooldownEffectClass, TEXT("CooldownEffectClass"));
+}
+
+UClass* URogueGameplayAbility::GetStatusEffectClass()
+{
+	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->StatusEffectClass, TEXT("StatusEffectClass"));
 }
 
 bool URogueGameplayAbility::CanActivateAbility(
@@ -141,9 +162,15 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
 	// 두 번째 사용의 쿨타임이 첫 번째 사용의 쿨타임이 끝나면 적용
 	Duration += FMath::Max(0.f, GetCooldownTimeRemaining(ActorInfo));
 
+	UClass* CooldownEffectClass = GetCooldownEffectClass();
+	if (!CooldownEffectClass)
+	{
+		return;
+	}
+
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
 		Handle, ActorInfo, ActivationInfo,
-		URogueTimedTagEffect::StaticClass(), Level);
+		CooldownEffectClass, Level);
 
 	if (!SpecHandle.IsValid())
 	{

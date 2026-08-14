@@ -123,8 +123,14 @@ void URogueReconDroneAbility::ApplyReveal(const FGameplayAbilitySpecHandle Handl
 		return;
 	}
 
+	UClass* StatusEffectClass = GetStatusEffectClass();
+	if (!StatusEffectClass)
+	{
+		return;
+	}
+
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
-		Handle, ActorInfo, ActivationInfo, URogueTimedTagEffect::StaticClass(), Level);
+		Handle, ActorInfo, ActivationInfo, StatusEffectClass, Level);
 
 	if (!SpecHandle.IsValid())
 	{
