@@ -156,6 +156,11 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 		LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
 	}
+
+	if (GetWorld() && GetWorld()->GetGameState<ABaseRoundGameState>())
+	{
+		StartMatchLoadReadyCheck();
+	}
 }
 
 void AShooterPlayerController::SetLoadingProgress(const float Progress)

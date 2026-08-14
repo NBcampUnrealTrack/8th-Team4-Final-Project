@@ -15,7 +15,14 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "TimerManager.h"
 #include "UI/Lobby/LobbyPlayerEntryWidget.h"
+
+namespace LobbyWidgetRefresh
+{
+	constexpr int32 MaxInitialRefreshRetries = 5;
+	constexpr float InitialRefreshRetryInterval = 0.1f;
+}
 
 void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
 {
@@ -78,12 +85,24 @@ void ULobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	InitialLobbyRefreshRetryCount = 0;
 	BindLobbyGameState();
 	RefreshLobbyPlayerList();
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			InitialLobbyRefreshRetryTimerHandle,
+			this,
+			&ThisClass::RetryInitialLobbyRefresh,
+			LobbyWidgetRefresh::InitialRefreshRetryInterval,
+			true);
+	}
 }
 
 void ULobbyWidget::NativeDestruct()
 {
+	StopInitialLobbyRefreshRetry();
 	UnbindLobbyGameState();
 	UnbindSessionDelegates();
 	Super::NativeDestruct();
@@ -228,6 +247,27 @@ void ULobbyWidget::RefreshLobbyPlayerList()
 	}
 }
 
+void ULobbyWidget::RetryInitialLobbyRefresh()
+{
+	++InitialLobbyRefreshRetryCount;
+
+	BindLobbyGameState();
+	RefreshLobbyPlayerList();
+
+	if (InitialLobbyRefreshRetryCount >= LobbyWidgetRefresh::MaxInitialRefreshRetries)
+	{
+		StopInitialLobbyRefreshRetry();
+	}
+}
+
+void ULobbyWidget::StopInitialLobbyRefreshRetry()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InitialLobbyRefreshRetryTimerHandle);
+	}
+}
+
 void ULobbyWidget::UpdateLobbyButtons()
 {
 	const bool bIsHost = IsLocalPlayerHost();
@@ -248,20 +288,12 @@ void ULobbyWidget::UpdateLobbyButtons()
 bool ULobbyWidget::IsLocalPlayerHost() const
 {
 	const UWorld* World = GetWorld();
-	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
-	if (!IsValid(GameState) || GameState->PlayerArray.IsEmpty())
+	if (!World)
 	{
 		return false;
 	}
 
-	APlayerController* PlayerController = GetOwningPlayer();
-	if (!PlayerController && GetGameInstance())
-	{
-		PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
-	}
-
-	const APlayerState* LocalPlayerState = PlayerController ? PlayerController->PlayerState : nullptr;
-	return IsValid(LocalPlayerState) && GameState->PlayerArray[0] == LocalPlayerState;
+	return World->GetNetMode() != NM_Client;
 }
 
 FString ULobbyWidget::BuildLobbyListSignature() const

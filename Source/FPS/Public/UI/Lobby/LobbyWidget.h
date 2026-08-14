@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "TimerManager.h"
 #include "UI/Session/SessionWidgetBase.h"
 #include "LobbyWidget.generated.h"
 
@@ -46,6 +47,8 @@ private:
 	void BindLobbyGameState();
 	void UnbindLobbyGameState();
 	void RefreshLobbyPlayerList();
+	void RetryInitialLobbyRefresh();
+	void StopInitialLobbyRefreshRetry();
 	void UpdateLobbyButtons();
 	bool IsLocalPlayerHost() const;
 	FString BuildLobbyListSignature() const;
@@ -70,5 +73,7 @@ private:
 	TObjectPtr<ALobbyGameState> BoundLobbyGameState;
 
 	FString CachedLobbyListSignature;
+	FTimerHandle InitialLobbyRefreshRetryTimerHandle;
+	int32 InitialLobbyRefreshRetryCount = 0;
 	bool bSessionDelegatesBound = false;
 };
