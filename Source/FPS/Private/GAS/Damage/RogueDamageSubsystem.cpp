@@ -40,6 +40,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageP
 		return FRogueDamageResult();
 	}
 
+	// 총 관통력 합산
 	float TotalRetention = 0.f;
 	for (const FRogueHitGroup& Group : Hit.HitGroups)
 	{
@@ -49,6 +50,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageP
 		}
 	}
 
+	// 관통력이 0 이하이면 대미지 적용 X
 	if (TotalRetention <= 0.f)
 	{
 		return FRogueDamageResult();

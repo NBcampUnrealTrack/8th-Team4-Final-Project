@@ -411,6 +411,11 @@ namespace
 		}
 
 		const float Retention = FMath::Clamp(Group.WallRetentionSum, 0.f, PelletCount);
+		if (Retention <= 0.f)
+		{
+			return 0.f;
+		}
+
 		const float Penetration = FMath::Max(MinPenetrationMul, PenetrationMultiplier);
 
 		return FMath::Clamp(PelletCount - (PelletCount - Retention) / Penetration, 0.f, PelletCount);
