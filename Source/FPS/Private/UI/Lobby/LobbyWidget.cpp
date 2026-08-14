@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/LobbyWidget.h"
+#include "UI/Lobby/LobbyWidget.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
@@ -8,13 +8,14 @@
 #include "Components/VerticalBox.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFlow/Lobby/LobbyGameMode.h"
 #include "GameFlow/Lobby/LobbyGameState.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
-#include "UI/LobbyPlayerEntryWidget.h"
+#include "UI/Lobby/LobbyPlayerEntryWidget.h"
 
 void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
 {
@@ -35,17 +36,21 @@ void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
 
 void ULobbyWidget::StartRoomGame()
 {
-	CacheSessionSubsystem();
-
-	if (!SessionSubsystem)
+	ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
+	if (!LobbyGameMode)
 	{
-		SetStatusMessage(FText::FromString(TEXT("Session subsystem is not available.")));
+		SetStatusMessage(FText::FromString(TEXT("Lobby game mode is not available.")));
 		OnStartRoomGameResult(false);
 		return;
 	}
 
 	SetStatusMessage(FText::FromString(TEXT("Starting game...")));
-	SessionSubsystem->StartRoomGame(MapName);
+	if (!LobbyGameMode->RequestStartRoomGame(GetOwningPlayer(), MapName))
+	{
+		SetStatusMessage(FText::FromString(TEXT("Cannot start until every client is ready.")));
+		OnStartRoomGameResult(false);
+		UpdateLobbyButtons();
+	}
 }
 
 bool ULobbyWidget::Initialize()
@@ -235,7 +240,8 @@ void ULobbyWidget::UpdateLobbyButtons()
 	if (StartButton)
 	{
 		StartButton->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		StartButton->SetIsEnabled(SessionSubsystem && SessionSubsystem->CanStartRoomGame());
+		const ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
+		StartButton->SetIsEnabled(LobbyGameMode && LobbyGameMode->CanStartRoomGame());
 	}
 }
 

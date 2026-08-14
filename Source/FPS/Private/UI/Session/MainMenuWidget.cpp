@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/MainMenuWidget.h"
+#include "UI/Session/MainMenuWidget.h"
 
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -9,7 +9,7 @@
 #include "Components/Widget.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/SessionSubSystem.h"
-#include "UI/RoomEntryWidget.h"
+#include "UI/Session/RoomEntryWidget.h"
 
 void UMainMenuWidget::HostRoom()
 {

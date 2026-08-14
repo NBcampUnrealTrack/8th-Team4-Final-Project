@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Session/RoomInfo.h"
-#include "UI/SessionWidgetBase.h"
+#include "UI/Session/SessionWidgetBase.h"
 #include "MainMenuWidget.generated.h"
 
 class UButton;

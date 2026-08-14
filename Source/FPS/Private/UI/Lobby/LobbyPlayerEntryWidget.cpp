@@ -1,4 +1,4 @@
-#include "UI/LobbyPlayerEntryWidget.h"
+#include "UI/Lobby/LobbyPlayerEntryWidget.h"
 
 #include "Components/TextBlock.h"
 

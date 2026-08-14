@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "UI/RoomEntryWidget.h"
+#include "UI/Session/RoomEntryWidget.h"
 
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
-#include "UI/MainMenuWidget.h"
+#include "UI/Session/MainMenuWidget.h"
 
 void URoomEntryWidget::SetupRoomEntry(const FRoomInfo& InRoomInfo, UMainMenuWidget* InOwningMenu)
 {

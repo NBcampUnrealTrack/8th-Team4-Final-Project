@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UI/SessionWidgetBase.h"
+#include "UI/Session/SessionWidgetBase.h"
 #include "LobbyWidget.generated.h"
 
 class ALobbyGameState;

@@ -8,8 +8,6 @@
 #include "Session/RoomInfo.h"
 #include "SessionSubSystem.generated.h"
 
-class APlayerState;
-
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCreateRoomComplete, bool, bWasSuccessful);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnFindRoomsComplete, const TArray<FRoomInfo>&, Rooms, bool, bWasSuccessful);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnJoinRoomComplete, bool, bWasSuccessful);
@@ -40,9 +38,6 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void StartRoomGame(const FString& GameMapName = TEXT(""));
 
-	UFUNCTION(BlueprintPure)
-	bool CanStartRoomGame() const;
-
 	UPROPERTY(BlueprintAssignable)
 	FOnCreateRoomComplete OnCreateRoomComplete;
 
@@ -67,9 +62,6 @@ private:
 	FString BuildDefaultRoomName() const;
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
-	bool AreAllClientsReady() const;
-	bool IsHostPlayerState(const APlayerState* PlayerState) const;
-	void TravelToCachedGameMap();
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
@@ -100,7 +92,6 @@ private:
 	bool bCreateRoomAfterDestroy = false;
 	bool bLeaveAfterDestroy = false;
 	bool bStartRoomGamePending = false;
-	bool bTravelingToGameMap = false;
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");

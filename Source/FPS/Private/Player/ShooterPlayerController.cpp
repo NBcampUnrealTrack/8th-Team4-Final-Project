@@ -12,7 +12,7 @@
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
-#include "UI/LoadingScreenWidget.h"
+#include "UI/Loading/LoadingScreenWidget.h"
 #include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
