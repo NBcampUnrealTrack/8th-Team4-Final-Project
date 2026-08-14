@@ -1,6 +1,5 @@
 #include "Combat/Hitscan/HitscanBallistics.h"
 
-#include "Curves/CurveFloat.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 
@@ -24,31 +23,6 @@ namespace
 	}
 }
 
-float HitscanBallistics::CalculateBallisticDamage(
-	const float BaseDamage,
-	const float DistanceMeters,
-	const float PenetrationDamageMultiplier,
-	const FHitscanDistanceFalloffSettings& FalloffSettings)
-{
-	if (!FMath::IsFinite(BaseDamage)
-		|| BaseDamage <= 0.0f
-		|| !FMath::IsFinite(DistanceMeters)
-		|| DistanceMeters < 0.0f
-		|| !FMath::IsFinite(PenetrationDamageMultiplier)
-		|| PenetrationDamageMultiplier < 0.0f
-		|| PenetrationDamageMultiplier > 1.0f)
-	{
-		return 0.0f;
-	}
-
-	const float DistanceMultiplier = CalculateDistanceMultiplier(DistanceMeters, FalloffSettings);
-	const float Damage = BaseDamage
-		* DistanceMultiplier
-		* FMath::Clamp(PenetrationDamageMultiplier, 0.0f, 1.0f);
-
-	return FMath::IsFinite(Damage) ? FMath::Max(0.0f, Damage) : 0.0f;
-}
-
 FHitscanPenetrationStepResult HitscanBallistics::ResolvePenetration(
 	const FHitscanPenetrationState& CurrentState,
 	const float ThicknessCentimeters,
@@ -61,16 +35,13 @@ FHitscanPenetrationStepResult HitscanBallistics::ResolvePenetration(
 	if (!FMath::IsFinite(ThicknessCentimeters)
 		|| ThicknessCentimeters <= 0.0f
 		|| !FMath::IsFinite(CurrentState.RemainingPenetrationPower)
-		|| !FMath::IsFinite(CurrentState.AccumulatedDamageMultiplier)
+		|| !FMath::IsFinite(CurrentState.AccumulatedWallRetention)
 		|| CurrentState.RemainingPenetrationPower < 0.0f
-		|| CurrentState.AccumulatedDamageMultiplier < 0.0f
-		|| CurrentState.AccumulatedDamageMultiplier > 1.0f
+		|| CurrentState.AccumulatedWallRetention < 0.0f
+		|| CurrentState.AccumulatedWallRetention > 1.0f
 		|| CurrentState.PenetrationCount < 0
 		|| PenetrationSettings.MaximumPenetrationCount <= 0
 		|| CurrentState.PenetrationCount >= PenetrationSettings.MaximumPenetrationCount
-		|| !FMath::IsFinite(PenetrationSettings.MinimumDamageMultiplierToContinue)
-		|| PenetrationSettings.MinimumDamageMultiplierToContinue < 0.0f
-		|| PenetrationSettings.MinimumDamageMultiplierToContinue > 1.0f
 		|| !FMath::IsFinite(SurfaceRule.Hardness)
 		|| SurfaceRule.Hardness < 0.0f
 		|| !FMath::IsFinite(SurfaceRule.PenetrationCostPerCentimeter)
@@ -91,108 +62,30 @@ FHitscanPenetrationStepResult HitscanBallistics::ResolvePenetration(
 		return Result;
 	}
 
-	const float SurfaceDamageMultiplier = FMath::Pow(
+	const float SurfaceWallRetention = FMath::Pow(
 		FMath::Clamp(SurfaceRule.DamageRetentionPerCentimeter, 0.0f, 1.0f),
 		ThicknessCentimeters);
-	const float ResultingDamageMultiplier = CurrentState.AccumulatedDamageMultiplier
-		* SurfaceDamageMultiplier;
+	const float ResultingWallRetention = CurrentState.AccumulatedWallRetention
+		* SurfaceWallRetention;
 
-	if (!FMath::IsFinite(SurfaceDamageMultiplier)
-		|| !FMath::IsFinite(ResultingDamageMultiplier)
-		|| ResultingDamageMultiplier <= KINDA_SMALL_NUMBER
-		|| ResultingDamageMultiplier + KINDA_SMALL_NUMBER
-			< PenetrationSettings.MinimumDamageMultiplierToContinue)
+	// 로컬 임계값으로 작은 양수 계수를 버리지 않는다. 실제 보존 계수는 그대로 GAS에 전달한다.
+	if (!FMath::IsFinite(SurfaceWallRetention)
+		|| !FMath::IsFinite(ResultingWallRetention)
+		|| ResultingWallRetention <= 0.0f)
 	{
 		return Result;
 	}
 
 	Result.bPenetrated = true;
-	Result.SurfaceDamageMultiplier = SurfaceDamageMultiplier;
 	Result.ResultingState.RemainingPenetrationPower = FMath::Max(
 		0.0f,
 		CurrentState.RemainingPenetrationPower - PenetrationCost);
-	Result.ResultingState.AccumulatedDamageMultiplier = FMath::Max(
+	Result.ResultingState.AccumulatedWallRetention = FMath::Clamp(
+		ResultingWallRetention,
 		0.0f,
-		ResultingDamageMultiplier);
+		1.0f);
 	Result.ResultingState.PenetrationCount = CurrentState.PenetrationCount + 1;
 	return Result;
-}
-
-float HitscanBallistics::CalculateDistanceMultiplier(
-	const float DistanceMeters,
-	const FHitscanDistanceFalloffSettings& FalloffSettings)
-{
-	const float SafeDistanceMeters = FMath::Max(0.0f, DistanceMeters);
-	const float EffectiveRangeMeters = FMath::Max(0.0f, FalloffSettings.EffectiveRangeMeters);
-	const float MaximumRangeMeters = FMath::Max(EffectiveRangeMeters, FalloffSettings.MaximumRangeMeters);
-	const float MinimumMultiplier = FMath::Clamp(
-		FalloffSettings.MinimumDamageMultiplierAtMaximumRange,
-		0.0f,
-		1.0f);
-
-	if (IsValid(FalloffSettings.DamageMultiplierCurve.Get()))
-	{
-		if (EffectiveRangeMeters <= KINDA_SMALL_NUMBER)
-		{
-			return 1.0f;
-		}
-
-		float CurveInput = SafeDistanceMeters / EffectiveRangeMeters;
-		if (MaximumRangeMeters > EffectiveRangeMeters + KINDA_SMALL_NUMBER)
-		{
-			CurveInput = FMath::Min(CurveInput, MaximumRangeMeters / EffectiveRangeMeters);
-		}
-
-		const float CurveMultiplier = FalloffSettings.DamageMultiplierCurve->GetFloatValue(CurveInput);
-		return FMath::Clamp(
-			FMath::IsFinite(CurveMultiplier) ? CurveMultiplier : 1.0f,
-			MinimumMultiplier,
-			1.0f);
-	}
-
-	if (MaximumRangeMeters <= KINDA_SMALL_NUMBER || SafeDistanceMeters <= EffectiveRangeMeters)
-	{
-		return 1.0f;
-	}
-
-	if (MaximumRangeMeters <= EffectiveRangeMeters + KINDA_SMALL_NUMBER)
-	{
-		return MinimumMultiplier;
-	}
-
-	const float FalloffAlpha = FMath::Clamp(
-		(SafeDistanceMeters - EffectiveRangeMeters)
-		/ (MaximumRangeMeters - EffectiveRangeMeters),
-		0.0f,
-		1.0f);
-	return FMath::Lerp(1.0f, MinimumMultiplier, FalloffAlpha);
-}
-
-float HitscanBallistics::RoundDamage(
-	const float Damage,
-	const FHitscanDamageRoundingSettings& RoundingSettings)
-{
-	const float SafeDamage = FMath::Max(0.0f, Damage);
-	if (RoundingSettings.Mode == EHitscanDamageRoundingMode::None)
-	{
-		return SafeDamage;
-	}
-
-	const float Step = FMath::Max(RoundingSettings.Step, KINDA_SMALL_NUMBER);
-	const float ScaledDamage = SafeDamage / Step;
-
-	switch (RoundingSettings.Mode)
-	{
-	case EHitscanDamageRoundingMode::Nearest:
-		return FMath::RoundToFloat(ScaledDamage) * Step;
-	case EHitscanDamageRoundingMode::Floor:
-		return FMath::FloorToFloat(ScaledDamage) * Step;
-	case EHitscanDamageRoundingMode::Ceil:
-		return FMath::CeilToFloat(ScaledDamage) * Step;
-	case EHitscanDamageRoundingMode::None:
-	default:
-		return SafeDamage;
-	}
 }
 
 bool HitscanBallistics::IsBackstabDirection(
