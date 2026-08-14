@@ -20,16 +20,6 @@ FPrimaryAssetId UAugmentDefinition::GetPrimaryAssetId() const
 	return FPrimaryAssetId(AugmentAssetType, GetFName());
 }
 
-FAugmentInventoryEntry FAugmentInventoryEntry::Make(const UAugmentDefinition& Definition, int32 Level)
-{
-	FAugmentInventoryEntry Entry;
-	Entry.DefinitionId = Definition.GetPrimaryAssetId();
-	Entry.LineTag      = Definition.LineTag;
-	Entry.Level        = Level;
-
-	return Entry;
-}
-
 #if WITH_EDITOR
 
 namespace

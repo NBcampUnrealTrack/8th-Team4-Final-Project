@@ -51,7 +51,7 @@ public:
 
 	// 현재 보유한 증강 목록, 서버에서만 변경하며 클라이언트에게 복제
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<FAugmentInventoryEntry> GetEntries() const { return Entries; }
+	const TArray<FAugmentInventoryEntry>& GetEntries() const { return Entries; }
 
 	// 이 계열의 보유 레벨. 미보유면 0.
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
@@ -69,7 +69,7 @@ public:
 	// 이번 라운드에 제시된 후보
 	// 비어있는 경우 = 선택 완료
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<FAugmentInventoryEntry> GetOffers() const { return Offers; }
+	const TArray<FAugmentInventoryEntry>& GetOffers() const { return Offers; }
 
 	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
 	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음

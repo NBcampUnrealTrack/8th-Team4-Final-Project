@@ -30,7 +30,7 @@ namespace
 		UE_LOG(LogAugmentInventory, Error,
 			TEXT("[AugmentInventory] %s %d레벨 부여가 일부 실패했습니다 (GE %d/%d, GA %d/%d). ")
 			TEXT("하위 레벨은 이미 제거된 뒤라 그만큼 효과가 비어 있습니다. ")
-			TEXT("[AugmentAssembler] 로그에서 실패한 항목을 확인하세요"),
+			TEXT("스펙 생성 실패 · Duration Policy 나 태그 차단으로 핸들 무효 · GiveAbility 실패 중 하나입니다"),
 			*Definition.GetName(), Level,
 			Handles.EffectHandles.Num(), ExpectedEffects,
 			Handles.AbilityHandles.Num(), ExpectedAbilities);
@@ -65,7 +65,6 @@ void UAugmentInventoryComponent::BeginPlay()
 		{
 			Registry->OnRegistryReady.AddDynamic(this, &UAugmentInventoryComponent::HandleRegistryReady);
 
-			// 해제할 때 쓸 참조를 지금 잡아둔다
 			BoundRegistry = Registry;
 		}
 	}
@@ -92,26 +91,22 @@ void UAugmentInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemCompo
 		return;
 	}
 
-	// ASC 교체 시 기존 부여 효과 제거
+	// 이전 ASC에서 부여한 GE/GA 제거
 	RemoveAllGrants();
 
-	UninitializeFromAbilitySystem();
-
+	// ASC 교체
 	AbilitySystemComponent = InASC;
 }
 
 void UAugmentInventoryComponent::UninitializeFromAbilitySystem()
 {
-	// 참조만 제거. 효과 제거는 InitializeWithAbilitySystem
 	GrantHandlesByLine.Reset();
 	AbilitySystemComponent = nullptr;
 }
 
 void UAugmentInventoryComponent::HandleRegistryReady()
 {
-	// 목록 재생성
-	RebuildConditionalRuleCache();
-
+	// 레지스트리 준비 완료 이벤트
 	OnInventoryChanged.Broadcast();
 }
 
@@ -190,8 +185,7 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
-	// 레벨 조회와 애셋 로드를 여기서 끝낸다.
-	// 하위 레벨을 걷어내기 전에 실패를 확정해야 보유 상태를 건드리지 않고 빠질 수 있다
+	// 레벨 조회 및 애셋 로드
 	FAugmentResolvedGrant Resolved;
 	if (!RogueAugmentAssembler::ResolveAugment(*Definition, Level, Resolved))
 	{
@@ -296,11 +290,11 @@ void UAugmentInventoryComponent::RemoveAllGrants()
 
 void UAugmentInventoryComponent::OnRep_Entries()
 {
-	RebuildConditionalRuleCache();
-
 	OnInventoryChanged.Broadcast();
 }
 
+// 조건부 증강 규칙 캐시를 재구성. ExecCalc 이 히트마다 읽음
+// ExecCalc는 서버에서만 실행되므로 서버에서만 캐시를 재구성
 void UAugmentInventoryComponent::RebuildConditionalRuleCache()
 {
 	CachedConditionalRules.Reset();
