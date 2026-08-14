@@ -93,7 +93,6 @@ public:
 	static float GetTierDraftWeight(EAugmentTier Tier, int32 RoundNumber);
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void OnUnregister() override;
 
 private:
@@ -103,11 +102,11 @@ private:
 	// 참조만 끊는다. 효과 제거는 교체 경로가
 	void UninitializeFromAbilitySystem();
 
-	UFUNCTION()
-	void HandleRegistryReady();
-
 	UAugmentRegistrySubsystem* GetRegistry() const;
 	UAugmentDefinition* ResolveDefinition(const FPrimaryAssetId& DefinitionId) const;
+
+	// 서버 전용 함수의 공통 가드
+	bool HasServerAuthority(const TCHAR* Context) const;
 
 	// --------------------------------------------------
 	// 증강
@@ -148,9 +147,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
-
-	// 구독해 둔 레지스트리
-	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 보유 목록. 서버에서만 변경하고 소유자에게만 복제
 	// 수명은 매치 내내. 비어 있다 = 증강 없음

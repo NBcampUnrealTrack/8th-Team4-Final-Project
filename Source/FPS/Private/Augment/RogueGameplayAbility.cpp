@@ -88,8 +88,7 @@ bool URogueGameplayAbility::CheckCooldown(const FGameplayAbilitySpecHandle Handl
 		return true;
 	}
 
-	FGameplayTagContainer CooldownTags;
-	CooldownTags.AddTag(CooldownTag);
+	const FGameplayTagContainer& CooldownTags = *GetCooldownTags();
 
 	// 현재 스택이 최대 충전 수보다 적으면 쿨타임이 남아있어도 사용 가능
 	const int32 SpentCharges =

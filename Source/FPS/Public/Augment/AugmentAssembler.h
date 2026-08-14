@@ -52,7 +52,7 @@ struct FAugmentResolvedGrant
 		
 	TArray<FAugmentResolvedAbility> Abilities;
 
-	bool IsValid() const { return LevelData != nullptr; }
+	bool IsValid() const { return Definition != nullptr && LevelData != nullptr; }
 };
 
 namespace RogueAugmentAssembler

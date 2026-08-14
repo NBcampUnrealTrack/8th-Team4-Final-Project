@@ -3,8 +3,6 @@
 
 #include "Augment/AugmentDefinition.h"
 
-#include "Augment/RogueGameplayAbility.h"
-
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
@@ -128,19 +126,19 @@ namespace
 		return bValid;
 	}
 
-	bool IsLevelValid(const UAugmentDefinition& Definition, int32 LevelIndex, FDataValidationContext& Context)
+	bool IsLevelValid(const UAugmentDefinition& Definition, int32 LevelIndex,
+		bool bHasSharedEffects, FDataValidationContext& Context)
 	{
 		const FAugmentLevelData& LevelData = Definition.Levels[LevelIndex];
 		const int32 LevelNumber = LevelIndex + 1;
 
 		bool bValid = true;
 
-		// GE, GA, 조건부 규칙이 모두 없는 레벨은 의미가 없음
-		if (Definition.GrantedEffects.IsEmpty() && Definition.GrantedAbilities.IsEmpty()
-			&& LevelData.ConditionalDamageRules.IsEmpty())
+		// 공통 GE/GA 가 없는 경우
+		if (!bHasSharedEffects && LevelData.ConditionalDamageRules.IsEmpty())
 		{
 			Context.AddError(FText::Format(
-				LOCTEXT("EmptyLevel", "{0}레벨에 GE / GA / 조건부 규칙이 모두 없습니다. 획득해도 아무 효과가 없습니다"),
+				LOCTEXT("EmptyLevel", "{0}레벨에 조건부 규칙이 없습니다. 공통 GE / GA 도 없어 획득해도 아무 효과가 없습니다"),
 				LevelNumber));
 			bValid = false;
 		}
@@ -185,9 +183,22 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
+	const bool bHasSharedEffects = !GrantedEffects.IsEmpty() || !GrantedAbilities.IsEmpty();
+	const bool bAnyLevelHasRules = Levels.ContainsByPredicate(
+		[](const FAugmentLevelData& Level) { return !Level.ConditionalDamageRules.IsEmpty(); });
+
+	if (!bHasSharedEffects && !bAnyLevelHasRules)
+	{
+		Context.AddError(LOCTEXT("NoEffects",
+			"GE / GA 가 없고 어느 레벨에도 조건부 규칙이 없습니다. 획득해도 아무 효과가 없습니다"));
+		MarkInvalid();
+
+		return Result;
+	}
+
 	for (int32 LevelIndex = 0; LevelIndex < Levels.Num(); ++LevelIndex)
 	{
-		if (!IsLevelValid(*this, LevelIndex, Context))
+		if (!IsLevelValid(*this, LevelIndex, bHasSharedEffects, Context))
 		{
 			MarkInvalid();
 		}

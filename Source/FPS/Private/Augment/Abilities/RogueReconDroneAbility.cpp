@@ -10,8 +10,6 @@
 #include "GAS/RogueTargetFilter.h"
 #include "Tags/GameplayTags.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogRogueRecon, Log, All);
-
 URogueReconDroneAbility::URogueReconDroneAbility()
 {
 	// 어빌리티는 클라이언트에서 예측

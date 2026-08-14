@@ -53,32 +53,8 @@ void UAugmentInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, Offers, COND_OwnerOnly);
 }
 
-void UAugmentInventoryComponent::BeginPlay()
-{
-	Super::BeginPlay();
-
-	// 카탈로그는 비동기로 로드, 목록이 먼저 도착하면 정의를 못 찾음
-	// 준비 되지 않은 상태면 OnRegistryReady 이벤트를 기다렸다가 처리
-	if (UAugmentRegistrySubsystem* Registry = GetRegistry())
-	{
-		if (!Registry->IsReady())
-		{
-			Registry->OnRegistryReady.AddDynamic(this, &UAugmentInventoryComponent::HandleRegistryReady);
-
-			BoundRegistry = Registry;
-		}
-	}
-}
-
 void UAugmentInventoryComponent::OnUnregister()
 {
-	// 레지스트리 이벤트 해제
-	if (UAugmentRegistrySubsystem* Registry = BoundRegistry.Get())
-	{
-		Registry->OnRegistryReady.RemoveDynamic(this, &UAugmentInventoryComponent::HandleRegistryReady);
-		BoundRegistry.Reset();
-	}
-
 	UninitializeFromAbilitySystem();
 
 	Super::OnUnregister();
@@ -104,12 +80,6 @@ void UAugmentInventoryComponent::UninitializeFromAbilitySystem()
 	AbilitySystemComponent = nullptr;
 }
 
-void UAugmentInventoryComponent::HandleRegistryReady()
-{
-	// 레지스트리 준비 완료 이벤트
-	OnInventoryChanged.Broadcast();
-}
-
 UAugmentRegistrySubsystem* UAugmentInventoryComponent::GetRegistry() const
 {
 	const UWorld* World = GetWorld();
@@ -123,6 +93,21 @@ UAugmentDefinition* UAugmentInventoryComponent::ResolveDefinition(const FPrimary
 	const UAugmentRegistrySubsystem* Registry = GetRegistry();
 
 	return Registry ? Registry->FindDefinition(DefinitionId) : nullptr;
+}
+
+bool UAugmentInventoryComponent::HasServerAuthority(const TCHAR* Context) const
+{
+	const AActor* Owner = GetOwner();
+	if (Owner && Owner->HasAuthority())
+	{
+		return true;
+	}
+
+	UE_LOG(LogAugmentInventory, Error,
+		TEXT("[AugmentInventory] %s: 권한이 없는 곳에서 %s 이(가) 호출됐습니다"),
+		*GetNameSafe(Owner), Context);
+
+	return false;
 }
 
 UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbilitySystemComponent* ASC)
@@ -152,10 +137,8 @@ UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbi
 
 bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Definition, int32 Level)
 {
-	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!HasServerAuthority(TEXT("증강 획득")))
 	{
-		UE_LOG(LogAugmentInventory, Error, TEXT("[AugmentInventory] 권한이 없는 곳에서 증강을 획득하려 했습니다"));
 		return false;
 	}
 
@@ -202,19 +185,22 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		GrantHandlesByLine.Remove(Definition->LineTag);
 	}
 
-	const int32 ExistingIndex = FindEntryIndexInLine(Definition->LineTag);
-	if (ExistingIndex != INDEX_NONE)
-	{
-		Entries.RemoveAt(ExistingIndex);
-	}
-
 	// 새 증강 적용
 	const FAugmentGrantHandles& Granted = GrantHandlesByLine.Add(Definition->LineTag,
 		RogueAugmentAssembler::ApplyResolved(*AbilitySystemComponent, Resolved));
 
 	VerifyGrantResult(*Definition, Level, Granted);
 
-	Entries.Add(FAugmentInventoryEntry::Make(*Definition, Level));
+	// 보유 목록 갱신. 같은 계열이면 교체
+	const int32 ExistingIndex = FindEntryIndexInLine(Definition->LineTag);
+	if (ExistingIndex != INDEX_NONE)
+	{
+		Entries[ExistingIndex] = FAugmentInventoryEntry::Make(*Definition, Level);
+	}
+	else
+	{
+		Entries.Add(FAugmentInventoryEntry::Make(*Definition, Level));
+	}
 
 	RebuildConditionalRuleCache();
 
@@ -226,8 +212,7 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 
 void UAugmentInventoryComponent::ServerRemoveAllAugments()
 {
-	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!HasServerAuthority(TEXT("증강 전체 해제")))
 	{
 		return;
 	}
@@ -254,15 +239,8 @@ int32 UAugmentInventoryComponent::GetLevelInLine(FGameplayTag LineTag) const
 
 int32 UAugmentInventoryComponent::FindEntryIndexInLine(const FGameplayTag& LineTag) const
 {
-	for (int32 Index = 0; Index < Entries.Num(); ++Index)
-	{
-		if (Entries[Index].LineTag.MatchesTagExact(LineTag))
-		{
-			return Index;
-		}
-	}
-
-	return INDEX_NONE;
+	return Entries.IndexOfByPredicate(
+		[&LineTag](const FAugmentInventoryEntry& Entry) { return Entry.LineTag.MatchesTagExact(LineTag); });
 }
 
 void UAugmentInventoryComponent::RemoveAllGrants()
@@ -322,11 +300,8 @@ void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferInd
 
 bool UAugmentInventoryComponent::ServerAutoSelectOffer()
 {
-	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!HasServerAuthority(TEXT("자동 선택")))
 	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] 권한이 없는 곳에서 자동 선택이 호출됐습니다"));
 		return false;
 	}
 
@@ -344,7 +319,7 @@ bool UAugmentInventoryComponent::ServerAutoSelectOffer()
 
 	UE_LOG(LogAugmentInventory, Log,
 		TEXT("[AugmentInventory] %s: 자동 선택 %d번 (후보 %d장, 시드 %d)"),
-		*GetNameSafe(Owner), PickedIndex, Offers.Num(), static_cast<int32>(AutoSelectSeed));
+		*GetNameSafe(GetOwner()), PickedIndex, Offers.Num(), static_cast<int32>(AutoSelectSeed));
 
 	return AcquireFromOffer(PickedIndex, TEXT("자동 선택"));
 }
@@ -399,12 +374,12 @@ void UAugmentInventoryComponent::OnRep_Offers()
 
 bool UAugmentInventoryComponent::ServerRollOffers(const FAugmentDraftContext& DraftContext, int32 CardCount)
 {
-	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!HasServerAuthority(TEXT("추첨")))
 	{
-		UE_LOG(LogAugmentInventory, Error, TEXT("[AugmentInventory] 권한이 없는 곳에서 추첨을 돌렸습니다"));
 		return false;
 	}
+
+	const AActor* Owner = GetOwner();
 
 	if (CardCount <= 0)
 	{
