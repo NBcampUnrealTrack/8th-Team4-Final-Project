@@ -68,7 +68,16 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Duration);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Radius);
 
-	// 전투 상태 - 일단 추가는 해뒀습니다.
+	// 게임플레이 입력 차단/행동 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked_AugmentDraft);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_ActionInProgress);
+
+	// Data Jack 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Interacting);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Dropping);
+
+	// 전투 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsAiming);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsReloading);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsFiring);

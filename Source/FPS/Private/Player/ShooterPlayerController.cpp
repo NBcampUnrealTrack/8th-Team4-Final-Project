@@ -7,6 +7,7 @@
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
@@ -114,8 +115,37 @@ void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobby
 	}
 }
 
+bool AShooterPlayerController::CanProcessGameplayInput() const
+{
+	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
+	return !IsValid(AbilitySystem)
+		|| !AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked);
+}
+
+bool AShooterPlayerController::CanProcessMovementInput() const
+{
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+}
+
+bool AShooterPlayerController::CanProcessActionInput() const
+{
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+}
+
+bool AShooterPlayerController::HasDataJackInteractionInputBlock() const
+{
+	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
+	return IsValid(AbilitySystem)
+		&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_DataJack_Interacting);
+}
+
 void AShooterPlayerController::Input_Move(const FInputActionValue& Value)
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleMoveInput(Value);
@@ -124,6 +154,11 @@ void AShooterPlayerController::Input_Move(const FInputActionValue& Value)
 
 void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 {
+	if (!CanProcessGameplayInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleLookInput(Value);
@@ -132,6 +167,11 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 
 void AShooterPlayerController::Input_JumpPressed()
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleJumpPressed();
@@ -148,6 +188,11 @@ void AShooterPlayerController::Input_JumpReleased()
 
 void AShooterPlayerController::Input_SprintPressed()
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintPressed();
@@ -164,6 +209,11 @@ void AShooterPlayerController::Input_SprintReleased()
 
 void AShooterPlayerController::Input_PrimaryWeaponPressed()
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
@@ -172,6 +222,11 @@ void AShooterPlayerController::Input_PrimaryWeaponPressed()
 
 void AShooterPlayerController::Input_SecondaryWeaponPressed()
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
@@ -180,6 +235,11 @@ void AShooterPlayerController::Input_SecondaryWeaponPressed()
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagPressed(InputTag);

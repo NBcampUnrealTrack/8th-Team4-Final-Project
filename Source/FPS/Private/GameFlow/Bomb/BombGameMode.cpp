@@ -1,17 +1,14 @@
 #include "GameFlow/Bomb/BombGameMode.h"
 
 #include "EngineUtils.h"
-#include "Engine/World.h"
 #include "GameFlow/Bomb/BombGameState.h"
+#include "GameFlow/Bomb/BombObjectiveManager.h"
 #include "GameFlow/Bomb/BombPlayerController.h"
 #include "GameFlow/Bomb/BombPlayerStart.h"
 #include "GameFlow/Bomb/DataJack.h"
-#include "GameFlow/Bomb/DataJackSiteVolume.h"
-#include "GameFlow/Bomb/DataJackSpawnPoint.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "GameFlow/Common/TeamPlayerManager.h"
 #include "GameFlow/Round/BaseRoundGameState.h"
-#include "GameFramework/Controller.h"
-#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
@@ -21,125 +18,32 @@ ABombGameMode::ABombGameMode()
 {
 	GameStateClass = ABombGameState::StaticClass();
 	PlayerControllerClass = ABombPlayerController::StaticClass();
+
+	// Listen Server PIE 최소값이다. 실제 4대4 정원과 Ready 검증은 로비 계층에서 확정한다.
 	MinimumPlayersToStart = 2;
-	RoundDuration = 100.0f;
-	SideSwitchRound = 0;
-	RoundsToWin = 2;
-	MaxRounds = 3;
+	RoundDuration = 160.0f;
+	SideSwitchRound = 7;
+	RoundsToWin = 7;
+	MaxRounds = 13;
 	StartingTeamARole = ETeamRole::Attackers;
 	StartingTeamBRole = ETeamRole::Defenders;
-}
 
-void ABombGameMode::BeginPlay()
-{
-	Super::BeginPlay();
-
-	if (!DataJackClass || DataJackClass->HasAnyClassFlags(CLASS_Abstract))
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("%s requires a concrete Data Jack class."), *GetNameSafe(this));
-	}
-}
-
-bool ABombGameMode::StartDataJackInteraction(ABombPlayerController* PlayerController)
-{
-	ABaseTeamPlayerState* PlayerState = nullptr;
-	if (!IsDataJackRequestValid(PlayerController, PlayerState) || !IsValid(ActiveDataJack))
-	{
-		return false;
-	}
-
-	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
-	const ETeamRole PlayerRole = IsValid(RoundGameState) ? RoundGameState->GetTeamRole(PlayerState->GetTeam()) : ETeamRole::None;
-	const EDataJackState ObjectiveState = ActiveDataJack->GetDataJackState();
-	if (ActiveDataJack->IsInteractingPlayer(PlayerState))
-	{
-		return (PlayerRole == ETeamRole::Attackers && ObjectiveState == EDataJackState::Planting)
-			|| (PlayerRole == ETeamRole::Defenders && ObjectiveState == EDataJackState::Defusing);
-	}
-
-	bool bInteractionStarted = false;
-	if (PlayerRole == ETeamRole::Attackers
-		&& ActiveDataJack->GetDataJackState() == EDataJackState::Carried
-		&& ActiveDataJack->IsCarriedBy(PlayerState))
-	{
-		ADataJackSiteVolume* SiteVolume = FindPlantSiteForPawn(PlayerController->GetPawn());
-		bInteractionStarted = IsValid(SiteVolume) && ActiveDataJack->BeginPlanting(PlayerController, PlayerState, SiteVolume);
-	}
-	else if (PlayerRole == ETeamRole::Defenders && ActiveDataJack->GetDataJackState() == EDataJackState::Planted)
-	{
-		bInteractionStarted = ActiveDataJack->BeginDefusing(PlayerController, PlayerState);
-	}
-
-	return bInteractionStarted;
-}
-
-void ABombGameMode::StopDataJackInteraction(ABombPlayerController* PlayerController)
-{
-	if (HasAuthority() && IsValid(ActiveDataJack) && IsValid(PlayerController))
-	{
-		ActiveDataJack->CancelInteraction(PlayerController);
-	}
-}
-
-bool ABombGameMode::StartDataJackDrop(ABombPlayerController* PlayerController)
-{
-	ABaseTeamPlayerState* PlayerState = nullptr;
-	return IsDataJackRequestValid(PlayerController, PlayerState)
-		&& IsValid(ActiveDataJack)
-		&& ActiveDataJack->BeginDropHold(PlayerController, PlayerState);
-}
-
-void ABombGameMode::StopDataJackDrop(ABombPlayerController* PlayerController)
-{
-	if (HasAuthority() && IsValid(ActiveDataJack) && IsValid(PlayerController))
-	{
-		ActiveDataJack->CancelDropHold(PlayerController);
-	}
-}
-
-bool ABombGameMode::TryPickupDataJack(APawn* PlayerPawn)
-{
-	if (!HasAuthority() || !IsValid(PlayerPawn) || !IsValid(ActiveDataJack))
-	{
-		return false;
-	}
-
-	AController* PlayerController = PlayerPawn->GetController();
-	ABaseTeamPlayerState* PlayerState = IsValid(PlayerController) ? PlayerController->GetPlayerState<ABaseTeamPlayerState>() : nullptr;
-	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
-	if (!IsValid(PlayerState)
-		|| !PlayerState->IsAlive()
-		|| !IsValid(RoundGameState)
-		|| RoundGameState->GetGameFlowPhase() != EGameFlowPhase::RoundInProgress
-		|| RoundGameState->GetTeamRole(PlayerState->GetTeam()) != ETeamRole::Attackers)
-	{
-		return false;
-	}
-
-	return ActiveDataJack->TryPickup(PlayerPawn, PlayerState);
-}
-
-void ABombGameMode::NotifyDataJackInteractionStopped(APlayerController* PlayerController)
-{
-	if (ABombPlayerController* BombPlayerController = Cast<ABombPlayerController>(PlayerController))
-	{
-		BombPlayerController->SetObjectiveInteractionActive(false);
-	}
+	BombObjectiveManager = CreateDefaultSubobject<UBombObjectiveManager>(TEXT("BombObjectiveManager"));
 }
 
 void ABombGameMode::NotifyDataJackPlanted(ADataJack* DataJack)
 {
-	if (!HasAuthority() || DataJack != ActiveDataJack)
+	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	if (HasAuthority() && IsValid(ObjectiveManager) && ObjectiveManager->IsActiveDataJack(DataJack))
 	{
-		return;
+		FreezeRoundTimer();
 	}
-
-	FreezeRoundTimer();
 }
 
 void ABombGameMode::NotifyDataJackDetonated(ADataJack* DataJack)
 {
-	if (!HasAuthority() || DataJack != ActiveDataJack)
+	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	if (!HasAuthority() || !IsValid(ObjectiveManager) || !ObjectiveManager->IsActiveDataJack(DataJack))
 	{
 		return;
 	}
@@ -153,7 +57,8 @@ void ABombGameMode::NotifyDataJackDetonated(ADataJack* DataJack)
 
 void ABombGameMode::NotifyDataJackDefused(ADataJack* DataJack)
 {
-	if (!HasAuthority() || DataJack != ActiveDataJack)
+	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	if (!HasAuthority() || !IsValid(ObjectiveManager) || !ObjectiveManager->IsActiveDataJack(DataJack))
 	{
 		return;
 	}
@@ -165,29 +70,49 @@ void ABombGameMode::NotifyDataJackDefused(ADataJack* DataJack)
 	}
 }
 
+void ABombGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	if (IsValid(BombObjectiveManager))
+	{
+		BombObjectiveManager->Initialize(this);
+	}
+}
+
+void ABombGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
+	if (UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager())
+	{
+		ObjectiveManager->Shutdown();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 AActor* ABombGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-	if (APlayerController* PlayerController = Cast<APlayerController>(Player))
+	const ABaseTeamPlayerState* TeamPlayerState = IsValid(Player)
+		? Player->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	if (!IsValid(TeamPlayerState))
 	{
-		EnsurePlayerTeamAssigned(PlayerController);
-	}
-
-	const ABaseTeamPlayerState* TeamPlayerState = IsValid(Player) ? Player->GetPlayerState<ABaseTeamPlayerState>() : nullptr;
-	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
-	if (!IsValid(TeamPlayerState) || !IsValid(RoundGameState))
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Cannot choose a bomb-mode spawn because the team or round state is invalid for %s."), *GetNameSafe(Player));
+		UE_LOG(LogBombGameMode, Error,
+			TEXT("Cannot choose a bomb-mode spawn because team state is invalid for %s."),
+			*GetNameSafe(Player));
 		return nullptr;
 	}
 
-	const ETeamRole SpawnRole = RoundGameState->GetTeamRole(TeamPlayerState->GetTeam());
+	// 다음 라운드 역할은 스폰 준비에만 먼저 사용하고, 준비 완료 후 GameState에 공개한다.
+	const ETeamRole SpawnRole = GetSpawnRoleForTeam(TeamPlayerState->GetTeam());
 	if (SpawnRole == ETeamRole::None)
 	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Cannot choose a bomb-mode spawn because %s has no active team role."), *GetNameSafe(Player));
+		UE_LOG(LogBombGameMode, Error, TEXT("%s has no active team role."), *GetNameSafe(Player));
 		return nullptr;
 	}
 
-	TArray<ABombPlayerStart*> MatchingStarts;
+	TArray<AActor*> MatchingStarts;
 	for (TActorIterator<ABombPlayerStart> Iterator(GetWorld()); Iterator; ++Iterator)
 	{
 		ABombPlayerStart* PlayerStart = *Iterator;
@@ -197,81 +122,68 @@ AActor* ABombGameMode::ChoosePlayerStart_Implementation(AController* Player)
 		}
 	}
 
-	if (MatchingStarts.Num() == 0)
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("No BombPlayerStart is configured for role %d."), static_cast<int32>(SpawnRole));
-		return nullptr;
-	}
-
-	TArray<ABombPlayerStart*> ClearStarts;
-	for (ABombPlayerStart* PlayerStart : MatchingStarts)
-	{
-		if (IsPlayerStartClear(PlayerStart))
-		{
-			ClearStarts.Add(PlayerStart);
-		}
-	}
-
-	const TArray<ABombPlayerStart*>& CandidateStarts = ClearStarts.Num() == 0 ? MatchingStarts : ClearStarts;
-	return CandidateStarts[FMath::RandHelper(CandidateStarts.Num())];
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager)
+		? PlayerManager->SelectAvailablePlayerStart(MatchingStarts, TEXT("BombPlayerStart"))
+		: nullptr;
 }
 
-bool ABombGameMode::PrepareRound()
+void ABombGameMode::ResetModeState()
 {
-	return Super::PrepareRound() && SpawnDataJackForRound();
-}
-
-void ABombGameMode::HandlePreparedRoundAborted()
-{
-	Super::HandlePreparedRoundAborted();
 	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
-	DestroyDataJackForRound();
-}
-
-void ABombGameMode::HandleGameFlowReset()
-{
-	Super::HandleGameFlowReset();
-	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
-	DestroyDataJackForRound();
-}
-
-void ABombGameMode::HandleRoundStarted()
-{
-	Super::HandleRoundStarted();
-
-	if (IsValid(ActiveDataJack))
+	if (UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager())
 	{
-		ActiveDataJack->ActivateForRound();
+		ObjectiveManager->ResetObjective();
 	}
 }
 
-void ABombGameMode::HandleRoundEnded(const EGameTeam WinningTeam, const ERoundEndReason EndReason)
+bool ABombGameMode::PrepareModeRound(const FRoundContext&)
 {
-	Super::HandleRoundEnded(WinningTeam, EndReason);
-	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
-
-	if (IsValid(ActiveDataJack))
+	UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	if (!IsValid(ObjectiveManager))
 	{
-		ActiveDataJack->DeactivateForRound();
+		return false;
+	}
+
+	FBombObjectiveConfig ObjectiveConfig;
+	ObjectiveConfig.DataJackClass = DataJackClass;
+	ObjectiveConfig.PlantDuration = PlantDuration;
+	ObjectiveConfig.CountdownDuration = CountdownDuration;
+	ObjectiveConfig.DefuseDuration = DefuseDuration;
+	ObjectiveConfig.DropHoldDuration = DropHoldDuration;
+	ObjectiveConfig.InteractionValidationInterval = InteractionValidationInterval;
+	return ObjectiveManager->PrepareForRound(ObjectiveConfig);
+}
+
+bool ABombGameMode::ActivateModeRound()
+{
+	UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	return IsValid(ObjectiveManager) && ObjectiveManager->ActivateForRound();
+}
+
+void ABombGameMode::DeactivateModeRound(const EGameTeam, const ERoundEndReason)
+{
+	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
+	if (UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager())
+	{
+		ObjectiveManager->DeactivateForRound();
 	}
 }
 
-void ABombGameMode::HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState)
+void ABombGameMode::HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState)
 {
-	Super::HandlePlayerEliminated(EliminatedPlayerState);
-
-	if (IsValid(ActiveDataJack))
+	if (UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager())
 	{
-		ActiveDataJack->HandlePlayerEliminated(EliminatedPlayerState);
+		ObjectiveManager->HandlePlayerEliminated(EliminatedPlayerState);
 	}
 
 	ScheduleEliminationResolution();
 }
 
-void ABombGameMode::HandleRoundTimeExpired()
+void ABombGameMode::ResolveModeRoundTimeExpired()
 {
-	if (IsValid(ActiveDataJack)
-		&& (ActiveDataJack->GetDataJackState() == EDataJackState::Planted || ActiveDataJack->GetDataJackState() == EDataJackState::Defusing))
+	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	if (IsValid(ObjectiveManager) && ObjectiveManager->IsPlantedOrDefusing())
 	{
 		return;
 	}
@@ -288,23 +200,22 @@ void ABombGameMode::HandleRoundTimeExpired()
 	}
 }
 
-bool ABombGameMode::HasEnoughPlayersToStart() const
+bool ABombGameMode::HasModeRequiredPlayers() const
 {
-	return Super::HasEnoughPlayersToStart()
-		&& GetTeamPlayerCount(EGameTeam::TeamA) > 0
+	return GetTeamPlayerCount(EGameTeam::TeamA) > 0
 		&& GetTeamPlayerCount(EGameTeam::TeamB) > 0;
 }
 
-bool ABombGameMode::IsGameFlowConfigurationValid() const
+bool ABombGameMode::IsModeConfigurationValid() const
 {
 	const bool bHasValidRoles =
 		(StartingTeamARole == ETeamRole::Attackers && StartingTeamBRole == ETeamRole::Defenders)
 		|| (StartingTeamARole == ETeamRole::Defenders && StartingTeamBRole == ETeamRole::Attackers);
-
 	const int32 MinimumRoundsForWinningScore = (RoundsToWin * 2) - 1;
 
-	return Super::IsGameFlowConfigurationValid()
+	return PlayerControllerClass != nullptr
 		&& PlayerControllerClass->IsChildOf(ABombPlayerController::StaticClass())
+		&& GameStateClass != nullptr
 		&& GameStateClass->IsChildOf(ABombGameState::StaticClass())
 		&& DataJackClass != nullptr
 		&& !DataJackClass->HasAnyClassFlags(CLASS_Abstract)
@@ -329,19 +240,19 @@ void ABombGameMode::ScheduleEliminationResolution()
 
 	if (MutualEliminationGracePeriod <= 0.0f)
 	{
-		GetWorldTimerManager().SetTimerForNextTick(this, &ABombGameMode::ResolveEliminationOutcome);
+		GetWorldTimerManager().SetTimerForNextTick(this, &ABombGameMode::HandleEliminationGraceExpired);
 		return;
 	}
 
 	GetWorldTimerManager().SetTimer(
 		EliminationResolutionTimerHandle,
 		this,
-		&ABombGameMode::ResolveEliminationOutcome,
+		&ABombGameMode::HandleEliminationGraceExpired,
 		MutualEliminationGracePeriod,
 		false);
 }
 
-void ABombGameMode::ResolveEliminationOutcome()
+void ABombGameMode::HandleEliminationGraceExpired()
 {
 	TryResolveEliminationOutcome();
 }
@@ -363,8 +274,8 @@ bool ABombGameMode::TryResolveEliminationOutcome()
 
 	const int32 AliveAttackers = GetAlivePlayerCount(Attackers);
 	const int32 AliveDefenders = GetAlivePlayerCount(Defenders);
-	const EDataJackState ObjectiveState = IsValid(ActiveDataJack) ? ActiveDataJack->GetDataJackState() : EDataJackState::Idle;
-	const bool bObjectiveIsPlanted = ObjectiveState == EDataJackState::Planted || ObjectiveState == EDataJackState::Defusing;
+	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
+	const bool bObjectiveIsPlanted = IsValid(ObjectiveManager) && ObjectiveManager->IsPlantedOrDefusing();
 
 	if (AliveAttackers == 0 && AliveDefenders == 0)
 	{
@@ -387,159 +298,7 @@ bool ABombGameMode::TryResolveEliminationOutcome()
 	return false;
 }
 
-bool ABombGameMode::SpawnDataJackForRound()
+UBombObjectiveManager* ABombGameMode::GetBombObjectiveManager() const
 {
-	DestroyDataJackForRound();
-	if (!ValidateDataJackMapConfiguration())
-	{
-		return false;
-	}
-
-	ADataJackSpawnPoint* SpawnPoint = nullptr;
-	for (TActorIterator<ADataJackSpawnPoint> Iterator(GetWorld()); Iterator; ++Iterator)
-	{
-		SpawnPoint = *Iterator;
-		break;
-	}
-
-	if (!IsValid(SpawnPoint))
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Failed to find the configured Data Jack spawn point."));
-		return false;
-	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ActiveDataJack = GetWorld()->SpawnActor<ADataJack>(DataJackClass, SpawnPoint->GetActorTransform(), SpawnParameters);
-	if (!IsValid(ActiveDataJack))
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Failed to spawn the Data Jack actor."));
-		return false;
-	}
-
-	ActiveDataJack->ConfigureForMode(
-		PlantDuration,
-		CountdownDuration,
-		DefuseDuration,
-		DropHoldDuration,
-		InteractionValidationInterval);
-	ActiveDataJack->InitializeForRound(SpawnPoint->GetActorTransform());
-
-	ABombGameState* BombGameState = GetGameState<ABombGameState>();
-	if (!IsValid(BombGameState))
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Failed to publish the active Data Jack because BombGameState is unavailable."));
-		ActiveDataJack->Destroy();
-		ActiveDataJack = nullptr;
-		return false;
-	}
-
-	BombGameState->SetActiveDataJack(ActiveDataJack);
-	return true;
-}
-
-void ABombGameMode::DestroyDataJackForRound()
-{
-	if (ABombGameState* BombGameState = GetGameState<ABombGameState>())
-	{
-		BombGameState->SetActiveDataJack(nullptr);
-	}
-
-	if (IsValid(ActiveDataJack))
-	{
-		ActiveDataJack->DeactivateForRound();
-		ActiveDataJack->Destroy();
-	}
-
-	ActiveDataJack = nullptr;
-}
-
-bool ABombGameMode::ValidateDataJackMapConfiguration() const
-{
-	int32 DataJackSpawnPointCount = 0;
-	for (TActorIterator<ADataJackSpawnPoint> Iterator(GetWorld()); Iterator; ++Iterator)
-	{
-		if (IsValid(*Iterator))
-		{
-			++DataJackSpawnPointCount;
-		}
-	}
-
-	if (DataJackSpawnPointCount != 1)
-	{
-		UE_LOG(
-			LogBombGameMode,
-			Error,
-			TEXT("Bomb mode requires exactly one attacker-side DataJackSpawnPoint, but found %d."),
-			DataJackSpawnPointCount);
-		return false;
-	}
-
-	int32 SiteCount = 0;
-	TSet<FName> SiteIds;
-	for (TActorIterator<ADataJackSiteVolume> Iterator(GetWorld()); Iterator; ++Iterator)
-	{
-		const ADataJackSiteVolume* SiteVolume = *Iterator;
-		if (!IsValid(SiteVolume))
-		{
-			continue;
-		}
-
-		const FName SiteId = SiteVolume->GetSiteId();
-		if (SiteId.IsNone() || SiteIds.Contains(SiteId))
-		{
-			UE_LOG(LogBombGameMode, Error, TEXT("Every DataJackSiteVolume requires a unique, non-empty SiteId."));
-			return false;
-		}
-
-		SiteIds.Add(SiteId);
-		++SiteCount;
-	}
-
-	if (SiteCount == 0)
-	{
-		UE_LOG(LogBombGameMode, Error, TEXT("Bomb mode requires at least one DataJackSiteVolume."));
-		return false;
-	}
-
-	return true;
-}
-
-ADataJackSiteVolume* ABombGameMode::FindPlantSiteForPawn(const APawn* PlayerPawn) const
-{
-	if (!IsValid(PlayerPawn))
-	{
-		return nullptr;
-	}
-
-	for (TActorIterator<ADataJackSiteVolume> Iterator(GetWorld()); Iterator; ++Iterator)
-	{
-		ADataJackSiteVolume* SiteVolume = *Iterator;
-		if (IsValid(SiteVolume) && SiteVolume->ContainsPawn(PlayerPawn))
-		{
-			return SiteVolume;
-		}
-	}
-
-	return nullptr;
-}
-
-bool ABombGameMode::IsDataJackRequestValid(
-	const ABombPlayerController* PlayerController,
-	ABaseTeamPlayerState*& OutPlayerState) const
-{
-	OutPlayerState = nullptr;
-	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
-	if (!HasAuthority()
-		|| !IsValid(PlayerController)
-		|| !PlayerController->IsRoundInputEnabled()
-		|| !IsValid(RoundGameState)
-		|| RoundGameState->GetGameFlowPhase() != EGameFlowPhase::RoundInProgress
-		|| !IsValid(PlayerController->GetPawn()))
-	{
-		return false;
-	}
-
-	OutPlayerState = PlayerController->GetPlayerState<ABaseTeamPlayerState>();
-	return IsValid(OutPlayerState) && OutPlayerState->IsAlive() && OutPlayerState->GetTeam() != EGameTeam::None;
+	return BombObjectiveManager.Get();
 }

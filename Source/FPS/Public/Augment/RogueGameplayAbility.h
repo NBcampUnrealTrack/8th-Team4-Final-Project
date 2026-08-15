@@ -24,6 +24,8 @@ class FPS_API URogueGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
+	URogueGameplayAbility();
+
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	                                const FGameplayAbilityActorInfo* ActorInfo,
 	                                const FGameplayTagContainer* SourceTags = nullptr,

@@ -9,6 +9,7 @@ class ABaseTeamPlayerState;
 class ADataJackSiteVolume;
 class APlayerController;
 class APawn;
+class UBombObjectiveManager;
 class UPrimitiveComponent;
 class USceneComponent;
 class USphereComponent;
@@ -62,7 +63,7 @@ public:
 	bool IsRoundActive() const;
 
 	void ConfigureForMode(float NewPlantDuration, float NewCountdownDuration, float NewDefuseDuration, float NewDropHoldDuration, float NewValidationInterval);
-	void InitializeForRound(const FTransform& SpawnTransform);
+	void InitializeForRound(const FTransform& SpawnTransform, UBombObjectiveManager* InObjectiveManager);
 	void ActivateForRound();
 	void DeactivateForRound();
 	bool TryPickup(APawn* NewCarrierPawn, ABaseTeamPlayerState* NewCarrierPlayerState);
@@ -130,13 +131,19 @@ private:
 	bool CanPawnDefuse(const APawn* PlayerPawn) const;
 	void ValidateActiveInteraction();
 	void CompleteActiveInteraction();
+	void CompletePlanting();
+	void CompleteDefusing();
 	void CompleteDropHold();
 	void Detonate();
+	APlayerController* ResetInteractionState();
+	APlayerController* ResetDropHold();
+	void FinishDropHold();
 	void ClearInteractionTimers();
-	void ClearDropTimer();
 	void ClearDetonationTimer();
 	void ClearPickupBlockIfNotOverlapping();
 	void NotifyInteractionStopped(APlayerController* PlayerController);
+	void NotifyDropStopped(APlayerController* PlayerController);
+	UBombObjectiveManager* GetObjectiveManager() const;
 	void DropFromCarrier(bool bBlockPreviousCarrier);
 	FTransform BuildDropTransform(const APawn* SourceCarrierPawn) const;
 	FTransform BuildGroundedTransform(const FHitResult& SurfaceHit, const APawn* OrientationSource) const;
@@ -229,6 +236,7 @@ private:
 	TWeakObjectPtr<ABaseTeamPlayerState> DropPlayerState;
 	TWeakObjectPtr<APawn> TemporarilyBlockedPickupPawn;
 	TWeakObjectPtr<ADataJackSiteVolume> ActivePlantSite;
+	TWeakObjectPtr<UBombObjectiveManager> ObjectiveManager;
 	FTimerHandle InteractionCompletionTimerHandle;
 	FTimerHandle InteractionValidationTimerHandle;
 	FTimerHandle DropHoldTimerHandle;

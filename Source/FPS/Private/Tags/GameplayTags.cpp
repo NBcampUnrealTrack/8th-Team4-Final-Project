@@ -63,6 +63,15 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경");
 
+	// 게임플레이 입력 차단/행동 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked, "State.Gameplay.InputBlocked", "게임플레이 입력 차단 부모 태그");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked_AugmentDraft, "State.Gameplay.InputBlocked.AugmentDraft", "증강 선택 중 게임플레이 입력 차단");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_ActionInProgress, "State.Gameplay.ActionInProgress", "Data Jack 설치/해체와 동시에 진행할 수 없는 GameplayAbility 실행 중");
+
+	// Data Jack 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting, "State.Combat.DataJack.Interacting", "Data Jack 설치/해체 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Dropping, "State.Combat.DataJack.Dropping", "Data Jack 드롭 입력 유지 중");
+
 	// 전투 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsAiming,    "State.Combat.IsAiming",    "조준 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsReloading, "State.Combat.IsReloading", "재장전 중");

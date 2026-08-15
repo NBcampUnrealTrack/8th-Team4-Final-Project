@@ -7,8 +7,13 @@
 
 class ABaseRoundGameState;
 class ABaseTeamPlayerState;
-class UAugmentRegistrySubsystem;
+class APlayerController;
+class UAugmentDraftManager;
 
+/**
+ * 서버 권위 라운드 흐름 조정자.
+ * 페이즈와 승패만 결정하고, 플레이어 및 드래프트 작업은 각 Manager에 맡긴다.
+ */
 UCLASS(Abstract)
 class FPS_API ABaseRoundGameMode : public ABaseTeamGameMode
 {
@@ -24,6 +29,12 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Match")
 	void RestartGameFlow();
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Round")
+	void RetryRoundOpening();
+
+	// 각 로컬 플레이어의 인게임 UI가 준비되면 첫 라운드 시작 조건을 다시 평가한다.
+	void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -33,46 +44,58 @@ protected:
 	virtual bool ReadyToEndMatch_Implementation() override;
 	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
 
-	virtual void HandleGameFlowReset();
-	virtual bool PrepareRound();
-	virtual void HandlePreparedRoundAborted();
-	virtual void HandleRoundStarted();
-	virtual void HandleRoundEnded(EGameTeam WinningTeam, ERoundEndReason EndReason);
-	virtual void HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState);
-	virtual void HandleRoundTimeExpired();
-	virtual bool HasEnoughPlayersToStart() const;
-	virtual bool IsGameFlowConfigurationValid() const;
+	// 파생 모드는 목표물 수명주기와 승패 규칙만 구현한다.
+	virtual void ResetModeState();
+	virtual bool PrepareModeRound(const FRoundContext& RoundContext);
+	virtual bool ActivateModeRound();
+	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
+	virtual void HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState);
+	virtual void ResolveModeRoundTimeExpired();
+	virtual bool HasModeRequiredPlayers() const;
+	virtual bool IsModeConfigurationValid() const;
 
 	void EndRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
-	void SetRoundTimer(float Duration);
 	void FreezeRoundTimer();
-	bool PreparePlayersForRound();
 
 	ABaseRoundGameState* GetBaseRoundGameState() const;
+	ETeamRole GetRoleForTeam(EGameTeam Team) const;
 	EGameTeam GetTeamForRole(ETeamRole TeamRole) const;
+	ETeamRole GetSpawnRoleForTeam(EGameTeam Team) const;
 
 private:
-	void EvaluateRoundStart();
-	void ScheduleRoundStart(float Delay);
-	void BeginNextRound();
-	void BeginAugmentSelectionPhase();
-	void FinishAugmentSelectionPhase();
-	void StartRoundCombat();
-	void HandleRoundEndDelayFinished();
+	void InitializeGameFlow();
+	void HandlePlayerRosterChanged();
+	void HandleDraftDependenciesReady();
+
+	// 상위 흐름은 아래 전이만 따라가면 된다.
+	void TryBeginNextRound();       // Waiting/Ready -> RoundStarting
+	void OpenNextRound();           // RoundStarting -> Draft 또는 Combat
+	void FinishAugmentDraft();      // Draft -> Combat
+	bool TryStartRoundCombat();     // 준비 완료 -> RoundInProgress
+	void AdvanceToNextRound();      // RoundEnding -> Waiting
 	void FinishMatch(EGameTeam WinningTeam);
-	void AbortPreparedRound(bool bRollbackRoundNumber);
-	void ResetAllPlayerPawns();
-	void ResetAllPlayerAugments();
-	void SetRoundPlayerInputEnabled(bool bEnabled);
-	bool RollAugmentOffersForPlayers(int32 RoundNumber);
-	bool AutoSelectAugmentOffersForPlayers();
-	bool IsAugmentRegistryReady() const;
-	int32 MakeRoundSeed(int32 RoundNumber) const;
-	void RegenerateMatchSeed();
+
+	void EnterWaitingForPlayers();
+	void EnterWaitingForPlayersReady();
+	void SuspendRoundOpening(const TCHAR* Reason);
+	FRoundContext MakeRoundContext(int32 RoundNumber) const;
+
+	bool HasRequiredPlayersToStart() const;
+	bool AreInitialPlayersReadyForGameFlow() const;
+	bool IsGameFlowConfigurationValid() const;
+	bool IsBaseConfigurationValid() const;
 	bool IsMatchComplete(EGameTeam& OutWinningTeam) const;
 
-	UFUNCTION()
-	void HandleAugmentRegistryReady();
+	void StartRoundTimer(float Duration);
+	void HandleRoundTimerExpired();
+	void ClearPhaseTimer();
+	void ClearRoundTimer();
+	void ClearAllFlowTimers();
+
+	void SetAllPlayersRoundInputEnabled(bool bEnabled);
+	void SetRoundParticipantInputEnabled(bool bEnabled);
+	void SetPlayerRoundInputEnabled(APlayerController* PlayerController, bool bEnabled) const;
+	UAugmentDraftManager* GetAugmentDraftManager() const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Players", meta = (ClampMin = "1"))
@@ -99,6 +122,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment", meta = (EditCondition = "bEnableAugmentDraft", ClampMin = "1", ClampMax = "8"))
 	int32 AugmentOfferCount = 3;
 
+	// 이 라운드부터 공수 역할을 교대한다. 0이면 교대하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Rules", meta = (ClampMin = "0"))
 	int32 SideSwitchRound = 0;
 
@@ -115,13 +139,14 @@ protected:
 	ETeamRole StartingTeamBRole = ETeamRole::Defenders;
 
 private:
-	FTimerHandle RoundStartTimerHandle;
-	FTimerHandle AugmentSelectionTimerHandle;
-	FTimerHandle RoundEndTimerHandle;
-	FTimerHandle RoundTimeTimerHandle;
-	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundAugmentRegistry;
-	TSet<TWeakObjectPtr<ABaseTeamPlayerState>> EliminatedPlayersThisRound;
-	int32 MatchSeed = 0;
-	bool bSidesSwitched = false;
+	UPROPERTY(Transient)
+	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
+
+	FTimerHandle PhaseTimerHandle;
+	FTimerHandle RoundTimerHandle;
+	TOptional<FRoundContext> PendingRoundContext;
+	TSet<TWeakObjectPtr<APlayerController>> InitialReadyPlayerControllers;
+	int32 LastCompletedRoundNumber = 0;
+	bool bRoundOpeningSuspended = false;
 	bool bLoggedWaitingForAugmentRegistry = false;
 };

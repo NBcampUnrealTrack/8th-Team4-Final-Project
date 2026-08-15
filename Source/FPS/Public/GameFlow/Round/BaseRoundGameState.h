@@ -49,6 +49,7 @@ public:
 	int32 GetMaxRounds() const;
 
 	void InitializeRoundConfiguration(int32 NewMaxRounds);
+	void SetRoundContext(const FRoundContext& RoundContext);
 	void SetCurrentRoundNumber(int32 NewRoundNumber);
 	void SetGameFlowPhase(EGameFlowPhase NewPhase, float PhaseDuration = 0.0f);
 	void SetRoundTimer(float Duration);

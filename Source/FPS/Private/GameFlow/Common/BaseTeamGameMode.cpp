@@ -4,9 +4,8 @@
 #include "GameFlow/Common/BaseTeamGameState.h"
 #include "GameFlow/Common/BaseTeamPlayerStart.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
-#include "GameFramework/Pawn.h"
+#include "GameFlow/Common/TeamPlayerManager.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerState.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseTeamGameMode, Log, All);
@@ -16,45 +15,48 @@ ABaseTeamGameMode::ABaseTeamGameMode()
 	GameStateClass = ABaseTeamGameState::StaticClass();
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 	DefaultPawnClass = nullptr;
+
+	TeamPlayerManager = CreateDefaultSubobject<UTeamPlayerManager>(TEXT("TeamPlayerManager"));
 }
 
 int32 ABaseTeamGameMode::GetTeamPlayerCount(const EGameTeam Team) const
 {
-	const ABaseTeamGameState* TeamGameState = GetBaseTeamGameState();
-	if (!IsValid(TeamGameState))
-	{
-		return 0;
-	}
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager) ? PlayerManager->GetTeamPlayerCount(Team) : 0;
+}
 
-	int32 PlayerCount = 0;
-	for (const APlayerState* PlayerState : TeamGameState->PlayerArray)
-	{
-		const ABaseTeamPlayerState* TeamPlayerState = Cast<ABaseTeamPlayerState>(PlayerState);
-		if (IsValid(TeamPlayerState) && TeamPlayerState->GetTeam() == Team)
-		{
-			++PlayerCount;
-		}
-	}
+void ABaseTeamGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
 
-	return PlayerCount;
+	if (IsValid(TeamPlayerManager))
+	{
+		TeamPlayerManager->Initialize(this, SpawnClearanceRadius);
+	}
 }
 
 void ABaseTeamGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
-	EnsurePlayerTeamAssigned(NewPlayer);
+	if (!InitializeTeamPlayer(NewPlayer))
+	{
+		return;
+	}
+
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 }
 
 AActor* ABaseTeamGameMode::ChoosePlayerStart_Implementation(AController* Player)
 {
-	const ABaseTeamPlayerState* TeamPlayerState = IsValid(Player) ? Player->GetPlayerState<ABaseTeamPlayerState>() : nullptr;
+	const ABaseTeamPlayerState* TeamPlayerState = IsValid(Player)
+		? Player->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
 	if (!IsValid(TeamPlayerState) || TeamPlayerState->GetTeam() == EGameTeam::None)
 	{
 		UE_LOG(LogBaseTeamGameMode, Error, TEXT("Cannot choose a team spawn because %s has no assigned team."), *GetNameSafe(Player));
 		return nullptr;
 	}
 
-	TArray<ABaseTeamPlayerStart*> MatchingStarts;
+	TArray<AActor*> MatchingStarts;
 	for (TActorIterator<ABaseTeamPlayerStart> Iterator(GetWorld()); Iterator; ++Iterator)
 	{
 		ABaseTeamPlayerStart* PlayerStart = *Iterator;
@@ -64,23 +66,10 @@ AActor* ABaseTeamGameMode::ChoosePlayerStart_Implementation(AController* Player)
 		}
 	}
 
-	if (MatchingStarts.Num() == 0)
-	{
-		UE_LOG(LogBaseTeamGameMode, Error, TEXT("No BaseTeamPlayerStart is configured for team %d."), static_cast<int32>(TeamPlayerState->GetTeam()));
-		return nullptr;
-	}
-
-	TArray<ABaseTeamPlayerStart*> ClearStarts;
-	for (ABaseTeamPlayerStart* PlayerStart : MatchingStarts)
-	{
-		if (IsPlayerStartClear(PlayerStart))
-		{
-			ClearStarts.Add(PlayerStart);
-		}
-	}
-
-	const TArray<ABaseTeamPlayerStart*>& CandidateStarts = ClearStarts.Num() == 0 ? MatchingStarts : ClearStarts;
-	return CandidateStarts[FMath::RandHelper(CandidateStarts.Num())];
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager)
+		? PlayerManager->SelectAvailablePlayerStart(MatchingStarts, TEXT("BaseTeamPlayerStart"))
+		: nullptr;
 }
 
 EGameTeam ABaseTeamGameMode::ChooseTeamForNewPlayer() const
@@ -90,27 +79,11 @@ EGameTeam ABaseTeamGameMode::ChooseTeamForNewPlayer() const
 	return TeamACount <= TeamBCount ? EGameTeam::TeamA : EGameTeam::TeamB;
 }
 
-void ABaseTeamGameMode::EnsurePlayerTeamAssigned(APlayerController* PlayerController)
+bool ABaseTeamGameMode::InitializeTeamPlayer(APlayerController* PlayerController)
 {
-	if (!IsValid(PlayerController))
-	{
-		return;
-	}
-
-	ABaseTeamPlayerState* TeamPlayerState = PlayerController->GetPlayerState<ABaseTeamPlayerState>();
-	if (!IsValid(TeamPlayerState))
-	{
-		UE_LOG(LogBaseTeamGameMode, Error, TEXT("%s does not use ABaseTeamPlayerState."), *GetNameSafe(PlayerController));
-		return;
-	}
-
-	if (TeamPlayerState->GetTeam() != EGameTeam::None)
-	{
-		return;
-	}
-
-	TeamPlayerState->SetTeam(ChooseTeamForNewPlayer());
-	TeamPlayerState->SetAlive(false);
+	UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager)
+		&& PlayerManager->AssignTeamIfNeeded(PlayerController, ChooseTeamForNewPlayer());
 }
 
 ABaseTeamGameState* ABaseTeamGameMode::GetBaseTeamGameState() const
@@ -120,41 +93,11 @@ ABaseTeamGameState* ABaseTeamGameMode::GetBaseTeamGameState() const
 
 int32 ABaseTeamGameMode::GetAlivePlayerCount(const EGameTeam Team) const
 {
-	const ABaseTeamGameState* TeamGameState = GetBaseTeamGameState();
-	if (!IsValid(TeamGameState))
-	{
-		return 0;
-	}
-
-	int32 AlivePlayerCount = 0;
-	for (const APlayerState* PlayerState : TeamGameState->PlayerArray)
-	{
-		const ABaseTeamPlayerState* TeamPlayerState = Cast<ABaseTeamPlayerState>(PlayerState);
-		if (IsValid(TeamPlayerState) && TeamPlayerState->GetTeam() == Team && TeamPlayerState->IsAlive())
-		{
-			++AlivePlayerCount;
-		}
-	}
-
-	return AlivePlayerCount;
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager) ? PlayerManager->GetAlivePlayerCount(Team) : 0;
 }
 
-bool ABaseTeamGameMode::IsPlayerStartClear(const AActor* PlayerStart) const
+UTeamPlayerManager* ABaseTeamGameMode::GetTeamPlayerManager() const
 {
-	if (!IsValid(PlayerStart) || SpawnClearanceRadius <= 0.0f)
-	{
-		return true;
-	}
-
-	const float ClearanceRadiusSquared = FMath::Square(SpawnClearanceRadius);
-	for (TActorIterator<APawn> Iterator(GetWorld()); Iterator; ++Iterator)
-	{
-		const APawn* ExistingPawn = *Iterator;
-		if (IsValid(ExistingPawn) && FVector::DistSquared(ExistingPawn->GetActorLocation(), PlayerStart->GetActorLocation()) < ClearanceRadiusSquared)
-		{
-			return false;
-		}
-	}
-
-	return true;
+	return TeamPlayerManager.Get();
 }

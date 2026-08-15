@@ -5,11 +5,8 @@
 #include "BombGameMode.generated.h"
 
 class ABaseTeamPlayerState;
-class ABombPlayerController;
 class ADataJack;
-class ADataJackSiteVolume;
-class APawn;
-class APlayerController;
+class UBombObjectiveManager;
 
 UCLASS()
 class FPS_API ABombGameMode : public ABaseRoundGameMode
@@ -19,40 +16,26 @@ class FPS_API ABombGameMode : public ABaseRoundGameMode
 public:
 	ABombGameMode();
 
-	bool StartDataJackInteraction(ABombPlayerController* PlayerController);
-	void StopDataJackInteraction(ABombPlayerController* PlayerController);
-	bool StartDataJackDrop(ABombPlayerController* PlayerController);
-	void StopDataJackDrop(ABombPlayerController* PlayerController);
-	bool TryPickupDataJack(APawn* PlayerPawn);
-	void NotifyDataJackInteractionStopped(APlayerController* PlayerController);
+	// 서버 GameplayAbility가 Objective 작업을 요청하는 진입점이다.
+	UBombObjectiveManager* GetBombObjectiveManager() const;
 	void NotifyDataJackPlanted(ADataJack* DataJack);
 	void NotifyDataJackDetonated(ADataJack* DataJack);
 	void NotifyDataJackDefused(ADataJack* DataJack);
 
 protected:
-	virtual void BeginPlay() override;
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
-	virtual bool PrepareRound() override;
-	virtual void HandlePreparedRoundAborted() override;
-	virtual void HandleGameFlowReset() override;
-	virtual void HandleRoundStarted() override;
-	virtual void HandleRoundEnded(EGameTeam WinningTeam, ERoundEndReason EndReason) override;
-	virtual void HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState) override;
-	virtual void HandleRoundTimeExpired() override;
-	virtual bool HasEnoughPlayersToStart() const override;
-	virtual bool IsGameFlowConfigurationValid() const override;
 
-private:
-	void ScheduleEliminationResolution();
-	void ResolveEliminationOutcome();
-	bool TryResolveEliminationOutcome();
-	bool SpawnDataJackForRound();
-	void DestroyDataJackForRound();
-	bool ValidateDataJackMapConfiguration() const;
-	ADataJackSiteVolume* FindPlantSiteForPawn(const APawn* PlayerPawn) const;
-	bool IsDataJackRequestValid(const ABombPlayerController* PlayerController, ABaseTeamPlayerState*& OutPlayerState) const;
+	virtual void ResetModeState() override;
+	virtual bool PrepareModeRound(const FRoundContext& RoundContext) override;
+	virtual bool ActivateModeRound() override;
+	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason) override;
+	virtual void HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState) override;
+	virtual void ResolveModeRoundTimeExpired() override;
+	virtual bool HasModeRequiredPlayers() const override;
+	virtual bool IsModeConfigurationValid() const override;
 
-protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Data Jack")
 	TSubclassOf<ADataJack> DataJackClass;
 
@@ -75,8 +58,12 @@ protected:
 	float MutualEliminationGracePeriod = 0.05f;
 
 private:
+	void ScheduleEliminationResolution();
+	void HandleEliminationGraceExpired();
+	bool TryResolveEliminationOutcome();
+
 	UPROPERTY(Transient)
-	TObjectPtr<ADataJack> ActiveDataJack;
+	TObjectPtr<UBombObjectiveManager> BombObjectiveManager;
 
 	FTimerHandle EliminationResolutionTimerHandle;
 };

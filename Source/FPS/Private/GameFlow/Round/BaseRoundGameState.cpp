@@ -109,6 +109,21 @@ void ABaseRoundGameState::InitializeRoundConfiguration(const int32 NewMaxRounds)
 	BroadcastRoundStateChanged();
 }
 
+void ABaseRoundGameState::SetRoundContext(const FRoundContext& RoundContext)
+{
+	if (!HasAuthority() || !RoundContext.IsValid())
+	{
+		return;
+	}
+
+	CurrentRoundNumber = RoundContext.RoundNumber;
+	TeamARole = RoundContext.TeamARole;
+	TeamBRole = RoundContext.TeamBRole;
+	RoundWinner = EGameTeam::None;
+	RoundEndReason = ERoundEndReason::None;
+	BroadcastRoundStateChanged();
+}
+
 void ABaseRoundGameState::SetCurrentRoundNumber(const int32 NewRoundNumber)
 {
 	if (!HasAuthority())

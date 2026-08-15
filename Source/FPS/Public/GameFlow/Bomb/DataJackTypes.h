@@ -14,3 +14,11 @@ enum class EDataJackState : uint8
 	Detonated UMETA(DisplayName = "Successfully Detonated"),
 	Defused UMETA(DisplayName = "Successfully Defused")
 };
+
+// GameplayAbility와 DataJack 서버 작업의 종료 통지를 연결하는 내부 작업 종류.
+enum class EDataJackOperation : uint8
+{
+	None,
+	Interaction,
+	Drop
+};

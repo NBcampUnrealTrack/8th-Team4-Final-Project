@@ -20,6 +20,12 @@ URogueTimedTagEffect::URogueTimedTagEffect()
 	DurationMagnitude = FGameplayEffectModifierMagnitude(Duration);
 }
 
+URogueGameplayAbility::URogueGameplayAbility()
+{
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
+}
+
 bool URogueGameplayAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,

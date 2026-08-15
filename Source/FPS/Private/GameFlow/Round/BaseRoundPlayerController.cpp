@@ -3,6 +3,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "GameFlow/Round/BaseRoundGameMode.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "Input/ShooterInputConfig.h"
@@ -31,13 +32,19 @@ bool ABaseRoundPlayerController::IsRoundInputEnabled() const
 	return bIsRoundInputEnabled;
 }
 
-bool ABaseRoundPlayerController::CanUseCombatInput() const
+bool ABaseRoundPlayerController::CanProcessGameplayInput() const
 {
 	const ABaseTeamPlayerState* TeamPlayerState = GetPlayerState<ABaseTeamPlayerState>();
-	return bIsRoundInputEnabled
+	return Super::CanProcessGameplayInput()
+		&& bIsRoundInputEnabled
 		&& IsValid(GetPawn())
 		&& IsValid(TeamPlayerState)
 		&& TeamPlayerState->IsAlive();
+}
+
+bool ABaseRoundPlayerController::CanUseCombatInput() const
+{
+	return CanProcessActionInput();
 }
 
 void ABaseRoundPlayerController::SetRoundInputEnabled(const bool bEnabled)
@@ -60,23 +67,42 @@ void ABaseRoundPlayerController::ClientSetRoundInputEnabled_Implementation(const
 	ApplyRoundInputEnabled(bEnabled);
 }
 
-void ABaseRoundPlayerController::HandleRoundInputStateChanged(const bool)
+void ABaseRoundPlayerController::NotifyClientReadyForGameFlow()
 {
+	if (HasAuthority())
+	{
+		if (ABaseRoundGameMode* RoundGameMode = GetWorld() != nullptr
+			? GetWorld()->GetAuthGameMode<ABaseRoundGameMode>()
+			: nullptr)
+		{
+			RoundGameMode->NotifyPlayerReadyForGameFlow(this);
+		}
+		return;
+	}
+
+	ServerNotifyClientReadyForGameFlow();
+}
+
+void ABaseRoundPlayerController::ServerNotifyClientReadyForGameFlow_Implementation()
+{
+	if (ABaseRoundGameMode* RoundGameMode = GetWorld() != nullptr
+		? GetWorld()->GetAuthGameMode<ABaseRoundGameMode>()
+		: nullptr)
+	{
+		RoundGameMode->NotifyPlayerReadyForGameFlow(this);
+	}
 }
 
 void ABaseRoundPlayerController::ApplyRoundInputEnabled(const bool bEnabled)
 {
 	if (bIsRoundInputEnabled == bEnabled)
 	{
-		SetGameplayMappingContextEnabled(bEnabled);
-		HandleRoundInputStateChanged(bEnabled);
 		return;
 	}
 
 	bIsRoundInputEnabled = bEnabled;
 	SetRoundInputLockApplied(!bEnabled);
 	SetGameplayMappingContextEnabled(bEnabled);
-	HandleRoundInputStateChanged(bEnabled);
 
 	if (!bEnabled)
 	{
@@ -141,4 +167,5 @@ void ABaseRoundPlayerController::SetGameplayMappingContextEnabled(const bool bEn
 	{
 		InputSubsystem->RemoveMappingContext(DefaultMappingContext);
 	}
+
 }

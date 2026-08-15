@@ -23,6 +23,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessGameplayInput() const;
+
+	// Data Jack 설치·해체 중에는 이동과 행동만 막고 Look은 공통 게이트만 사용한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessMovementInput() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessActionInput() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -33,7 +44,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
+
 private:
+	bool HasDataJackInteractionInputBlock() const;
+
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
@@ -44,5 +59,4 @@ private:
 	void Input_SecondaryWeaponPressed();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
-	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 };
