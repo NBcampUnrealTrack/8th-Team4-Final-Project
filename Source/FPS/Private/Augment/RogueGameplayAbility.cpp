@@ -20,12 +20,6 @@ URogueTimedTagEffect::URogueTimedTagEffect()
 	DurationMagnitude = FGameplayEffectModifierMagnitude(Duration);
 }
 
-URogueGameplayAbility::URogueGameplayAbility()
-{
-	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
-	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
-}
-
 bool URogueGameplayAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -38,15 +32,15 @@ bool URogueGameplayAbility::CanActivateAbility(
 		return false;
 	}
 
-	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도 라운드 상태를 반영한다.
-	// 현재 이 베이스의 실사용자는 Dash/Recon이라 라운드 전/선택/종료/사망/폭탄 상호작용 중에는
-	// 액티브 증강도 무기 어빌리티와 동일하게 차단된다.
+	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도
+	// 라운드/사망/공통 입력 차단 상태를 반영한다.
+	// Data Jack 등 행동별 상호 배제는 각 구체 증강의 Activation 태그가 결정한다.
 	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
 	const ABaseRoundPlayerController* RoundPlayerController = IsValid(AvatarPawn)
 		? Cast<ABaseRoundPlayerController>(AvatarPawn->GetController())
 		: nullptr;
 
-	return !IsValid(RoundPlayerController) || RoundPlayerController->CanUseCombatInput();
+	return !IsValid(RoundPlayerController) || RoundPlayerController->CanProcessGameplayInput();
 }
 
 int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const
