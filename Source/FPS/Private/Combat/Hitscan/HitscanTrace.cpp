@@ -18,7 +18,6 @@ namespace
 	{
 		Miss,
 		RangeLimit,
-		DamageTarget,
 		SurfaceBlocked,
 		LoopGuard,
 		IterationLimit
@@ -30,7 +29,6 @@ namespace
 		{
 		case EResolvedPelletStopReason::Miss: return TEXT("Miss");
 		case EResolvedPelletStopReason::RangeLimit: return TEXT("RangeLimit");
-		case EResolvedPelletStopReason::DamageTarget: return TEXT("DamageTarget");
 		case EResolvedPelletStopReason::SurfaceBlocked: return TEXT("SurfaceBlocked");
 		case EResolvedPelletStopReason::LoopGuard: return TEXT("LoopGuard");
 		case EResolvedPelletStopReason::IterationLimit: return TEXT("IterationLimit");
@@ -38,7 +36,7 @@ namespace
 		}
 	}
 
-	bool IsDamageTarget(
+	bool IsPotentialDamageTarget(
 		const FHitResult& HitResult,
 		const FHitscanDamageTargetSettings& TargetSettings)
 	{
@@ -291,6 +289,130 @@ namespace
 			1.0f);
 		return SurfaceRule;
 	}
+
+	bool TraceNextBlockingHit(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		const FCollisionQueryParams& QueryParams,
+		const FVector& TraceStart,
+		const FVector& TraceDirection,
+		const float RemainingRangeCentimeters,
+		FHitResult& OutHitResult)
+	{
+		const FVector TraceEnd = TraceStart + TraceDirection * RemainingRangeCentimeters;
+		const bool bBlockingHit = World->LineTraceSingleByChannel(
+			OutHitResult,
+			TraceStart,
+			TraceEnd,
+			Request.TraceSettings.TraceChannel,
+			QueryParams);
+
+		if (Request.TraceSettings.bDrawDebugTrace)
+		{
+			DrawDebugLine(
+				World,
+				TraceStart,
+				bBlockingHit ? OutHitResult.ImpactPoint : TraceEnd,
+				bBlockingHit ? FColor::Red : FColor::Green,
+				false,
+				2.0f,
+				0,
+				1.0f);
+		}
+
+		return bBlockingHit;
+	}
+
+	bool TryBuildImpactSample(
+		const FHitResult& HitResult,
+		const FVector& TraceDirection,
+		const FHitscanPenetrationState& PenetrationState,
+		const FHitscanDamageTargetSettings& TargetSettings,
+		const int32 PelletIndex,
+		FHitscanImpactSample& OutImpactSample)
+	{
+		if (!IsPotentialDamageTarget(HitResult, TargetSettings))
+		{
+			return false;
+		}
+
+		OutImpactSample.TargetActor = HitResult.GetActor();
+		OutImpactSample.ImpactPoint = HitResult.ImpactPoint;
+		OutImpactSample.BoneName = HitResult.BoneName;
+		OutImpactSample.ShotDirection = TraceDirection;
+		OutImpactSample.WallRetention = FMath::Clamp(
+			PenetrationState.AccumulatedWallRetention,
+			0.0f,
+			1.0f);
+		OutImpactSample.PelletIndex = PelletIndex;
+		return true;
+	}
+
+	bool TryAdvanceThroughSurface(
+		const FHitResult& EntryHit,
+		const FVector& TraceDirection,
+		const int32 PelletIndex,
+		const float RemainingRangeAfterEntryCentimeters,
+		const FHitscanShotRequest& Request,
+		FHitscanPenetrationState& InOutPenetrationState,
+		FVector& OutNextTraceStart)
+	{
+		if (Request.PenetrationSettings.MaximumPenetrationCount <= 0
+			|| InOutPenetrationState.PenetrationCount >= Request.PenetrationSettings.MaximumPenetrationCount
+			|| InOutPenetrationState.RemainingPenetrationPower <= 0.0f)
+		{
+			return false;
+		}
+
+		FVector ExitPoint = FVector::ZeroVector;
+		float ThicknessCentimeters = 0.0f;
+		if (!FindSurfaceExit(
+			EntryHit,
+			TraceDirection,
+			Request.TraceSettings,
+			RemainingRangeAfterEntryCentimeters,
+			ExitPoint,
+			ThicknessCentimeters))
+		{
+			return false;
+		}
+
+		const FHitscanSurfaceRule SurfaceRule = ResolveSurfaceRule(EntryHit, Request);
+		const bool bHasConfiguredSurfaceCost =
+			SurfaceRule.Hardness > KINDA_SMALL_NUMBER
+			|| SurfaceRule.PenetrationCostPerCentimeter > KINDA_SMALL_NUMBER
+			|| SurfaceRule.DamageRetentionPerCentimeter < 1.0f - KINDA_SMALL_NUMBER;
+		if (!Request.TraceSettings.bAllowZeroCostSurfaceRule && !bHasConfiguredSurfaceCost)
+		{
+			// 설정 누락 때문에 관통이 조용히 막히지 않게 첫 펠릿은 경고를 남긴다.
+			// 디버그 로그를 켠 경우에는 모든 펠릿에서 원인을 확인할 수 있다.
+			if (PelletIndex == 0 || Request.TraceSettings.bLogResolvedDamage)
+			{
+				UE_LOG(
+					LogHitscanTrace,
+					Warning,
+					TEXT("Penetration stopped: surface has zero cost and bAllowZeroCostSurfaceRule is false. Actor=%s Component=%s"),
+					*GetNameSafe(EntryHit.GetActor()),
+					*GetNameSafe(EntryHit.GetComponent()));
+			}
+			return false;
+		}
+
+		const FHitscanPenetrationStepResult PenetrationResult = HitscanBallistics::ResolvePenetration(
+			InOutPenetrationState,
+			ThicknessCentimeters,
+			SurfaceRule,
+			Request.PenetrationSettings);
+		if (!PenetrationResult.bPenetrated)
+		{
+			return false;
+		}
+
+		InOutPenetrationState = PenetrationResult.ResultingState;
+		OutNextTraceStart = ExitPoint
+			+ TraceDirection * Request.TraceSettings.TraceAdvanceEpsilonCentimeters;
+		return true;
+	}
 }
 
 bool HitscanTrace::ResolvePellet(
@@ -328,7 +450,7 @@ bool HitscanTrace::ResolvePellet(
 
 	FHitscanPenetrationState PenetrationState;
 	PenetrationState.RemainingPenetrationPower = FMath::Max(0.0f, Request.InitialPenetrationPower);
-	PenetrationState.AccumulatedDamageMultiplier = 1.0f;
+	PenetrationState.AccumulatedWallRetention = 1.0f;
 
 	FVector CurrentTraceStart = Request.TraceStart;
 	float PreviousTraceStartProgress = -1.0f;
@@ -362,111 +484,48 @@ bool HitscanTrace::ResolvePellet(
 			return Stop(EResolvedPelletStopReason::RangeLimit);
 		}
 
-		const FVector TraceEnd = CurrentTraceStart + TraceDirection * RemainingRangeCentimeters;
-
 		FHitResult HitResult;
-		const bool bBlockingHit = World->LineTraceSingleByChannel(
-			HitResult,
+		if (!TraceNextBlockingHit(
+			World,
+			Request,
+			QueryParams,
 			CurrentTraceStart,
-			TraceEnd,
-			Request.TraceSettings.TraceChannel,
-			QueryParams);
-
-		if (Request.TraceSettings.bDrawDebugTrace)
-		{
-			DrawDebugLine(
-				World,
-				CurrentTraceStart,
-				bBlockingHit ? HitResult.ImpactPoint : TraceEnd,
-				bBlockingHit ? FColor::Red : FColor::Green,
-				false,
-				2.0f,
-				0,
-				1.0f);
-		}
-
-		if (!bBlockingHit)
+			TraceDirection,
+			RemainingRangeCentimeters,
+			HitResult))
 		{
 			return Stop(EResolvedPelletStopReason::Miss);
+		}
+
+		// 현재 규칙은 피해 대상에서 펠릿을 종료하고, 월드 표면만 연속 관통한다.
+		if (TryBuildImpactSample(
+			HitResult,
+			TraceDirection,
+			PenetrationState,
+			Request.TraceSettings.DamageTarget,
+			PelletIndex,
+			OutImpactSample))
+		{
+			return true;
 		}
 
 		const float DistanceTraveledCentimeters = FVector::Distance(
 			Request.TraceStart,
 			HitResult.ImpactPoint);
-
-		// 현재 규칙은 표면 관통만 허용하고 플레이어/대미지 타깃 관통은 허용하지 않는다.
-		if (IsDamageTarget(HitResult, Request.TraceSettings.DamageTarget))
-		{
-			OutImpactSample.TargetActor = HitResult.GetActor();
-			OutImpactSample.ImpactPoint = HitResult.ImpactPoint;
-			OutImpactSample.ImpactNormal = HitResult.ImpactNormal;
-			OutImpactSample.BoneName = HitResult.BoneName;
-			OutImpactSample.ShotDirection = TraceDirection;
-			OutImpactSample.DistanceMeters = FMath::Max(0.0f, DistanceTraveledCentimeters / 100.0f);
-			OutImpactSample.PenetrationDamageMultiplier = FMath::Clamp(
-				PenetrationState.AccumulatedDamageMultiplier,
-				0.0f,
-				1.0f);
-			OutImpactSample.PelletIndex = PelletIndex;
-			return true;
-		}
-
-		if (Request.PenetrationSettings.MaximumPenetrationCount <= 0
-			|| PenetrationState.RemainingPenetrationPower <= 0.0f)
-		{
-			return Stop(EResolvedPelletStopReason::SurfaceBlocked);
-		}
-
-		FVector ExitPoint = FVector::ZeroVector;
-		float ThicknessCentimeters = 0.0f;
 		const float RemainingRangeAfterEntryCentimeters = FMath::Max(
 			0.0f,
 			Request.TraceSettings.MaximumRangeCentimeters - DistanceTraveledCentimeters);
-		if (!FindSurfaceExit(
+		if (!TryAdvanceThroughSurface(
 			HitResult,
 			TraceDirection,
-			Request.TraceSettings,
+			PelletIndex,
 			RemainingRangeAfterEntryCentimeters,
-			ExitPoint,
-			ThicknessCentimeters))
-		{
-			return Stop(EResolvedPelletStopReason::SurfaceBlocked);
-		}
-
-		const FHitscanSurfaceRule SurfaceRule = ResolveSurfaceRule(HitResult, Request);
-		const bool bHasConfiguredSurfaceCost =
-			SurfaceRule.Hardness > KINDA_SMALL_NUMBER
-			|| SurfaceRule.PenetrationCostPerCentimeter > KINDA_SMALL_NUMBER
-			|| SurfaceRule.DamageRetentionPerCentimeter < 1.0f - KINDA_SMALL_NUMBER;
-		if (!Request.TraceSettings.bAllowZeroCostSurfaceRule && !bHasConfiguredSurfaceCost)
-		{
-			// 설정 누락 때문에 관통이 조용히 막히지 않게 첫 펠릿은 경고를 남긴다.
-			// 디버그 로그를 켠 경우에는 모든 펠릿에서 원인을 확인할 수 있다.
-			if (PelletIndex == 0 || Request.TraceSettings.bLogResolvedDamage)
-			{
-				UE_LOG(
-					LogHitscanTrace,
-					Warning,
-					TEXT("Penetration stopped: surface has zero cost and bAllowZeroCostSurfaceRule is false. Actor=%s Component=%s"),
-					*GetNameSafe(HitResult.GetActor()),
-					*GetNameSafe(HitResult.GetComponent()));
-			}
-			return Stop(EResolvedPelletStopReason::SurfaceBlocked);
-		}
-
-		const FHitscanPenetrationStepResult PenetrationResult = HitscanBallistics::ResolvePenetration(
+			Request,
 			PenetrationState,
-			ThicknessCentimeters,
-			SurfaceRule,
-			Request.PenetrationSettings);
-		if (!PenetrationResult.bPenetrated)
+			CurrentTraceStart))
 		{
 			return Stop(EResolvedPelletStopReason::SurfaceBlocked);
 		}
-
-		PenetrationState = PenetrationResult.ResultingState;
-		CurrentTraceStart = ExitPoint
-			+ TraceDirection * Request.TraceSettings.TraceAdvanceEpsilonCentimeters;
 	}
 
 	return Stop(EResolvedPelletStopReason::IterationLimit);

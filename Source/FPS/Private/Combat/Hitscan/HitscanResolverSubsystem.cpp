@@ -2,10 +2,10 @@
 
 #include "Combat/Hitscan/HitZoneDefinition.h"
 #include "Combat/Hitscan/HitscanBallistics.h"
-#include "HitscanTrace.h"
 #include "Engine/World.h"
 #include "GAS/Damage/RogueDamageSubsystem.h"
 #include "GameFramework/Actor.h"
+#include "HitscanTrace.h"
 #include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogHitscanResolver, Log, All);
@@ -15,119 +15,159 @@ namespace
 	constexpr int32 MaxTraceIterationsPerPellet = 128;
 	constexpr int32 MaxPelletsPerShot = 128;
 	constexpr int32 MaxPenetrationsPerPellet = 64;
-	constexpr int32 MaxCollisionQueriesPerShot = 4096;
-	constexpr int32 MaxCollisionQueriesPerTraceIteration = 3;
+	constexpr int64 MaxCollisionQueriesPerShot = 4096;
+	constexpr int64 MaxCollisionQueriesPerTraceIteration = 3;
 
-	struct FZoneEntry
+	struct FTargetHitAccumulator
 	{
-		FGameplayTag HitZoneTag;
-		float BaseDamage = 0.0f;
-		float HitZoneMultiplier = 1.0f;
-		int32 PelletsHit = 0;
-		int32 Priority = 0;
-		bool bHeadshot = false;
-	};
-
-	struct FTargetEntry
-	{
-		TWeakObjectPtr<AActor> TargetActor;
-		float BaseDamage = 0.0f;
-		float TotalDistanceMeters = 0.0f;
-		int32 PelletsHit = 0;
+		FRogueHitContext HitContext;
+		int32 FirstPelletIndex = MAX_int32;
+		int32 PelletCount = 0;
 		int32 BackstabPelletCount = 0;
-		TArray<FZoneEntry> HitZones;
 	};
 
-	struct FResolvedTargetDamage
+	bool IsFiniteVector(const FVector& Value)
 	{
-		TWeakObjectPtr<AActor> TargetActor;
-		float BaseDamage = 0.0f;
-		TArray<FZoneEntry> HitZones;
-		FGameplayTag RepresentativeHitZoneTag;
-		float DistanceMeters = 0.0f;
-		int32 PelletsHit = 0;
-		bool bIsBackstab = false;
-	};
+		return FMath::IsFinite(Value.X)
+			&& FMath::IsFinite(Value.Y)
+			&& FMath::IsFinite(Value.Z);
+	}
 
-	bool ValidateShotRequest(const UWorld* World, const FHitscanShotRequest& Request, FString& OutFailureReason)
+	bool FailValidation(FString& OutFailureReason, const TCHAR* Reason)
 	{
-		auto Fail = [&OutFailureReason](const TCHAR* Reason)
-			{
-				OutFailureReason = Reason;
-				return false;
-			};
+		OutFailureReason = Reason;
+		return false;
+	}
 
+	bool ValidateShotActorsAndDynamicData(
+		const UWorld* World,
+		const FHitscanShotRequest& Request,
+		FString& OutFailureReason)
+	{
 		if (!IsValid(World))
 		{
-			return Fail(TEXT("World is invalid"));
+			return FailValidation(OutFailureReason, TEXT("World is invalid"));
 		}
 		if (World->GetNetMode() == NM_Client)
 		{
-			return Fail(TEXT("Client attempted authoritative hitscan"));
+			return FailValidation(OutFailureReason, TEXT("Client attempted authoritative hitscan"));
 		}
-		if (!IsValid(Request.InstigatorActor))
+		if (!IsValid(Request.InstigatorActor)
+			|| !Request.InstigatorActor->HasAuthority()
+			|| Request.InstigatorActor->GetWorld() != World)
 		{
-			return Fail(TEXT("InstigatorActor is invalid"));
+			return FailValidation(OutFailureReason, TEXT("InstigatorActor is not authoritative in this world"));
 		}
-		if (!Request.InstigatorActor->HasAuthority())
+		if (!IsValid(Request.CauserActor)
+			|| !Request.CauserActor->HasAuthority()
+			|| Request.CauserActor->GetWorld() != World)
 		{
-			return Fail(TEXT("InstigatorActor has no authority"));
+			return FailValidation(OutFailureReason, TEXT("CauserActor is not authoritative in this world"));
 		}
-		if (!IsValid(Request.CauserActor))
+		if (!IsFiniteVector(Request.TraceStart))
 		{
-			return Fail(TEXT("CauserActor is invalid"));
+			return FailValidation(OutFailureReason, TEXT("TraceStart is not finite"));
 		}
-		if (Request.TraceStart.ContainsNaN())
+		if (!Request.bHasDamageDistanceOrigin)
 		{
-			return Fail(TEXT("TraceStart contains NaN"));
+			return FailValidation(OutFailureReason, TEXT("DamageDistanceOrigin was not supplied"));
 		}
-		if (Request.PelletDirections.IsEmpty())
+		if (!IsFiniteVector(Request.DamageDistanceOrigin))
 		{
-			return Fail(TEXT("PelletDirections is empty"));
+			return FailValidation(OutFailureReason, TEXT("DamageDistanceOrigin is not finite"));
+		}
+		if (!Request.WeaponTag.IsValid())
+		{
+			return FailValidation(OutFailureReason, TEXT("WeaponTag is invalid"));
 		}
 		if (Request.ShotIndexInMagazine < 0)
 		{
-			return Fail(TEXT("ShotIndexInMagazine is negative"));
+			return FailValidation(OutFailureReason, TEXT("ShotIndexInMagazine is negative"));
+		}
+		if (Request.PelletDirections.IsEmpty())
+		{
+			return FailValidation(OutFailureReason, TEXT("PelletDirections is empty"));
 		}
 
+		for (const FVector& PelletDirection : Request.PelletDirections)
+		{
+			if (!IsFiniteVector(PelletDirection) || PelletDirection.IsNearlyZero())
+			{
+				return FailValidation(OutFailureReason, TEXT("PelletDirections contains an invalid direction"));
+			}
+		}
+
+		return true;
+	}
+
+	bool ValidateHitResolutionSettings(
+		const FHitscanDamageSettings& Settings,
+		FString& OutFailureReason)
+	{
+		if (!Settings.DefaultHitZoneTag.IsValid())
+		{
+			return FailValidation(OutFailureReason, TEXT("DefaultHitZoneTag is invalid"));
+		}
+		if (Settings.bEnableBackstab
+			&& (!FMath::IsFinite(Settings.BackstabRearConeHalfAngleDegrees)
+				|| Settings.BackstabRearConeHalfAngleDegrees < 0.0f
+				|| Settings.BackstabRearConeHalfAngleDegrees > 180.0f))
+		{
+			return FailValidation(OutFailureReason, TEXT("BackstabRearConeHalfAngleDegrees must be in [0,180]"));
+		}
+
+		return true;
+	}
+
+	bool ValidateTraceSettings(
+		const FHitscanShotRequest& Request,
+		FString& OutFailureReason)
+	{
 		const FHitscanTraceSettings& Trace = Request.TraceSettings;
 		if (Trace.MaximumPelletCount <= 0 || Trace.MaximumPelletCount > MaxPelletsPerShot)
 		{
-			return Fail(TEXT("MaximumPelletCount is out of bounds"));
+			return FailValidation(OutFailureReason, TEXT("MaximumPelletCount is out of bounds"));
 		}
 		if (Request.PelletDirections.Num() > Trace.MaximumPelletCount)
 		{
-			return Fail(TEXT("Pellet count exceeds MaximumPelletCount"));
+			return FailValidation(OutFailureReason, TEXT("Pellet count exceeds MaximumPelletCount"));
 		}
 		if (!FMath::IsFinite(Trace.MaximumRangeCentimeters) || Trace.MaximumRangeCentimeters <= 0.0f)
 		{
-			return Fail(TEXT("MaximumRangeCentimeters must be positive"));
+			return FailValidation(OutFailureReason, TEXT("MaximumRangeCentimeters must be positive"));
 		}
 		if (Trace.MaximumTraceIterations <= 0 || Trace.MaximumTraceIterations > MaxTraceIterationsPerPellet)
 		{
-			return Fail(TEXT("MaximumTraceIterations is out of bounds"));
+			return FailValidation(OutFailureReason, TEXT("MaximumTraceIterations is out of bounds"));
 		}
-		const int32 WorstCaseQueriesPerPellet = Trace.MaximumTraceIterations * MaxCollisionQueriesPerTraceIteration;
-		if (WorstCaseQueriesPerPellet <= 0
-			|| Request.PelletDirections.Num() > MaxCollisionQueriesPerShot / WorstCaseQueriesPerPellet)
+
+		const int64 WorstCaseQueries = static_cast<int64>(Request.PelletDirections.Num())
+			* static_cast<int64>(Trace.MaximumTraceIterations)
+			* MaxCollisionQueriesPerTraceIteration;
+		if (WorstCaseQueries <= 0 || WorstCaseQueries > MaxCollisionQueriesPerShot)
 		{
-			return Fail(TEXT("Worst-case collision queries exceed the per-shot budget"));
+			return FailValidation(OutFailureReason, TEXT("Worst-case collision queries exceed the per-shot budget"));
 		}
 		if (!FMath::IsFinite(Trace.SurfaceExitSearchDistanceCentimeters)
 			|| Trace.SurfaceExitSearchDistanceCentimeters <= 0.0f)
 		{
-			return Fail(TEXT("SurfaceExitSearchDistanceCentimeters must be positive"));
+			return FailValidation(OutFailureReason, TEXT("SurfaceExitSearchDistanceCentimeters must be positive"));
 		}
 		if (!FMath::IsFinite(Trace.TraceAdvanceEpsilonCentimeters)
-			|| Trace.TraceAdvanceEpsilonCentimeters <= 0.0f)
+			|| Trace.TraceAdvanceEpsilonCentimeters <= 0.0f
+			|| Trace.TraceAdvanceEpsilonCentimeters >= Trace.MaximumRangeCentimeters)
 		{
-			return Fail(TEXT("TraceAdvanceEpsilonCentimeters must be positive"));
+			return FailValidation(
+				OutFailureReason,
+				TEXT("TraceAdvanceEpsilonCentimeters must be positive and smaller than MaximumRangeCentimeters"));
 		}
 		if (Trace.bAllowFallbackSurfaceThickness
 			&& (!FMath::IsFinite(Trace.FallbackSurfaceThicknessCentimeters)
 				|| Trace.FallbackSurfaceThicknessCentimeters <= 0.0f))
 		{
-			return Fail(TEXT("FallbackSurfaceThicknessCentimeters must be positive when fallback is enabled"));
+			return FailValidation(
+				OutFailureReason,
+				TEXT("FallbackSurfaceThicknessCentimeters must be positive when fallback is enabled"));
 		}
 		if (!FMath::IsFinite(Trace.DefaultSurfaceRule.Hardness)
 			|| Trace.DefaultSurfaceRule.Hardness < 0.0f
@@ -137,78 +177,7 @@ namespace
 			|| Trace.DefaultSurfaceRule.DamageRetentionPerCentimeter < 0.0f
 			|| Trace.DefaultSurfaceRule.DamageRetentionPerCentimeter > 1.0f)
 		{
-			return Fail(TEXT("DefaultSurfaceRule contains invalid values"));
-		}
-
-		const FHitscanDamageSettings& Damage = Request.DamageSettings;
-		if (!FMath::IsFinite(Damage.BaseDamagePerPellet) || Damage.BaseDamagePerPellet <= 0.0f)
-		{
-			return Fail(TEXT("BaseDamagePerPellet must be positive"));
-		}
-		if (!FMath::IsFinite(Damage.DistanceFalloff.EffectiveRangeMeters)
-			|| Damage.DistanceFalloff.EffectiveRangeMeters < 0.0f)
-		{
-			return Fail(TEXT("EffectiveRangeMeters is invalid"));
-		}
-		if (!FMath::IsFinite(Damage.DistanceFalloff.MaximumRangeMeters)
-			|| Damage.DistanceFalloff.MaximumRangeMeters < 0.0f)
-		{
-			return Fail(TEXT("MaximumRangeMeters is invalid"));
-		}
-		if (Damage.DistanceFalloff.MaximumRangeMeters + KINDA_SMALL_NUMBER
-			< Damage.DistanceFalloff.EffectiveRangeMeters)
-		{
-			return Fail(TEXT("MaximumRangeMeters must be >= EffectiveRangeMeters"));
-		}
-		if (!FMath::IsFinite(Damage.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange)
-			|| Damage.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange < 0.0f
-			|| Damage.DistanceFalloff.MinimumDamageMultiplierAtMaximumRange > 1.0f)
-		{
-			return Fail(TEXT("MinimumDamageMultiplierAtMaximumRange must be in [0,1]"));
-		}
-		if (IsValid(Damage.DistanceFalloff.DamageMultiplierCurve.Get())
-			&& Damage.DistanceFalloff.EffectiveRangeMeters <= 0.0f)
-		{
-			return Fail(TEXT("DamageMultiplierCurve requires a positive EffectiveRangeMeters"));
-		}
-		if (Damage.bEnableBackstab
-			&& (!FMath::IsFinite(Damage.BackstabRearConeHalfAngleDegrees)
-				|| Damage.BackstabRearConeHalfAngleDegrees < 0.0f
-				|| Damage.BackstabRearConeHalfAngleDegrees > 180.0f))
-		{
-			return Fail(TEXT("BackstabRearConeHalfAngleDegrees must be in [0,180]"));
-		}
-		if (Damage.Rounding.Mode != EHitscanDamageRoundingMode::None
-			&& (!FMath::IsFinite(Damage.Rounding.Step) || Damage.Rounding.Step <= 0.0f))
-		{
-			return Fail(TEXT("Damage rounding step must be positive"));
-		}
-		if (Request.HitZoneDamageMultipliers)
-		{
-			for (const TPair<FGameplayTag, float>& Pair : *Request.HitZoneDamageMultipliers)
-			{
-				if (!FMath::IsFinite(Pair.Value) || Pair.Value < 0.0f)
-				{
-					return Fail(TEXT("HitZoneDamageMultipliers contains an invalid multiplier"));
-				}
-			}
-		}
-
-		const FHitscanPenetrationSettings& Penetration = Request.PenetrationSettings;
-		if (Penetration.MaximumPenetrationCount < 0
-			|| Penetration.MaximumPenetrationCount > MaxPenetrationsPerPellet)
-		{
-			return Fail(TEXT("MaximumPenetrationCount is out of bounds"));
-		}
-		if (!FMath::IsFinite(Penetration.MinimumDamageMultiplierToContinue)
-			|| Penetration.MinimumDamageMultiplierToContinue < 0.0f
-			|| Penetration.MinimumDamageMultiplierToContinue > 1.0f)
-		{
-			return Fail(TEXT("MinimumDamageMultiplierToContinue must be in [0,1]"));
-		}
-		if (!FMath::IsFinite(Request.InitialPenetrationPower) || Request.InitialPenetrationPower < 0.0f)
-		{
-			return Fail(TEXT("InitialPenetrationPower is invalid"));
+			return FailValidation(OutFailureReason, TEXT("DefaultSurfaceRule contains invalid values"));
 		}
 
 		if (Request.SurfaceHardnessOverrides)
@@ -217,226 +186,251 @@ namespace
 			{
 				if (!FMath::IsFinite(Pair.Value) || Pair.Value < 0.0f)
 				{
-					return Fail(TEXT("SurfaceHardnessOverrides contains an invalid value"));
+					return FailValidation(OutFailureReason, TEXT("SurfaceHardnessOverrides contains an invalid value"));
 				}
 			}
 		}
-		for (const FVector& PelletDirection : Request.PelletDirections)
-		{
-			if (PelletDirection.ContainsNaN() || PelletDirection.IsNearlyZero())
-			{
-				return Fail(TEXT("PelletDirections contains an invalid direction"));
-			}
-		}
 
-		OutFailureReason.Reset();
 		return true;
 	}
 
-	float ResolveHitZoneMultiplier(
-		const FGameplayTag HitZoneTag,
-		const TMap<FGameplayTag, float>* Multipliers)
+	bool ValidatePenetrationSettings(
+		const FHitscanShotRequest& Request,
+		FString& OutFailureReason)
 	{
-		if (Multipliers)
+		const FHitscanPenetrationSettings& Penetration = Request.PenetrationSettings;
+		if (Penetration.MaximumPenetrationCount < 0
+			|| Penetration.MaximumPenetrationCount > MaxPenetrationsPerPellet)
 		{
-			if (const float* Multiplier = Multipliers->Find(HitZoneTag))
-			{
-				return FMath::Max(0.0f, *Multiplier);
-			}
+			return FailValidation(OutFailureReason, TEXT("MaximumPenetrationCount is out of bounds"));
 		}
-		return 1.0f;
+		if (!FMath::IsFinite(Request.InitialPenetrationPower) || Request.InitialPenetrationPower < 0.0f)
+		{
+			return FailValidation(OutFailureReason, TEXT("InitialPenetrationPower is invalid"));
+		}
+
+		return true;
 	}
 
-	const FZoneEntry* SelectRepresentativeZone(const FTargetEntry& Entry)
+	// 요청과 각 설정 구조의 불변식을 책임 단위로 검증한다.
+	bool ValidateShotRequest(
+		const UWorld* World,
+		const FHitscanShotRequest& Request,
+		FString& OutFailureReason)
 	{
-		const FZoneEntry* Best = nullptr;
-		for (const FZoneEntry& Zone : Entry.HitZones)
-		{
-			if (!Best
-				|| Zone.PelletsHit > Best->PelletsHit
-				|| (Zone.PelletsHit == Best->PelletsHit && Zone.BaseDamage > Best->BaseDamage + KINDA_SMALL_NUMBER)
-				|| (Zone.PelletsHit == Best->PelletsHit
-					&& FMath::IsNearlyEqual(Zone.BaseDamage, Best->BaseDamage)
-					&& Zone.Priority > Best->Priority))
-			{
-				Best = &Zone;
-			}
-		}
-		return Best;
+		OutFailureReason.Reset();
+		return ValidateShotActorsAndDynamicData(World, Request, OutFailureReason)
+			&& ValidateHitResolutionSettings(Request.DamageSettings, OutFailureReason)
+			&& ValidateTraceSettings(Request, OutFailureReason)
+			&& ValidatePenetrationSettings(Request, OutFailureReason);
 	}
 
-	void BuildTargetAggregates(
+	// 펠릿 결과를 Target별, HitZone별 GAS 입력 구조로 집계한다.
+	FGameplayTag ResolveHitZoneTag(const FHitscanShotRequest& Request, const FName BoneName)
+	{
+		const FHitscanDamageSettings& Settings = Request.DamageSettings;
+		return IsValid(Settings.HitZoneDefinition.Get())
+			? Settings.HitZoneDefinition->ResolveHitZone(BoneName, Settings.DefaultHitZoneTag)
+			: Settings.DefaultHitZoneTag;
+	}
+
+	void AccumulateImpactSamples(
 		const FHitscanShotRequest& Request,
 		const TArray<FHitscanImpactSample>& ImpactSamples,
-		TArray<FResolvedTargetDamage>& OutTargetAggregates)
+		TArray<FTargetHitAccumulator>& OutAccumulators)
 	{
-		OutTargetAggregates.Reset();
-		if (ImpactSamples.IsEmpty())
-		{
-			return;
-		}
-
-		TArray<FTargetEntry> TargetEntries;
-		TMap<TWeakObjectPtr<AActor>, int32> TargetEntryIndices;
+		OutAccumulators.Reset();
+		TMap<TWeakObjectPtr<AActor>, int32> TargetIndices;
 
 		for (const FHitscanImpactSample& Impact : ImpactSamples)
 		{
 			AActor* TargetActor = Impact.TargetActor.Get();
 			if (!IsValid(TargetActor)
 				|| Impact.PelletIndex < 0
-				|| Impact.PelletIndex >= Request.PelletDirections.Num())
+				|| Impact.PelletIndex >= Request.PelletDirections.Num()
+				|| !IsFiniteVector(Impact.ImpactPoint)
+				|| !FMath::IsFinite(Impact.WallRetention))
 			{
 				continue;
 			}
 
-			const float BallisticDamage = HitscanBallistics::CalculateBallisticDamage(
-				Request.DamageSettings.BaseDamagePerPellet,
-				Impact.DistanceMeters,
-				Impact.PenetrationDamageMultiplier,
-				Request.DamageSettings.DistanceFalloff);
-			if (BallisticDamage <= 0.0f)
+			const float WallRetention = FMath::Clamp(Impact.WallRetention, 0.0f, 1.0f);
+			if (WallRetention <= 0.0f)
 			{
 				continue;
 			}
-
-			FGameplayTag HitZoneTag = Request.DamageSettings.DefaultHitZoneTag;
-			int32 HitZonePriority = 0;
-			bool bHeadshot = false;
-			if (IsValid(Request.DamageSettings.HitZoneDefinition.Get()))
-			{
-				const FHitscanResolvedHitZoneInfo HitZoneInfo =
-					Request.DamageSettings.HitZoneDefinition->ResolveHitZoneInfo(
-						Impact.BoneName,
-						Request.DamageSettings.DefaultHitZoneTag);
-				HitZoneTag = HitZoneInfo.HitZoneTag;
-				HitZonePriority = HitZoneInfo.Priority;
-				bHeadshot = HitZoneInfo.bHeadshot;
-			}
-			else if (Request.DamageSettings.HeadshotHitZoneTag.IsValid())
-			{
-				bHeadshot = HitZoneTag.MatchesTagExact(Request.DamageSettings.HeadshotHitZoneTag);
-			}
-
-			// 계수는 조회해서 메타데이터로 보관만 한다. 여기서는 절대 피해에 곱하지 않는다.
-			const float HitZoneMultiplier = ResolveHitZoneMultiplier(
-				HitZoneTag,
-				Request.HitZoneDamageMultipliers);
 
 			const TWeakObjectPtr<AActor> TargetKey(TargetActor);
-			int32 TargetEntryIndex = INDEX_NONE;
-			if (const int32* FoundIndex = TargetEntryIndices.Find(TargetKey))
+			int32 TargetIndex = INDEX_NONE;
+			if (const int32* FoundIndex = TargetIndices.Find(TargetKey))
 			{
-				TargetEntryIndex = *FoundIndex;
+				TargetIndex = *FoundIndex;
 			}
 			else
 			{
-				TargetEntryIndex = TargetEntries.AddDefaulted();
-				TargetEntries[TargetEntryIndex].TargetActor = TargetActor;
-				TargetEntryIndices.Add(TargetKey, TargetEntryIndex);
+				TargetIndex = OutAccumulators.AddDefaulted();
+				OutAccumulators[TargetIndex].HitContext.Target = TargetActor;
+				TargetIndices.Add(TargetKey, TargetIndex);
 			}
 
-			FTargetEntry& TargetEntry = TargetEntries[TargetEntryIndex];
-			TargetEntry.PelletsHit++;
-			TargetEntry.BaseDamage += BallisticDamage;
-			TargetEntry.TotalDistanceMeters += Impact.DistanceMeters;
+			FTargetHitAccumulator& Accumulator = OutAccumulators[TargetIndex];
+			++Accumulator.PelletCount;
 			if (Request.DamageSettings.bEnableBackstab
 				&& HitscanBallistics::IsBackstab(
 					TargetActor,
 					Impact.ShotDirection,
 					Request.DamageSettings.BackstabRearConeHalfAngleDegrees))
 			{
-				++TargetEntry.BackstabPelletCount;
+				++Accumulator.BackstabPelletCount;
 			}
 
-			FZoneEntry* ZoneEntry = TargetEntry.HitZones.FindByPredicate(
-				[HitZoneTag, bHeadshot](const FZoneEntry& Zone)
+			// 팀 계약의 "첫 명중 펠릿"은 가장 낮은 PelletIndex로 결정한다.
+			if (Impact.PelletIndex < Accumulator.FirstPelletIndex)
+			{
+				Accumulator.FirstPelletIndex = Impact.PelletIndex;
+				Accumulator.HitContext.DistanceMeters = FMath::Max(
+					0.0f,
+					FVector::Distance(Request.DamageDistanceOrigin, Impact.ImpactPoint) / 100.0f);
+			}
+
+			const FGameplayTag HitZoneTag = ResolveHitZoneTag(Request, Impact.BoneName);
+			FRogueHitGroup* HitGroup = Accumulator.HitContext.HitGroups.FindByPredicate(
+				[HitZoneTag](const FRogueHitGroup& Group)
 				{
-					// 같은 태그를 여러 Bone 규칙이 공유해도 헤드샷 몫과 일반 몫은 합치지 않는다.
-					return Zone.HitZoneTag == HitZoneTag && Zone.bHeadshot == bHeadshot;
+					return Group.HitZoneTag.MatchesTagExact(HitZoneTag);
 				});
-			if (!ZoneEntry)
+
+			if (Request.TraceSettings.bLogResolvedDamage)
 			{
-				ZoneEntry = &TargetEntry.HitZones.AddDefaulted_GetRef();
-				ZoneEntry->HitZoneTag = HitZoneTag;
-				ZoneEntry->HitZoneMultiplier = HitZoneMultiplier;
-				ZoneEntry->Priority = HitZonePriority;
-				ZoneEntry->bHeadshot = bHeadshot;
+				UE_LOG(
+					LogHitscanResolver,
+					Log,
+					TEXT("Hitscan zone resolved. Target=%s Bone=%s HitZone=%s Pellet=%d Retention=%.3f"),
+					*GetNameSafe(TargetActor),
+					*Impact.BoneName.ToString(),
+					*HitZoneTag.ToString(),
+					Impact.PelletIndex,
+					WallRetention);
 			}
 
-			ZoneEntry->BaseDamage += BallisticDamage;
-			ZoneEntry->PelletsHit++;
-			ZoneEntry->Priority = FMath::Max(ZoneEntry->Priority, HitZonePriority);
+			if (!HitGroup)
+			{
+				HitGroup = &Accumulator.HitContext.HitGroups.AddDefaulted_GetRef();
+				HitGroup->HitZoneTag = HitZoneTag;
+				HitGroup->WallRetentionSum = 0.0f;
+				HitGroup->PelletCount = 0;
+			}
+
+			HitGroup->WallRetentionSum += WallRetention;
+			++HitGroup->PelletCount;
 		}
+	}
 
-		OutTargetAggregates.Reserve(TargetEntries.Num());
-		for (const FTargetEntry& Entry : TargetEntries)
+	void FinalizeTargetHitContexts(
+		const FHitscanShotRequest& Request,
+		TArray<FTargetHitAccumulator>& Accumulators,
+		TArray<FRogueHitContext>& OutHitContexts)
+	{
+		OutHitContexts.Reset();
+		OutHitContexts.Reserve(Accumulators.Num());
+
+		for (FTargetHitAccumulator& Accumulator : Accumulators)
 		{
-			AActor* TargetActor = Entry.TargetActor.Get();
-			const int32 PelletsHit = Entry.PelletsHit;
-			if (!IsValid(TargetActor)
-				|| PelletsHit <= 0
-				|| !FMath::IsFinite(Entry.BaseDamage)
-				|| !FMath::IsFinite(Entry.TotalDistanceMeters)
-				|| Entry.BaseDamage <= 0.0f)
+			FRogueHitContext& HitContext = Accumulator.HitContext;
+			if (!IsValid(HitContext.Target.Get())
+				|| Accumulator.FirstPelletIndex == MAX_int32
+				|| !FMath::IsFinite(HitContext.DistanceMeters)
+				|| HitContext.DistanceMeters < 0.0f)
 			{
 				continue;
 			}
 
-			const float RoundedBaseDamage = HitscanBallistics::RoundDamage(
-				Entry.BaseDamage,
-				Request.DamageSettings.Rounding);
-			if (RoundedBaseDamage <= 0.0f)
+			HitContext.bBackstab = Request.DamageSettings.bEnableBackstab
+				&& Accumulator.PelletCount > 0
+				&& Accumulator.BackstabPelletCount * 2 > Accumulator.PelletCount;
+
+			float TotalWallRetention = 0.0f;
+			for (int32 GroupIndex = HitContext.HitGroups.Num() - 1; GroupIndex >= 0; --GroupIndex)
 			{
-				continue;
-			}
-
-			const float RoundingScale = Entry.BaseDamage > KINDA_SMALL_NUMBER
-				? RoundedBaseDamage / Entry.BaseDamage
-				: 1.0f;
-
-			FResolvedTargetDamage& Aggregate = OutTargetAggregates.AddDefaulted_GetRef();
-			Aggregate.TargetActor = TargetActor;
-			Aggregate.BaseDamage = RoundedBaseDamage;
-			Aggregate.DistanceMeters = Entry.TotalDistanceMeters / static_cast<float>(PelletsHit);
-			Aggregate.PelletsHit = PelletsHit;
-			Aggregate.bIsBackstab = Entry.BackstabPelletCount * 2 > PelletsHit;
-
-			Aggregate.HitZones.Reserve(Entry.HitZones.Num());
-			float AggregatedZoneDamage = 0.0f;
-			for (const FZoneEntry& Zone : Entry.HitZones)
-			{
-				if (Zone.PelletsHit <= 0 || Zone.BaseDamage <= 0.0f)
+				FRogueHitGroup& Group = HitContext.HitGroups[GroupIndex];
+				if (!Group.HitZoneTag.IsValid()
+					|| Group.PelletCount <= 0
+					|| !FMath::IsFinite(Group.WallRetentionSum))
 				{
+					HitContext.HitGroups.RemoveAtSwap(GroupIndex, 1, EAllowShrinking::No);
 					continue;
 				}
 
-				FZoneEntry& ZoneAggregate = Aggregate.HitZones.AddDefaulted_GetRef();
-				ZoneAggregate = Zone;
-				ZoneAggregate.BaseDamage = FMath::Max(0.0f, Zone.BaseDamage * RoundingScale);
-				AggregatedZoneDamage += ZoneAggregate.BaseDamage;
-			}
-
-			// 반올림으로 생긴 미세 오차만 마지막 항목에 보정한다.
-			if (!Aggregate.HitZones.IsEmpty())
-			{
-				Aggregate.HitZones.Last().BaseDamage = FMath::Max(
+				Group.WallRetentionSum = FMath::Clamp(
+					Group.WallRetentionSum,
 					0.0f,
-					Aggregate.HitZones.Last().BaseDamage + (RoundedBaseDamage - AggregatedZoneDamage));
+					static_cast<float>(Group.PelletCount));
+				TotalWallRetention += Group.WallRetentionSum;
 			}
 
-			if (const FZoneEntry* Representative = SelectRepresentativeZone(Entry))
+			if (!HitContext.HitGroups.IsEmpty() && TotalWallRetention > 0.0f)
 			{
-				Aggregate.RepresentativeHitZoneTag = Representative->HitZoneTag;
+				OutHitContexts.Add(MoveTemp(HitContext));
 			}
 		}
 	}
 
-	int32 ApplyResolvedDamage(
+	// 완성된 Target Context를 팀 대미지 계약으로 전달한다.
+	void LogHitContextResult(
+		const FHitscanShotRequest& Request,
+		const FRogueDamageParams& Params,
+		const FRogueHitContext& HitContext,
+		const FRogueDamageResult& DamageResult)
+	{
+		if (!Request.TraceSettings.bLogResolvedDamage)
+		{
+			return;
+		}
+
+		int32 PelletCount = 0;
+		float TotalWallRetention = 0.0f;
+		for (const FRogueHitGroup& Group : HitContext.HitGroups)
+		{
+			PelletCount += Group.PelletCount;
+			TotalWallRetention += Group.WallRetentionSum;
+		}
+
+		if (DamageResult.bApplied)
+		{
+			UE_LOG(
+				LogHitscanResolver,
+				Log,
+				TEXT("Hitscan context applied. Target=%s WeaponTag=%s Groups=%d Pellets=%d WallRetentionSum=%.3f Distance=%.2fm Backstab=%s"),
+				*GetNameSafe(HitContext.Target.Get()),
+				*Params.WeaponTag.ToString(),
+				HitContext.HitGroups.Num(),
+				PelletCount,
+				TotalWallRetention,
+				HitContext.DistanceMeters,
+				HitContext.bBackstab ? TEXT("true") : TEXT("false"));
+		}
+		else
+		{
+			UE_LOG(
+				LogHitscanResolver,
+				Warning,
+				TEXT("Hitscan context rejected. Target=%s WeaponTag=%s Groups=%d Pellets=%d WallRetentionSum=%.3f Distance=%.2fm Backstab=%s"),
+				*GetNameSafe(HitContext.Target.Get()),
+				*Params.WeaponTag.ToString(),
+				HitContext.HitGroups.Num(),
+				PelletCount,
+				TotalWallRetention,
+				HitContext.DistanceMeters,
+				HitContext.bBackstab ? TEXT("true") : TEXT("false"));
+		}
+	}
+
+	int32 ApplyDamageToTargets(
 		UWorld* World,
 		const FHitscanShotRequest& Request,
-		const TArray<FResolvedTargetDamage>& TargetAggregates)
+		const TArray<FRogueHitContext>& HitContexts)
 	{
-		if (!IsValid(World) || TargetAggregates.IsEmpty())
+		if (!IsValid(World) || HitContexts.IsEmpty())
 		{
 			return 0;
 		}
@@ -448,74 +442,19 @@ namespace
 			return 0;
 		}
 
+		FRogueDamageParams Params;
+		Params.Instigator = Request.InstigatorActor;
+		Params.Causer = Request.CauserActor;
+		Params.WeaponTag = Request.WeaponTag;
+		Params.SourceTag = RogueTags::Damage_Source_Weapon;
+		Params.ShotIndexInMagazine = Request.ShotIndexInMagazine;
+
 		int32 AppliedTargetCount = 0;
-		for (const FResolvedTargetDamage& Aggregate : TargetAggregates)
+		for (const FRogueHitContext& HitContext : HitContexts)
 		{
-			if (!IsValid(Aggregate.TargetActor.Get()) || Aggregate.BaseDamage <= 0.0f)
-			{
-				continue;
-			}
-
-			FRogueDamageRequest DamageRequest;
-			DamageRequest.InstigatorActor = Request.InstigatorActor;
-			DamageRequest.TargetActor = Aggregate.TargetActor.Get();
-			DamageRequest.CauserActor = Request.CauserActor;
-			DamageRequest.SourceTag = RogueTags::Damage_Source_Weapon;
-			DamageRequest.WeaponTag = Request.WeaponTag;
-			DamageRequest.BaseDamage = Aggregate.BaseDamage;
-			DamageRequest.HitZoneTag = Aggregate.RepresentativeHitZoneTag;
-			DamageRequest.DistanceMeters = Aggregate.DistanceMeters;
-			DamageRequest.bIsBackstab = Aggregate.bIsBackstab;
-			DamageRequest.PelletsHit = FMath::Max(1, Aggregate.PelletsHit);
-			DamageRequest.ShotIndexInMagazine = Request.ShotIndexInMagazine;
-			DamageRequest.HitZoneDamageParts.Reserve(Aggregate.HitZones.Num());
-
-			for (const FZoneEntry& HitZone : Aggregate.HitZones)
-			{
-				if (HitZone.BaseDamage <= 0.0f)
-				{
-					continue;
-				}
-
-				FRogueHitZoneDamagePart& Part = DamageRequest.HitZoneDamageParts.AddDefaulted_GetRef();
-				Part.HitZoneTag = HitZone.HitZoneTag;
-				Part.BaseDamage = HitZone.BaseDamage;
-				Part.HitZoneMultiplier = HitZone.HitZoneMultiplier;
-				Part.PelletsHit = FMath::Max(1, HitZone.PelletsHit);
-				Part.bHeadshot = HitZone.bHeadshot;
-			}
-
-			const FRogueDamageResult DamageResult = DamageSubsystem->ApplyDamage(DamageRequest);
-
-			if (DamageResult.bApplied)
-			{
-				++AppliedTargetCount;
-
-				if (Request.TraceSettings.bLogResolvedDamage)
-				{
-					UE_LOG(
-						LogHitscanResolver,
-						Log,
-						TEXT("Applied hitscan damage. Target=%s WeaponTag=%s BallisticDamage=%.2f HealthDamage=%.2f ShieldDamage=%.2f Zones=%d Pellets=%d Distance=%.2fm"),
-						*GetNameSafe(Aggregate.TargetActor.Get()),
-						*DamageRequest.WeaponTag.ToString(),
-						Aggregate.BaseDamage,
-						DamageResult.HealthDamage,
-						DamageResult.ShieldDamage,
-						DamageRequest.HitZoneDamageParts.Num(),
-						Aggregate.PelletsHit,
-						Aggregate.DistanceMeters);
-				}
-			}
-			else if (Request.TraceSettings.bLogResolvedDamage)
-			{
-				UE_LOG(
-					LogHitscanResolver,
-					Warning,
-					TEXT("RogueDamageSubsystem rejected resolved damage. Target=%s BallisticDamage=%.2f"),
-					*GetNameSafe(Aggregate.TargetActor.Get()),
-					Aggregate.BaseDamage);
-			}
+			const FRogueDamageResult DamageResult = DamageSubsystem->ApplyHitscanDamage(Params, HitContext);
+			AppliedTargetCount += DamageResult.bApplied ? 1 : 0;
+			LogHitContextResult(Request, Params, HitContext, DamageResult);
 		}
 
 		return AppliedTargetCount;
@@ -543,15 +482,16 @@ FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 		UE_LOG(
 			LogHitscanResolver,
 			Warning,
-			TEXT("Rejected shot. Reason=%s Instigator=%s Causer=%s Pellets=%d"),
+			TEXT("Rejected shot. Reason=%s Instigator=%s Causer=%s WeaponTag=%s Pellets=%d"),
 			*FailureReason,
 			*GetNameSafe(Request.InstigatorActor),
 			*GetNameSafe(Request.CauserActor),
+			*Request.WeaponTag.ToString(),
 			Request.PelletDirections.Num());
 		return Result;
 	}
 
-	// 상위 흐름은 Request 검증 -> Pellet Trace -> 거리/관통 집계 -> GAS 전달 네 단계로만 유지한다.
+	// 한 발은 요청 검증 -> 펠릿 Trace -> 대상/부위 집계 -> GAS 적용 순서로 처리한다.
 	TArray<FHitscanImpactSample> ImpactSamples;
 	ImpactSamples.Reserve(Request.PelletDirections.Num());
 	for (int32 PelletIndex = 0; PelletIndex < Request.PelletDirections.Num(); ++PelletIndex)
@@ -568,11 +508,14 @@ FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 		}
 	}
 
-	TArray<FResolvedTargetDamage> TargetAggregates;
-	BuildTargetAggregates(Request, ImpactSamples, TargetAggregates);
+	TArray<FTargetHitAccumulator> TargetAccumulators;
+	AccumulateImpactSamples(Request, ImpactSamples, TargetAccumulators);
 
-	Result.ResolvedTargetCount = TargetAggregates.Num();
-	Result.AppliedTargetCount = ApplyResolvedDamage(World, Request, TargetAggregates);
+	TArray<FRogueHitContext> HitContexts;
+	FinalizeTargetHitContexts(Request, TargetAccumulators, HitContexts);
+
+	Result.ResolvedTargetCount = HitContexts.Num();
+	Result.AppliedTargetCount = ApplyDamageToTargets(World, Request, HitContexts);
 	Result.bProcessed = true;
 	return Result;
 }

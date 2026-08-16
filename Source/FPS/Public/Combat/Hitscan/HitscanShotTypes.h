@@ -39,8 +39,7 @@ struct FHitscanTraceSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Trace")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
 
-	// 현재 프로젝트의 BoneName 기반 부위 판정을 보존하기 위해 기본값은 true로 둔다.
-	// 전용 Weapon 채널/충돌 프리셋을 확정한 뒤 프로파일링 결과로 조정한다.
+	// BoneName 기반 부위 판정을 위해 기본값은 true로 둔다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Trace")
 	bool bTraceComplex = true;
 
@@ -59,11 +58,10 @@ struct FHitscanTraceSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Trace", meta = (ClampMin = "1", ClampMax = "128"))
 	int32 MaximumPelletCount = 64;
 
-	// 출구 역트레이스 실패 시 AABB 출구 거리 이상으로 보수적 fallback을 허용할지 결정한다. 기본은 fail-closed.
+	// 출구 역트레이스 실패 시 AABB 출구 거리 이상으로 보수적 fallback을 허용할지 결정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Trace")
 	bool bAllowFallbackSurfaceThickness = false;
 
-	// 실제 fallback 두께는 max(AABB 출구 거리, 이 값)으로 계산되어 표면을 임의로 얇게 만들지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Trace", meta = (EditCondition = "bAllowFallbackSurfaceThickness", ClampMin = "0.1"))
 	float FallbackSurfaceThicknessCentimeters = 10.0f;
 
@@ -91,24 +89,34 @@ struct FHitscanShotRequest
 {
 	AActor* InstigatorActor = nullptr;
 	AActor* CauserActor = nullptr;
+
+	// 실제 조준/충돌 Trace의 시작점. 현재 FPS 카메라 위치를 사용한다.
 	FVector TraceStart = FVector::ZeroVector;
-	// Weapon이 만든 방향 배열을 동기 ResolveServerShot 호출 동안 참조한다. 매 발 TArray 복사를 만들지 않는다.
+
+	// GAS 거리 감쇠용 원점. 팀 계약에 따라 총구 위치를 사용한다.
+	FVector DamageDistanceOrigin = FVector::ZeroVector;
+	bool bHasDamageDistanceOrigin = false;
+
+	// Weapon이 만든 방향 배열을 동기 ResolveServerShot 호출 동안 참조한다.
 	TConstArrayView<FVector> PelletDirections;
+
+	// WeaponDamageData 조회에 사용하는 Weapon.Type.* 태그.
 	FGameplayTag WeaponTag;
 	FGuid ShotId;
 	int32 ShotIndexInMagazine = 0;
 	float InitialPenetrationPower = 0.0f;
+
+	// 이름은 기존 DataAsset 호환을 위해 유지하지만 부위/후방 판정 설정만 포함한다.
 	FHitscanDamageSettings DamageSettings;
 	FHitscanPenetrationSettings PenetrationSettings;
 	FHitscanTraceSettings TraceSettings;
 	UHitscanSurfaceDefinition* SurfaceDefinition = nullptr;
-	// Definition이 소유하는 부위 계수 맵을 참조한다. Resolver는 값만 메타데이터로 전달하고 곱하지 않는다.
-	const TMap<FGameplayTag, float>* HitZoneDamageMultipliers = nullptr;
+
 	// Weapon이 소유하는 맵을 동기 호출 동안 참조해 발사마다 TMap을 복사하지 않는다.
 	const TMap<TEnumAsByte<EPhysicalSurface>, float>* SurfaceHardnessOverrides = nullptr;
 };
 
-// 외부 호출자는 성공 여부와 GAS 적용 개수만 알면 된다. 세부 펠릿/표면 기록은 Resolver 내부에 남긴다.
+// 외부 호출자는 성공 여부와 GAS 적용 개수만 확인한다.
 struct FHitscanShotResult
 {
 	bool bProcessed = false;

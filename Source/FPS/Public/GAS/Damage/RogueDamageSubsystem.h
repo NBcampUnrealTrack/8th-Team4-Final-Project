@@ -32,13 +32,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyFlatDamage(const FRogueDamageParams& Params, AActor* Target, float Damage);
 
-
-	// ----------------------------------------------------------------
-	// 레거시 코드 ApplyHitscanDamage / ApplyFlatDamage 로 대체 후 삭제
-	// 대미지 적용 요청 함수
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
-	FRogueDamageResult ApplyDamage(const FRogueDamageRequest& Request);
-
 private:
 	// 두 진입점의 공통 흐름
 	FRogueDamageResult ApplyDamageInternal(const FRogueDamageParams& Params,
