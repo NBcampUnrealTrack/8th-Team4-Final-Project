@@ -78,6 +78,10 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	Text_Ammo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
 	Text_MaxAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
 	
+	// 무기 교체 시 탄약 개수가 같을 수도 있으므로 초기화
+	CachedAmmo = INDEX_NONE;
+	CachedMaxAmmo = INDEX_NONE;
+	
 	if (!WeaponDisplaySet)
 	{
 		UE_LOG(LogTemp, Warning,TEXT("[WeaponStatus] DA_WeaponDisplaySet이 지정되지않았습니다."));
@@ -104,7 +108,6 @@ void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 	
 	// Style 갱신
 	const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;
-	UE_LOG(LogTemp, Warning, TEXT("%f = %d / %d | AmmoPer = CurrentAmmo / MaxAmmo"), AmmoPer, CachedAmmo, CachedMaxAmmo);
 	const EShooterHUDVisualTypes Type = GetAmmoVisualType(AmmoPer);
 	
 	ApplyHUDVisualStyle(AmmoVisualStyles.GetStyle(Type));
@@ -114,16 +117,13 @@ EShooterHUDVisualTypes UShooterWeaponStatus::GetAmmoVisualType(float AmmoPercent
 {
 	if (AmmoPercent <= CriticalThreshold)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Critical Mode On"));
 		return EShooterHUDVisualTypes::Critical;
 	}
 	if (AmmoPercent <= WarningThreshold)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Warning Mode On"));
 		return EShooterHUDVisualTypes::Warning;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Normal Mode On"));
 	return EShooterHUDVisualTypes::Normal;
 }
 
