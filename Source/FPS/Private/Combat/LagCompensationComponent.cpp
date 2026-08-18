@@ -2,8 +2,11 @@
 
 #include "Combat/LagCompensationComponent.h"
 
+#include "Combat/LagCompensationHitBoxProfile.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
@@ -121,6 +124,8 @@ void ULagCompensationComponent::SaveFramePackage()
 		CaptureFallbackCapsule(FramePackage);
 	}
 
+	DrawFramePackage(FramePackage);
+
 	FrameHistory.Add(MoveTemp(FramePackage));
 	TrimFrameHistory(World->GetTimeSeconds());
 }
@@ -128,6 +133,13 @@ void ULagCompensationComponent::SaveFramePackage()
 void ULagCompensationComponent::CacheHitBoxComponents()
 {
 	CachedHitBoxes.Reset();
+	GeneratedHitBoxes.Reset();
+
+	CreateHitBoxesFromProfile();
+	if (!CachedHitBoxes.IsEmpty())
+	{
+		return;
+	}
 
 	const AActor* Owner = GetOwner();
 	if (!Owner)
@@ -151,6 +163,51 @@ void ULagCompensationComponent::CacheHitBoxComponents()
 		}
 
 		CachedHitBoxes.Add(BoxComponent);
+	}
+}
+
+void ULagCompensationComponent::CreateHitBoxesFromProfile()
+{
+	if (!IsValid(HitBoxProfile.Get()))
+	{
+		return;
+	}
+
+	ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+	if (!OwnerCharacter)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* MeshComponent = OwnerCharacter->GetMesh();
+	if (!IsValid(MeshComponent))
+	{
+		return;
+	}
+
+	for (const FLagCompensationHitBoxDefinition& Definition : HitBoxProfile->HitBoxes)
+	{
+		if (Definition.HitBoxName.IsNone() || Definition.AttachBoneName.IsNone())
+		{
+			continue;
+		}
+
+		UBoxComponent* HitBox = NewObject<UBoxComponent>(OwnerCharacter, Definition.HitBoxName);
+		if (!IsValid(HitBox))
+		{
+			continue;
+		}
+
+		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		HitBox->SetGenerateOverlapEvents(false);
+		HitBox->ComponentTags.AddUnique(HitBoxComponentTag);
+		HitBox->SetBoxExtent(Definition.BoxExtent, false);
+		HitBox->SetupAttachment(MeshComponent, Definition.AttachBoneName);
+		HitBox->RegisterComponent();
+		HitBox->SetRelativeLocationAndRotation(Definition.RelativeLocation, Definition.RelativeRotation);
+
+		GeneratedHitBoxes.Add(HitBox);
+		CachedHitBoxes.Add(HitBox);
 	}
 }
 
@@ -194,6 +251,33 @@ void ULagCompensationComponent::CaptureFallbackCapsule(FLagCompensationFramePack
 		CapsuleComponent->GetScaledCapsuleHalfHeight());
 
 	OutFramePackage.HitBoxes.Add(CapsuleComponent->GetFName(), HitBoxInfo);
+}
+
+void ULagCompensationComponent::DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const
+{
+	if (!bDrawDebugHitBoxes)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	for (const TPair<FName, FLagCompensatedHitBoxInfo>& HitBoxPair : FramePackage.HitBoxes)
+	{
+		const FLagCompensatedHitBoxInfo& HitBoxInfo = HitBoxPair.Value;
+		DrawDebugBox(
+			World,
+			HitBoxInfo.Location,
+			HitBoxInfo.BoxExtent,
+			FQuat(HitBoxInfo.Rotation),
+			DebugDrawColor,
+			false,
+			DebugDrawDuration);
+	}
 }
 
 void ULagCompensationComponent::TrimFrameHistory(float CurrentServerTime)

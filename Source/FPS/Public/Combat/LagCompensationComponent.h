@@ -7,7 +7,7 @@
 #include "LagCompensationComponent.generated.h"
 
 class UBoxComponent;
-class UPrimitiveComponent;
+class ULagCompensationHitBoxProfile;
 
 USTRUCT()
 struct FLagCompensatedHitBoxInfo
@@ -62,19 +62,36 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation")
 	FName HitBoxComponentTag = TEXT("LagCompensationHitBox");
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation")
+	TObjectPtr<ULagCompensationHitBoxProfile> HitBoxProfile;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
+	bool bDrawDebugHitBoxes = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug", meta = (ClampMin = "0.0"))
+	float DebugDrawDuration = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
+	FColor DebugDrawColor = FColor::Red;
+
 private:
 	void StartRecording();
 	void StopRecording();
 	void SaveFramePackage();
 	void CacheHitBoxComponents();
+	void CreateHitBoxesFromProfile();
 	void CaptureBoxComponent(const UBoxComponent* BoxComponent, FLagCompensationFramePackage& OutFramePackage) const;
 	void CaptureFallbackCapsule(FLagCompensationFramePackage& OutFramePackage) const;
+	void DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const;
 	void TrimFrameHistory(float CurrentServerTime);
 
 	bool ShouldRecordHistory() const;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UBoxComponent>> CachedHitBoxes;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UBoxComponent>> GeneratedHitBoxes;
 
 	UPROPERTY()
 	TArray<FLagCompensationFramePackage> FrameHistory;
