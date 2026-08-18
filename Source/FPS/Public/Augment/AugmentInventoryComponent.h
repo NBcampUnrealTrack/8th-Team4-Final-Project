@@ -55,12 +55,12 @@ public:
 	void InitializeWithAbilitySystem(UAbilitySystemComponent* InASC);
 
 	// 매치 초기화. 서버 전용
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	void ServerRemoveAllAugments();
 
 	// 이번 라운드 후보를 뽑아 Offers 에 채움, 서버 전용
 	// 카드마다 등급을 굴리고, 그 등급 버킷에서 균등 추출
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	bool ServerRollOffers(const FAugmentDraftContext& DraftContext, int32 CardCount = 3);
 
 	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
@@ -72,7 +72,7 @@ public:
 	bool ServerSetOfferSelectionEnabled(bool bEnabled);
 
 	// 미선택자 자동 선택. 서버 전용
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	bool ServerAutoSelectOffer();
 
 	// 선택은 먼저 스테이징하고, 모든 참가자가 확정 가능한 경우 DraftManager가 일괄 커밋한다.
