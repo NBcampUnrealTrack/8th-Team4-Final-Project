@@ -11,6 +11,7 @@
 
 class URogueAbilitySystemComponent;
 class ULoadingScreenWidget;
+class UNetworkTimeSyncComponent;
 class UShooterInputConfig;
 class ULoadingScreenSubsystem;
 struct FInputActionValue;
@@ -43,6 +44,9 @@ public:
 
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
+	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -81,6 +85,9 @@ private:
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Network", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNetworkTimeSyncComponent> NetworkTimeSyncComponent;
+
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
 };

@@ -2,12 +2,6 @@
 
 #include "Tags/GameplayTags.h"
 
-namespace ShooterTags
-{
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_None, "Weapon.Type.None", "No Weapon Type");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_Rifle, "Weapon.Type.Rifle", "Rifle Weapon Type");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_Pistol, "Weapon.Type.Pistol", "Pistol Weapon Type");
-}
 
 namespace RogueTags
 {
@@ -19,7 +13,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Source_SelfCost,    "Damage.Source.SelfCost",    "자기 체력을 대가로 지불");
 
 	// 무기 종류
-	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_None,    "Weapon.Type.None",    "무기 없음"); - 기존 코드와 중복되어 주석 처리
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_None,    "Weapon.Type.None",    "무기 없음"); 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Rifle,   "Weapon.Type.Rifle",   "돌격소총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Sniper,  "Weapon.Type.Sniper",  "저격소총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Shotgun, "Weapon.Type.Shotgun", "산탄총");

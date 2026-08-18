@@ -10,6 +10,7 @@
 #include "GameFlow/Round/BaseRoundGameMode.h"
 #include "GameFlow/Round/BaseRoundGameState.h"
 #include "Loading/LoadingScreenSubsystem.h"
+#include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -17,6 +18,7 @@
 
 AShooterPlayerController::AShooterPlayerController()
 {
+	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 }
 
 void AShooterPlayerController::BeginPlay()
@@ -25,7 +27,13 @@ void AShooterPlayerController::BeginPlay()
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		ABaseRoundGameState* RoundGameState = nullptr;
+		if (UWorld* World = GetWorld())
+		{
+			RoundGameState = World->GetGameState<ABaseRoundGameState>();
+		}
+
+		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 	}
 
 	if (!IsLocalController() || !InputConfig || !InputConfig->DefaultMappingContext)
@@ -90,9 +98,11 @@ void AShooterPlayerController::SetupInputComponent()
 			continue;
 		}
 
-		const ETriggerEvent PressEvent = AbilityInput.bTriggerWhileHeld
-			? ETriggerEvent::Triggered
-			: ETriggerEvent::Started;
+		ETriggerEvent PressEvent = ETriggerEvent::Started;
+		if (AbilityInput.bTriggerWhileHeld)
+		{
+			PressEvent = ETriggerEvent::Triggered;
+		}
 
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, PressEvent, this, &ThisClass::Input_AbilityPressed, AbilityInput.InputTag);
@@ -119,7 +129,13 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	{
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 		{
-			LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+			ABaseRoundGameState* RoundGameState = nullptr;
+			if (UWorld* World = GetWorld())
+			{
+				RoundGameState = World->GetGameState<ABaseRoundGameState>();
+			}
+
+			LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 		}
 		StartMatchLoadReadyCheck();
 	}
@@ -153,7 +169,13 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		LoadingScreenSubsystem->BindToRoundGameState(GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		ABaseRoundGameState* RoundGameState = nullptr;
+		if (UWorld* World = GetWorld())
+		{
+			RoundGameState = World->GetGameState<ABaseRoundGameState>();
+		}
+
+		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
 	}
 
@@ -201,7 +223,13 @@ void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 		ShooterPlayerState->SetLoadedIntoMatch(true);
 	}
 
-	if (ABaseRoundGameMode* RoundGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ABaseRoundGameMode>() : nullptr)
+	ABaseRoundGameMode* RoundGameMode = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		RoundGameMode = World->GetAuthGameMode<ABaseRoundGameMode>();
+	}
+
+	if (RoundGameMode)
 	{
 		RoundGameMode->NotifyPlayerLoadedIntoMatch(this);
 	}
@@ -265,7 +293,12 @@ ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() c
 	}
 
 	UGameInstance* GameInstance = GetGameInstance();
-	return GameInstance ? GameInstance->GetSubsystem<ULoadingScreenSubsystem>() : nullptr;
+	if (GameInstance)
+	{
+		return GameInstance->GetSubsystem<ULoadingScreenSubsystem>();
+	}
+
+	return nullptr;
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
@@ -359,5 +392,10 @@ void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, c
 URogueAbilitySystemComponent* AShooterPlayerController::GetRogueAbilitySystemComponent() const
 {
 	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
-	return IsValid(ShooterPlayerState) ? ShooterPlayerState->GetRogueAbilitySystemComponent() : nullptr;
+	if (IsValid(ShooterPlayerState))
+	{
+		return ShooterPlayerState->GetRogueAbilitySystemComponent();
+	}
+
+	return nullptr;
 }

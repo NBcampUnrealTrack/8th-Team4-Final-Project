@@ -122,7 +122,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bIsReloading = IsValid(CurrentWeapon) && CurrentWeapon->IsReloading();
 
 	const FGameplayTag WeaponTag = IsValid(CurrentWeapon) ? CurrentWeapon->GetWeaponTag() : FGameplayTag();
-	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : ShooterTags::TAG_WeaponType_None;
+	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : RogueTags::Weapon_Type_None;
 
 	UpdateWeaponAnimationData();
 
