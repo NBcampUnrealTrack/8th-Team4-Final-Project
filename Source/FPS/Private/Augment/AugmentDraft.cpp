@@ -3,6 +3,8 @@
 
 #include "Augment/AugmentDraft.h"
 
+#include "Augment/AugmentDefinition.h"
+
 namespace
 {
 	// 등급 순서 비교, EAugmentTier 선언 순서에 의존
@@ -158,4 +160,77 @@ EAugmentTier RogueAugmentDraft::ResolveTier(
 
 	// 최소 등급 보장
 	return IsLowerTier(Result, MinimumTier) ? MinimumTier : Result;
+}
+
+// 보유 중이면 다음 레벨, 아니면 1레벨
+int32 RogueAugmentDraft::GetOfferLevel(
+	const FAugmentDraftEligibility& State,
+	const UAugmentDefinition& Definition)
+{
+	for (const FAugmentInventoryEntry& Entry : State.Owned)
+	{
+		if (Entry.LineTag.MatchesTagExact(Definition.LineTag))
+		{
+			return Entry.Level + 1;
+		}
+	}
+
+	return 1;
+}
+
+// 해당 증강이 이번 라운드 후보로 제시될 수 있는지 판정
+bool RogueAugmentDraft::IsCandidateEligible(
+	const FAugmentDraftRules& Rules,
+	const FAugmentDraftEligibility& State,
+	const UAugmentDefinition& Definition)
+{
+	// 라인 태그가 유효하지 않은 경우
+	if (!Definition.LineTag.IsValid())
+	{
+		return false;
+	}
+
+	// 등급이 다른 경우
+	if (Definition.Tier != State.Tier)
+	{
+		return false;
+	}
+
+	// 다음 레벨이 없는 경우
+	const int32 OfferLevel = GetOfferLevel(State, Definition);
+	if (!Definition.HasLevel(OfferLevel))
+	{
+		return false;
+	}
+
+	// 이미 보유한 계열이면 레벨업 증강의 후보
+	const bool bIsLevelUp = OfferLevel > 1;
+
+	// 필요한 태그가 없는 경우
+	if (!State.UnlockTags.HasAll(Definition.RequiredUnlockTags))
+	{
+		return false;
+	}
+
+	// 인벤토리가 가득 찬 경우, 레벨업은 예외
+	if (!bIsLevelUp && State.Owned.Num() >= Rules.MaxOwnedLines)
+	{
+		return false;
+	}
+
+	// 액티브 증강이 보유 상한에 걸린 경우, 레벨업은 예외
+	if (!bIsLevelUp
+		&& Definition.AugmentCategory == EAugmentCategory::Active
+		&& State.OwnedActiveCount >= Rules.MaxActiveLines)
+	{
+		return false;
+	}
+
+	// 재등장 금지는 매치 전체, 레벨업은 예외, 현재는 동작 X
+	if (!bIsLevelUp && State.SeenDefinitions.Contains(Definition.GetPrimaryAssetId()))
+	{
+		return false;
+	}
+
+	return true;
 }
