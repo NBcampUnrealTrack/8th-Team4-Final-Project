@@ -4,19 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
-#include "GameplayEffect.h"
 #include "ScalableFloat.h"
 #include "RogueGameplayAbility.generated.h"
-
-UCLASS(HideDropdown)
-class URogueTimedTagEffect : public UGameplayEffect
-{
-	GENERATED_BODY()
-
-public:
-	URogueTimedTagEffect();
-};
-
 
 UCLASS(Abstract)
 class FPS_API URogueGameplayAbility : public UGameplayAbility
@@ -44,6 +33,10 @@ public:
 protected:
 	// 어빌리티 레벨에 해당하는 최대 충전 수
 	int32 GetMaxCharges(int32 Level) const;
+
+	// 설정(RogueGASSettings)에 등록된 GE 클래스. 미등록이면 nullptr + Error 로그
+	static UClass* GetCooldownEffectClass();
+	static UClass* GetStatusEffectClass();
 
 	// 쿨타임 중임을 나타내는 태그
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown",

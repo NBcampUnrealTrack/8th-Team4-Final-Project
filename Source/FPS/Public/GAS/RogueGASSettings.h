@@ -31,4 +31,12 @@ public:
 	// AShooterPlayerState 가 최초 아바타 연결 시 한 번만 부여
 	UPROPERTY(Config, EditAnywhere, Category = "Ability")
 	TSoftObjectPtr<URogueAbilitySet> StartupAbilitySet;
+
+	// 어빌리티 쿨타임/충전용 GE.
+	UPROPERTY(Config, EditAnywhere, Category = "Ability")
+	TSoftClassPtr<UGameplayEffect> CooldownEffectClass;
+
+	// 시한부 상태 태그용 GE (발각/CC/버프).
+	UPROPERTY(Config, EditAnywhere, Category = "Effect")
+	TSoftClassPtr<UGameplayEffect> StatusEffectClass;
 };

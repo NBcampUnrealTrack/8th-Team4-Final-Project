@@ -10,8 +10,6 @@
 #include "GAS/RogueTargetFilter.h"
 #include "Tags/GameplayTags.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogRogueRecon, Log, All);
-
 URogueReconDroneAbility::URogueReconDroneAbility()
 {
 	// 어빌리티는 클라이언트에서 예측
@@ -123,8 +121,14 @@ void URogueReconDroneAbility::ApplyReveal(const FGameplayAbilitySpecHandle Handl
 		return;
 	}
 
+	UClass* StatusEffectClass = GetStatusEffectClass();
+	if (!StatusEffectClass)
+	{
+		return;
+	}
+
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
-		Handle, ActorInfo, ActivationInfo, URogueTimedTagEffect::StaticClass(), Level);
+		Handle, ActorInfo, ActivationInfo, StatusEffectClass, Level);
 
 	if (!SpecHandle.IsValid())
 	{

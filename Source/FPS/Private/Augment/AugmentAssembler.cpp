@@ -9,140 +9,119 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAssembler, Log, All);
 
-namespace RogueAugmentAssembler
+namespace
 {
-	namespace
+	// 소프트 클래스 로드, 실패하면 어느 칸인지 남기고 nullptr
+	template <typename T>
+	UClass* LoadGrantedClass(const TSoftClassPtr<T>& SoftClass,
+		const UAugmentDefinition& Definition, const TCHAR* FieldName, int32 Index)
 	{
-		void ApplyGrantedEffects(UAbilitySystemComponent& ASC,
-		                         const UAugmentDefinition& Definition,
-		                         const FAugmentLevelData& LevelData,
-		                         FAugmentGrantHandles& OutHandles)
+		UClass* Loaded = SoftClass.LoadSynchronous();
+		if (!Loaded)
 		{
-			for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
-			{
-				UClass* EffectClass = Definition.GrantedEffects[Index].LoadSynchronous();
-				if (!EffectClass)
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 를 로드하지 못했습니다"),
-						*Definition.GetName(), Index);
-					continue;
-				}
-
-				FGameplayEffectContextHandle Context = ASC.MakeEffectContext();
-
-				// 어느 증강이 건 효과인지
-				Context.AddSourceObject(&Definition);
-
-				// GE 레벨은 항상 1
-				const FGameplayEffectSpecHandle Spec = ASC.MakeOutgoingSpec(EffectClass, 1.f, Context);
-				if (!Spec.IsValid())
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 스펙 생성에 실패했습니다"),
-						*Definition.GetName(), Index);
-					continue;
-				}
-
-				// 각 레벨의 SetByCallerMagnitude 를 스펙에 적용. Magnitude 는 레벨마다 다르게 설정
-				for (const TPair<FGameplayTag, float>& Magnitude : LevelData.SetByCallerMagnitudes)
-				{
-					Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
-				}
-
-				const FActiveGameplayEffectHandle Handle = ASC.ApplyGameplayEffectSpecToSelf(*Spec.Data);
-				if (!Handle.IsValid())
-				{
-					// Instant GE 는 핸들 생성 없이 바로 적용되므로, DurationPolicy 가 Infinite 인지 확인
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 핸들이 무효입니다. ")
-						TEXT("Duration Policy 가 Infinite 인지, 태그로 차단되지 않았는지 확인하세요"),
-						*Definition.GetName(), Index);
-					continue;
-				}
-
-				OutHandles.EffectHandles.Add(Handle);
-			}
+			UE_LOG(LogAugmentAssembler, Error,
+				TEXT("[AugmentAssembler] %s 의 %s[%d] 를 로드하지 못했습니다"),
+				*Definition.GetName(), FieldName, Index);
 		}
 
-		void GiveGrantedAbilities(UAbilitySystemComponent& ASC,
-		                          const UAugmentDefinition& Definition,
-		                          int32 Level,
-		                          FAugmentGrantHandles& OutHandles)
+		return Loaded;
+	}
+
+	// 해석된 GE 적용 및 해제용 핸들 저장
+	void ApplyResolvedEffects(UAbilitySystemComponent& ASC,
+		const FAugmentResolvedGrant& Resolved, FAugmentGrantHandles& OutHandles)
+	{
+		const UAugmentDefinition& Definition = *Resolved.Definition;
+
+		for (int32 Index = 0; Index < Resolved.EffectClasses.Num(); ++Index)
 		{
-			for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
+			FGameplayEffectContextHandle Context = ASC.MakeEffectContext();
+
+			// 어느 증강이 건 효과인지
+			Context.AddSourceObject(&Definition);
+
+			// 스펙 생성, GE 레벨은 항상 1
+			const FGameplayEffectSpecHandle Spec = ASC.MakeOutgoingSpec(Resolved.EffectClasses[Index], 1.f, Context);
+			if (!Spec.IsValid())
 			{
-				const FAugmentGrantedAbility& Granted = Definition.GrantedAbilities[Index];
-
-				UClass* AbilityClass = Granted.AbilityClass.LoadSynchronous();
-				if (!AbilityClass)
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 를 로드하지 못했습니다"),
-						*Definition.GetName(), Index);
-					continue;
-				}
-
-				// SourceObject 로 정의를 전달
-				// GAS 가 non-const 를 요구해서 const_cast
-				UObject* SourceObject = const_cast<UAugmentDefinition*>(&Definition);
-
-				// 어빌리티 레벨 = 증강 레벨
-				FGameplayAbilitySpec Spec(AbilityClass, Level, INDEX_NONE, SourceObject);
-
-				if (Granted.InputTag.IsValid())
-				{
-					// 입력 태그 부여
-					Spec.GetDynamicSpecSourceTags().AddTag(Granted.InputTag);
-				}
-
-				const FGameplayAbilitySpecHandle Handle = ASC.GiveAbility(Spec);
-				if (!Handle.IsValid())
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 부여에 실패했습니다"),
-						*Definition.GetName(), Index);
-					continue;
-				}
-
-				OutHandles.AbilityHandles.Add(Handle);
+				UE_LOG(LogAugmentAssembler, Error,
+					TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 스펙 생성에 실패했습니다"),
+					*Definition.GetName(), Index);
+				continue;
 			}
+
+			// 각 레벨의 SetByCallerMagnitude 를 스펙에 적용. Magnitude 는 레벨마다 다르게 설정
+			for (const TPair<FGameplayTag, float>& Magnitude : Resolved.LevelData->SetByCallerMagnitudes)
+			{
+				Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
+			}
+
+			// 스펙 적용
+			const FActiveGameplayEffectHandle Handle = ASC.ApplyGameplayEffectSpecToSelf(*Spec.Data);
+			if (!Handle.IsValid())
+			{
+				// Instant GE 는 핸들 생성 없이 바로 적용되므로, DurationPolicy 가 Infinite 인지 확인
+				UE_LOG(LogAugmentAssembler, Error,
+					TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 핸들이 무효입니다. ")
+					TEXT("Duration Policy 가 Infinite 인지, 태그로 차단되지 않았는지 확인하세요"),
+					*Definition.GetName(), Index);
+				continue;
+			}
+
+			// 핸들 저장
+			OutHandles.EffectHandles.Add(Handle);
 		}
+	}
 
-		bool CanLoadAllAssets(const UAugmentDefinition& Definition)
+	// 해석된 GA 를 부여 해제용 핸들 저장
+	void GiveResolvedAbilities(UAbilitySystemComponent& ASC,
+		const FAugmentResolvedGrant& Resolved, FAugmentGrantHandles& OutHandles)
+	{
+		const UAugmentDefinition& Definition = *Resolved.Definition;
+
+		for (int32 Index = 0; Index < Resolved.Abilities.Num(); ++Index)
 		{
-			bool bLoadable = true;
+			const FAugmentResolvedAbility& Ability = Resolved.Abilities[Index];
 
-			for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
+			// 어느 증강이 준 어빌리티인지
+			UObject* SourceObject = const_cast<UAugmentDefinition*>(&Definition);
+
+			// 어빌리티 레벨 = 증강 레벨로 스펙 생성
+			FGameplayAbilitySpec Spec(Ability.AbilityClass, Resolved.Level, INDEX_NONE, SourceObject);
+
+			if (Ability.InputTag.IsValid())
 			{
-				if (!Definition.GrantedEffects[Index].LoadSynchronous())
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 를 로드하지 못했습니다"),
-						*Definition.GetName(), Index);
-					bLoadable = false;
-				}
+				// 입력 태그 부여
+				Spec.GetDynamicSpecSourceTags().AddTag(Ability.InputTag);
 			}
 
-			for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
+			// 어빌리티 부여
+			const FGameplayAbilitySpecHandle Handle = ASC.GiveAbility(Spec);
+			if (!Handle.IsValid())
 			{
-				if (!Definition.GrantedAbilities[Index].AbilityClass.LoadSynchronous())
-				{
-					UE_LOG(LogAugmentAssembler, Error,
-						TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 를 로드하지 못했습니다"),
-						*Definition.GetName(), Index);
-					bLoadable = false;
-				}
+				UE_LOG(LogAugmentAssembler, Error,
+					TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 부여에 실패했습니다"),
+					*Definition.GetName(), Index);
+				continue;
 			}
 
-			return bLoadable;
+			// 핸들 저장
+			OutHandles.AbilityHandles.Add(Handle);
 		}
 	}
 }
 
-bool RogueAugmentAssembler::CanApplyAugment(const UAugmentDefinition& Definition, int32 Level)
+// 증강 정의 해석, GE/GA 로드
+bool RogueAugmentAssembler::ResolveAugment(
+	const UAugmentDefinition& Definition,
+	int32 Level,
+	FAugmentResolvedGrant& OutResolved)
 {
-	if (!Definition.FindLevel(Level))
+	OutResolved = FAugmentResolvedGrant();
+
+	// 레벨 데이터 검사
+	const FAugmentLevelData* LevelData = Definition.FindLevel(Level);
+	if (!LevelData)
 	{
 		UE_LOG(LogAugmentAssembler, Error,
 			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
@@ -150,12 +129,60 @@ bool RogueAugmentAssembler::CanApplyAugment(const UAugmentDefinition& Definition
 		return false;
 	}
 
-	return CanLoadAllAssets(Definition);
+	OutResolved.Definition = &Definition;
+	OutResolved.Level      = Level;
+
+	bool bResolved = true;
+
+	// GE 로드
+	OutResolved.EffectClasses.Reserve(Definition.GrantedEffects.Num());
+	for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
+	{
+		UClass* EffectClass =
+			LoadGrantedClass(Definition.GrantedEffects[Index], Definition, TEXT("GrantedEffects"), Index);
+
+		if (!EffectClass)
+		{
+			bResolved = false;
+			continue;
+		}
+
+		OutResolved.EffectClasses.Add(EffectClass);
+	}
+
+	// GA 로드
+	OutResolved.Abilities.Reserve(Definition.GrantedAbilities.Num());
+	for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
+	{
+		const FAugmentGrantedAbility& Granted = Definition.GrantedAbilities[Index];
+
+		UClass* AbilityClass =
+			LoadGrantedClass(Granted.AbilityClass, Definition, TEXT("GrantedAbilities"), Index);
+
+		if (!AbilityClass)
+		{
+			bResolved = false;
+			continue;
+		}
+
+		OutResolved.Abilities.Add({ AbilityClass, Granted.InputTag });
+	}
+
+	// 하나라도 실패하면 해석 자체를 실패
+	if (!bResolved)
+	{
+		return false;
+	}
+
+	// 레벨 데이터 저장
+	OutResolved.LevelData = LevelData;
+
+	return true;
 }
 
-FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent& ASC,
-                                                         const UAugmentDefinition& Definition,
-                                                         int32 Level)
+// 해석된 증강을 ASC에 적용
+FAugmentGrantHandles RogueAugmentAssembler::ApplyResolved(UAbilitySystemComponent& ASC,
+	const FAugmentResolvedGrant& Resolved)
 {
 	FAugmentGrantHandles Handles;
 
@@ -163,25 +190,27 @@ FAugmentGrantHandles RogueAugmentAssembler::ApplyAugment(UAbilitySystemComponent
 	if (!ASC.IsOwnerActorAuthoritative())
 	{
 		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] 권한이 없는 곳에서 %s 를 부여하려 했습니다"), *Definition.GetName());
+			TEXT("[AugmentAssembler] 권한이 없는 곳에서 %s 를 부여하려 했습니다"),
+			*GetNameSafe(Resolved.Definition));
 		return Handles;
 	}
 
-	const FAugmentLevelData* LevelData = Definition.FindLevel(Level);
-	if (!LevelData)
+	if (!Resolved.IsValid())
 	{
 		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
-			*Definition.GetName(), Level, Definition.GetMaxLevel());
+			TEXT("[AugmentAssembler] %s 를 해석하지 않고 부여하려 했습니다. ResolveAugment 를 먼저 호출하세요"),
+			*GetNameSafe(Resolved.Definition));
 		return Handles;
 	}
 
-	ApplyGrantedEffects(ASC, Definition, *LevelData, Handles);
-	GiveGrantedAbilities(ASC, Definition, Level, Handles);
+	// GE/GA 부여
+	ApplyResolvedEffects(ASC, Resolved, Handles);
+	GiveResolvedAbilities(ASC, Resolved, Handles);
 
 	return Handles;
 }
 
+// ASC에서 증강 제거
 void RogueAugmentAssembler::RemoveAugment(UAbilitySystemComponent& ASC, FAugmentGrantHandles& Handles)
 {
 	if (!ASC.IsOwnerActorAuthoritative())
