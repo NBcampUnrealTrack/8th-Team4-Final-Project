@@ -33,7 +33,7 @@ bool URoomEntryWidget::Initialize()
 
 void URoomEntryWidget::JoinButtonClicked()
 {
-	if (!OwningMenu)
+	if (!OwningMenu || !RoomInfo.bIsJoinable)
 	{
 		return;
 	}
@@ -55,7 +55,9 @@ void URoomEntryWidget::UpdateTextBlocks()
 
 	if (MatchTypeText)
 	{
-		MatchTypeText->SetText(FText::FromString(RoomInfo.MatchType));
+		MatchTypeText->SetText(FText::FromString(RoomInfo.bIsJoinable
+			? RoomInfo.MatchType
+			: FString::Printf(TEXT("%s (Closed)"), *RoomInfo.MatchType)));
 	}
 
 	if (PlayerCountText)
@@ -66,5 +68,10 @@ void URoomEntryWidget::UpdateTextBlocks()
 	if (PingText)
 	{
 		PingText->SetText(FText::FromString(FString::Printf(TEXT("%d ms"), RoomInfo.PingInMs)));
+	}
+
+	if (JoinButton)
+	{
+		JoinButton->SetIsEnabled(RoomInfo.bIsJoinable);
 	}
 }

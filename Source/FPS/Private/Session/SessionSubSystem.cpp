@@ -17,6 +17,7 @@ namespace SessionSettingKeys
 	const FName MapName(TEXT("MapName"));
 	const FName MapPath(TEXT("MapPath"));
 	const FName MatchType(TEXT("MatchType"));
+	const FName Joinable(TEXT("Joinable"));
 }
 
 namespace
@@ -97,6 +98,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 	LastSessionSettings->Set(SessionSettingKeys::MapName, CachedMapName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	LastSessionSettings->Set(SessionSettingKeys::MapPath, CachedMapPath, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	LastSessionSettings->Set(SessionSettingKeys::MatchType, CachedMatchType, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	LastSessionSettings->Set(SessionSettingKeys::Joinable, true, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 
 	const ULocalPlayer* LocalPlayer = GetWorld() ? GetWorld()->GetFirstLocalPlayerFromController() : nullptr;
 	if (!LocalPlayer || !LocalPlayer->GetPreferredUniqueNetId().IsValid())
@@ -153,6 +155,14 @@ void USessionSubSystem::FindRooms()
 void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 {
 	if (!EnsureSessionInterface() || !LastSessionSearch.IsValid() || !LastSessionSearch->SearchResults.IsValidIndex(SessionIndex))
+	{
+		OnJoinRoomComplete.Broadcast(false);
+		return;
+	}
+
+	bool bIsJoinable = true;
+	LastSessionSearch->SearchResults[SessionIndex].Session.SessionSettings.Get(SessionSettingKeys::Joinable, bIsJoinable);
+	if (!bIsJoinable)
 	{
 		OnJoinRoomComplete.Broadcast(false);
 		return;
@@ -225,6 +235,8 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		CachedMapPath = ResolveMapPathFromName(CachedMapName);
 	}
 
+	SetRoomJoinable(false);
+
 	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: StartSession before travel. Target=%s"), *CachedMapPath);
 
 	bStartRoomGamePending = true;
@@ -245,6 +257,7 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		}
 		else
 		{
+			SetRoomJoinable(true);
 			OnStartRoomGameComplete.Broadcast(false);
 		}
 	}
@@ -319,6 +332,7 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 		Result.Session.SessionSettings.Get(SessionSettingKeys::RoomName, RoomInfo.RoomName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MapName, RoomInfo.MapName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MatchType, RoomInfo.MatchType);
+		Result.Session.SessionSettings.Get(SessionSettingKeys::Joinable, RoomInfo.bIsJoinable);
 
 		if (RoomInfo.RoomName.IsEmpty())
 		{
@@ -339,6 +353,41 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 	}
 
 	return Rooms;
+}
+
+bool USessionSubSystem::SetRoomJoinable(bool bIsJoinable)
+{
+	if (!EnsureSessionInterface())
+	{
+		return false;
+	}
+
+	FNamedOnlineSession* NamedSession = SessionInterface->GetNamedSession(NAME_GameSession);
+	if (!NamedSession)
+	{
+		return false;
+	}
+
+	NamedSession->SessionSettings.bAllowJoinInProgress = bIsJoinable;
+	NamedSession->SessionSettings.bAllowJoinViaPresence = bIsJoinable;
+	NamedSession->SessionSettings.bShouldAdvertise = bIsJoinable;
+	NamedSession->SessionSettings.Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+
+	if (LastSessionSettings.IsValid())
+	{
+		LastSessionSettings->bAllowJoinInProgress = bIsJoinable;
+		LastSessionSettings->bAllowJoinViaPresence = bIsJoinable;
+		LastSessionSettings->bShouldAdvertise = bIsJoinable;
+		LastSessionSettings->Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	}
+
+	if (!SessionInterface->UpdateSession(NAME_GameSession, NamedSession->SessionSettings, true))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Failed to update room joinability. Joinable=%s"), bIsJoinable ? TEXT("true") : TEXT("false"));
+		return false;
+	}
+
+	return true;
 }
 
 void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
@@ -449,6 +498,7 @@ void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSucce
 		}
 		else
 		{
+			SetRoomJoinable(true);
 			OnStartRoomGameComplete.Broadcast(false);
 		}
 		return;

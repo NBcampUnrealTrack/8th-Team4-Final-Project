@@ -62,6 +62,7 @@ private:
 	FString BuildDefaultRoomName() const;
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
+	bool SetRoomJoinable(bool bIsJoinable);
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
