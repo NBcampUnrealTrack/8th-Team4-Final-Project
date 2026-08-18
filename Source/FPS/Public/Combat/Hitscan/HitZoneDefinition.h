@@ -16,18 +16,9 @@ struct FHitscanHitZoneRule
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|HitZone")
 	TArray<FName> BoneNames;
 
+	// 같은 BoneName이 여러 규칙에 들어간 경우 가장 높은 우선순위의 규칙을 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|HitZone")
 	int32 Priority = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|HitZone")
-	bool bCountsAsHeadshot = false;
-};
-
-struct FHitscanResolvedHitZoneInfo
-{
-	FGameplayTag HitZoneTag;
-	int32 Priority = 0;
-	bool bHeadshot = false;
 };
 
 UCLASS(BlueprintType)
@@ -36,21 +27,13 @@ class FPS_API UHitscanHitZoneDefinition : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	static FHitscanResolvedHitZoneInfo ResolveRules(
+	static FGameplayTag ResolveRules(
 		const TArray<FHitscanHitZoneRule>& Rules,
 		FName BoneName,
 		FGameplayTag FallbackTag);
 
-	FHitscanResolvedHitZoneInfo ResolveHitZoneInfo(FName BoneName, FGameplayTag FallbackTag) const;
-
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|HitZone")
 	FGameplayTag ResolveHitZone(FName BoneName, FGameplayTag FallbackTag) const;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|HitZone")
-	int32 GetHitZonePriority(FGameplayTag HitZoneTag) const;
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|HitZone")
-	bool IsHeadshotZone(FGameplayTag HitZoneTag) const;
 
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|HitZone", meta = (AllowPrivateAccess = "true"))

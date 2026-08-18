@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "GameplayEffectTypes.h"
+#include "Augment/AugmentTypes.h"
 #include "AugmentAssembler.generated.h"
 
 class UAbilitySystemComponent;
@@ -23,8 +24,6 @@ struct FAugmentGrantHandles
 	UPROPERTY()
 	TArray<FGameplayAbilitySpecHandle> AbilityHandles;
 
-	bool IsEmpty() const { return EffectHandles.IsEmpty() && AbilityHandles.IsEmpty(); }
-
 	void Reset()
 	{
 		EffectHandles.Reset();
@@ -32,17 +31,38 @@ struct FAugmentGrantHandles
 	}
 };
 
+// 해석이 끝난 어빌리티 한 칸
+struct FAugmentResolvedAbility
+{
+	UClass*      AbilityClass = nullptr;
+	FGameplayTag InputTag;
+};
+
+// 검증, 로드를 마친 증강
+struct FAugmentResolvedGrant
+{
+	// 증강의 정의와 레벨
+	const UAugmentDefinition* Definition = nullptr;
+	int32                     Level = 0;
+
+	// 증강 수치와 조건부 규칙
+	const FAugmentLevelData* LevelData = nullptr;
+
+	TArray<UClass*> EffectClasses;
+		
+	TArray<FAugmentResolvedAbility> Abilities;
+
+	bool IsValid() const { return Definition != nullptr && LevelData != nullptr; }
+};
+
 namespace RogueAugmentAssembler
 {
-	// 부여가 가능한지 확인
-	FPS_API bool CanApplyAugment(const UAugmentDefinition& Definition, int32 Level);
+	// 증강 정의 해석, GE/GA 로드
+	FPS_API bool ResolveAugment(const UAugmentDefinition& Definition, int32 Level, FAugmentResolvedGrant& OutResolved);
 
-	// 서버 전용. 계열의 GE/GA 를 Level 의 수치로 부여하고 해제용 핸들을 반환
-	// 정의에 없는 레벨이면 빈 핸들
-	FPS_API FAugmentGrantHandles ApplyAugment(UAbilitySystemComponent& ASC,
-	                                          const UAugmentDefinition& Definition,
-	                                          int32 Level);
+	// 해석된 증강을 ASC에 적용
+	FPS_API FAugmentGrantHandles ApplyResolved(UAbilitySystemComponent& ASC, const FAugmentResolvedGrant& Resolved);
 
-	// ApplyAugment 가 돌려준 핸들을 되돌림. 성공하면 Handles은 비움
+	// ASC에서 증강 제거
 	FPS_API void RemoveAugment(UAbilitySystemComponent& ASC, FAugmentGrantHandles& Handles);
 }

@@ -5,11 +5,11 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayTagContainer.h"
-#include "Weapon/WeaponTypes.h"
 
 #include "RogueAbilitySystemComponent.generated.h"
 
 class URogueAbilitySet;
+enum class EWeaponType : uint8;
 
 UCLASS()
 class FPS_API URogueAbilitySystemComponent : public UAbilitySystemComponent

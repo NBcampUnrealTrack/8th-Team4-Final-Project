@@ -8,12 +8,6 @@
 
 #include "RogueVitalAttributeSet.generated.h"
 
-#define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
-	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
-
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRogueOutOfHealth,
 	UAbilitySystemComponent* /*VictimASC*/, const FGameplayEffectContextHandle& /*Context*/);
 
@@ -46,7 +40,7 @@ private:
 	// Max 계열이 바뀔 때 현재값도 수정
 	void AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
 	                            float CurrentValue, float OldMax, float NewMax);
-
+	
 	// 체력이 0 이 되었으면 사망을 1회 확정하고 발신
 	void TryDeclareDeath(const FGameplayEffectContextHandle& Context);
 
@@ -54,39 +48,39 @@ public:
 	// 0 이 되면 즉시 사망
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Rogue|Vital")
 	FGameplayAttributeData Health;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, Health)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,Health)
 
 	// 기본 100. 상점 5회 강화로 200, 증강으로 추가 상향
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealth, Category = "Rogue|Vital")
 	FGameplayAttributeData MaxHealth;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, MaxHealth)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,MaxHealth)
 
 	// 보호막 / 피격 시 체력보다 우선 차감
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Shield, Category = "Rogue|Vital")
 	FGameplayAttributeData Shield;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, Shield)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,Shield)
 
 	// 최대 보호막
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxShield, Category = "Rogue|Vital")
 	FGameplayAttributeData MaxShield;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, MaxShield)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,MaxShield)
 
 	// 상점 공격력 강화
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShopDamageAmplification, Category = "Rogue|Vital")
 	FGameplayAttributeData ShopDamageAmplification;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, ShopDamageAmplification)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,ShopDamageAmplification)
 
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
 	FGameplayAttributeData IncomingDamage;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, IncomingDamage)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingDamage)
 
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
 	FGameplayAttributeData IncomingShieldDamage;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, IncomingShieldDamage)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingShieldDamage)
 
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
 	FGameplayAttributeData IncomingHealing;
-	ATTRIBUTE_ACCESSORS(URogueVitalAttributeSet, IncomingHealing)
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingHealing)
 
 private:
 	// 중복 호출 방지를 위한 사망 여부 플래그
@@ -94,5 +88,6 @@ private:
 
 public:
 	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유
-	mutable FOnRogueOutOfHealth OnOutOfHealth;
+	FOnRogueOutOfHealth OnOutOfHealth;
 };
+

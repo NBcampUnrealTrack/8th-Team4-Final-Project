@@ -26,7 +26,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Target")
 	static ERogueTargetRelation GetRelation(const AActor* Source, const AActor* Target);
 
-	// 사망 태그 보유 여부
+	// 생존 여부. State.Combat.IsDead 를 갖고 있지 않으면 true
 	UFUNCTION(BlueprintPure, Category = "Rogue|Target")
 	static bool IsAlive(const AActor* Target);
 };
