@@ -16,6 +16,13 @@ DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
 
 namespace
 {
+	// 부여 가능 여부만 확인
+	bool CanApply(const UAugmentDefinition& Definition, int32 Level)
+	{
+		FAugmentResolvedGrant Unused;
+		return RogueAugmentAssembler::ResolveAugment(Definition, Level, Unused);
+	}
+
 	bool IsGrantComplete(const UAugmentDefinition& Definition, const FAugmentGrantHandles& Handles)
 	{
 		return Handles.EffectHandles.Num() == Definition.GrantedEffects.Num()
@@ -154,7 +161,7 @@ bool UAugmentInventoryComponent::ServerAcquireAugment(UAugmentDefinition* Defini
 		return false;
 	}
 
-	if (!RogueAugmentAssembler::CanApplyAugment(*Definition, Level))
+	if (!CanApply(*Definition, Level))
 	{
 		UE_LOG(LogAugmentInventory, Error,
 			TEXT("[AugmentInventory] %s %d레벨의 모든 자산을 준비할 수 없어 획득을 취소합니다"),
@@ -406,7 +413,7 @@ bool UAugmentInventoryComponent::CanCommitStagedOffer() const
 		&& Definition->LineTag == StagedOffer.LineTag
 		&& Definition->HasLevel(StagedOffer.Level)
 		&& StagedOffer.Level == GetLevelInLine(StagedOffer.LineTag) + 1
-		&& RogueAugmentAssembler::CanApplyAugment(*Definition, StagedOffer.Level);
+		&& CanApply(*Definition, StagedOffer.Level);
 }
 
 bool UAugmentInventoryComponent::CommitStagedOffer()
@@ -729,8 +736,14 @@ bool UAugmentInventoryComponent::ApplyLineAugment(
 	}
 
 	RemoveLineAugment(Definition.LineTag);
-	FAugmentGrantHandles NewHandles = RogueAugmentAssembler::ApplyAugment(
-		*AbilitySystemComponent, Definition, Level);
+
+	FAugmentResolvedGrant Resolved;
+	FAugmentGrantHandles NewHandles;
+	if (RogueAugmentAssembler::ResolveAugment(Definition, Level, Resolved))
+	{
+		NewHandles = RogueAugmentAssembler::ApplyResolved(*AbilitySystemComponent, Resolved);
+	}
+
 	if (!IsGrantComplete(Definition, NewHandles))
 	{
 		LogIncompleteGrant(Definition, Level, NewHandles);
@@ -770,7 +783,7 @@ bool UAugmentInventoryComponent::RestoreLineSnapshot(const FAugmentLineSnapshot&
 		|| !IsValid(PreviousDefinition)
 		|| PreviousDefinition->LineTag != PreviousEntry.LineTag
 		|| !PreviousDefinition->HasLevel(PreviousEntry.Level)
-		|| !RogueAugmentAssembler::CanApplyAugment(*PreviousDefinition, PreviousEntry.Level))
+		|| !CanApply(*PreviousDefinition, PreviousEntry.Level))
 	{
 		return false;
 	}

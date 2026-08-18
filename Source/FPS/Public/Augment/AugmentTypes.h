@@ -33,8 +33,7 @@ enum class EAugmentCategory : uint8
     Weapon_Sniper   UMETA(DisplayName = "저격소총"),
     Weapon_Shotgun  UMETA(DisplayName = "산탄총"),
     Weapon_Pistol   UMETA(DisplayName = "권총"),
-    Weapon_Knife    UMETA(DisplayName = "전술칼"),
-    MAX             UMETA(Hidden)
+    Weapon_Knife    UMETA(DisplayName = "전술칼")
 };
 
 // 조건부 대미지 규칙이 걸리는 방향
@@ -42,8 +41,7 @@ UENUM(BlueprintType)
 enum class EAugmentDamageRuleSide : uint8
 {
     Dealt UMETA(DisplayName = "주는 피해"),
-    Taken UMETA(DisplayName = "받는 피해"),
-    MAX   UMETA(Hidden)
+    Taken UMETA(DisplayName = "받는 피해")
 };
 
 // 조건부 대미지 규칙

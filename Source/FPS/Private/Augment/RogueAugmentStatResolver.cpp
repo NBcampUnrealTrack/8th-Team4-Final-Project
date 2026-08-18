@@ -70,28 +70,6 @@ int32 URogueAugmentStatResolver::GetFinalPelletCount(const AActor* Actor, int32 
 	return FMath::Max(1, BasePelletCount + FMath::RoundToInt(Set->GetPelletCountBonus()));
 }
 
-float URogueAugmentStatResolver::GetFinalEffectiveRange(const AActor* Actor, float BaseRangeMeters)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseRangeMeters;
-	}
-
-	return BaseRangeMeters + Set->GetEffectiveRangeBonus();
-}
-
-float URogueAugmentStatResolver::GetFinalPenetration(const AActor* Actor, float BasePenetration)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BasePenetration;
-	}
-
-	return BasePenetration * Set->GetPenetrationMultiplier();
-}
-
 float URogueAugmentStatResolver::GetFinalMeleeRange(const AActor* Actor, float BaseRangeMeters)
 {
 	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
