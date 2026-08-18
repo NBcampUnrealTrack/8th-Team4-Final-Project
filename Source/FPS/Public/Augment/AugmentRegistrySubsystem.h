@@ -29,8 +29,7 @@ public:
 	UAugmentDefinition* FindDefinition(const FPrimaryAssetId& DefinitionId) const;
 
 	// 애셋 하나가 계열 하나
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<UAugmentDefinition*> GetAllDefinitions() const;
+	const TArray<TObjectPtr<UAugmentDefinition>>& GetAllDefinitions() const { return AllDefinitions; }
 
 private:
 	void StartAsyncLoad();
@@ -39,6 +38,9 @@ private:
 
 	UPROPERTY()
 	TMap<FPrimaryAssetId, TObjectPtr<UAugmentDefinition>> DefinitionsById;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UAugmentDefinition>> AllDefinitions;
 
 	TSharedPtr<FStreamableHandle> LoadHandle;
 

@@ -9,40 +9,60 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
 
-namespace
-{
-	constexpr int32 MaxContextHitZoneParts = 16;
-
-	float ResolveHeadshotEventMagnitude(const FRogueDamageRequest& Request)
-	{
-		float HeadshotDamage = 0.0f;
-		for (const FRogueHitZoneDamagePart& Part : Request.HitZoneDamageParts)
-		{
-			if (!Part.bHeadshot
-				|| !FMath::IsFinite(Part.BaseDamage)
-				|| Part.BaseDamage <= 0.0f)
-			{
-				continue;
-			}
-
-			// 이벤트는 헤드 적중량만 알린다. 부위 배율 적용은 ExecCalc_Damage 단일 책임으로 유지한다.
-			HeadshotDamage += Part.BaseDamage;
-		}
-
-		return HeadshotDamage > 0.0f ? HeadshotDamage : FMath::Max(0.0f, Request.HeadshotDamage);
-	}
-}
-
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
 }
 
-FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest& Request)
+// 신규 히트스캔 경로
+FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageParams& Params,
+                                                             const FRogueHitContext& Hit)
 {
-	// 검증
-	FRogueDamageTarget Target;
-	if (!ResolveDamageTarget(Request, Target))
+	// 유효 팰릿이 없는 경우
+	if (Hit.HitGroups.IsEmpty())
+	{
+		return FRogueDamageResult();
+	}
+
+	// 총 관통력 합산
+	float TotalRetention = 0.f;
+	for (const FRogueHitGroup& Group : Hit.HitGroups)
+	{
+		if (FMath::IsFinite(Group.WallRetentionSum))
+		{
+			TotalRetention += FMath::Max(0.f, Group.WallRetentionSum);
+		}
+	}
+
+	// 관통력이 0 이하이면 대미지 적용 X
+	if (TotalRetention <= 0.f)
+	{
+		return FRogueDamageResult();
+	}
+
+	return ApplyDamageInternal(Params, Hit.Target, &Hit, 0.f);
+}
+
+// 탄착 기하가 없는 피해, 스킬, 폭발, 자가피해
+FRogueDamageResult URogueDamageSubsystem::ApplyFlatDamage(const FRogueDamageParams& Params,
+                                                          AActor* Target,
+                                                          const float Damage)
+{
+	if (!FMath::IsFinite(Damage) || Damage <= 0.f)
+	{
+		return FRogueDamageResult();
+	}
+
+	return ApplyDamageInternal(Params, Target, nullptr, Damage);
+}
+
+FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamageParams& Params,
+                                                              AActor*                   TargetActor,
+                                                              const FRogueHitContext*   Hit,
+                                                              const float               FlatDamage)
+{
+	FRogueDamageTarget DamageTarget;
+	if (!ResolveDamageTarget(TargetActor, DamageTarget))
 	{
 		return FRogueDamageResult();
 	}
@@ -56,10 +76,11 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest&
 
 	// 컨텍스트 조립
 	// 가해자 ASC 가 없으면 타깃으로 대체
-	UAbilitySystemComponent* SourceASC  = ResolveASC(Request.InstigatorActor);
-	UAbilitySystemComponent* ContextASC = SourceASC ? SourceASC : Target.ASC;
+	UAbilitySystemComponent* SourceASC  = ResolveASC(Params.Instigator);
+	UAbilitySystemComponent* ContextASC = SourceASC ? SourceASC : DamageTarget.ASC;
 
-	const FGameplayEffectContextHandle ContextHandle = MakeDamageContext(Request, *ContextASC, Target.Vital);
+	const FGameplayEffectContextHandle ContextHandle =
+		MakeDamageContext(Params, Hit, *ContextASC, DamageTarget.Vital);
 
 	// 스펙 생성
 	const FGameplayEffectSpecHandle SpecHandle = ContextASC->MakeOutgoingSpec(DamageGEClass, 1.f, ContextHandle);
@@ -68,34 +89,31 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamage(const FRogueDamageRequest&
 		return FRogueDamageResult();
 	}
 
-	SpecHandle.Data->SetSetByCallerMagnitude(RogueTags::Data_Damage_Base, Request.BaseDamage);
+	SpecHandle.Data->SetSetByCallerMagnitude(RogueTags::Data_Damage_Base, FlatDamage);
 
 	// 대미지 적용 전 체력/실드 수집
-	const float ShieldBefore = Target.Vital->GetShield();
-	const float HealthBefore = Target.Vital->GetHealth();
+	const float ShieldBefore = DamageTarget.Vital->GetShield();
+	const float HealthBefore = DamageTarget.Vital->GetHealth();
 
-	Target.ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	DamageTarget.ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 
 	// 결과 수집
-	const FRogueDamageResult Result = MeasureDamageResult(*Target.Vital, ShieldBefore, HealthBefore);
+	const FRogueDamageResult Result = MeasureDamageResult(*DamageTarget.Vital, ShieldBefore, HealthBefore);
 
 	// 이벤트 발신
-	BroadcastCombatEvents(Request, Result, ContextHandle);
+	BroadcastCombatEvents(Params, TargetActor, Result, ContextHandle);
 
 	return Result;
 }
 
-bool URogueDamageSubsystem::ResolveDamageTarget(const FRogueDamageRequest& Request,
-                                                FRogueDamageTarget& OutTarget) const
+bool URogueDamageSubsystem::ResolveDamageTarget(AActor* TargetActor, FRogueDamageTarget& OutTarget)
 {
-	if (!Request.TargetActor
-		|| !FMath::IsFinite(Request.BaseDamage)
-		|| Request.BaseDamage <= 0.f)
+	if (!TargetActor)
 	{
 		return false;
 	}
 
-	UAbilitySystemComponent* TargetASC = ResolveASC(Request.TargetActor);
+	UAbilitySystemComponent* TargetASC = ResolveASC(TargetActor);
 	if (!TargetASC)
 	{
 		return false;
@@ -137,12 +155,13 @@ UClass* URogueDamageSubsystem::ResolveDamageEffectClass()
 	return DamageGEClass;
 }
 
-FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRogueDamageRequest& Request,
+FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRogueDamageParams& Params,
+                                                                     const FRogueHitContext* Hit,
                                                                      UAbilitySystemComponent& ContextASC,
                                                                      const URogueVitalAttributeSet* TargetVital) const
 {
 	FGameplayEffectContextHandle ContextHandle = ContextASC.MakeEffectContext();
-	ContextHandle.AddInstigator(Request.InstigatorActor, Request.CauserActor);
+	ContextHandle.AddInstigator(Params.Instigator, Params.Causer);
 
 	FGameplayEffectContext* RawContext = ContextHandle.Get();
 	if (!RawContext || RawContext->GetScriptStruct() != FRogueGameplayEffectContext::StaticStruct())
@@ -156,40 +175,42 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 
 	FRogueGameplayEffectContext* Ctx = static_cast<FRogueGameplayEffectContext*>(RawContext);
 
-	Ctx->SourceTag           = Request.SourceTag;
-	Ctx->WeaponTag           = Request.WeaponTag;
-	Ctx->HitZoneTag          = Request.HitZoneTag;
-	Ctx->HitDistanceMeters   = Request.DistanceMeters;
-	Ctx->PelletsHit          = FMath::Max(1, Request.PelletsHit);
-	Ctx->ShotIndexInMagazine = Request.ShotIndexInMagazine;
+	Ctx->SourceTag           = Params.SourceTag;
+	Ctx->WeaponTag           = Params.WeaponTag;
+	Ctx->ShotIndexInMagazine = Params.ShotIndexInMagazine;
 
-	Ctx->HitZoneDamageParts.Reset(FMath::Min(Request.HitZoneDamageParts.Num(), MaxContextHitZoneParts));
-	for (const FRogueHitZoneDamagePart& Part : Request.HitZoneDamageParts)
+	// 히트스캔 데이터를 컨텍스트에 담음
+	if (Hit)
 	{
-		if (Ctx->HitZoneDamageParts.Num() >= MaxContextHitZoneParts)
-		{
-			break;
-		}
-		if (!FMath::IsFinite(Part.BaseDamage)
-			|| !FMath::IsFinite(Part.HitZoneMultiplier)
-			|| Part.BaseDamage <= 0.0f
-			|| Part.HitZoneMultiplier < 0.0f)
-		{
-			continue;
-		}
+		Ctx->HitDistanceMeters = FMath::Max(0.f, Hit->DistanceMeters);
 
-		FRogueHitZoneDamagePart& Sanitized = Ctx->HitZoneDamageParts.AddDefaulted_GetRef();
-		Sanitized = Part;
-		Sanitized.BaseDamage = FMath::Max(0.0f, Part.BaseDamage);
-		Sanitized.HitZoneMultiplier = FMath::Max(0.0f, Part.HitZoneMultiplier);
-		Sanitized.PelletsHit = FMath::Max(1, Part.PelletsHit);
+		Ctx->HitGroups.Reset(FMath::Min(Hit->HitGroups.Num(), RogueMaxHitGroups));
+
+		for (const FRogueHitGroup& Group : Hit->HitGroups)
+		{
+			if (Ctx->HitGroups.Num() >= RogueMaxHitGroups)
+			{
+				break;
+			}
+			if (Group.PelletCount <= 0 || !FMath::IsFinite(Group.WallRetentionSum))
+			{
+				continue;
+			}
+
+			FRogueHitGroup& Sanitized = Ctx->HitGroups.AddDefaulted_GetRef();
+			Sanitized.HitZoneTag       = Group.HitZoneTag;
+			Sanitized.PelletCount      = Group.PelletCount;
+			Sanitized.WallRetentionSum = FMath::Clamp(
+				Group.WallRetentionSum, 0.f, static_cast<float>(Group.PelletCount));
+
+			if (RogueTags::IsHeadZone(Sanitized.HitZoneTag))
+			{
+				Ctx->bHeadshot = true;
+			}
+		}
 	}
 
-	// 기존 비-Hitscan 호출자 호환용 경로.
-	Ctx->HeadshotDamage = FMath::Max(0.0f, Request.HeadshotDamage);
-	Ctx->AppliedHeadshotMultiplier = FMath::Max(KINDA_SMALL_NUMBER, Request.AppliedHeadshotMultiplier);
-
-	BuildContextTags(Request, TargetVital, Ctx->ContextTags);
+	BuildContextTags(Params, Hit, TargetVital, Ctx->ContextTags);
 
 	return ContextHandle;
 }
@@ -209,21 +230,28 @@ FRogueDamageResult URogueDamageSubsystem::MeasureDamageResult(const URogueVitalA
 	return Result;
 }
 
-void URogueDamageSubsystem::BuildContextTags(const FRogueDamageRequest& Request,
+void URogueDamageSubsystem::BuildContextTags(const FRogueDamageParams& Params,
+                                             const FRogueHitContext* Hit,
                                              const URogueVitalAttributeSet* TargetVital,
-                                             FGameplayTagContainer& OutTags) const
+                                             FGameplayTagContainer& OutTags)
 {
-	if (Request.HitZoneTag.IsValid())
+	if (Hit)
 	{
-		OutTags.AddTag(Request.HitZoneTag);
+		for (const FRogueHitGroup& Group : Hit->HitGroups)
+		{
+			if (Group.HitZoneTag.IsValid() && Group.PelletCount > 0)
+			{
+				OutTags.AddTag(Group.HitZoneTag);
+			}
+		}
 	}
 
-	if (Request.SourceTag.IsValid())
+	if (Params.SourceTag.IsValid())
 	{
-		OutTags.AddTag(Request.SourceTag);
+		OutTags.AddTag(Params.SourceTag);
 	}
 
-	if (Request.bIsBackstab)
+	if (Hit && Hit->bBackstab)
 	{
 		OutTags.AddTag(RogueTags::Hit_Angle_Back);
 	}
@@ -237,7 +265,8 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageRequest& Request,
 	}
 }
 
-void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageRequest& Request,
+void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Params,
+                                                  AActor* TargetActor,
                                                   const FRogueDamageResult& Result,
                                                   const FGameplayEffectContextHandle& ContextHandle) const
 {
@@ -246,7 +275,10 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageRequest& Req
 		return;
 	}
 
-	auto Send = [&ContextHandle](AActor* To, const FGameplayTag& Tag, AActor* Other, float Magnitude)
+	AActor* Src = Params.Instigator;
+	AActor* Tgt = TargetActor;
+
+	auto Send = [&ContextHandle, Src, Tgt](AActor* To, const FGameplayTag& Tag, float Magnitude)
 	{
 		if (!To || !Tag.IsValid())
 		{
@@ -255,38 +287,36 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageRequest& Req
 
 		FGameplayEventData Payload;
 		Payload.EventTag       = Tag;
-		Payload.Instigator     = To;
-		Payload.Target         = Other;
+		Payload.Instigator     = Src;
+		Payload.Target         = Tgt;
 		Payload.EventMagnitude = Magnitude;
-		Payload.ContextHandle = ContextHandle;
+		Payload.ContextHandle  = ContextHandle;
 
 		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(To, Tag, Payload);
 	};
 
-	AActor* Src = Request.InstigatorActor;
-	AActor* Tgt = Request.TargetActor;
+	Send(Src, RogueTags::Event_Combat_DamageDealt, Result.HealthDamage);
+	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Result.HealthDamage);
 
-	Send(Src, RogueTags::Event_Combat_DamageDealt, Tgt, Result.HealthDamage);
-	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Src, Result.HealthDamage);
-
-	const float HeadshotEventMagnitude = ResolveHeadshotEventMagnitude(Request);
-	if (HeadshotEventMagnitude > 0.0f)
+	const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle);
+	if (Ctx && Ctx->bHeadshot)
 	{
-		Send(Src, RogueTags::Event_Combat_Headshot, Tgt, HeadshotEventMagnitude);
+		Send(Src, RogueTags::Event_Combat_Headshot, Result.HealthDamage);
 	}
 
 	if (Result.bShieldBroken)
 	{
-		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Src, Result.ShieldDamage);
-		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Tgt, Result.ShieldDamage);
+		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Result.ShieldDamage);
+		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Result.ShieldDamage);
 	}
 
 	// 사망 이벤트 발신
 	if (Result.bHealthDepleted)
 	{
-		Send(Src, RogueTags::Event_Combat_Kill,  Tgt, Result.HealthDamage);
-		Send(Tgt, RogueTags::Event_Combat_Death, Src, Result.HealthDamage);
+		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
+		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);
 
 		// Event.Team.AllyDeath 는 팀 구성을 아는 GameState 가 처리
 	}
 }
+

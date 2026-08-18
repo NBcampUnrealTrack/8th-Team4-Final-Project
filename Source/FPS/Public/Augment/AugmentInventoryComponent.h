@@ -54,11 +54,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
 	void InitializeWithAbilitySystem(UAbilitySystemComponent* InASC);
 
-	// 증강 획득. 서버 전용
-	// 같은 계열을 이미 보유하고 있으면 하위 레벨을 걷어내고 교체
-	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
-	bool ServerAcquireAugment(UAugmentDefinition* Definition, int32 Level = 1);
-
 	// 매치 초기화. 서버 전용
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment")
 	void ServerRemoveAllAugments();
@@ -94,7 +89,7 @@ public:
 	// 이번 라운드에 제시된 후보
 	// 비어있는 경우 = 선택 완료
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<FAugmentInventoryEntry> GetOffers() const { return Offers; }
+	const TArray<FAugmentInventoryEntry>& GetOffers() const { return Offers; }
 
 	// 이 라운드의 등급 가중치
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
@@ -102,24 +97,19 @@ public:
 
 	// 현재 보유한 증강 목록, 서버에서만 변경하며 클라이언트에게 복제
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<FAugmentInventoryEntry> GetEntries() const { return Entries; }
-
-	// 정의까지 해석한 목록
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<UAugmentDefinition*> GetOwnedDefinitions() const;
+	const TArray<FAugmentInventoryEntry>& GetEntries() const { return Entries; }
 
 	// 이 계열의 보유 레벨. 미보유면 0.
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	int32 GetLevelInLine(FGameplayTag LineTag) const;
 
-	// ExecCalc 이 히트마다 읽는다. 정의를 매번 훑지 않도록 캐싱
+	// ExecCalc(서버전용)이 히트마다 읽음 정의를 매번 훑지 않도록 캐싱
 	const TArray<FAugmentConditionalDamageRule>& GetConditionalDamageRules() const { return CachedConditionalRules; }
 
 	// ExecCalc 은 ASC 만 들고 있다. 거기서 인벤토리로 건너오는 유일한 경로
 	static UAugmentInventoryComponent* FindInventory(const UAbilitySystemComponent* ASC);
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void OnUnregister() override;
 
 private:
@@ -129,11 +119,11 @@ private:
 	UFUNCTION()
 	void OnRep_Offers();
 
-	UFUNCTION()
-	void HandleRegistryReady();
-
 	UAugmentRegistrySubsystem* GetRegistry() const;
 	UAugmentDefinition* ResolveDefinition(const FPrimaryAssetId& DefinitionId) const;
+
+	// 서버 전용 함수의 공통 가드
+	bool HasServerAuthority(const TCHAR* Context) const;
 
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
 	FAugmentLineSnapshot CaptureLineSnapshot(const FGameplayTag& LineTag) const;
@@ -175,9 +165,6 @@ private:
 	TMap<FGameplayTag, FAugmentGrantHandles> GrantHandlesByLine;
 
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
-
-	// 구독해 둔 레지스트리
-	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 서버 전용. 마지막 추첨에 쓴 시드.
 	// 자동 선택이 이걸 재사용해야 "이 라운드에 왜 이 카드가 자동 선택됐나" 를 재현 가능

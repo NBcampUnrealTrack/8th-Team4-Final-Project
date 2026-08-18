@@ -398,29 +398,67 @@ void AWeaponBase::ResolveHitscanShot(
 		return;
 	}
 
+	if (!IsValid(HitscanDefinition.Get()))
+	{
+		UE_LOG(
+			LogWeaponHitscanBridge,
+			Error,
+			TEXT("HitscanDefinition is required by the GAS damage pipeline. Weapon=%s"),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// Fire()의 기존 호출 경계를 유지하기 위한 레거시 인자다.
+	// 신규 대미지는 WeaponDamageData와 ExecCalc_Damage에서 결정한다.
+	(void)ShotDamage;
+
 	FHitscanShotRequest Request;
-	if (IsValid(HitscanDefinition.Get()))
-	{
-		HitscanDefinition->ConfigureShotRequest(
-			Request,
-			ShotDamage,
-			TraceRange,
-			DefaultSurfaceThickness,
-			DefaultSurfaceHardness);
-	}
-	else
-	{
-		// Definition이 없는 레거시 무기도 기본 사격은 동작하되, 정적 정책은 기본값을 사용한다.
-		Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
-		Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = FMath::Max(0.0f, TraceRange / 100.0f);
-		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
-		Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(0.1f, DefaultSurfaceThickness);
-		Request.TraceSettings.DefaultSurfaceRule.Hardness = FMath::Max(0.0f, DefaultSurfaceHardness);
-	}
+	HitscanDefinition->ConfigureShotRequest(
+		Request,
+		TraceRange,
+		DefaultSurfaceThickness,
+		DefaultSurfaceHardness);
 
 	Request.InstigatorActor = GetOwner();
 	Request.CauserActor = this;
 	Request.TraceStart = TraceStart;
+
+	// 충돌 Trace는 카메라에서 시작하지만 거리 감쇠는 총구 원점을 사용한다.
+	// 발사 상태는 변경하지 않고 기존 요청 조립 경계에서 위치만 채운다.
+	static const FName MuzzleSocketName(TEXT("Muzzle"));
+	if (IsValid(Mesh3P.Get()) && Mesh3P->DoesSocketExist(MuzzleSocketName))
+	{
+		Request.DamageDistanceOrigin = Mesh3P->GetSocketLocation(MuzzleSocketName);
+	}
+	else if (IsValid(Mesh1P.Get()) && Mesh1P->DoesSocketExist(MuzzleSocketName))
+	{
+		Request.DamageDistanceOrigin = Mesh1P->GetSocketLocation(MuzzleSocketName);
+	}
+	else
+	{
+		ensureMsgf(
+			false,
+			TEXT("Muzzle socket is missing. Weapon=%s Socket=%s"),
+			*GetNameSafe(this),
+			*MuzzleSocketName.ToString());
+
+		// Fire()가 이미 확정된 뒤의 브리지이므로 요청을 중단하지 않는다.
+		// 잘못된 에셋에서도 가장 가까운 무기 원점을 사용하고 설정 오류는 ensure로 노출한다.
+		if (IsValid(Mesh3P.Get()))
+		{
+			Request.DamageDistanceOrigin = Mesh3P->GetComponentLocation();
+		}
+		else if (IsValid(Mesh1P.Get()))
+		{
+			Request.DamageDistanceOrigin = Mesh1P->GetComponentLocation();
+		}
+		else
+		{
+			Request.DamageDistanceOrigin = GetActorLocation();
+		}
+	}
+
+	Request.bHasDamageDistanceOrigin = true;
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
@@ -433,10 +471,9 @@ void AWeaponBase::ResolveHitscanShot(
 		UE_LOG(
 			LogWeaponHitscanBridge,
 			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.2f"),
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
-			TraceRange,
-			ShotDamage);
+			TraceRange);
 	}
 }
