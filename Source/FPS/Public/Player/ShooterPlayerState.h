@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "Player/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
 

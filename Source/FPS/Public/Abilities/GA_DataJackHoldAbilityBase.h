@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"
-#include "GameFlow/Bomb/DataJackTypes.h"
+#include "Actor/DataJackTypes.h"
 #include "GA_DataJackHoldAbilityBase.generated.h"
 
 class ABaseRoundPlayerController;

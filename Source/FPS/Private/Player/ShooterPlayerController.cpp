@@ -4,7 +4,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
-#include "GameFlow/Round/BaseRoundGameState.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"

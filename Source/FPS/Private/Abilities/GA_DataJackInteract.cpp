@@ -1,7 +1,7 @@
 #include "Abilities/GA_DataJackInteract.h"
 
 #include "Combat/CombatComponent.h"
-#include "GameFlow/Bomb/BombObjectiveManager.h"
+#include "GameMode/BombObjectiveManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/PlayerController.h"

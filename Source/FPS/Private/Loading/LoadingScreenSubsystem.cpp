@@ -2,7 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFlow/Round/BaseRoundGameState.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 
 void ULoadingScreenSubsystem::Deinitialize()

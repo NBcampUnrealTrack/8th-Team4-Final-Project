@@ -9,7 +9,7 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
-#include "GameFlow/Lobby/LobbyGameState.h"
+#include "GameMode/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponTypes.h"
