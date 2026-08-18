@@ -9,6 +9,7 @@ class ABaseRoundGameState;
 class ABaseTeamPlayerState;
 class APlayerController;
 class UAugmentDraftManager;
+enum class EPlayerStartReservationResult : uint8;
 
 /**
  * 서버 권위 라운드 흐름 조정자.
@@ -46,6 +47,7 @@ protected:
 
 	// 파생 모드는 목표물 수명주기와 승패 규칙만 구현한다.
 	virtual void ResetModeState();
+	virtual EPlayerStartReservationResult ReserveModePlayerStarts(const FRoundContext& RoundContext);
 	virtual bool PrepareModeRound(const FRoundContext& RoundContext);
 	virtual bool ActivateModeRound();
 	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
@@ -77,6 +79,8 @@ private:
 
 	void EnterWaitingForPlayers();
 	void EnterWaitingForPlayersReady();
+	void HandleInitialReadyTimeout();
+	void ScheduleSpawnPreparationRetry(const TCHAR* Reason);
 	void SuspendRoundOpening(const TCHAR* Reason);
 	FRoundContext MakeRoundContext(int32 RoundNumber) const;
 
@@ -90,6 +94,7 @@ private:
 	void HandleRoundTimerExpired();
 	void ClearPhaseTimer();
 	void ClearRoundTimer();
+	void ClearInitialReadyTimer();
 	void ClearAllFlowTimers();
 
 	void SetAllPlayersRoundInputEnabled(bool bEnabled);
@@ -104,11 +109,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Timing", meta = (ClampMin = "0.0"))
 	float InitialRoundStartDelay = 5.0f;
 
+	// 첫 라운드에서 모든 참가자의 인게임 UI 준비 신호를 기다리는 최대 시간이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Timing", meta = (ClampMin = "1.0"))
+	float InitialReadyTimeout = 30.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Timing", meta = (ClampMin = "0.0"))
 	float RoundStartDelay = 5.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Timing", meta = (ClampMin = "0.0"))
 	float RoundEndDelay = 3.0f;
+
+	// 일시적인 Pawn 점유나 SpawnActor 실패만 이 횟수만큼 다시 시도한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Spawn", meta = (ClampMin = "0", ClampMax = "10"))
+	int32 MaxSpawnPreparationRetries = 3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Spawn", meta = (ClampMin = "0.05"))
+	float SpawnPreparationRetryDelay = 0.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Timing", meta = (ClampMin = "1.0"))
 	float RoundDuration = 300.0f;
@@ -144,9 +160,12 @@ private:
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle RoundTimerHandle;
+	FTimerHandle InitialReadyTimerHandle;
 	TOptional<FRoundContext> PendingRoundContext;
 	TSet<TWeakObjectPtr<APlayerController>> InitialReadyPlayerControllers;
 	int32 LastCompletedRoundNumber = 0;
+	int32 SpawnPreparationRetryCount = 0;
+	bool bInitialReadyTimeoutExpired = false;
 	bool bRoundOpeningSuspended = false;
 	bool bLoggedWaitingForAugmentRegistry = false;
 };

@@ -83,14 +83,21 @@ void UShooterUIInitComponent::TryStartInGameUI()
 
 	if (!IsValid(UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass)))
 	{
-		UE_LOG(LogShooterUIInitComp, Error,
-			TEXT("Failed to create the initial in-game widget. Layer=%s WidgetClass=%s"),
-			*InitialWidgetLayer.ToString(),
-			*GetNameSafe(InitialWidgetClass));
+		if (!bLoggedInitialWidgetPushFailure)
+		{
+			bLoggedInitialWidgetPushFailure = true;
+			UE_LOG(LogShooterUIInitComp, Warning,
+				TEXT("Failed to create the initial in-game widget; initialization will retry. Layer=%s WidgetClass=%s"),
+				*InitialWidgetLayer.ToString(),
+				*GetNameSafe(InitialWidgetClass));
+		}
+
+		ScheduleInGameUIRetry();
 		return;
 	}
 
 	World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
+	bLoggedInitialWidgetPushFailure = false;
 	UnbindRuntimeDelegates();
 	BoundInventory = Inventory;
 	BoundRoundGameState = RoundGameState;

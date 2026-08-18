@@ -28,6 +28,7 @@ protected:
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 	virtual void ResetModeState() override;
+	virtual EPlayerStartReservationResult ReserveModePlayerStarts(const FRoundContext& RoundContext) override;
 	virtual bool PrepareModeRound(const FRoundContext& RoundContext) override;
 	virtual bool ActivateModeRound() override;
 	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason) override;

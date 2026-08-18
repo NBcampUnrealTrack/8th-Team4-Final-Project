@@ -5,6 +5,7 @@
 #include "GameFlow/Bomb/BombObjectiveManager.h"
 #include "GameFlow/Bomb/BombPlayerController.h"
 #include "GameFlow/Bomb/BombPlayerStart.h"
+#include "GameFlow/Bomb/BombRoundRules.h"
 #include "GameFlow/Bomb/DataJack.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
 #include "GameFlow/Common/TeamPlayerManager.h"
@@ -122,7 +123,7 @@ AActor* ABombGameMode::ChoosePlayerStart_Implementation(AController* Player)
 		}
 	}
 
-	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
 	return IsValid(PlayerManager)
 		? PlayerManager->SelectAvailablePlayerStart(MatchingStarts, TEXT("BombPlayerStart"))
 		: nullptr;
@@ -135,6 +136,50 @@ void ABombGameMode::ResetModeState()
 	{
 		ObjectiveManager->ResetObjective();
 	}
+}
+
+EPlayerStartReservationResult ABombGameMode::ReserveModePlayerStarts(const FRoundContext& RoundContext)
+{
+	UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	if (!IsValid(PlayerManager) || !RoundContext.IsValid())
+	{
+		return EPlayerStartReservationResult::InvalidConfiguration;
+	}
+
+	FPlayerStartGroup AttackerStarts;
+	AttackerStarts.Description = TEXT("attacker BombPlayerStart group");
+	AttackerStarts.RequiredCount = GetTeamPlayerCount(RoundContext.GetTeamForRole(ETeamRole::Attackers));
+
+	FPlayerStartGroup DefenderStarts;
+	DefenderStarts.Description = TEXT("defender BombPlayerStart group");
+	DefenderStarts.RequiredCount = GetTeamPlayerCount(RoundContext.GetTeamForRole(ETeamRole::Defenders));
+
+	for (TActorIterator<ABombPlayerStart> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		ABombPlayerStart* PlayerStart = *Iterator;
+		if (!IsValid(PlayerStart))
+		{
+			continue;
+		}
+
+		switch (PlayerStart->GetSpawnRole())
+		{
+		case ETeamRole::Attackers:
+			AttackerStarts.PlayerStarts.Add(PlayerStart);
+			break;
+		case ETeamRole::Defenders:
+			DefenderStarts.PlayerStarts.Add(PlayerStart);
+			break;
+		default:
+			break;
+		}
+	}
+
+	TArray<FPlayerStartGroup> StartGroups;
+	StartGroups.Reserve(2);
+	StartGroups.Add(MoveTemp(AttackerStarts));
+	StartGroups.Add(MoveTemp(DefenderStarts));
+	return PlayerManager->ReservePlayerStarts(StartGroups);
 }
 
 bool ABombGameMode::PrepareModeRound(const FRoundContext&)
@@ -183,20 +228,18 @@ void ABombGameMode::HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedP
 void ABombGameMode::ResolveModeRoundTimeExpired()
 {
 	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
-	if (IsValid(ObjectiveManager) && ObjectiveManager->IsPlantedOrDefusing())
-	{
-		return;
-	}
-
-	if (TryResolveEliminationOutcome())
-	{
-		return;
-	}
-
+	const bool bObjectiveIsPlanted = IsValid(ObjectiveManager) && ObjectiveManager->IsPlantedOrDefusing();
+	const EGameTeam Attackers = GetTeamForRole(ETeamRole::Attackers);
 	const EGameTeam Defenders = GetTeamForRole(ETeamRole::Defenders);
-	if (Defenders != EGameTeam::None)
+	const FBombRoundResolution Resolution = BombRoundRules::ResolveTimeExpired(
+		GetAlivePlayerCount(Attackers),
+		GetAlivePlayerCount(Defenders),
+		bObjectiveIsPlanted,
+		Attackers,
+		Defenders);
+	if (Resolution.ShouldEndRound())
 	{
-		EndRound(Defenders, ERoundEndReason::RoundTimeExpired);
+		EndRound(Resolution.WinningTeam, Resolution.EndReason);
 	}
 }
 
@@ -277,21 +320,15 @@ bool ABombGameMode::TryResolveEliminationOutcome()
 	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
 	const bool bObjectiveIsPlanted = IsValid(ObjectiveManager) && ObjectiveManager->IsPlantedOrDefusing();
 
-	if (AliveAttackers == 0 && AliveDefenders == 0)
+	const FBombRoundResolution Resolution = BombRoundRules::ResolveElimination(
+		AliveAttackers,
+		AliveDefenders,
+		bObjectiveIsPlanted,
+		Attackers,
+		Defenders);
+	if (Resolution.ShouldEndRound())
 	{
-		EndRound(Defenders, ERoundEndReason::MutualElimination);
-		return true;
-	}
-
-	if (AliveDefenders == 0)
-	{
-		EndRound(Attackers, ERoundEndReason::TeamEliminated);
-		return true;
-	}
-
-	if (AliveAttackers == 0 && !bObjectiveIsPlanted)
-	{
-		EndRound(Defenders, ERoundEndReason::TeamEliminated);
+		EndRound(Resolution.WinningTeam, Resolution.EndReason);
 		return true;
 	}
 

@@ -121,6 +121,8 @@ void ABaseRoundGameMode::RestartGameFlow()
 	SetAllPlayersRoundInputEnabled(false);
 	PendingRoundContext.Reset();
 	LastCompletedRoundNumber = 0;
+	SpawnPreparationRetryCount = 0;
+	bInitialReadyTimeoutExpired = false;
 	bRoundOpeningSuspended = false;
 	bLoggedWaitingForAugmentRegistry = false;
 
@@ -158,6 +160,7 @@ void ABaseRoundGameMode::RetryRoundOpening()
 	}
 
 	bRoundOpeningSuspended = false;
+	SpawnPreparationRetryCount = 0;
 	TryBeginNextRound();
 }
 
@@ -246,6 +249,15 @@ bool ABaseRoundGameMode::ShouldSpawnAtStartSpot(AController*)
 
 void ABaseRoundGameMode::ResetModeState()
 {
+}
+
+EPlayerStartReservationResult ABaseRoundGameMode::ReserveModePlayerStarts(const FRoundContext&)
+{
+	if (UTeamPlayerManager* PlayerManager = GetTeamPlayerManager())
+	{
+		PlayerManager->ClearPlayerStartReservations();
+	}
+	return EPlayerStartReservationResult::Succeeded;
 }
 
 bool ABaseRoundGameMode::PrepareModeRound(const FRoundContext&)
@@ -378,6 +390,7 @@ void ABaseRoundGameMode::InitializeGameFlow()
 
 	LastCompletedRoundNumber = RoundGameState->GetCurrentRoundNumber();
 	InitialReadyPlayerControllers.Reset();
+	bInitialReadyTimeoutExpired = false;
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
 
 	TryBeginNextRound();
@@ -413,7 +426,9 @@ void ABaseRoundGameMode::HandlePlayerRosterChanged()
 		}
 
 		// 첫 라운드 시작 지연 중 새 플레이어가 합류했다면 그 플레이어의 UI 준비도 기다린다.
-		if (LastCompletedRoundNumber == 0 && !AreInitialPlayersReadyForGameFlow())
+		if (LastCompletedRoundNumber == 0
+			&& !bInitialReadyTimeoutExpired
+			&& !AreInitialPlayersReadyForGameFlow())
 		{
 			EnterWaitingForPlayersReady();
 			return;
@@ -498,12 +513,15 @@ void ABaseRoundGameMode::TryBeginNextRound()
 		return;
 	}
 
-	if (bNeedsInitialReadyGate && !AreInitialPlayersReadyForGameFlow())
+	if (bNeedsInitialReadyGate
+		&& !bInitialReadyTimeoutExpired
+		&& !AreInitialPlayersReadyForGameFlow())
 	{
 		return;
 	}
 
 	bLoggedWaitingForAugmentRegistry = false;
+	ClearInitialReadyTimer();
 	ClearPhaseTimer();
 	SetAllPlayersRoundInputEnabled(false);
 
@@ -556,11 +574,36 @@ void ABaseRoundGameMode::OpenNextRound()
 	PendingRoundContext = RoundContext;
 
 	UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
-	if (!IsValid(PlayerManager) || !PlayerManager->PreparePlayersForRound())
+	if (!IsValid(PlayerManager))
 	{
-		SuspendRoundOpening(TEXT("Player spawn/reset failed."));
+		SuspendRoundOpening(TEXT("The team player manager is missing."));
 		return;
 	}
+
+	const EPlayerStartReservationResult StartReservationResult = ReserveModePlayerStarts(RoundContext);
+	if (StartReservationResult == EPlayerStartReservationResult::InvalidConfiguration)
+	{
+		SuspendRoundOpening(TEXT("The mode-specific PlayerStart configuration is invalid."));
+		return;
+	}
+	if (StartReservationResult == EPlayerStartReservationResult::TemporarilyBlocked)
+	{
+		ScheduleSpawnPreparationRetry(TEXT("Required PlayerStarts are temporarily blocked."));
+		return;
+	}
+
+	const ERoundPlayerPreparationResult PlayerPreparationResult = PlayerManager->PreparePlayersForRound();
+	if (PlayerPreparationResult == ERoundPlayerPreparationResult::TemporarilyBlocked)
+	{
+		ScheduleSpawnPreparationRetry(TEXT("A reserved PlayerStart could not spawn its pawn."));
+		return;
+	}
+	if (PlayerPreparationResult != ERoundPlayerPreparationResult::Succeeded)
+	{
+		SuspendRoundOpening(TEXT("Player spawn or state reset failed with a non-recoverable error."));
+		return;
+	}
+	SpawnPreparationRetryCount = 0;
 
 	if (!PrepareModeRound(RoundContext))
 	{
@@ -724,6 +767,7 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 {
 	ClearAllFlowTimers();
 	SetAllPlayersRoundInputEnabled(false);
+	SpawnPreparationRetryCount = 0;
 
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
@@ -750,12 +794,100 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 void ABaseRoundGameMode::EnterWaitingForPlayersReady()
 {
 	ClearPhaseTimer();
+	ClearInitialReadyTimer();
 	SetAllPlayersRoundInputEnabled(false);
+	SpawnPreparationRetryCount = 0;
 
 	if (ABaseRoundGameState* RoundGameState = GetBaseRoundGameState())
 	{
 		RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayersReady);
+		GetWorldTimerManager().SetTimer(
+			InitialReadyTimerHandle,
+			this,
+			&ThisClass::HandleInitialReadyTimeout,
+			InitialReadyTimeout,
+			false);
 	}
+}
+
+void ABaseRoundGameMode::HandleInitialReadyTimeout()
+{
+	ClearInitialReadyTimer();
+
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState)
+		|| RoundGameState->GetGameFlowPhase() != EGameFlowPhase::WaitingForPlayersReady)
+	{
+		return;
+	}
+
+	if (AreInitialPlayersReadyForGameFlow())
+	{
+		TryBeginNextRound();
+		return;
+	}
+
+	TArray<FString> PendingPlayerNames;
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PlayerController = Iterator->Get();
+		const ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
+			: nullptr;
+		if (!IsValid(PlayerState)
+			|| PlayerState->GetTeam() == EGameTeam::None
+			|| InitialReadyPlayerControllers.Contains(TWeakObjectPtr<APlayerController>(PlayerController)))
+		{
+			continue;
+		}
+
+		const FString PlayerName = PlayerState->GetPlayerName();
+		PendingPlayerNames.Add(PlayerName.IsEmpty() ? GetNameSafe(PlayerController) : PlayerName);
+	}
+
+	const FString PendingPlayerList = PendingPlayerNames.IsEmpty()
+		? TEXT("<unknown>")
+		: FString::Join(PendingPlayerNames, TEXT(", "));
+	UE_LOG(LogBaseRoundGameMode, Warning,
+		TEXT("Initial player ready gate timed out after %.1f seconds. Continuing while UI initialization keeps retrying. Unready players: %s"),
+		InitialReadyTimeout,
+		*PendingPlayerList);
+	bInitialReadyTimeoutExpired = true;
+	TryBeginNextRound();
+}
+
+void ABaseRoundGameMode::ScheduleSpawnPreparationRetry(const TCHAR* Reason)
+{
+	if (UTeamPlayerManager* PlayerManager = GetTeamPlayerManager())
+	{
+		PlayerManager->ClearPlayerStartReservations();
+	}
+	PendingRoundContext.Reset();
+
+	if (SpawnPreparationRetryCount >= MaxSpawnPreparationRetries)
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("Round spawn retry limit reached after %d retries. Last failure: %s"),
+			SpawnPreparationRetryCount,
+			Reason);
+		SuspendRoundOpening(TEXT("Temporary PlayerStart blockage did not clear before the spawn retry limit."));
+		return;
+	}
+
+	++SpawnPreparationRetryCount;
+	UE_LOG(LogBaseRoundGameMode, Warning,
+		TEXT("Round spawn preparation retry %d/%d in %.2f seconds: %s"),
+		SpawnPreparationRetryCount,
+		MaxSpawnPreparationRetries,
+		SpawnPreparationRetryDelay,
+		Reason);
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTimerHandle,
+		this,
+		&ThisClass::OpenNextRound,
+		SpawnPreparationRetryDelay,
+		false);
 }
 
 void ABaseRoundGameMode::SuspendRoundOpening(const TCHAR* Reason)
@@ -769,13 +901,11 @@ void ABaseRoundGameMode::SuspendRoundOpening(const TCHAR* Reason)
 
 FRoundContext ABaseRoundGameMode::MakeRoundContext(const int32 RoundNumber) const
 {
-	FRoundContext Context;
-	Context.RoundNumber = RoundNumber;
-
-	const bool bUseSwappedRoles = SideSwitchRound > 0 && Context.RoundNumber >= SideSwitchRound;
-	Context.TeamARole = bUseSwappedRoles ? StartingTeamBRole : StartingTeamARole;
-	Context.TeamBRole = bUseSwappedRoles ? StartingTeamARole : StartingTeamBRole;
-	return Context;
+	return FRoundContext::Make(
+		RoundNumber,
+		SideSwitchRound,
+		StartingTeamARole,
+		StartingTeamBRole);
 }
 
 bool ABaseRoundGameMode::HasRequiredPlayersToStart() const
@@ -830,8 +960,11 @@ bool ABaseRoundGameMode::IsBaseConfigurationValid() const
 		&& SpawnClearanceRadius >= 0.0f
 		&& MinimumPlayersToStart > 0
 		&& InitialRoundStartDelay >= 0.0f
+		&& InitialReadyTimeout > 0.0f
 		&& RoundStartDelay >= 0.0f
 		&& RoundEndDelay >= 0.0f
+		&& MaxSpawnPreparationRetries >= 0
+		&& SpawnPreparationRetryDelay > 0.0f
 		&& RoundDuration > 0.0f
 		&& (!bEnableAugmentDraft || (AugmentSelectionDuration > 0.0f && AugmentOfferCount > 0))
 		&& SideSwitchRound >= 0
@@ -919,10 +1052,16 @@ void ABaseRoundGameMode::ClearRoundTimer()
 	}
 }
 
+void ABaseRoundGameMode::ClearInitialReadyTimer()
+{
+	GetWorldTimerManager().ClearTimer(InitialReadyTimerHandle);
+}
+
 void ABaseRoundGameMode::ClearAllFlowTimers()
 {
 	ClearPhaseTimer();
 	ClearRoundTimer();
+	ClearInitialReadyTimer();
 }
 
 void ABaseRoundGameMode::SetAllPlayersRoundInputEnabled(const bool bEnabled)

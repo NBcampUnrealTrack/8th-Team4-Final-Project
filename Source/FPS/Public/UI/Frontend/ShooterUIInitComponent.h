@@ -57,6 +57,7 @@ protected:
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
 	bool bInGameUIReady = false;
+	bool bLoggedInitialWidgetPushFailure = false;
 
 	UShooterUIManagerSubsystem* GetUIManager() const;
 

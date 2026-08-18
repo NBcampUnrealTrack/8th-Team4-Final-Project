@@ -47,6 +47,21 @@ struct FRoundContext
 	ETeamRole TeamARole = ETeamRole::None;
 	ETeamRole TeamBRole = ETeamRole::None;
 
+	static FRoundContext Make(
+		const int32 InRoundNumber,
+		const int32 SideSwitchRound,
+		const ETeamRole StartingTeamARole,
+		const ETeamRole StartingTeamBRole)
+	{
+		FRoundContext Context;
+		Context.RoundNumber = InRoundNumber;
+
+		const bool bUseSwappedRoles = SideSwitchRound > 0 && InRoundNumber >= SideSwitchRound;
+		Context.TeamARole = bUseSwappedRoles ? StartingTeamBRole : StartingTeamARole;
+		Context.TeamBRole = bUseSwappedRoles ? StartingTeamARole : StartingTeamBRole;
+		return Context;
+	}
+
 	bool IsValid() const
 	{
 		return RoundNumber > 0

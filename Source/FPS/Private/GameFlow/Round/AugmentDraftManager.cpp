@@ -350,11 +350,8 @@ void UAugmentDraftManager::HandleRegistryReady()
 
 void UAugmentDraftManager::RegenerateMatchSeed()
 {
-	MatchSeed = FMath::Rand();
-	if (MatchSeed == 0)
-	{
-		MatchSeed = 1;
-	}
+	const uint32 RandomSeed = FMath::Rand32() & 0x7fffffffu;
+	MatchSeed = RandomSeed == 0u ? 1 : static_cast<int32>(RandomSeed);
 }
 
 int32 UAugmentDraftManager::MakeRoundSeed(const int32 RoundNumber) const

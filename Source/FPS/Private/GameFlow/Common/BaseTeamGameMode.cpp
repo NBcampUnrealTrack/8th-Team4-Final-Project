@@ -66,7 +66,7 @@ AActor* ABaseTeamGameMode::ChoosePlayerStart_Implementation(AController* Player)
 		}
 	}
 
-	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
 	return IsValid(PlayerManager)
 		? PlayerManager->SelectAvailablePlayerStart(MatchingStarts, TEXT("BaseTeamPlayerStart"))
 		: nullptr;

@@ -5,6 +5,7 @@
 #include "GameFlow/Common/BaseTeamGameMode.h"
 #include "GameFlow/Common/BaseTeamGameState.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
@@ -16,6 +17,7 @@ void UTeamPlayerManager::Initialize(ABaseTeamGameMode* InOwnerGameMode, const fl
 {
 	OwnerGameMode = InOwnerGameMode;
 	SpawnClearanceRadius = FMath::Max(0.0f, InSpawnClearanceRadius);
+	ClearPlayerStartReservations();
 	ResetRoundTracking();
 }
 
@@ -110,9 +112,102 @@ bool UTeamPlayerManager::AssignTeamIfNeeded(APlayerController* PlayerController,
 	return true;
 }
 
+EPlayerStartReservationResult UTeamPlayerManager::ReservePlayerStarts(
+	const TArray<FPlayerStartGroup>& StartGroups)
+{
+	ClearPlayerStartReservations();
+
+	TArray<FPlayerStartGroup> ValidatedGroups;
+	ValidatedGroups.Reserve(StartGroups.Num());
+	for (const FPlayerStartGroup& StartGroup : StartGroups)
+	{
+		if (StartGroup.RequiredCount <= 0)
+		{
+			continue;
+		}
+
+		FPlayerStartGroup& ValidatedGroup = ValidatedGroups.AddDefaulted_GetRef();
+		ValidatedGroup.Description = StartGroup.Description.IsEmpty()
+			? TEXT("PlayerStart group")
+			: StartGroup.Description;
+		ValidatedGroup.RequiredCount = StartGroup.RequiredCount;
+
+		TSet<AActor*> UniqueStarts;
+		for (AActor* PlayerStart : StartGroup.PlayerStarts)
+		{
+			if (IsValid(PlayerStart) && !UniqueStarts.Contains(PlayerStart))
+			{
+				UniqueStarts.Add(PlayerStart);
+				ValidatedGroup.PlayerStarts.Add(PlayerStart);
+			}
+		}
+
+		if (ValidatedGroup.PlayerStarts.Num() < ValidatedGroup.RequiredCount)
+		{
+			UE_LOG(LogTeamPlayerManager, Error,
+				TEXT("Invalid %s configuration: %d valid starts are configured, but %d are required."),
+				*ValidatedGroup.Description,
+				ValidatedGroup.PlayerStarts.Num(),
+				ValidatedGroup.RequiredCount);
+			return EPlayerStartReservationResult::InvalidConfiguration;
+		}
+	}
+
+	if (ValidatedGroups.IsEmpty())
+	{
+		UE_LOG(LogTeamPlayerManager, Error, TEXT("No PlayerStart group requires a spawn reservation."));
+		return EPlayerStartReservationResult::InvalidConfiguration;
+	}
+
+	TArray<AActor*> ConfiguredReservation;
+	// 필요한 수만 조합으로 고르므로 가까이 배치된 여분 Start가 있어도 사용 가능한 구성이면 허용한다.
+	if (!TryBuildStartReservation(
+		ValidatedGroups,
+		0,
+		0,
+		ValidatedGroups[0].RequiredCount,
+		false,
+		ConfiguredReservation))
+	{
+		UE_LOG(LogTeamPlayerManager, Error,
+			TEXT("PlayerStart configuration cannot fit all required players with SpawnClearanceRadius %.1f. "
+				"Move the starts farther apart or reduce the clearance radius."),
+			SpawnClearanceRadius);
+		return EPlayerStartReservationResult::InvalidConfiguration;
+	}
+
+	TArray<AActor*> ClearReservation;
+	if (!TryBuildStartReservation(
+		ValidatedGroups,
+		0,
+		0,
+		ValidatedGroups[0].RequiredCount,
+		true,
+		ClearReservation))
+	{
+		UE_LOG(LogTeamPlayerManager, Warning,
+			TEXT("The configured PlayerStarts are currently blocked by pawns. Round spawn will be retried."));
+		return EPlayerStartReservationResult::TemporarilyBlocked;
+	}
+
+	ReservedPlayerStarts.Reserve(ClearReservation.Num());
+	for (AActor* PlayerStart : ClearReservation)
+	{
+		ReservedPlayerStarts.Add(TWeakObjectPtr<AActor>(PlayerStart));
+	}
+	bHasActivePlayerStartReservation = true;
+	return EPlayerStartReservationResult::Succeeded;
+}
+
+void UTeamPlayerManager::ClearPlayerStartReservations()
+{
+	ReservedPlayerStarts.Reset();
+	bHasActivePlayerStartReservation = false;
+}
+
 AActor* UTeamPlayerManager::SelectAvailablePlayerStart(
 	const TArray<AActor*>& MatchingStarts,
-	const TCHAR* StartDescription) const
+	const TCHAR* StartDescription)
 {
 	TArray<AActor*> ValidStarts;
 	TArray<AActor*> ClearStarts;
@@ -122,6 +217,11 @@ AActor* UTeamPlayerManager::SelectAvailablePlayerStart(
 	for (AActor* PlayerStart : MatchingStarts)
 	{
 		if (!IsValid(PlayerStart))
+		{
+			continue;
+		}
+		if (bHasActivePlayerStartReservation
+			&& !ReservedPlayerStarts.Contains(TWeakObjectPtr<AActor>(PlayerStart)))
 		{
 			continue;
 		}
@@ -135,13 +235,20 @@ AActor* UTeamPlayerManager::SelectAvailablePlayerStart(
 
 	if (ValidStarts.IsEmpty())
 	{
-		UE_LOG(LogTeamPlayerManager, Error, TEXT("No valid %s is configured for the requested spawn group."), StartDescription);
+		UE_LOG(LogTeamPlayerManager, Error,
+			TEXT("No valid or reserved %s is available for the requested spawn group."),
+			StartDescription);
 		return nullptr;
 	}
 
 	if (!ClearStarts.IsEmpty())
 	{
-		return ClearStarts[FMath::RandHelper(ClearStarts.Num())];
+		AActor* SelectedStart = ClearStarts[FMath::RandHelper(ClearStarts.Num())];
+		if (bHasActivePlayerStartReservation)
+		{
+			ReservedPlayerStarts.Remove(TWeakObjectPtr<AActor>(SelectedStart));
+		}
+		return SelectedStart;
 	}
 
 	if (SpawnClearanceRadius <= 0.0f)
@@ -149,8 +256,8 @@ AActor* UTeamPlayerManager::SelectAvailablePlayerStart(
 		return ValidStarts[FMath::RandHelper(ValidStarts.Num())];
 	}
 
-	UE_LOG(LogTeamPlayerManager, Error,
-		TEXT("No clear %s is available. Add enough starts or reduce SpawnClearanceRadius."),
+	UE_LOG(LogTeamPlayerManager, Warning,
+		TEXT("No clear %s is currently available."),
 		StartDescription);
 	return nullptr;
 }
@@ -176,6 +283,8 @@ void UTeamPlayerManager::RemovePlayerPawn(APlayerController* PlayerController) c
 
 void UTeamPlayerManager::ResetAllPlayerPawns()
 {
+	ClearPlayerStartReservations();
+
 	ABaseTeamGameMode* GameMode = GetOwnerGameMode();
 	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
 	if (!IsValid(World))
@@ -192,19 +301,22 @@ void UTeamPlayerManager::ResetAllPlayerPawns()
 	ResetRoundTracking();
 }
 
-bool UTeamPlayerManager::PreparePlayersForRound()
+ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 {
 	ABaseTeamGameMode* GameMode = GetOwnerGameMode();
 	if (!IsValid(GameMode))
 	{
-		return false;
+		ClearPlayerStartReservations();
+		return ERoundPlayerPreparationResult::InvalidState;
 	}
 
 	TArray<APlayerController*> Players;
 	if (!GatherEligiblePlayers(Players))
 	{
-		return false;
+		ClearPlayerStartReservations();
+		return ERoundPlayerPreparationResult::InvalidState;
 	}
+	const bool bUsesReservedPlayerStarts = bHasActivePlayerStartReservation;
 
 	ResetRoundTracking();
 	for (APlayerController* PlayerController : Players)
@@ -215,19 +327,46 @@ bool UTeamPlayerManager::PreparePlayersForRound()
 	for (APlayerController* PlayerController : Players)
 	{
 		AShooterPlayerState* PlayerState = PlayerController->GetPlayerState<AShooterPlayerState>();
+		if (!IsValid(PlayerState))
+		{
+			UE_LOG(LogTeamPlayerManager, Error,
+				TEXT("%s lost its ShooterPlayerState during round preparation."),
+				*GetNameSafe(PlayerController));
+			CleanupFailedPreparation(Players);
+			return ERoundPlayerPreparationResult::InvalidState;
+		}
+
 		GameMode->RestartPlayer(PlayerController);
 
 		APawn* SpawnedPawn = PlayerController->GetPawn();
-		if (!IsValid(PlayerState)
-			|| !IsValid(SpawnedPawn)
-			|| SpawnedPawn->GetController() != PlayerController
+		if (!IsValid(SpawnedPawn))
+		{
+			if (bUsesReservedPlayerStarts)
+			{
+				UE_LOG(LogTeamPlayerManager, Warning,
+					TEXT("Could not spawn %s at its reserved PlayerStart; round spawn will be retried."),
+					*GetNameSafe(PlayerController));
+			}
+			else
+			{
+				UE_LOG(LogTeamPlayerManager, Error,
+					TEXT("Could not spawn %s because no validated PlayerStart reservation is active."),
+					*GetNameSafe(PlayerController));
+			}
+			CleanupFailedPreparation(Players);
+			return bUsesReservedPlayerStarts
+				? ERoundPlayerPreparationResult::TemporarilyBlocked
+				: ERoundPlayerPreparationResult::InvalidState;
+		}
+
+		if (SpawnedPawn->GetController() != PlayerController
 			|| PlayerController->GetPlayerState<AShooterPlayerState>() != PlayerState)
 		{
 			UE_LOG(LogTeamPlayerManager, Error,
-				TEXT("Failed to spawn %s for the round. Check DefaultPawnClass and the mode-specific PlayerStarts."),
+				TEXT("%s has an invalid pawn/controller state after round spawn."),
 				*GetNameSafe(PlayerController));
 			CleanupFailedPreparation(Players);
-			return false;
+			return ERoundPlayerPreparationResult::InvalidState;
 		}
 
 		PlayerState->ServerRespawnReset();
@@ -237,7 +376,7 @@ bool UTeamPlayerManager::PreparePlayersForRound()
 				TEXT("%s remained dead after ServerRespawnReset()."),
 				*GetNameSafe(PlayerState));
 			CleanupFailedPreparation(Players);
-			return false;
+			return ERoundPlayerPreparationResult::InvalidState;
 		}
 	}
 
@@ -252,10 +391,11 @@ bool UTeamPlayerManager::PreparePlayersForRound()
 	if (!AreRoundParticipantsReady())
 	{
 		CleanupFailedPreparation(Players);
-		return false;
+		return ERoundPlayerPreparationResult::InvalidState;
 	}
 
-	return true;
+	ClearPlayerStartReservations();
+	return ERoundPlayerPreparationResult::Succeeded;
 }
 
 bool UTeamPlayerManager::AreRoundParticipantsReady() const
@@ -400,7 +540,92 @@ void UTeamPlayerManager::CleanupFailedPreparation(const TArray<APlayerController
 	{
 		RemovePlayerPawn(PlayerController);
 	}
+	ClearPlayerStartReservations();
 	ResetRoundTracking();
+}
+
+bool UTeamPlayerManager::TryBuildStartReservation(
+	const TArray<FPlayerStartGroup>& StartGroups,
+	const int32 GroupIndex,
+	const int32 CandidateIndex,
+	const int32 RemainingInGroup,
+	const bool bRequireClearStarts,
+	TArray<AActor*>& InOutSelectedStarts) const
+{
+	if (!StartGroups.IsValidIndex(GroupIndex))
+	{
+		return true;
+	}
+
+	if (RemainingInGroup <= 0)
+	{
+		const int32 NextGroupIndex = GroupIndex + 1;
+		return !StartGroups.IsValidIndex(NextGroupIndex)
+			|| TryBuildStartReservation(
+				StartGroups,
+				NextGroupIndex,
+				0,
+				StartGroups[NextGroupIndex].RequiredCount,
+				bRequireClearStarts,
+				InOutSelectedStarts);
+	}
+
+	const FPlayerStartGroup& StartGroup = StartGroups[GroupIndex];
+	if (StartGroup.PlayerStarts.Num() - CandidateIndex < RemainingInGroup)
+	{
+		return false;
+	}
+
+	for (int32 Index = CandidateIndex; Index < StartGroup.PlayerStarts.Num(); ++Index)
+	{
+		AActor* Candidate = StartGroup.PlayerStarts[Index];
+		if (!IsValid(Candidate)
+			|| (bRequireClearStarts && !IsPlayerStartClear(Candidate))
+			|| !IsCompatibleWithSelectedStarts(Candidate, InOutSelectedStarts))
+		{
+			continue;
+		}
+
+		InOutSelectedStarts.Add(Candidate);
+		if (TryBuildStartReservation(
+			StartGroups,
+			GroupIndex,
+			Index + 1,
+			RemainingInGroup - 1,
+			bRequireClearStarts,
+			InOutSelectedStarts))
+		{
+			return true;
+		}
+		InOutSelectedStarts.Pop();
+	}
+
+	return false;
+}
+
+bool UTeamPlayerManager::IsCompatibleWithSelectedStarts(
+	const AActor* Candidate,
+	const TArray<AActor*>& SelectedStarts) const
+{
+	if (!IsValid(Candidate))
+	{
+		return false;
+	}
+
+	const float ClearanceRadiusSquared = FMath::Square(SpawnClearanceRadius);
+	for (const AActor* SelectedStart : SelectedStarts)
+	{
+		if (Candidate == SelectedStart
+			|| (SpawnClearanceRadius > 0.0f
+				&& IsValid(SelectedStart)
+				&& FVector::DistSquared(Candidate->GetActorLocation(), SelectedStart->GetActorLocation())
+					< ClearanceRadiusSquared))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 bool UTeamPlayerManager::IsPlayerStartClear(const AActor* PlayerStart) const
