@@ -46,6 +46,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
 
+	bool FireMelee(bool bHeavyAttack = false);
+	bool FireRanged(float ClientFireServerTime);
+
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void StartReload();
@@ -149,7 +152,10 @@ protected:
 		const FVector& TraceStart,
 		const TArray<FVector>& PelletDirections,
 		float ShotDamage,
-		int32 ShotIndexInMagazine);
+		int32 ShotIndexInMagazine,
+		float ClientFireServerTime);
+
+	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
 
 	// --- 재장전 ---
 	void FinishReload();

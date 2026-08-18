@@ -5,6 +5,8 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
+#include "GameFramework/PlayerController.h"
+#include "Player/NetworkTimeSyncComponent.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -46,7 +48,19 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		Weapon->SetEffectiveRPM(FinalRPM);
 	}
 
-	const bool bFired = Weapon->Fire();
+	float ClientFireServerTime = 0.0f;
+	if (ActorInfo)
+	{
+		if (const APlayerController* PlayerController = ActorInfo->PlayerController.Get())
+		{
+			if (const UNetworkTimeSyncComponent* TimeSyncComponent = PlayerController->FindComponentByClass<UNetworkTimeSyncComponent>())
+			{
+				ClientFireServerTime = TimeSyncComponent->GetEstimatedServerTime();
+			}
+		}
+	}
+
+	const bool bFired = Weapon->FireRanged(ClientFireServerTime);
 
 	if (bFired)
 	{

@@ -61,7 +61,7 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		}
 	}
 
-	const bool bAttacked = Weapon->Fire(bIsHeavyAttack);
+	const bool bAttacked = Weapon->FireMelee(bIsHeavyAttack);
 
 	if (bAttacked)
 	{

@@ -157,6 +157,21 @@ void AWeaponBase::SetADS(bool bNewIsADS)
 
 bool AWeaponBase::Fire(bool bHeavyAttack)
 {
+	return FireMelee(bHeavyAttack);
+}
+
+bool AWeaponBase::FireMelee(bool bHeavyAttack)
+{
+	return FireInternal(bHeavyAttack, 0.0f);
+}
+
+bool AWeaponBase::FireRanged(float ClientFireServerTime)
+{
+	return FireInternal(false, ClientFireServerTime);
+}
+
+bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
+{
 	if (!CanFireNow(bHeavyAttack))
 	{
 		return false;
@@ -205,7 +220,7 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		PelletDirections.Add(CalculateTraceDirection(AimDirection));
 	}
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime);
 
 	// ** 임시 - 담당자 코드로 수정해주세요
 	if (HasAuthority() && FireSound)
@@ -380,7 +395,8 @@ void AWeaponBase::ResolveHitscanShot(
 	const FVector& TraceStart,
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
-	const int32 ShotIndexInMagazine)
+	const int32 ShotIndexInMagazine,
+	const float ClientFireServerTime)
 {
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
@@ -462,6 +478,7 @@ void AWeaponBase::ResolveHitscanShot(
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
+	Request.ClientFireServerTime = ClientFireServerTime;
 	Request.InitialPenetrationPower = FMath::Max(0.0f, PenetrationPower);
 	Request.SurfaceHardnessOverrides = &SurfaceHardnessMap;
 

@@ -120,11 +120,6 @@ void UNetworkTimeSyncComponent::ClientReportServerTime_Implementation(float Clie
 
 	const float EstimatedServerTime = ServerReceiptTime + (RoundTripTime * 0.5f);
 	ServerTimeOffset = EstimatedServerTime - ClientReceiveTime;
-
-	UE_LOG(LogTemp, Warning, TEXT("[TimeSync] RTT=%.4f Offset=%.4f EstimatedServerTime=%.4f"),
-		RoundTripTime,
-		ServerTimeOffset,
-		GetEstimatedServerTime());
 }
 
 bool UNetworkTimeSyncComponent::ShouldSyncTime() const

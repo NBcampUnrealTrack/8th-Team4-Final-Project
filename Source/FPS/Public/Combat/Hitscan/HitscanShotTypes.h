@@ -104,6 +104,7 @@ struct FHitscanShotRequest
 	FGameplayTag WeaponTag;
 	FGuid ShotId;
 	int32 ShotIndexInMagazine = 0;
+	float ClientFireServerTime = 0.0f;
 	float InitialPenetrationPower = 0.0f;
 
 	// 이름은 기존 DataAsset 호환을 위해 유지하지만 부위/후방 판정 설정만 포함한다.
