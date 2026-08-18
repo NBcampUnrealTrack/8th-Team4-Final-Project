@@ -14,15 +14,47 @@ UNetworkTimeSyncComponent::UNetworkTimeSyncComponent()
 void UNetworkTimeSyncComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
-	StartPeriodicTimeSync();
 }
 
 void UNetworkTimeSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopPeriodicTimeSync();
+	StopTimeSync();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void UNetworkTimeSyncComponent::StartTimeSync()
+{
+	if (!ShouldSyncTime())
+	{
+		return;
+	}
+
+	RequestServerTimeSync();
+
+	if (TimeSyncFrequency <= 0.0f)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			TimeSyncTimerHandle,
+			this,
+			&ThisClass::RequestServerTimeSync,
+			TimeSyncFrequency,
+			true
+		);
+	}
+}
+
+void UNetworkTimeSyncComponent::StopTimeSync()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(TimeSyncTimerHandle);
+	}
 }
 
 void UNetworkTimeSyncComponent::RequestServerTimeSync()
@@ -73,7 +105,7 @@ void UNetworkTimeSyncComponent::ServerRequestServerTime_Implementation(float Cli
 	}
 
 	ClientReportServerTime(ClientRequestTime, ServerReceiptTime);
-}
+}	
 
 void UNetworkTimeSyncComponent::ClientReportServerTime_Implementation(float ClientRequestTime, float ServerReceiptTime)
 {
@@ -88,44 +120,15 @@ void UNetworkTimeSyncComponent::ClientReportServerTime_Implementation(float Clie
 
 	const float EstimatedServerTime = ServerReceiptTime + (RoundTripTime * 0.5f);
 	ServerTimeOffset = EstimatedServerTime - ClientReceiveTime;
+
+	UE_LOG(LogTemp, Warning, TEXT("[TimeSync] RTT=%.4f Offset=%.4f EstimatedServerTime=%.4f"),
+		RoundTripTime,
+		ServerTimeOffset,
+		GetEstimatedServerTime());
 }
 
 bool UNetworkTimeSyncComponent::ShouldSyncTime() const
 {
 	const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
 	return PlayerController && PlayerController->IsLocalController();
-}
-
-void UNetworkTimeSyncComponent::StartPeriodicTimeSync()
-{
-	if (!ShouldSyncTime())
-	{
-		return;
-	}
-
-	RequestServerTimeSync();
-
-	if (TimeSyncFrequency <= 0.0f)
-	{
-		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().SetTimer(
-			TimeSyncTimerHandle,
-			this,
-			&ThisClass::RequestServerTimeSync,
-			TimeSyncFrequency,
-			true
-		);
-	}
-}
-
-void UNetworkTimeSyncComponent::StopPeriodicTimeSync()
-{
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(TimeSyncTimerHandle);
-	}
 }

@@ -16,6 +16,12 @@ public:
 	UNetworkTimeSyncComponent();
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Network Time")
+	void StartTimeSync();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Network Time")
+	void StopTimeSync();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Network Time")
 	void RequestServerTimeSync();
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network Time")
@@ -48,8 +54,6 @@ protected:
 
 private:
 	bool ShouldSyncTime() const;
-	void StartPeriodicTimeSync();
-	void StopPeriodicTimeSync();
 
 	FTimerHandle TimeSyncTimerHandle;
 };

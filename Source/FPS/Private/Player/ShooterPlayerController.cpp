@@ -141,6 +141,16 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	}
 }
 
+void AShooterPlayerController::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+
+	if (IsLocalController() && NetworkTimeSyncComponent)
+	{
+		NetworkTimeSyncComponent->StartTimeSync();
+	}
+}
+
 void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 {
 	if (HasAuthority())
