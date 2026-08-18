@@ -56,6 +56,7 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	}
 
 	Super::Logout(Exiting);
+	UpdateInitialLoadingStatus();
 	HandlePlayerRosterChanged();
 }
 
@@ -76,6 +77,7 @@ void ABaseRoundGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerC
 		UE_LOG(LogBaseRoundGameMode, Display, TEXT("%s reported that its in-game UI is ready."), *GetNameSafe(PlayerController));
 	}
 
+	UpdateInitialLoadingStatus();
 	TryBeginNextRound();
 }
 
@@ -149,6 +151,7 @@ void ABaseRoundGameMode::RestartGameFlow()
 	RoundGameState->ClearRoundResult();
 	RoundGameState->SetMatchWinner(EGameTeam::None);
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
+	UpdateInitialLoadingStatus();
 	TryBeginNextRound();
 }
 
@@ -229,6 +232,7 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		PlayerManager->RemovePlayerPawn(NewPlayer);
 	}
 	SetPlayerRoundInputEnabled(NewPlayer, false);
+	UpdateInitialLoadingStatus();
 	HandlePlayerRosterChanged();
 }
 
@@ -392,6 +396,7 @@ void ABaseRoundGameMode::InitializeGameFlow()
 	InitialReadyPlayerControllers.Reset();
 	bInitialReadyTimeoutExpired = false;
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::WaitingForPlayers);
+	UpdateInitialLoadingStatus();
 
 	TryBeginNextRound();
 }
@@ -937,6 +942,46 @@ bool ABaseRoundGameMode::AreInitialPlayersReadyForGameFlow() const
 	}
 
 	return AssignedPlayerCount >= MinimumPlayersToStart;
+}
+
+void ABaseRoundGameMode::UpdateInitialLoadingStatus()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	int32 ReadyPlayerCount = 0;
+	int32 RequiredPlayerCount = 0;
+	for (FConstPlayerControllerIterator Iterator = GetWorld()->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PlayerController = Iterator->Get();
+		ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
+			: nullptr;
+		if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
+		{
+			continue;
+		}
+
+		++RequiredPlayerCount;
+		const bool bIsReady = InitialReadyPlayerControllers.Contains(
+			TWeakObjectPtr<APlayerController>(PlayerController));
+		ReadyPlayerCount += bIsReady ? 1 : 0;
+
+		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		{
+			ShooterPlayerState->SetLoadedIntoMatch(bIsReady);
+		}
+	}
+
+	RoundGameState->SetLoadingStatus(ReadyPlayerCount, RequiredPlayerCount);
 }
 
 bool ABaseRoundGameMode::IsBaseConfigurationValid() const

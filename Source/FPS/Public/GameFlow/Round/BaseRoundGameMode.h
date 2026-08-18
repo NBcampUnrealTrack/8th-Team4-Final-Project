@@ -86,6 +86,7 @@ private:
 
 	bool HasRequiredPlayersToStart() const;
 	bool AreInitialPlayersReadyForGameFlow() const;
+	void UpdateInitialLoadingStatus();
 	bool IsGameFlowConfigurationValid() const;
 	bool IsBaseConfigurationValid() const;
 	bool IsMatchComplete(EGameTeam& OutWinningTeam) const;

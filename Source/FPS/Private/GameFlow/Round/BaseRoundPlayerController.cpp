@@ -69,6 +69,9 @@ void ABaseRoundPlayerController::ClientSetRoundInputEnabled_Implementation(const
 
 void ABaseRoundPlayerController::NotifyClientReadyForGameFlow()
 {
+	// feat의 UI 준비 신호를 로딩 진행률의 단일 완료 경계로도 사용한다.
+	SetLoadingProgress(0.9f);
+
 	if (HasAuthority())
 	{
 		if (ABaseRoundGameMode* RoundGameMode = GetWorld() != nullptr

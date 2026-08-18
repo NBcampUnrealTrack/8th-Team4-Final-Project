@@ -9,6 +9,8 @@
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class ULoadingScreenSubsystem;
+class ULoadingScreenWidget;
 class UShooterInputConfig;
 struct FInputActionValue;
 
@@ -23,6 +25,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void ShowLoadingScreen(float InitialProgress = 0.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void SetLoadingProgress(float Progress);
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void HideLoadingScreen();
+
+	UFUNCTION(Client, Reliable)
+	void ClientShowLoadingScreen(float InitialProgress);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetLoadingProgress(float Progress);
+
+	UFUNCTION(Client, Reliable)
+	void ClientHideLoadingScreen();
+
 	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Input")
 	virtual bool CanProcessGameplayInput() const;
@@ -36,10 +56,15 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest) override;
 	virtual void SetupInputComponent() override;
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
+	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
@@ -48,6 +73,7 @@ protected:
 
 private:
 	bool HasDataJackInteractionInputBlock() const;
+	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);

@@ -97,7 +97,9 @@ void ULoadingScreenSubsystem::SyncWithRoundGameState()
 
 	SetLoadingProgress(FMath::Max(CurrentProgress, BoundRoundGameState->GetLoadingProgress()));
 
-	if (BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress)
+	const EGameFlowPhase Phase = BoundRoundGameState->GetGameFlowPhase();
+	if (Phase == EGameFlowPhase::AugmentSelecting
+		|| Phase == EGameFlowPhase::RoundInProgress)
 	{
 		HideLoadingScreen();
 	}
