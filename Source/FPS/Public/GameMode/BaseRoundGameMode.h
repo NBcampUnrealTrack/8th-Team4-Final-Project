@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
+#include "GameMode/InitialPlayerReadinessTracker.h"
 #include "GameMode/RoundTypes.h"
 #include "BaseRoundGameMode.generated.h"
 
@@ -163,10 +164,9 @@ private:
 	FTimerHandle RoundTimerHandle;
 	FTimerHandle InitialReadyTimerHandle;
 	TOptional<FRoundContext> PendingRoundContext;
-	TSet<TWeakObjectPtr<APlayerController>> InitialReadyPlayerControllers;
+	FInitialPlayerReadinessTracker InitialPlayerReadinessTracker;
 	int32 LastCompletedRoundNumber = 0;
 	int32 SpawnPreparationRetryCount = 0;
-	bool bInitialReadyTimeoutExpired = false;
 	bool bRoundOpeningSuspended = false;
 	bool bLoggedWaitingForAugmentRegistry = false;
 };

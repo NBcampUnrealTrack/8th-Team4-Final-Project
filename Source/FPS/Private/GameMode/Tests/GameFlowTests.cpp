@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "GameMode/BombRoundRules.h"
+#include "GameMode/InitialPlayerReadinessTracker.h"
 #include "GameMode/RoundTypes.h"
 
 namespace
@@ -149,6 +150,33 @@ bool FRoundRoleSwitchRuleTest::RunTest(const FString& Parameters)
 		TEXT("Team B switches to attack in round seven"),
 		static_cast<int32>(RoundSeven.TeamBRole),
 		static_cast<int32>(ETeamRole::Attackers));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FInitialPlayerReadinessRuleTest,
+	"FPS.GameFlow.Round.Readiness.RequiresEveryAssignedPlayer",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FInitialPlayerReadinessRuleTest::RunTest(const FString& Parameters)
+{
+	FInitialPlayerReadinessSnapshot Snapshot;
+	Snapshot.AssignedPlayerCount = 1;
+	Snapshot.ReadyPlayerCount = 1;
+	TestFalse(
+		TEXT("A host alone cannot satisfy the two-player gate"),
+		Snapshot.AreAllAssignedPlayersReady(2));
+
+	Snapshot.AssignedPlayerCount = 2;
+	Snapshot.ReadyPlayerCount = 1;
+	TestFalse(
+		TEXT("Every assigned player must be ready"),
+		Snapshot.AreAllAssignedPlayersReady(2));
+
+	Snapshot.ReadyPlayerCount = 2;
+	TestTrue(
+		TEXT("Two assigned and ready players satisfy the gate"),
+		Snapshot.AreAllAssignedPlayersReady(2));
 	return true;
 }
 
