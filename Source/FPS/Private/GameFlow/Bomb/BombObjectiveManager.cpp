@@ -196,6 +196,47 @@ bool UBombObjectiveManager::IsActiveDataJack(const ADataJack* DataJack) const
 	return IsValid(DataJack) && DataJack == ActiveDataJack.Get();
 }
 
+bool UBombObjectiveManager::CanCompletePlanting(const ADataJack* DataJack) const
+{
+	const ABombGameMode* GameMode = GetOwnerGameMode();
+	const ABaseRoundGameState* RoundGameState = IsValid(GameMode)
+		? GameMode->GetGameState<ABaseRoundGameState>()
+		: nullptr;
+	return IsActiveDataJack(DataJack)
+		&& IsValid(GameMode)
+		&& GameMode->HasAuthority()
+		&& IsValid(RoundGameState)
+		&& RoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress
+		&& RoundGameState->GetRoundTimeRemaining() > 0.0f;
+}
+
+void UBombObjectiveManager::NotifyDataJackPlanted(ADataJack* DataJack)
+{
+	ABombGameMode* GameMode = GetOwnerGameMode();
+	if (IsValid(GameMode) && GameMode->HasAuthority() && IsActiveDataJack(DataJack))
+	{
+		GameMode->NotifyDataJackPlanted(DataJack);
+	}
+}
+
+void UBombObjectiveManager::NotifyDataJackDefused(ADataJack* DataJack)
+{
+	ABombGameMode* GameMode = GetOwnerGameMode();
+	if (IsValid(GameMode) && GameMode->HasAuthority() && IsActiveDataJack(DataJack))
+	{
+		GameMode->NotifyDataJackDefused(DataJack);
+	}
+}
+
+void UBombObjectiveManager::NotifyDataJackDetonated(ADataJack* DataJack)
+{
+	ABombGameMode* GameMode = GetOwnerGameMode();
+	if (IsValid(GameMode) && GameMode->HasAuthority() && IsActiveDataJack(DataJack))
+	{
+		GameMode->NotifyDataJackDetonated(DataJack);
+	}
+}
+
 bool UBombObjectiveManager::IsPlantedOrDefusing() const
 {
 	const EDataJackState State = GetObjectiveState();

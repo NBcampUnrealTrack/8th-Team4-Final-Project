@@ -60,6 +60,10 @@ public:
 	void HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState);
 
 	bool IsActiveDataJack(const ADataJack* DataJack) const;
+	bool CanCompletePlanting(const ADataJack* DataJack) const;
+	void NotifyDataJackPlanted(ADataJack* DataJack);
+	void NotifyDataJackDefused(ADataJack* DataJack);
+	void NotifyDataJackDetonated(ADataJack* DataJack);
 	bool IsPlantedOrDefusing() const;
 
 private:

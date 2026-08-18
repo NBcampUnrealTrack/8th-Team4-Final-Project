@@ -122,6 +122,7 @@ private:
 	void SetDataJackState(EDataJackState NewState);
 	void SetCarrierPlayerState(ABaseTeamPlayerState* NewCarrierPlayerState);
 	void SetInteractingPlayerState(ABaseTeamPlayerState* NewInteractingPlayerState);
+	void BroadcastDataChanged();
 	void HandleStateTransition(EDataJackState PreviousState);
 	void UpdateMeshVisibility();
 	void UpdatePickupCollision();

@@ -3,16 +3,11 @@
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
-#include "GameFlow/Bomb/BombGameMode.h"
 #include "GameFlow/Bomb/BombObjectiveManager.h"
-#include "GameFlow/Bomb/DataJackSiteVolume.h"
 #include "GameFlow/Common/BaseTeamPlayerState.h"
-#include "GameFlow/Round/BaseRoundGameState.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerController.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -169,11 +164,6 @@ FVector ADataJack::GetTrackedWorldLocation() const
 	return GetActorLocation();
 }
 
-FVector ADataJack::GetInteractionWorldLocation() const
-{
-	return IsValid(InteractionPoint) ? InteractionPoint->GetComponentLocation() : GetActorLocation();
-}
-
 bool ADataJack::IsCarriedBy(const ABaseTeamPlayerState* PlayerState) const
 {
 	return IsValid(PlayerState) && CarrierPlayerState == PlayerState;
@@ -281,7 +271,7 @@ void ADataJack::DeactivateForRound()
 	SetDataJackState(RestoredState);
 	NotifyInteractionStopped(PreviousInteractionController);
 	UpdatePickupCollision();
-	OnRep_DataJackData();
+	BroadcastDataChanged();
 	ForceNetUpdate();
 }
 
@@ -306,147 +296,6 @@ bool ADataJack::TryPickup(APawn* NewCarrierPawn, ABaseTeamPlayerState* NewCarrie
 	return true;
 }
 
-bool ADataJack::BeginPlanting(
-	APlayerController* PlayerController,
-	ABaseTeamPlayerState* PlayerState,
-	ADataJackSiteVolume* SiteVolume)
-{
-	const APawn* PlayerPawn = IsValid(PlayerController) ? PlayerController->GetPawn() : nullptr;
-	if (!HasAuthority()
-		|| !bRoundActive
-		|| DataJackState != EDataJackState::Carried
-		|| !IsValid(PlayerController)
-		|| !IsValid(PlayerState)
-		|| !IsCarriedBy(PlayerState)
-		|| CarrierPawn.Get() != PlayerPawn
-		|| !CanPawnPlant(PlayerPawn, SiteVolume))
-	{
-		return false;
-	}
-
-	FinishDropHold();
-	InteractionController = PlayerController;
-	InteractionStartPawnLocation = PlayerPawn->GetActorLocation();
-	ActivePlantSite = SiteVolume;
-	SetInteractingPlayerState(PlayerState);
-	InteractionStartServerTime = GetSynchronizedServerTime();
-	InteractionEndServerTime = InteractionStartServerTime + PlantDuration;
-	SetDataJackState(EDataJackState::Planting);
-	OnRep_DataJackData();
-
-	GetWorldTimerManager().SetTimer(InteractionCompletionTimerHandle, this, &ADataJack::CompleteActiveInteraction, PlantDuration, false);
-	GetWorldTimerManager().SetTimer(InteractionValidationTimerHandle, this, &ADataJack::ValidateActiveInteraction, InteractionValidationInterval, true);
-	return true;
-}
-
-bool ADataJack::BeginDefusing(APlayerController* PlayerController, ABaseTeamPlayerState* PlayerState)
-{
-	const APawn* PlayerPawn = IsValid(PlayerController) ? PlayerController->GetPawn() : nullptr;
-	if (!HasAuthority()
-		|| !bRoundActive
-		|| DataJackState != EDataJackState::Planted
-		|| !IsValid(PlayerController)
-		|| !IsValid(PlayerState)
-		|| !CanPawnDefuse(PlayerPawn))
-	{
-		return false;
-	}
-
-	InteractionController = PlayerController;
-	InteractionStartPawnLocation = PlayerPawn->GetActorLocation();
-	SetInteractingPlayerState(PlayerState);
-	InteractionStartServerTime = GetSynchronizedServerTime();
-	InteractionEndServerTime = InteractionStartServerTime + DefuseDuration;
-	SetDataJackState(EDataJackState::Defusing);
-	OnRep_DataJackData();
-
-	GetWorldTimerManager().SetTimer(InteractionCompletionTimerHandle, this, &ADataJack::CompleteActiveInteraction, DefuseDuration, false);
-	GetWorldTimerManager().SetTimer(InteractionValidationTimerHandle, this, &ADataJack::ValidateActiveInteraction, InteractionValidationInterval, true);
-	return true;
-}
-
-void ADataJack::CancelInteraction(APlayerController* PlayerController)
-{
-	if (!HasAuthority() || (DataJackState != EDataJackState::Planting && DataJackState != EDataJackState::Defusing))
-	{
-		return;
-	}
-
-	APlayerController* ActiveInteractionController = InteractionController.Get();
-	if (IsValid(PlayerController) && ActiveInteractionController != PlayerController)
-	{
-		return;
-	}
-
-	const EDataJackState RestoredState = DataJackState == EDataJackState::Planting
-		? EDataJackState::Carried
-		: EDataJackState::Planted;
-	ResetInteractionState();
-	SetDataJackState(RestoredState);
-	OnRep_DataJackData();
-	NotifyInteractionStopped(ActiveInteractionController);
-}
-
-bool ADataJack::BeginDropHold(APlayerController* PlayerController, ABaseTeamPlayerState* PlayerState)
-{
-	if (!HasAuthority()
-		|| !bRoundActive
-		|| DataJackState != EDataJackState::Carried
-		|| !IsValid(PlayerController)
-		|| !IsValid(PlayerState)
-		|| !IsCarriedBy(PlayerState)
-		|| CarrierPawn.Get() != PlayerController->GetPawn())
-	{
-		return false;
-	}
-
-	if (DropController.Get() == PlayerController
-		&& DropPlayerState.Get() == PlayerState
-		&& GetWorldTimerManager().IsTimerActive(DropHoldTimerHandle))
-	{
-		return true;
-	}
-
-	FinishDropHold();
-	DropController = PlayerController;
-	DropPlayerState = PlayerState;
-	GetWorldTimerManager().SetTimer(DropHoldTimerHandle, this, &ADataJack::CompleteDropHold, DropHoldDuration, false);
-	return true;
-}
-
-void ADataJack::CancelDropHold(APlayerController* PlayerController)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	if (IsValid(PlayerController) && DropController.Get() != PlayerController)
-	{
-		return;
-	}
-
-	FinishDropHold();
-}
-
-void ADataJack::HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState)
-{
-	if (!HasAuthority() || !IsValid(EliminatedPlayerState))
-	{
-		return;
-	}
-
-	if (IsInteractingPlayer(EliminatedPlayerState))
-	{
-		CancelInteraction();
-	}
-
-	if (IsCarriedBy(EliminatedPlayerState))
-	{
-		DropFromCarrier(false);
-	}
-}
-
 void ADataJack::OnRep_DataJackState(const EDataJackState PreviousState)
 {
 	UpdateMeshVisibility();
@@ -455,6 +304,11 @@ void ADataJack::OnRep_DataJackState(const EDataJackState PreviousState)
 }
 
 void ADataJack::OnRep_DataJackData()
+{
+	BroadcastDataChanged();
+}
+
+void ADataJack::BroadcastDataChanged()
 {
 	OnDataJackChanged.Broadcast();
 }
@@ -500,7 +354,9 @@ void ADataJack::SetDataJackState(const EDataJackState NewState)
 
 	const EDataJackState PreviousState = DataJackState;
 	DataJackState = NewState;
-	OnRep_DataJackState(PreviousState);
+	UpdateMeshVisibility();
+	UpdatePickupCollision();
+	HandleStateTransition(PreviousState);
 	ForceNetUpdate();
 }
 
@@ -512,7 +368,7 @@ void ADataJack::SetCarrierPlayerState(ABaseTeamPlayerState* NewCarrierPlayerStat
 	}
 
 	CarrierPlayerState = NewCarrierPlayerState;
-	OnRep_DataJackData();
+	BroadcastDataChanged();
 	ForceNetUpdate();
 }
 
@@ -524,7 +380,7 @@ void ADataJack::SetInteractingPlayerState(ABaseTeamPlayerState* NewInteractingPl
 	}
 
 	InteractingPlayerState = NewInteractingPlayerState;
-	OnRep_DataJackData();
+	BroadcastDataChanged();
 	ForceNetUpdate();
 }
 
@@ -618,422 +474,9 @@ void ADataJack::EvaluatePickupOverlaps()
 	}
 }
 
-bool ADataJack::CanPawnPlant(const APawn* PlayerPawn, const ADataJackSiteVolume* SiteVolume) const
-{
-	if (!IsValid(PlayerPawn) || !IsValid(SiteVolume) || !SiteVolume->ContainsPawn(PlayerPawn))
-	{
-		return false;
-	}
-
-	FHitResult PlantSurfaceHit;
-	return SiteVolume->FindPlantSurface(PlayerPawn, PlantSurfaceHit);
-}
-
-bool ADataJack::CanPawnDefuse(const APawn* PlayerPawn) const
-{
-	UWorld* World = GetWorld();
-	if (!IsValid(PlayerPawn) || !IsValid(World))
-	{
-		return false;
-	}
-
-	const FVector InteractionLocation = GetInteractionWorldLocation();
-	if (FVector::DistSquared(PlayerPawn->GetActorLocation(), InteractionLocation) > FMath::Square(DefuseRadius))
-	{
-		return false;
-	}
-
-	if (!bRequireDefuseLineOfSight)
-	{
-		return true;
-	}
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DataJackDefuseVisibility), false, PlayerPawn);
-	QueryParams.AddIgnoredActor(this);
-
-	FHitResult VisibilityHit;
-	return !World->LineTraceSingleByChannel(
-		VisibilityHit,
-		PlayerPawn->GetPawnViewLocation(),
-		InteractionLocation,
-		DefuseTraceChannel,
-		QueryParams);
-}
-
-void ADataJack::ValidateActiveInteraction()
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	APlayerController* PlayerController = InteractionController.Get();
-	ABaseTeamPlayerState* PlayerState = InteractingPlayerState;
-	APawn* PlayerPawn = IsValid(PlayerController) ? PlayerController->GetPawn() : nullptr;
-	const bool bHasValidPlayer = IsValid(PlayerController) && IsValid(PlayerState) && PlayerState->IsAlive() && IsValid(PlayerPawn);
-	const bool bStayedAtInteractionStart = bHasValidPlayer
-		&& FVector::DistSquared(PlayerPawn->GetActorLocation(), InteractionStartPawnLocation)
-		<= FMath::Square(InteractionMovementTolerance);
-
-	bool bInteractionValid = bHasValidPlayer && bStayedAtInteractionStart;
-	if (bInteractionValid && DataJackState == EDataJackState::Planting)
-	{
-		bInteractionValid = IsCarriedBy(PlayerState)
-			&& CarrierPawn.Get() == PlayerPawn
-			&& CanPawnPlant(PlayerPawn, ActivePlantSite.Get());
-	}
-	else if (bInteractionValid && DataJackState == EDataJackState::Defusing)
-	{
-		bInteractionValid = CanPawnDefuse(PlayerPawn);
-	}
-	else if (DataJackState != EDataJackState::Planting && DataJackState != EDataJackState::Defusing)
-	{
-		bInteractionValid = false;
-	}
-
-	if (!bInteractionValid)
-	{
-		CancelInteraction();
-	}
-}
-
-void ADataJack::CompleteActiveInteraction()
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	ValidateActiveInteraction();
-	switch (DataJackState)
-	{
-	case EDataJackState::Planting:
-		CompletePlanting();
-		break;
-	case EDataJackState::Defusing:
-		CompleteDefusing();
-		break;
-	default:
-		break;
-	}
-}
-
-void ADataJack::CompletePlanting()
-{
-	APlayerController* CompletedInteractionController = InteractionController.Get();
-	APawn* PlayerPawn = IsValid(CompletedInteractionController) ? CompletedInteractionController->GetPawn() : nullptr;
-	ADataJackSiteVolume* SiteVolume = ActivePlantSite.Get();
-	const ABaseRoundGameState* RoundGameState = GetWorld() != nullptr
-		? GetWorld()->GetGameState<ABaseRoundGameState>()
-		: nullptr;
-	if (!IsValid(SiteVolume)
-		|| !IsValid(PlayerPawn)
-		|| !IsValid(RoundGameState)
-		|| RoundGameState->GetGameFlowPhase() != EGameFlowPhase::RoundInProgress
-		|| RoundGameState->GetRoundTimeRemaining() <= 0.0f)
-	{
-		CancelInteraction();
-		return;
-	}
-
-	FHitResult PlantSurfaceHit;
-	if (!SiteVolume->FindPlantSurface(PlayerPawn, PlantSurfaceHit))
-	{
-		CancelInteraction();
-		return;
-	}
-
-	const FTransform PlantTransform = BuildGroundedTransform(PlantSurfaceHit, PlayerPawn);
-	ResetInteractionState();
-	SetOwner(nullptr);
-	CarrierPawn.Reset();
-	SetActorTransform(PlantTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	SetCarrierPlayerState(nullptr);
-	PlantedSiteId = SiteVolume->GetSiteId();
-	DetonationStartServerTime = GetSynchronizedServerTime();
-	DetonationEndServerTime = DetonationStartServerTime + CountdownDuration;
-	SetDataJackState(EDataJackState::Planted);
-	OnRep_DataJackData();
-	GetWorldTimerManager().SetTimer(DetonationTimerHandle, this, &ADataJack::Detonate, CountdownDuration, false);
-	NotifyInteractionStopped(CompletedInteractionController);
-
-	if (ABombGameMode* BombGameMode = GetWorld() != nullptr
-		? GetWorld()->GetAuthGameMode<ABombGameMode>()
-		: nullptr)
-	{
-		BombGameMode->NotifyDataJackPlanted(this);
-	}
-}
-
-void ADataJack::CompleteDefusing()
-{
-	if (DetonationEndServerTime > 0.0f && GetSynchronizedServerTime() >= DetonationEndServerTime)
-	{
-		Detonate();
-		return;
-	}
-
-	APlayerController* CompletedInteractionController = InteractionController.Get();
-	ResetInteractionState();
-	ClearDetonationTimer();
-	DetonationStartServerTime = 0.0f;
-	DetonationEndServerTime = 0.0f;
-	SetDataJackState(EDataJackState::Defused);
-	OnRep_DataJackData();
-	NotifyInteractionStopped(CompletedInteractionController);
-
-	if (ABombGameMode* BombGameMode = GetWorld() != nullptr
-		? GetWorld()->GetAuthGameMode<ABombGameMode>()
-		: nullptr)
-	{
-		BombGameMode->NotifyDataJackDefused(this);
-	}
-}
-
-void ADataJack::CompleteDropHold()
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	APlayerController* PlayerController = DropController.Get();
-	ABaseTeamPlayerState* PlayerState = DropPlayerState.Get();
-	if (DataJackState == EDataJackState::Carried
-		&& IsValid(PlayerController)
-		&& IsValid(PlayerState)
-		&& PlayerState->IsAlive()
-		&& IsCarriedBy(PlayerState)
-		&& CarrierPawn.Get() == PlayerController->GetPawn())
-	{
-		DropFromCarrier(true);
-		return;
-	}
-
-	FinishDropHold();
-}
-
-void ADataJack::Detonate()
-{
-	if (!HasAuthority() || (DataJackState != EDataJackState::Planted && DataJackState != EDataJackState::Defusing))
-	{
-		return;
-	}
-
-	APlayerController* ActiveInteractionController = ResetInteractionState();
-	ClearDetonationTimer();
-	SetDataJackState(EDataJackState::Detonated);
-	OnRep_DataJackData();
-	NotifyInteractionStopped(ActiveInteractionController);
-
-	if (ABombGameMode* BombGameMode = GetWorld() != nullptr ? GetWorld()->GetAuthGameMode<ABombGameMode>() : nullptr)
-	{
-		BombGameMode->NotifyDataJackDetonated(this);
-	}
-}
-
-void ADataJack::ClearInteractionTimers()
-{
-	GetWorldTimerManager().ClearTimer(InteractionCompletionTimerHandle);
-	GetWorldTimerManager().ClearTimer(InteractionValidationTimerHandle);
-}
-
-APlayerController* ADataJack::ResetInteractionState()
-{
-	APlayerController* PreviousController = InteractionController.Get();
-	ClearInteractionTimers();
-	InteractionController.Reset();
-	InteractionStartPawnLocation = FVector::ZeroVector;
-	ActivePlantSite.Reset();
-	SetInteractingPlayerState(nullptr);
-	InteractionStartServerTime = 0.0f;
-	InteractionEndServerTime = 0.0f;
-	return PreviousController;
-}
-
-APlayerController* ADataJack::ResetDropHold()
-{
-	APlayerController* PreviousController = DropController.Get();
-	GetWorldTimerManager().ClearTimer(DropHoldTimerHandle);
-	DropController.Reset();
-	DropPlayerState.Reset();
-	return PreviousController;
-}
-
-void ADataJack::FinishDropHold()
-{
-	NotifyDropStopped(ResetDropHold());
-}
-
-void ADataJack::ClearDetonationTimer()
-{
-	GetWorldTimerManager().ClearTimer(DetonationTimerHandle);
-}
-
-void ADataJack::ClearPickupBlockIfNotOverlapping()
-{
-	APawn* BlockedPickupPawn = TemporarilyBlockedPickupPawn.Get();
-	if (!IsValid(BlockedPickupPawn) || !IsValid(PickupArea) || !PickupArea->IsOverlappingActor(BlockedPickupPawn))
-	{
-		TemporarilyBlockedPickupPawn.Reset();
-	}
-
-	EvaluatePickupOverlaps();
-}
-
-void ADataJack::NotifyInteractionStopped(APlayerController* PlayerController)
-{
-	if (UBombObjectiveManager* BombObjectiveManager = GetObjectiveManager())
-	{
-		BombObjectiveManager->NotifyInteractionStopped(PlayerController);
-	}
-}
-
-void ADataJack::NotifyDropStopped(APlayerController* PlayerController)
-{
-	if (UBombObjectiveManager* BombObjectiveManager = GetObjectiveManager())
-	{
-		BombObjectiveManager->NotifyDropStopped(PlayerController);
-	}
-}
-
 UBombObjectiveManager* ADataJack::GetObjectiveManager() const
 {
 	return ObjectiveManager.Get();
-}
-
-void ADataJack::DropFromCarrier(const bool bBlockPreviousCarrier)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	if (DataJackState == EDataJackState::Planting)
-	{
-		CancelInteraction();
-	}
-
-	if (DataJackState != EDataJackState::Carried)
-	{
-		FinishDropHold();
-		return;
-	}
-
-	APawn* PreviousCarrierPawn = CarrierPawn.Get();
-	APlayerController* CompletedDropController = ResetDropHold();
-	const FTransform DropTransform = BuildDropTransform(PreviousCarrierPawn);
-
-	SetOwner(nullptr);
-	CarrierPawn.Reset();
-	SetActorTransform(DropTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	SetCarrierPlayerState(nullptr);
-	bHasBeenDropped = true;
-
-	if (bBlockPreviousCarrier && IsValid(PreviousCarrierPawn))
-	{
-		TemporarilyBlockedPickupPawn = PreviousCarrierPawn;
-	}
-
-	SetDataJackState(EDataJackState::Idle);
-	OnRep_DataJackData();
-	NotifyDropStopped(CompletedDropController);
-
-	GetWorldTimerManager().SetTimerForNextTick(this, &ADataJack::ClearPickupBlockIfNotOverlapping);
-}
-
-FTransform ADataJack::BuildDropTransform(const APawn* PreviousCarrierPawn) const
-{
-	FVector DropLocation = IsValid(PreviousCarrierPawn) ? PreviousCarrierPawn->GetActorLocation() : GetActorLocation();
-	const FRotator DropRotation = IsValid(PreviousCarrierPawn) ? PreviousCarrierPawn->GetActorRotation() : GetActorRotation();
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DataJackDrop), false, this);
-	if (IsValid(PreviousCarrierPawn))
-	{
-		QueryParams.AddIgnoredActor(PreviousCarrierPawn);
-		const FVector DesiredDropLocation = DropLocation + PreviousCarrierPawn->GetActorForwardVector() * DropForwardDistance;
-		FHitResult ObstacleHit;
-		if (GetWorld() != nullptr
-			&& GetWorld()->LineTraceSingleByChannel(ObstacleHit, DropLocation, DesiredDropLocation, DropPlacementTraceChannel, QueryParams))
-		{
-			DropLocation = ObstacleHit.ImpactPoint + ObstacleHit.ImpactNormal * DropObstacleClearance;
-		}
-		else
-		{
-			DropLocation = DesiredDropLocation;
-		}
-	}
-
-	const FVector TraceStart = DropLocation + FVector::UpVector * DropFloorTraceHeight;
-	const FVector TraceEnd = DropLocation - FVector::UpVector * DropFloorTraceDepth;
-	FHitResult FloorHit;
-	if (GetWorld() != nullptr && GetWorld()->LineTraceSingleByChannel(FloorHit, TraceStart, TraceEnd, DropPlacementTraceChannel, QueryParams))
-	{
-		return BuildGroundedTransform(FloorHit, PreviousCarrierPawn);
-	}
-
-	return FTransform(FRotator(0.0f, DropRotation.Yaw, 0.0f), DropLocation, GetActorScale3D());
-}
-
-FTransform ADataJack::BuildGroundedTransform(const FHitResult& SurfaceHit, const APawn* OrientationSource) const
-{
-	FVector SurfaceNormal = SurfaceHit.ImpactNormal.GetSafeNormal();
-	if (SurfaceNormal.IsNearlyZero())
-	{
-		SurfaceNormal = FVector::UpVector;
-	}
-
-	FVector Forward = IsValid(OrientationSource) ? OrientationSource->GetActorForwardVector() : GetActorForwardVector();
-	Forward = FVector::VectorPlaneProject(Forward, SurfaceNormal).GetSafeNormal();
-	if (Forward.IsNearlyZero())
-	{
-		Forward = FVector::VectorPlaneProject(FVector::ForwardVector, SurfaceNormal).GetSafeNormal();
-	}
-	if (Forward.IsNearlyZero())
-	{
-		Forward = FVector::CrossProduct(FVector::RightVector, SurfaceNormal).GetSafeNormal();
-	}
-
-	FTransform GroundedTransform(
-		FRotationMatrix::MakeFromXZ(Forward, SurfaceNormal).Rotator(),
-		SurfaceHit.ImpactPoint,
-		GetActorScale3D());
-
-	const UStaticMesh* StaticMesh = IsValid(DataJackMesh) ? DataJackMesh->GetStaticMesh() : nullptr;
-	if (!IsValid(StaticMesh))
-	{
-		GroundedTransform.AddToTranslation(SurfaceNormal * SurfaceClearance);
-		return GroundedTransform;
-	}
-
-	const FBoxSphereBounds LocalBounds = StaticMesh->GetBounds();
-	const FVector BoundsMin = LocalBounds.Origin - LocalBounds.BoxExtent;
-	const FVector BoundsMax = LocalBounds.Origin + LocalBounds.BoxExtent;
-	const FVector Corners[8] =
-	{
-		FVector(BoundsMin.X, BoundsMin.Y, BoundsMin.Z),
-		FVector(BoundsMin.X, BoundsMin.Y, BoundsMax.Z),
-		FVector(BoundsMin.X, BoundsMax.Y, BoundsMin.Z),
-		FVector(BoundsMin.X, BoundsMax.Y, BoundsMax.Z),
-		FVector(BoundsMax.X, BoundsMin.Y, BoundsMin.Z),
-		FVector(BoundsMax.X, BoundsMin.Y, BoundsMax.Z),
-		FVector(BoundsMax.X, BoundsMax.Y, BoundsMin.Z),
-		FVector(BoundsMax.X, BoundsMax.Y, BoundsMax.Z)
-	};
-
-	const FTransform MeshRelativeTransform = DataJackMesh->GetRelativeTransform();
-	float MinimumSurfaceDistance = BIG_NUMBER;
-	for (const FVector& Corner : Corners)
-	{
-		const FVector ActorSpaceCorner = MeshRelativeTransform.TransformPosition(Corner);
-		const FVector WorldCorner = GroundedTransform.TransformPosition(ActorSpaceCorner);
-		MinimumSurfaceDistance = FMath::Min(
-			MinimumSurfaceDistance,
-			FVector::DotProduct(WorldCorner - SurfaceHit.ImpactPoint, SurfaceNormal));
-	}
-
-	GroundedTransform.AddToTranslation(SurfaceNormal * (SurfaceClearance - MinimumSurfaceDistance));
-	return GroundedTransform;
 }
 
 float ADataJack::GetSynchronizedServerTime() const
