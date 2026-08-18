@@ -1,7 +1,7 @@
 #include "GameFlow/Bomb/BombGameState.h"
-
 #include "GameFlow/Bomb/DataJack.h"
 #include "Net/UnrealNetwork.h"
+
 
 void ABombGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {

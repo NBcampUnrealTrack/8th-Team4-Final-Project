@@ -28,4 +28,7 @@ struct FRoomInfo
 
 	UPROPERTY(BlueprintReadOnly)
 	int32 SessionIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly)
+	bool bIsJoinable = true;
 };

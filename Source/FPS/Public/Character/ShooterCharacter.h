@@ -100,6 +100,4 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> AimWeaponAction;
-
-
 };

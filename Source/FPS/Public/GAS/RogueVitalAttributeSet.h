@@ -40,7 +40,7 @@ private:
 	// Max 계열이 바뀔 때 현재값도 수정
 	void AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
 	                            float CurrentValue, float OldMax, float NewMax);
-
+	
 	// 체력이 0 이 되었으면 사망을 1회 확정하고 발신
 	void TryDeclareDeath(const FGameplayEffectContextHandle& Context);
 
@@ -90,3 +90,4 @@ public:
 	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유
 	FOnRogueOutOfHealth OnOutOfHealth;
 };
+
