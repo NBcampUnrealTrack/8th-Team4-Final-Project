@@ -30,38 +30,26 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Shotgun);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Pistol);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife_Light);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife_Heavy);
 
 	// 히트 부위
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Head);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Torso);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Limb);
 
-	// 히트 거리
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Close);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Mid);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Far);
-
 	// 히트 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Angle_Back);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Instigator_Airborne);
 
-	// 히트 탄환 상태 (탄창 초반/마지막 발) - 첫 탄환, 마지막 탄환 시 데미지 증폭 증강
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Shot_EarlyMagazine);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Shot_LastRound);
-
 	// 가해자, 대상 상태
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_LowHealth);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_FullHealth);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_HasShield);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_NoShield);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_LowHealth);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_FullHealth);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_HasShield);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_NoShield);
 
 	// SetByCaller 키
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_Base);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_PelletsHit);
 
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Primary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);
@@ -132,4 +120,10 @@ namespace RogueTags
 	// 액티브 증강 쿨타임
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
+
+	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
+	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)
+	{
+		return HitZoneTag.MatchesTag(Hit_Zone_Head);
+	}
 }

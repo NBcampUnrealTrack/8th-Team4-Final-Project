@@ -13,7 +13,7 @@ class FPS_API UHitscanResolverSubsystem : public UWorldSubsystem
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
-	// 서버 Trace -> 거리/관통 계산 -> HitZone 메타데이터 집계 -> RogueDamageSubsystem 전달.
-	// Resolver는 부위 배율을 곱하지 않는다. 실제 부위 배율/증강/방어/Shield 계산은 ExecCalc_Damage가 담당한다.
+	// 서버 Trace -> 대상/부위별 WallRetention 집계 -> RogueDamageSubsystem 전달.
+	// 절대 대미지, 거리 감쇠, 부위 배율, 방어/Shield 계산은 ExecCalc_Damage가 담당한다.
 	FHitscanShotResult ResolveServerShot(const FHitscanShotRequest& Request) const;
 };

@@ -17,6 +17,7 @@ class FPS_API URogueAugmentStatResolver : public UBlueprintFunctionLibrary
 public:
 	// ------------------------------------
 	// 전투 관련
+
 	// 분당 발사 수. 쿨다운 GE 의 SetDuration 에 쓸 초는 60 / 이 값
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static float GetFinalRPM(const AActor* Actor, float BaseRPM);
@@ -32,14 +33,6 @@ public:
 	// 산탄 수
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static int32 GetFinalPelletCount(const AActor* Actor, int32 BasePelletCount);
-
-	// 유효 사거리 (m)
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
-	static float GetFinalEffectiveRange(const AActor* Actor, float BaseRangeMeters);
-
-	// 관통력
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
-	static float GetFinalPenetration(const AActor* Actor, float BasePenetration);
 
 	// 근접 공격 사거리 (m)
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
