@@ -4,16 +4,12 @@
 #include "Session/SessionSubSystem.h"
 
 #include "Engine/World.h"
-#include "GameFramework/GameModeBase.h"
-#include "GameFramework/GameStateBase.h"
-#include "GameFramework/PlayerState.h"
 #include "GameFramework/PlayerController.h"
 #include "Interfaces/OnlineIdentityInterface.h"
 #include "Online/OnlineSessionNames.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
-#include "Player/ShooterPlayerState.h"
 
 namespace SessionSettingKeys
 {
@@ -21,6 +17,7 @@ namespace SessionSettingKeys
 	const FName MapName(TEXT("MapName"));
 	const FName MapPath(TEXT("MapPath"));
 	const FName MatchType(TEXT("MatchType"));
+	const FName Joinable(TEXT("Joinable"));
 }
 
 namespace
@@ -101,6 +98,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 	LastSessionSettings->Set(SessionSettingKeys::MapName, CachedMapName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	LastSessionSettings->Set(SessionSettingKeys::MapPath, CachedMapPath, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	LastSessionSettings->Set(SessionSettingKeys::MatchType, CachedMatchType, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	LastSessionSettings->Set(SessionSettingKeys::Joinable, true, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 
 	const ULocalPlayer* LocalPlayer = GetWorld() ? GetWorld()->GetFirstLocalPlayerFromController() : nullptr;
 	if (!LocalPlayer || !LocalPlayer->GetPreferredUniqueNetId().IsValid())
@@ -162,6 +160,14 @@ void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 		return;
 	}
 
+	bool bIsJoinable = true;
+	LastSessionSearch->SearchResults[SessionIndex].Session.SessionSettings.Get(SessionSettingKeys::Joinable, bIsJoinable);
+	if (!bIsJoinable)
+	{
+		OnJoinRoomComplete.Broadcast(false);
+		return;
+	}
+
 	JoinSessionCompleteDelegateHandle = SessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
 
 	const ULocalPlayer* LocalPlayer = GetWorld() ? GetWorld()->GetFirstLocalPlayerFromController() : nullptr;
@@ -212,13 +218,6 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		return;
 	}
 
-	if (!CanStartRoomGame())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] StartRoomGame blocked: not every client is ready."));
-		OnStartRoomGameComplete.Broadcast(false);
-		return;
-	}
-
 	if (!EnsureSessionInterface() || SessionInterface->GetNamedSession(NAME_GameSession) == nullptr || bStartRoomGamePending)
 	{
 		UE_LOG(LogTemp, Warning,
@@ -236,6 +235,8 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		CachedMapPath = ResolveMapPathFromName(CachedMapName);
 	}
 
+	SetRoomJoinable(false);
+
 	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: StartSession before travel. Target=%s"), *CachedMapPath);
 
 	bStartRoomGamePending = true;
@@ -252,19 +253,14 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
 		if (SessionState == EOnlineSessionState::InProgress)
 		{
-			TravelToCachedGameMap();
+			OnStartRoomGameComplete.Broadcast(true);
 		}
 		else
 		{
+			SetRoomJoinable(true);
 			OnStartRoomGameComplete.Broadcast(false);
 		}
 	}
-}
-
-bool USessionSubSystem::CanStartRoomGame() const
-{
-	UWorld* World = GetWorld();
-	return World && World->GetNetMode() != NM_Client && AreAllClientsReady();
 }
 
 bool USessionSubSystem::EnsureSessionInterface()
@@ -336,6 +332,7 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 		Result.Session.SessionSettings.Get(SessionSettingKeys::RoomName, RoomInfo.RoomName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MapName, RoomInfo.MapName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MatchType, RoomInfo.MatchType);
+		Result.Session.SessionSettings.Get(SessionSettingKeys::Joinable, RoomInfo.bIsJoinable);
 
 		if (RoomInfo.RoomName.IsEmpty())
 		{
@@ -358,74 +355,39 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 	return Rooms;
 }
 
-bool USessionSubSystem::AreAllClientsReady() const
+bool USessionSubSystem::SetRoomJoinable(bool bIsJoinable)
 {
-	UWorld* World = GetWorld();
-	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
-	if (!GameState)
+	if (!EnsureSessionInterface())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Ready check failed: GameState is invalid."));
 		return false;
 	}
 
-	bool bHasClientPlayer = false;
-	for (APlayerState* PlayerState : GameState->PlayerArray)
+	FNamedOnlineSession* NamedSession = SessionInterface->GetNamedSession(NAME_GameSession);
+	if (!NamedSession)
 	{
-		if (!IsValid(PlayerState))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Ready check: invalid PlayerState in PlayerArray."));
-			continue;
-		}
-
-		const bool bIsHost = IsHostPlayerState(PlayerState);
-		if (bIsHost)
-		{
-			UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check: host ignored. Player=%s"), *GetNameSafe(PlayerState));
-			continue;
-		}
-
-		bHasClientPlayer = true;
-		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
-		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
-		{
-			UE_LOG(LogTemp, Warning,
-				TEXT("[SessionSubSystem] Ready check failed: Player=%s ShooterPS=%s Ready=%s"),
-				*GetNameSafe(PlayerState),
-				*GetNameSafe(ShooterPlayerState),
-				IsValid(ShooterPlayerState) && ShooterPlayerState->IsLobbyReady() ? TEXT("true") : TEXT("false"));
-			return false;
-		}
-
-		UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check: client ready. Player=%s"), *GetNameSafe(ShooterPlayerState));
+		return false;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ready check result: HasClient=%s"), bHasClientPlayer ? TEXT("true") : TEXT("false"));
-	return bHasClientPlayer;
-}
+	NamedSession->SessionSettings.bAllowJoinInProgress = bIsJoinable;
+	NamedSession->SessionSettings.bAllowJoinViaPresence = bIsJoinable;
+	NamedSession->SessionSettings.bShouldAdvertise = bIsJoinable;
+	NamedSession->SessionSettings.Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 
-bool USessionSubSystem::IsHostPlayerState(const APlayerState* PlayerState) const
-{
-	UWorld* World = GetWorld();
-	const APlayerController* HostController = World ? World->GetFirstPlayerController() : nullptr;
-	return IsValid(PlayerState) && IsValid(HostController) && HostController->PlayerState == PlayerState;
-}
-
-void USessionSubSystem::TravelToCachedGameMap()
-{
-	UWorld* World = GetWorld();
-	if (!World || World->GetNetMode() == NM_Client)
+	if (LastSessionSettings.IsValid())
 	{
-		OnStartRoomGameComplete.Broadcast(false);
-		return;
+		LastSessionSettings->bAllowJoinInProgress = bIsJoinable;
+		LastSessionSettings->bAllowJoinViaPresence = bIsJoinable;
+		LastSessionSettings->bShouldAdvertise = bIsJoinable;
+		LastSessionSettings->Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] ServerTravel %s"), *CachedMapPath);
-	OnStartRoomGameComplete.Broadcast(true);
-	if (AGameModeBase* GameMode = World->GetAuthGameMode())
+	if (!SessionInterface->UpdateSession(NAME_GameSession, NamedSession->SessionSettings, true))
 	{
-		GameMode->bUseSeamlessTravel = true;
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Failed to update room joinability. Joinable=%s"), bIsJoinable ? TEXT("true") : TEXT("false"));
+		return false;
 	}
-	World->ServerTravel(CachedMapPath + TEXT("?listen"));
+
+	return true;
 }
 
 void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
@@ -532,17 +494,18 @@ void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSucce
 
 		if (SessionState == EOnlineSessionState::InProgress)
 		{
-			TravelToCachedGameMap();
+			OnStartRoomGameComplete.Broadcast(true);
 		}
 		else
 		{
+			SetRoomJoinable(true);
 			OnStartRoomGameComplete.Broadcast(false);
 		}
 		return;
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartSession succeeded. Target=%s"), *CachedMapPath);
-	TravelToCachedGameMap();
+	OnStartRoomGameComplete.Broadcast(true);
 }
 
 void USessionSubSystem::Deinitialize()

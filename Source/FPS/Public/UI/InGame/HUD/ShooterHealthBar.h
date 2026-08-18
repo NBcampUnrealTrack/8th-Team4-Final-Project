@@ -69,8 +69,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterGauge> Gauge_Shield;
 	
-
-	
 	// 체력 바 자체 피격 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_HealthHit;

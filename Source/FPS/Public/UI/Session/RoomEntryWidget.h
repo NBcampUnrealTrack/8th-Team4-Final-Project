@@ -8,7 +8,7 @@
 #include "RoomEntryWidget.generated.h"
 
 class UButton;
-class UMenuWidget;
+class UMainMenuWidget;
 class UTextBlock;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -18,7 +18,7 @@ class FPS_API URoomEntryWidget : public UUserWidget
 
 public:
 	UFUNCTION(BlueprintCallable)
-	void SetupRoomEntry(const FRoomInfo& InRoomInfo, UMenuWidget* InOwningMenu);
+	void SetupRoomEntry(const FRoomInfo& InRoomInfo, UMainMenuWidget* InOwningMenu);
 
 	UFUNCTION(BlueprintPure)
 	const FRoomInfo& GetRoomInfo() const { return RoomInfo; }
@@ -55,7 +55,7 @@ private:
 	TObjectPtr<UTextBlock> PingText;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMenuWidget> OwningMenu;
+	TObjectPtr<UMainMenuWidget> OwningMenu;
 
 	UPROPERTY(BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	FRoomInfo RoomInfo;

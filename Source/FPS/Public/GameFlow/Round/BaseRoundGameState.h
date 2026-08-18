@@ -45,6 +45,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Round")
 	float GetPhaseTimeRemaining() const;
 
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Loading")
+	int32 GetLoadedPlayerCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Loading")
+	int32 GetRequiredPlayerCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Loading")
+	float GetLoadingProgress() const;
+
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Match")
 	int32 GetMaxRounds() const;
 
@@ -59,6 +68,8 @@ public:
 	void ClearRoundResult();
 	void SetMatchWinner(EGameTeam WinningTeam);
 	void SetTeamRoles(ETeamRole NewTeamARole, ETeamRole NewTeamBRole);
+	void SetLoadingStatus(int32 NewLoadedPlayerCount, int32 NewRequiredPlayerCount);
+	void ClearLoadingStatus();
 
 protected:
 	UFUNCTION()
@@ -102,6 +113,15 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Match")
 	int32 MaxRounds = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Loading")
+	int32 LoadedPlayerCount = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Loading")
+	int32 RequiredPlayerCount = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Loading")
+	float LoadingProgress = 0.0f;
 
 public:
 	UPROPERTY(BlueprintAssignable, Category = "Game Flow|Round")
