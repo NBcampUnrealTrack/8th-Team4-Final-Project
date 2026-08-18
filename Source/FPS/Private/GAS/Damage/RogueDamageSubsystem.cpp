@@ -9,11 +9,6 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
 
-namespace
-{
-	constexpr int32 MaxContextHitGroups = 16;
-}
-
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Actor);
@@ -29,6 +24,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageP
 		return FRogueDamageResult();
 	}
 
+	// 총 관통력 합산
 	float TotalRetention = 0.f;
 	for (const FRogueHitGroup& Group : Hit.HitGroups)
 	{
@@ -38,6 +34,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageP
 		}
 	}
 
+	// 관통력이 0 이하이면 대미지 적용 X
 	if (TotalRetention <= 0.f)
 	{
 		return FRogueDamageResult();
@@ -187,12 +184,11 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 	{
 		Ctx->HitDistanceMeters = FMath::Max(0.f, Hit->DistanceMeters);
 
-		int32 TotalPellets = 0;
-		Ctx->HitGroups.Reset(FMath::Min(Hit->HitGroups.Num(), MaxContextHitGroups));
+		Ctx->HitGroups.Reset(FMath::Min(Hit->HitGroups.Num(), RogueMaxHitGroups));
 
 		for (const FRogueHitGroup& Group : Hit->HitGroups)
 		{
-			if (Ctx->HitGroups.Num() >= MaxContextHitGroups)
+			if (Ctx->HitGroups.Num() >= RogueMaxHitGroups)
 			{
 				break;
 			}
@@ -207,15 +203,11 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 			Sanitized.WallRetentionSum = FMath::Clamp(
 				Group.WallRetentionSum, 0.f, static_cast<float>(Group.PelletCount));
 
-			TotalPellets += Sanitized.PelletCount;
-
-			if (Sanitized.HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
+			if (RogueTags::IsHeadZone(Sanitized.HitZoneTag))
 			{
 				Ctx->bHeadshot = true;
 			}
 		}
-
-		Ctx->PelletsHit = FMath::Max(1, TotalPellets);
 	}
 
 	BuildContextTags(Params, Hit, TargetVital, Ctx->ContextTags);
@@ -283,7 +275,10 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		return;
 	}
 
-	auto Send = [&ContextHandle](AActor* To, const FGameplayTag& Tag, AActor* Other, float Magnitude)
+	AActor* Src = Params.Instigator;
+	AActor* Tgt = TargetActor;
+
+	auto Send = [&ContextHandle, Src, Tgt](AActor* To, const FGameplayTag& Tag, float Magnitude)
 	{
 		if (!To || !Tag.IsValid())
 		{
@@ -292,37 +287,34 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 
 		FGameplayEventData Payload;
 		Payload.EventTag       = Tag;
-		Payload.Instigator     = To;
-		Payload.Target         = Other;
+		Payload.Instigator     = Src;
+		Payload.Target         = Tgt;
 		Payload.EventMagnitude = Magnitude;
-		Payload.ContextHandle = ContextHandle;
+		Payload.ContextHandle  = ContextHandle;
 
 		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(To, Tag, Payload);
 	};
 
-	AActor* Src = Params.Instigator;
-	AActor* Tgt = TargetActor;
-
-	Send(Src, RogueTags::Event_Combat_DamageDealt, Tgt, Result.HealthDamage);
-	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Src, Result.HealthDamage);
+	Send(Src, RogueTags::Event_Combat_DamageDealt, Result.HealthDamage);
+	Send(Tgt, RogueTags::Event_Combat_DamageTaken, Result.HealthDamage);
 
 	const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle);
 	if (Ctx && Ctx->bHeadshot)
 	{
-		Send(Src, RogueTags::Event_Combat_Headshot, Tgt, Result.HealthDamage);
+		Send(Src, RogueTags::Event_Combat_Headshot, Result.HealthDamage);
 	}
 
 	if (Result.bShieldBroken)
 	{
-		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Src, Result.ShieldDamage);
-		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Tgt, Result.ShieldDamage);
+		Send(Tgt, RogueTags::Event_Combat_ShieldBroken,      Result.ShieldDamage);
+		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Result.ShieldDamage);
 	}
 
 	// 사망 이벤트 발신
 	if (Result.bHealthDepleted)
 	{
-		Send(Src, RogueTags::Event_Combat_Kill,  Tgt, Result.HealthDamage);
-		Send(Tgt, RogueTags::Event_Combat_Death, Src, Result.HealthDamage);
+		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
+		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);
 
 		// Event.Team.AllyDeath 는 팀 구성을 아는 GameState 가 처리
 	}

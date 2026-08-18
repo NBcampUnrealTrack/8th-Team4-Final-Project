@@ -20,6 +20,7 @@ namespace
 	constexpr float MaxReductionRate  = 0.95f;   // 1.0 이면 무적
 	constexpr float MinPenetrationMul = 1.f;     // 관통력 감소 증강은 없음
 	constexpr float TorsoMultiplier   = 1.f;     // 미등록 부위의 기준값이자 헤드 초과분의 기준선
+	constexpr float MaxShopDamageAmplification = 0.25f; // 상점 기본 대미지 증폭 상한. +5% x 5회 = +25%
 
 	// ------------------------------------------------------------
 	// GAS 연동
@@ -39,6 +40,7 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition TargetMaxHealthDef;
 		FGameplayEffectAttributeCaptureDefinition SourceHealthDef;
 		FGameplayEffectAttributeCaptureDefinition SourceMaxHealthDef;
+		FGameplayEffectAttributeCaptureDefinition SourceShopDamageAmplificationDef;
 
 		// Augment / 공격 측
 		FGameplayEffectAttributeCaptureDefinition SourceHeadshotDamageMultiplierDef;
@@ -63,6 +65,9 @@ namespace
 			SourceHealthDef    = MakeDef(URogueVitalAttributeSet::GetHealthAttribute(),    ECaptureSource::Source);
 			SourceMaxHealthDef = MakeDef(URogueVitalAttributeSet::GetMaxHealthAttribute(), ECaptureSource::Source);
 
+			SourceShopDamageAmplificationDef =
+				MakeDef(URogueVitalAttributeSet::GetShopDamageAmplificationAttribute(), ECaptureSource::Source);
+
 			SourceHeadshotDamageMultiplierDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageMultiplierAttribute(), ECaptureSource::Source);
 			SourceDamageMultiplierDef =
@@ -79,7 +84,7 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetEffectiveRangeBonusAttribute(),    ECaptureSource::Source);
 			SourcePenetrationMultiplierDef =
 				MakeDef(URogueAugmentAttributeSet::GetPenetrationMultiplierAttribute(),  ECaptureSource::Source);
-
+				
 			TargetHeadshotDamageTakenRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageTakenRateAttribute(), ECaptureSource::Target);
 			TargetDamageReductionRateDef =
@@ -126,15 +131,20 @@ namespace
 		bool bIsOffensive = false;
 	};
 
-	// 조건부 규칙 결과 누산
+	// 조건부 증강 누산
+	struct FRogueRuleTotals
+	{
+		float Multiplier     = 1.f;
+		float Flat           = 0.f;
+		float HeadMultiplier = 1.f;
+		float HeadFlat       = 0.f;
+	};
+
+	// 공격 / 방어 조건부 규칙 결과 누산
 	struct FRogueConditionalTotals
 	{
-		float DealtMultiplier = 1.f;
-		float DealtFlat       = 0.f;
-		float TakenMultiplier = 1.f;
-		float TakenFlat       = 0.f;
-		float HeadMultiplier  = 1.f;
-		float HeadFlat        = 0.f;
+		FRogueRuleTotals Dealt;
+		FRogueRuleTotals Taken;
 	};
 
 	// 규칙 판정에 필요한 히트 정보
@@ -263,20 +273,18 @@ namespace
 				continue;
 			}
 
+			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
+			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
+
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Totals.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.HeadFlat       += Rule.FlatDamageBonus;
-			}
-			else if (Side == EAugmentDamageRuleSide::Dealt)
-			{
-				Totals.DealtMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.DealtFlat       += Rule.FlatDamageBonus;
+				Bucket.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
+				Bucket.HeadFlat       += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Totals.TakenMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Totals.TakenFlat       += Rule.FlatDamageBonus;
+				Bucket.Multiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
+				Bucket.Flat       += Rule.FlatDamageBonus;
 			}
 		}
 	}
@@ -403,6 +411,11 @@ namespace
 		}
 
 		const float Retention = FMath::Clamp(Group.WallRetentionSum, 0.f, PelletCount);
+		if (Retention <= 0.f)
+		{
+			return 0.f;
+		}
+
 		const float Penetration = FMath::Max(MinPenetrationMul, PenetrationMultiplier);
 
 		return FMath::Clamp(PelletCount - (PelletCount - Retention) / Penetration, 0.f, PelletCount);
@@ -425,7 +438,7 @@ namespace
 		const float ZoneMultiplier = ReadHitZoneMultiplier(Entry, Group.HitZoneTag);
 
 		// 헤드샷 배율은 몸통 배율을 기준으로 초과분만 적용
-		const float BonusShare = Group.HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head)
+		const float BonusShare = RogueTags::IsHeadZone(Group.HitZoneTag)
 			? FMath::Max(0.f, ZoneMultiplier - TorsoMultiplier)
 			: 0.f;
 
@@ -501,6 +514,11 @@ namespace
 		// 전체 피해량 배율
 		Acc.Scale(FMath::Max(0.f, E.Read(MultiplierDef, 1.f)));
 
+		// 상점 기본 대미지 증폭
+		const float ShopAmplification = FMath::Clamp(
+			E.Read(E.Capture.SourceShopDamageAmplificationDef, 0.f), 0.f, MaxShopDamageAmplification);
+		Acc.Scale(1.f + ShopAmplification);
+
 		// 헤드샷 대미지 배율
 		Acc.ScaleHeadshot(FMath::Max(0.f, E.Read(E.Capture.SourceHeadshotDamageMultiplierDef, 1.f)));
 
@@ -512,14 +530,20 @@ namespace
 		}
 	}
 
-	// 5. 공격 측 조건부 증강
-	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
+	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
+	void ApplyRuleTotals(const FRogueRuleTotals& Totals, FRogueDamageAccumulator& Acc)
 	{
-		Acc.Scale(Totals.DealtMultiplier);
-		Acc.AddFlat(Totals.DealtFlat);
+		Acc.Scale(Totals.Multiplier);
+		Acc.AddFlat(Totals.Flat);
 
 		Acc.ScaleHeadshot(Totals.HeadMultiplier);
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
+	}
+
+	// 5. 공격 측 조건부 증강
+	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
+	{
+		ApplyRuleTotals(Totals.Dealt, Acc);
 	}
 
 	// 6. 방어 측 상시 증강
@@ -554,46 +578,48 @@ namespace
 			return;
 		}
 
-		Acc.Scale(Totals.TakenMultiplier);
-		Acc.AddFlat(Totals.TakenFlat);
+		ApplyRuleTotals(Totals.Taken, Acc);
 	}
 
 	// 8. 최종 대미지를 보호막 대미지와 체력 대미지로 분리
-	FRogueDamageSplit SplitByShield(const FRogueDamageEval& E, const FRogueDamageSource& Source, float Damage)
+	FRogueDamageSplit SplitByShield(const FRogueDamageEval& E, const FRogueDamageSource& Source, const float RawDamage)
 	{
 		FRogueDamageSplit Split;
+
+		if (RawDamage <= 0.f)
+		{
+			return Split;
+		}
 
 		// 자가 피해는 전부 체력 대미지
 		if (Source.bIsSelfCost)
 		{
-			Split.HealthDamage = Damage;
+			Split.HealthDamage = FMath::FloorToFloat(RawDamage);
 			return Split;
 		}
 
 		// 보호막 관통 증강 적용
 		const float Penetration =
 			FMath::Clamp(E.Read(E.Capture.SourceShieldPenetrationRateDef, 0.f), 0.f, MaxPenetration);
-		const float ShieldPortion = Damage * (1.f - Penetration); // 보호막에 적용되는 대미지
-		const float PierceDamage = Damage * Penetration;		  // 보호막을 뚫고 체력에 적용되는 대미지
+		const float ShieldPortion = RawDamage * (1.f - Penetration); // 보호막에 적용되는 대미지
 
-		// 보호막 피해 배율
+		// 공격자 보호막 피해 배율
 		const float ShieldMultiplier = Source.bIsOffensive
 			? FMath::Max(0.f, E.Read(E.Capture.SourceShieldDamageMultiplierDef, 1.f))
 			: 1.f;
 
 		const float CurrentShield = FMath::Max(0.f, E.Read(E.Capture.TargetShieldDef, 0.f));
 
-		// 보호막이 흡수할 수 있는 대미지
-		const float ShieldCapacityInDamage = (ShieldMultiplier > KINDA_SMALL_NUMBER)
-			? CurrentShield / ShieldMultiplier
-			: ShieldPortion;
+		// 보호막이 실제로 잃는 양
+		Split.ShieldDamage = FMath::Min(FMath::FloorToFloat(ShieldPortion * ShieldMultiplier), CurrentShield);
 
-		// 보호막이 실제로 흡수한 대미지
-		const float AbsorbedDamage = FMath::Min(ShieldPortion, ShieldCapacityInDamage);
+		// 보호막이 대신 받아낸 몫을 원시 대미지 단위로 환산
+		const float RawAbsorbedDamage = (Split.ShieldDamage > 0.f)
+			? (Split.ShieldDamage / ShieldMultiplier)
+			: 0.f;
 
-		// 최종 대미지 분할 및 내림
-		Split.ShieldDamage = FMath::FloorToFloat(AbsorbedDamage * ShieldMultiplier);
-		Split.HealthDamage = FMath::FloorToFloat(PierceDamage + (ShieldPortion - AbsorbedDamage));
+		// 남은 원시 대미지를 체력 대미지로 전환하고 최종 정수화
+		Split.HealthDamage = FMath::Max(0.f, FMath::FloorToFloat(RawDamage - RawAbsorbedDamage));
 
 		return Split;
 	}
@@ -608,6 +634,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.TargetMaxHealthDef);
 	RelevantAttributesToCapture.Add(C.SourceHealthDef);
 	RelevantAttributesToCapture.Add(C.SourceMaxHealthDef);
+	RelevantAttributesToCapture.Add(C.SourceShopDamageAmplificationDef);
 
 	RelevantAttributesToCapture.Add(C.SourceHeadshotDamageMultiplierDef);
 	RelevantAttributesToCapture.Add(C.SourceDamageMultiplierDef);

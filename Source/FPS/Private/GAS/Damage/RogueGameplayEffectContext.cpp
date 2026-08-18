@@ -4,8 +4,6 @@
 
 namespace
 {
-	constexpr int32 MaxSerializedHitGroups = 16;
-
 	void NetSerializeHitGroup(FArchive& Ar, UPackageMap* Map, FRogueHitGroup& Group, bool& bInOutSuccess)
 	{
 		bool bTagSuccess = true;
@@ -39,7 +37,6 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 	bSuccess &= bContainerSuccess;
 
 	Ar << HitDistanceMeters;
-	Ar << PelletsHit;
 	Ar << ShotIndexInMagazine;
 
 	uint8 HeadshotBit = bHeadshot ? 1 : 0;
@@ -50,12 +47,19 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 	}
 
 	uint8 GroupCount = Ar.IsSaving()
-		? static_cast<uint8>(FMath::Min(HitGroups.Num(), MaxSerializedHitGroups))
+		? static_cast<uint8>(FMath::Min(HitGroups.Num(), RogueMaxHitGroups))
 		: 0;
 	Ar << GroupCount;
 
 	if (Ar.IsLoading())
 	{
+		// 상한 HitGroup 개수를 초과하면 에러 처리
+		if (GroupCount > RogueMaxHitGroups)
+		{
+			Ar.SetError();
+			GroupCount = RogueMaxHitGroups;
+		}
+
 		HitGroups.SetNum(GroupCount);
 	}
 

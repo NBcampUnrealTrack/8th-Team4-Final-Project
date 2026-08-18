@@ -33,32 +33,18 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Torso, "Hit.Zone.Torso", "상체 피격");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Limb,  "Hit.Zone.Limb",  "사지 피격");
 
-	// 히트 거리
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Close, "Hit.Range.Close", "근거리");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Mid,   "Hit.Range.Mid",   "중거리");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Far,   "Hit.Range.Far",   "원거리");
-
 	// 히트 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Angle_Back,          "Hit.Angle.Back",          "배후 공격");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Instigator_Airborne, "Hit.Instigator.Airborne", "가해자가 공중에 있었음");
 
-	// 히트 탄환 상태
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_EarlyMagazine,  "Hit.Shot.EarlyMagazine",  "탄창 초반 사격");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_LastRound,      "Hit.Shot.LastRound",      "탄창 마지막 발");
-
 	// 가해자, 대상 상태
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_LowHealth,  "Target.State.LowHealth",  "대상 체력 비율이 임계값 이하");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_FullHealth, "Target.State.FullHealth", "대상 체력 100%");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_HasShield,  "Target.State.HasShield",  "대상 보호막 잔존");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_NoShield,   "Target.State.NoShield",   "대상 보호막 없음");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_LowHealth,  "Source.State.LowHealth",  "가해자 체력 비율이 임계값 이하");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_FullHealth, "Source.State.FullHealth", "가해자 체력 100%");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_HasShield,  "Source.State.HasShield", "가해자 보호막 잔존");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_HasShield,  "Source.State.HasShield",  "가해자 보호막 잔존");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_NoShield,   "Source.State.NoShield",   "가해자 보호막 없음");
 
 	// SetByCaller 키
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base,       "Data.Damage.Base",       "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_PelletsHit, "Data.Damage.PelletsHit", "이번 사격에서 이 대상에게 적중한 펠릿 수");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base, "Data.Damage.Base", "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
