@@ -14,6 +14,7 @@ class UAbilitySystemComponent;
 class UCameraComponent;
 class UCombatComponent;
 class UInputAction;
+class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
 class USpringArmComponent;
 class AWeaponBase;
@@ -84,6 +85,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
+	TObjectPtr<ULagCompensationComponent> LagCompensation;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;

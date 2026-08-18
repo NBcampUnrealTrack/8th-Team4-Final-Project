@@ -7,6 +7,7 @@
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Combat/LagCompensationComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFlow/Round/BaseRoundGameMode.h"
 #include "GameFlow/Round/BaseRoundPlayerController.h"
@@ -45,6 +46,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	LagCompensation = CreateDefaultSubobject<ULagCompensationComponent>(TEXT("LagCompensation"));
 }
 
 void AShooterCharacter::BeginPlay()
