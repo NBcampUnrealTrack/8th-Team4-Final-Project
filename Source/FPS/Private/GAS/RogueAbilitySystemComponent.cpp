@@ -4,6 +4,7 @@
 
 #include "GAS/RogueAbilitySet.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
@@ -11,11 +12,14 @@ namespace
 {
 	FPredictionKey GetInstanceActivationPredictionKey(const FGameplayAbilitySpec& Spec)
 	{
-		const TArray<UGameplayAbility*> Instances = Spec.GetAbilityInstances();
+		const UGameplayAbility* Instance =
+			!Spec.NonReplicatedInstances.IsEmpty() ? Spec.NonReplicatedInstances.Last()
+			: !Spec.ReplicatedInstances.IsEmpty()  ? Spec.ReplicatedInstances.Last()
+			: nullptr;
 
-		return Instances.IsEmpty()
-			? FPredictionKey()
-			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
+		return Instance
+			? Instance->GetCurrentActivationInfo().GetActivationPredictionKey()
+			: FPredictionKey();
 	}
 
 	// 무기 종류를 장착 상태 태그로
@@ -44,7 +48,7 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 
 void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid())
+	if (!InputTag.IsValid() || HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
 	{
 		return;
 	}

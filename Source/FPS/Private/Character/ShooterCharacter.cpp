@@ -8,8 +8,9 @@
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameFlow/Round/BaseRoundGameMode.h"
-#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "GameMode/BaseRoundGameMode.h"
+#include "GameFramework/Controller.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Player/ShooterPlayerState.h"
@@ -17,6 +18,56 @@
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
+
+namespace
+{
+	AShooterPlayerState* ResolveShooterPlayerState(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return nullptr;
+		}
+
+		if (AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(Actor))
+		{
+			return PlayerState;
+		}
+		if (APawn* Pawn = Cast<APawn>(Actor))
+		{
+			return Pawn->GetPlayerState<AShooterPlayerState>();
+		}
+		if (AController* Controller = Cast<AController>(Actor))
+		{
+			return Controller->GetPlayerState<AShooterPlayerState>();
+		}
+
+		return nullptr;
+	}
+
+	AShooterPlayerState* ResolveKillerPlayerState(const FRogueDeathContext& Context)
+	{
+		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Context.InstigatorActor.Get()))
+		{
+			return PlayerState;
+		}
+
+		AActor* Causer = Context.CauserActor.Get();
+		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer))
+		{
+			return PlayerState;
+		}
+		if (!IsValid(Causer))
+		{
+			return nullptr;
+		}
+
+		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer->GetOwner()))
+		{
+			return PlayerState;
+		}
+		return ResolveShooterPlayerState(Causer->GetInstigator());
+	}
+}
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -129,7 +180,7 @@ AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
 	return IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 }
 
-void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
+void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Context)
 {
 	if (!HasAuthority())
 	{
@@ -141,7 +192,7 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 	ABaseRoundGameMode* RoundGameMode = IsValid(World) ? World->GetAuthGameMode<ABaseRoundGameMode>() : nullptr;
 	if (IsValid(OwningController) && IsValid(RoundGameMode))
 	{
-		RoundGameMode->NotifyPlayerEliminated(OwningController);
+		RoundGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
 	}
 }
 

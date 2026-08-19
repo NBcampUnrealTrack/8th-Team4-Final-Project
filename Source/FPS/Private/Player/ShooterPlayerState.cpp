@@ -3,12 +3,14 @@
 #include "Player/ShooterPlayerState.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "GameMode/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponTypes.h"
@@ -24,6 +26,7 @@ AShooterPlayerState::AShooterPlayerState()
 
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
+	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
@@ -39,6 +42,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -152,9 +156,34 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 		bIsLobbyReady ? TEXT("true") : TEXT("false"));
 	OnRep_LobbyReady();
 	ForceNetUpdate();
+
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->NotifyLobbyPlayerListChanged();
+	}
 }
 
 void AShooterPlayerState::OnRep_LobbyReady()
+{
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
+void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
+{
+	if (!HasAuthority() || bLoadedIntoMatch == bNewLoadedIntoMatch)
+	{
+		return;
+	}
+
+	bLoadedIntoMatch = bNewLoadedIntoMatch;
+	OnRep_LoadedIntoMatch();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_LoadedIntoMatch()
 {
 }
 

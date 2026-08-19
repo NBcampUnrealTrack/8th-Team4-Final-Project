@@ -6,18 +6,39 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Augment/RogueAugmentStatResolver.h"
-#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "GAS/RogueGASSettings.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
 
-URogueTimedTagEffect::URogueTimedTagEffect()
+DEFINE_LOG_CATEGORY_STATIC(LogAugmentAbility, Log, All);
+
+namespace
 {
-	DurationPolicy = EGameplayEffectDurationType::HasDuration;
+	// 설정에 등록된 GE 애셋을 로드 (쿨타임/지속 시간)
+	UClass* LoadConfiguredEffectClass(const TSoftClassPtr<UGameplayEffect>& SoftClass, const TCHAR* FieldName)
+	{
+		UClass* Loaded = SoftClass.LoadSynchronous();
+		if (!Loaded)
+		{
+			UE_LOG(LogAugmentAbility, Error,
+				TEXT("[AugmentAbility] %s 를 로드하지 못했습니다. DefaultGame.ini 의 [/Script/FPS.RogueGASSettings] 등록과 ")
+				TEXT("애셋 경로를 확인하세요 (Duration Policy = Has Duration, Duration = SetByCaller %s)"),
+				FieldName, *RogueTags::Data_Magnitude_Duration.GetTag().ToString());
+		}
 
-	FSetByCallerFloat Duration;
-	Duration.DataTag = RogueTags::Data_Magnitude_Duration;
+		return Loaded;
+	}
+}
 
-	DurationMagnitude = FGameplayEffectModifierMagnitude(Duration);
+UClass* URogueGameplayAbility::GetCooldownEffectClass()
+{
+	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->CooldownEffectClass, TEXT("CooldownEffectClass"));
+}
+
+UClass* URogueGameplayAbility::GetStatusEffectClass()
+{
+	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->StatusEffectClass, TEXT("StatusEffectClass"));
 }
 
 bool URogueGameplayAbility::CanActivateAbility(
@@ -32,15 +53,15 @@ bool URogueGameplayAbility::CanActivateAbility(
 		return false;
 	}
 
-	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도 라운드 상태를 반영한다.
-	// 현재 이 베이스의 실사용자는 Dash/Recon이라 라운드 전/선택/종료/사망/폭탄 상호작용 중에는
-	// 액티브 증강도 무기 어빌리티와 동일하게 차단된다.
+	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도
+	// 라운드/사망/공통 입력 차단 상태를 반영한다.
+	// Data Jack 등 행동별 상호 배제는 각 구체 증강의 Activation 태그가 결정한다.
 	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
 	const ABaseRoundPlayerController* RoundPlayerController = IsValid(AvatarPawn)
 		? Cast<ABaseRoundPlayerController>(AvatarPawn->GetController())
 		: nullptr;
 
-	return !IsValid(RoundPlayerController) || RoundPlayerController->CanUseCombatInput();
+	return !IsValid(RoundPlayerController) || RoundPlayerController->CanProcessGameplayInput();
 }
 
 int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const
@@ -67,8 +88,7 @@ bool URogueGameplayAbility::CheckCooldown(const FGameplayAbilitySpecHandle Handl
 		return true;
 	}
 
-	FGameplayTagContainer CooldownTags;
-	CooldownTags.AddTag(CooldownTag);
+	const FGameplayTagContainer& CooldownTags = *GetCooldownTags();
 
 	// 현재 스택이 최대 충전 수보다 적으면 쿨타임이 남아있어도 사용 가능
 	const int32 SpentCharges =
@@ -141,9 +161,15 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
 	// 두 번째 사용의 쿨타임이 첫 번째 사용의 쿨타임이 끝나면 적용
 	Duration += FMath::Max(0.f, GetCooldownTimeRemaining(ActorInfo));
 
+	UClass* CooldownEffectClass = GetCooldownEffectClass();
+	if (!CooldownEffectClass)
+	{
+		return;
+	}
+
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
 		Handle, ActorInfo, ActivationInfo,
-		URogueTimedTagEffect::StaticClass(), Level);
+		CooldownEffectClass, Level);
 
 	if (!SpecHandle.IsValid())
 	{

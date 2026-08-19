@@ -4,6 +4,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "GameMode/BaseRoundGameState.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
@@ -29,82 +31,87 @@ void UShooterUIInitComponent::BeginPlay()
 	}
 
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (IsValid(UIManager) == false)
+	if (!IsValid(UIManager)
+		|| !ensure(RootLayoutClass)
+		|| !ensure(InitialWidgetClass)
+		|| !ensure(InitialWidgetLayer.IsValid()))
 	{
 		return;
 	}
-	
+
 	UIManager->InitializeUI(PC, RootLayoutClass);
-
-	// BP에서 지정
-	if (!ensure(InitialWidgetClass))
-	{
-		return;
-	}
-
 	TryStartInGameUI();
 }
 
 void UShooterUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (BoundInventory.IsValid())
+	if (UWorld* World = GetWorld())
 	{
-		BoundInventory->OnOffersChanged.RemoveDynamic(this, &ThisClass::HandleOffersChanged);
-		BoundInventory.Reset();
+		World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
 	}
-	
+
+	HideAugmentSelect();
+	UnbindRuntimeDelegates();
 	Super::EndPlay(EndPlayReason);
 }
 
 void UShooterUIInitComponent::TryStartInGameUI()
 {
+	if (bInGameUIReady)
+	{
+		return;
+	}
+
 	UWorld* World = GetWorld();
-	if (!World)
+	APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+	AShooterPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<AShooterPlayerState>()
+		: nullptr;
+	ABaseRoundGameState* RoundGameState = IsValid(World) ? World->GetGameState<ABaseRoundGameState>() : nullptr;
+	UAugmentInventoryComponent* Inventory = IsValid(PlayerState) ? PlayerState->GetAugmentInventory() : nullptr;
+	if (!IsValid(World) || !IsValid(PlayerState) || !IsValid(RoundGameState) || !IsValid(Inventory))
 	{
-		return;
-	}
-	
-	AShooterPlayerState* PS = GetOwner<APlayerController>()->GetPlayerState<AShooterPlayerState>();
-	if (!PS)
-	{
-		if (!World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
-		{
-			GetWorld()->GetTimerManager().SetTimer(
-			PlayerStateWaitTimerHandle,
-			this,
-			&ThisClass::TryStartInGameUI,
-			0.1f,
-			true
-			);
-		}
-		
+		ScheduleInGameUIRetry();
 		return;
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
-	
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (IsValid(UIManager) == false)
+	if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
 	{
-		return;
-	}
-	
-	UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass);
-	
-	UAugmentInventoryComponent* Inventory = PS->GetAugmentInventory();
-	if (Inventory == nullptr)
-	{
+		// RootLayout 준비 시간은 환경마다 다르므로 고정 Delay 대신 준비 완료까지 재시도한다.
+		ScheduleInGameUIRetry();
 		return;
 	}
 
+	if (!IsValid(UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass)))
+	{
+		if (!bLoggedInitialWidgetPushFailure)
+		{
+			bLoggedInitialWidgetPushFailure = true;
+			UE_LOG(LogShooterUIInitComp, Warning,
+				TEXT("Failed to create the initial in-game widget; initialization will retry. Layer=%s WidgetClass=%s"),
+				*InitialWidgetLayer.ToString(),
+				*GetNameSafe(InitialWidgetClass));
+		}
+
+		ScheduleInGameUIRetry();
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
+	bLoggedInitialWidgetPushFailure = false;
+	UnbindRuntimeDelegates();
 	BoundInventory = Inventory;
-	Inventory->OnOffersChanged.AddDynamic(this, &ThisClass::HandleOffersChanged);
+	BoundRoundGameState = RoundGameState;
+	Inventory->OnOffersChanged.AddUniqueDynamic(this, &ThisClass::HandleAugmentSelectionStateChanged);
+	RoundGameState->OnRoundStateChanged.AddUniqueDynamic(this, &ThisClass::HandleAugmentSelectionStateChanged);
 
-	// ⚠️ 구독하기 전에 후보가 이미 와 있을 수 있다.
-	//    이 줄이 없으면 그 라운드만 화면이 안 뜨고, 다음 라운드부터 정상 동작해서 원인을 못 찾는다
-	if (!Inventory->GetOffers().IsEmpty())
+	bInGameUIReady = true;
+	RefreshAugmentSelection();
+
+	if (ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(PlayerController))
 	{
-		HandleOffersChanged();
+		RoundPlayerController->NotifyClientReadyForGameFlow();
 	}
 }
 
@@ -129,22 +136,24 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 		UE_LOG(LogShooterUIInitComp, Error, TEXT("UIInitComponent | AugmentSelectClass가 지정되지 않았습니다"));
 		return;
 	}
-	
+
 	AugmentSelectInstance = Cast<UShooterAugmentSelectScreen>(UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, AugmentSelectClass));
 	if (IsValid(AugmentSelectInstance) == false)
 	{
 		return;
 	}
-	
-	AugmentSelectInstance->OnAugmentSelected.AddDynamic(this, &ThisClass::HandleAugmentSelected);
+
+	AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(this, &ThisClass::HandleAugmentSelected);
+	AugmentSelectInstance->OnAugmentSelected.AddUniqueDynamic(this, &ThisClass::HandleAugmentSelected);
 	AugmentSelectInstance->SetOffers(InOffers);
 
 }
 
 void UShooterUIInitComponent::HideAugmentSelect()
 {
-	if (AugmentSelectInstance)
+	if (IsValid(AugmentSelectInstance))
 	{
+		AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(this, &ThisClass::HandleAugmentSelected);
 		AugmentSelectInstance->DeactivateWidget();
 		AugmentSelectInstance = nullptr;
 	}
@@ -161,21 +170,87 @@ void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 	HideAugmentSelect();
 }
 
-void UShooterUIInitComponent::HandleOffersChanged()
+void UShooterUIInitComponent::HandleAugmentSelectionStateChanged()
 {
-	if (!BoundInventory.IsValid())
-	{
-		return;
-	}
-	
-	const TArray<FAugmentInventoryEntry> Offers = BoundInventory->GetOffers();
-	if (Offers.IsEmpty())
+	RefreshAugmentSelection();
+}
+
+void UShooterUIInitComponent::RefreshAugmentSelection()
+{
+	if (!BoundInventory.IsValid() || !BoundRoundGameState.IsValid())
 	{
 		HideAugmentSelect();
 		return;
 	}
-	
+
+	const bool bDraftPhaseIsOpen = BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting;
+	const TArray<FAugmentInventoryEntry> Offers = BoundInventory->GetOffers();
+	if (!bDraftPhaseIsOpen || Offers.IsEmpty())
+	{
+		HideAugmentSelect();
+		return;
+	}
+
 	ShowAugmentSelect(Offers);
+}
+
+void UShooterUIInitComponent::UnbindRuntimeDelegates()
+{
+	if (BoundInventory.IsValid())
+	{
+		BoundInventory->OnOffersChanged.RemoveDynamic(this, &ThisClass::HandleAugmentSelectionStateChanged);
+	}
+	if (BoundRoundGameState.IsValid())
+	{
+		BoundRoundGameState->OnRoundStateChanged.RemoveDynamic(this, &ThisClass::HandleAugmentSelectionStateChanged);
+	}
+
+	BoundInventory.Reset();
+	BoundRoundGameState.Reset();
+}
+
+void UShooterUIInitComponent::ScheduleInGameUIRetry()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		PlayerStateWaitTimerHandle,
+		this,
+		&ThisClass::TryStartInGameUI,
+		0.1f,
+		true);
+}
+
+void UShooterUIInitComponent::SetAugmentSelectionInput(bool bSelecting)
+{
+	APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
+	{
+		return;
+	}
+
+	if (bSelecting)
+	{
+		FInputModeGameAndUI InputMode;
+		if (IsValid(AugmentSelectInstance))
+		{
+			InputMode.SetWidgetToFocus(AugmentSelectInstance->TakeWidget());
+		}
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+
+		PlayerController->SetInputMode(InputMode);
+		PlayerController->SetShowMouseCursor(true);
+		return;
+	}
+
+	const FInputModeGameOnly InputMode;
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(false);
 }
 
 UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const

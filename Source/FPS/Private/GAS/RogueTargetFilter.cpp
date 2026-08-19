@@ -5,7 +5,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
-#include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
