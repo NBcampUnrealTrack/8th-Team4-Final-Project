@@ -69,10 +69,20 @@ public:
 	// 제시된 후보를 매치 등장 이력에 남긴다. 레벨업 후보는 재등장이 정상이라 제외, 서버 전용
 	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
-	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
+	// 카드 선택. 소유 클라이언트가 호출
 	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rogue|Augment")
 	void ServerSelectOffer(int32 OfferIndex);
+
+	// 슬롯 하나만 다시 뽑음. 소유 클라이언트가 호출
+	// 비용 없음. 추첨은 라운드 준비 때 완료된 상태
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rogue|Augment")
+	void ServerRerollOffer(int32 OfferIndex);
+
+	// 이 슬롯에 남은 리롤 횟수. 후보 범위 밖이면 0
+	// 0보다 크면 UI의 버튼 활성화
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	int32 GetSlotRerollsRemaining(int32 OfferIndex) const;
 
 	// 후보 생성과 실제 선택 가능 시점을 분리한다. DraftManager만 호출하는 서버 API.
 	bool SetOfferSelectionEnabled(bool bEnabled);
@@ -138,6 +148,9 @@ private:
 	bool StageOfferSelection(int32 OfferIndex, const TCHAR* Reason);
 	void ClearStagedOffer();
 
+	// 이번 라운드 드래프트 상태 초기화
+	void ClearRoundDraftState();
+
 	// 참조만 끊는다. 효과 제거는 교체 경로가
 	void UninitializeFromAbilitySystem();
 
@@ -155,6 +168,13 @@ private:
 	// 이번 라운드 후보. 서버에서만 변경하고 소유자에게만 복제
 	UPROPERTY(ReplicatedUsing = OnRep_Offers)
 	TArray<FAugmentInventoryEntry> Offers;
+
+	// 슬롯별 잔여 리롤 횟수
+	UPROPERTY(Replicated)
+	TArray<int32> SlotRerollsRemaining;
+
+	// 슬롯별 리롤 예비, 서버 전용
+	TArray<TArray<FAugmentInventoryEntry>> SlotReserves;
 
 	// 서버 전용. 계열별 해제 핸들
 	UPROPERTY()

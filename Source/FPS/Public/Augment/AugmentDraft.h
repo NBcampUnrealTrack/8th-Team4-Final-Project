@@ -44,8 +44,11 @@ struct FAugmentDraftEligibility
 	// ASC 가 보유한 해금 태그
 	FGameplayTagContainer UnlockTags;
 
-	// 매치 전체 등장 이력, 현재는 동작 X
+	// 매치 전체 등장 이력
 	TSet<FPrimaryAssetId> SeenDefinitions;
+
+	// 슬롯마다 뽑을 카드 수
+	int32 CardsPerSlot = 1;
 };
 
 // 증강 추첨 결과

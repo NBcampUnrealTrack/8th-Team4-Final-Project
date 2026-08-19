@@ -499,8 +499,9 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 		return false;
 	}
 
-	// 버킷에서 랜덤으로 후보를 선택
-	const FAugmentOfferResult Offer = RogueAugmentDraft::PickOffers(Bucket, OfferCount, Seed);
+	// 버킷에서 랜덤으로 후보와 리롤 예비를 선택
+	const FAugmentOfferResult Offer =
+		RogueAugmentDraft::PickOffers(Bucket, OfferCount, Seed, State.CardsPerSlot);
 
 	// 버킷의 증강이 부족해 요청한 수량보다 적게 선택된 경우, 로그를 남김
 	if (Offer.UnfilledSlots > 0)
