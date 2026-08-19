@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "Player/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
 
@@ -54,6 +54,11 @@ public:
 
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Loading")
+	bool IsLoadedIntoMatch() const { return bLoadedIntoMatch; }
+
+	void SetLoadedIntoMatch(bool bNewLoadedIntoMatch);
+
 protected:
 	virtual void PostInitializeComponents() override;
 
@@ -66,6 +71,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LobbyReady();
+
+	UFUNCTION()
+	void OnRep_LoadedIntoMatch();
 
 	void ServerResetVitals();
 
@@ -113,4 +121,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
 	bool bIsLobbyReady = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_LoadedIntoMatch, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Loading", meta = (AllowPrivateAccess = "true"))
+	bool bLoadedIntoMatch = false;
 };
