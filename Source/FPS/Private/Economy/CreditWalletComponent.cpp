@@ -15,6 +15,7 @@ void UCreditWalletComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	// 크레딧은 소유 플레이어에게만 복제하고 변경 시 항상 OnRep를 호출한다.
 	DOREPLIFETIME_CONDITION_NOTIFY(
 		UCreditWalletComponent,
 		Credits,
@@ -67,6 +68,7 @@ bool UCreditWalletComponent::TrySpendCredits(const int32 Cost, const ECreditChan
 
 void UCreditWalletComponent::OnRep_Credits(const int32 PreviousCredits)
 {
+	// 클라이언트에서는 복제된 값 변경을 동일한 델리게이트로 전달한다.
 	OnCreditsChanged.Broadcast(PreviousCredits, Credits);
 }
 
@@ -95,6 +97,8 @@ void UCreditWalletComponent::SetCreditsInternal(const int32 NewCredits, const EC
 		Credits,
 		*UEnum::GetValueAsString(Reason));
 
+	// 서버에서도 즉시 동일한 변경 이벤트를 발생시켜 UI/시스템이 한 경로로 처리하게 한다.
 	OnCreditsChanged.Broadcast(PreviousCredits, Credits);
+
 	GetOwner()->ForceNetUpdate();
 }
