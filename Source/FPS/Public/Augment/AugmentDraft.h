@@ -51,8 +51,9 @@ struct FAugmentDraftEligibility
 // 증강 추첨 결과
 struct FAugmentOfferResult
 {
-	// 플레이어에게 제시할 증강 후보
-	TArray<FAugmentInventoryEntry> Offers;
+	// 슬롯별 카드 체인. [슬롯][장]
+	// [i][0] 이 처음 제시할 후보, 그 뒤는 리롤로 꺼내 쓸 예비
+	TArray<TArray<FAugmentInventoryEntry>> SlotCards;
 
 	// 증강이 부족 해 못채운 슬롯 수
 	int32 UnfilledSlots = 0;
@@ -91,8 +92,10 @@ namespace RogueAugmentDraft
 		TArray<FAugmentInventoryEntry>& OutBucket);
 
 	// 버킷에서 플레이어에게 제시할 증강 뽑기
+	// CardsPerSlot 이 2 이상이면 슬롯마다 그 길이의 체인을 생성
 	FPS_API FAugmentOfferResult PickOffers(
 		TArray<FAugmentInventoryEntry>& Bucket,
 		int32 CardCount,
-		int32 Seed);
+		int32 Seed,
+		int32 CardsPerSlot = 1);
 }

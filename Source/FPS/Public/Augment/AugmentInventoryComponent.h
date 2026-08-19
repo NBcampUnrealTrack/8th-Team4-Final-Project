@@ -60,7 +60,8 @@ public:
 	void RemoveAllAugments();
 
 	// 드래프트 매니저가 추첨한 결과를 후보로 저장, 서버 전용
-	bool SetOffers(const TArray<FAugmentInventoryEntry>& InOffers, int32 DraftSeed);
+	// SlotCards 는 슬롯별 카드 체인, 각 체인의 첫 장이 이번에 제시할 후보
+	bool SetOffers(const TArray<TArray<FAugmentInventoryEntry>>& SlotCards, int32 DraftSeed);
 
 	// 후보 판정에 필요한 인벤토리 상태를 채워 반환, 서버 전용
 	void FillDraftEligibility(FAugmentDraftEligibility& OutState) const;

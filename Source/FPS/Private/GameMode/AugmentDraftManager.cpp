@@ -507,18 +507,18 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 	{
 		UE_LOG(LogAugmentDraftManager, Warning,
 			TEXT("%s could only fill %d of %d augment offers for round %d (tier %s)."),
-			*GetNameSafe(PlayerState), Offer.Offers.Num(), OfferCount, DraftContext.RoundNumber,
+			*GetNameSafe(PlayerState), Offer.SlotCards.Num(), OfferCount, DraftContext.RoundNumber,
 			*UEnum::GetValueAsString(Tier));
 	}
 
 	// 선택된 후보를 플레이어의 인벤토리에 등록
-	if (!Inventory->SetOffers(Offer.Offers, Seed))
+	if (!Inventory->SetOffers(Offer.SlotCards, Seed))
 	{
 		return false;
 	}
 
 	// 등장한 증강은 다시 등장하지 못하도록 저장
-	Inventory->MarkOffersSeen(Offer.Offers);
+	Inventory->MarkOffersSeen(Inventory->GetOffers());
 
 	return true;
 }

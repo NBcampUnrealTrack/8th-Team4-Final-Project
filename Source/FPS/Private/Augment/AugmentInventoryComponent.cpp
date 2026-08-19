@@ -100,7 +100,9 @@ void UAugmentInventoryComponent::RemoveAllGrants()
 	GrantHandlesByLine.Reset();
 }
 
-bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers, const int32 DraftSeed)
+bool UAugmentInventoryComponent::SetOffers(
+	const TArray<TArray<FAugmentInventoryEntry>>& SlotCards,
+	const int32 DraftSeed)
 {
 	if (!HasServerAuthority(TEXT("후보 설정")))
 	{
@@ -120,7 +122,7 @@ bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>&
 		return false;
 	}
 
-	if (InOffers.IsEmpty())
+	if (SlotCards.IsEmpty())
 	{
 		UE_LOG(LogAugmentInventory, Error,
 			TEXT("[AugmentInventory] %s: 빈 후보 목록을 받았습니다"), *GetNameSafe(Owner));
@@ -136,7 +138,12 @@ bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>&
 			*GetNameSafe(Owner), Offers.Num());
 	}
 
-	Offers = InOffers;
+	// 각 체인의 첫 장이 이번에 제시할 후보. 나머지는 리롤 예비
+	Offers.Reset(SlotCards.Num());
+	for (const TArray<FAugmentInventoryEntry>& Chain : SlotCards)
+	{
+		Offers.Add(Chain[0]);
+	}
 
 	// 자동 선택에서 사용할 시드
 	LastDraftSeed = DraftSeed;

@@ -262,56 +262,75 @@ void RogueAugmentDraft::BuildCandidateBucket(
 }
 
 // 레벨업 1장을 0번 칸에 고정하고 나머지를 균등 추출
+// 각 체인 채우는 것을 반복
 FAugmentOfferResult RogueAugmentDraft::PickOffers(
 	TArray<FAugmentInventoryEntry>& Bucket,
 	const int32 CardCount,
-	const int32 Seed)
+	const int32 Seed,
+	const int32 CardsPerSlot)
 {
 	FAugmentOfferResult Result;
 
-	if (CardCount <= 0)
+	if (CardCount <= 0 || CardsPerSlot <= 0)
 	{
 		return Result;
 	}
 
-	Result.Offers.Reserve(CardCount);
+	Result.SlotCards.SetNum(CardCount);
 
 	FRandomStream Stream(Seed);
 
-	// 엔트리 레벨이 2 이상이면 보유 계열의 레벨업
-	TArray<int32> LevelUpIndices;
-	for (int32 Index = 0; Index < Bucket.Num(); ++Index)
+	// 0회차가 제시할 카드, 그 뒤 회차가 리롤 예비
+	for (int32 Pass = 0; Pass < CardsPerSlot && !Bucket.IsEmpty(); ++Pass)
 	{
-		if (Bucket[Index].Level > 1)
+		// 이번 회차에 채운 슬롯 수
+		int32 Filled = 0;
+
+		// 엔트리 레벨이 2 이상이면 보유 계열의 레벨업
+		TArray<int32> LevelUpIndices;
+		for (int32 Index = 0; Index < Bucket.Num(); ++Index)
 		{
-			LevelUpIndices.Add(Index);
+			if (Bucket[Index].Level > 1)
+			{
+				LevelUpIndices.Add(Index);
+			}
+		}
+
+		// 레벨업이 가능한 증강 중 랜덤으로 선택
+		// 0번 칸에 고정하고 나머지는 균등 추첨
+		if (!LevelUpIndices.IsEmpty())
+		{
+			const int32 Picked = LevelUpIndices[Stream.RandRange(0, LevelUpIndices.Num() - 1)];
+
+			Result.SlotCards[Filled++].Add(Bucket[Picked]);
+
+			if (Pass == 0)
+			{
+				Result.bLevelUpSlotReserved = true;
+			}
+
+			// 뽑은 것은 버킷에서 제거
+			Bucket.RemoveAt(Picked);
+		}
+
+		// 나머지 슬롯은 균등 추첨, 뽑은 것은 버킷에서 제거
+		while (Filled < CardCount && !Bucket.IsEmpty())
+		{
+			const int32 Picked = Stream.RandRange(0, Bucket.Num() - 1);
+
+			Result.SlotCards[Filled++].Add(Bucket[Picked]);
+			Bucket.RemoveAt(Picked);
 		}
 	}
 
-	// 레벨업이 가능한 증강 중 랜덤으로 선택
-	// 0번 칸에 고정하고 나머지는 균등 추첨
-	if (!LevelUpIndices.IsEmpty())
+	// 빈 슬롯 제거
+	Result.SlotCards.RemoveAll([](const TArray<FAugmentInventoryEntry>& Chain)
 	{
-		const int32 Picked = LevelUpIndices[Stream.RandRange(0, LevelUpIndices.Num() - 1)];
+		return Chain.IsEmpty();
+	});
 
-		Result.Offers.Add(Bucket[Picked]);
-		Result.bLevelUpSlotReserved = true;
-
-		// 뽑은 것은 버킷에서 제거
-		Bucket.RemoveAt(Picked);
-	}
-
-	// 나머지 슬롯은 균등 추첨, 뽑은 것은 버킷에서 제거
-	while (Result.Offers.Num() < CardCount && !Bucket.IsEmpty())
-	{
-		const int32 Picked = Stream.RandRange(0, Bucket.Num() - 1);
-
-		Result.Offers.Add(Bucket[Picked]);
-		Bucket.RemoveAt(Picked);
-	}
-
-	// 뽑을 증강이 없는 경우, 남은 슬롯 수를 UnfilledSlots 에 기록
-	Result.UnfilledSlots = CardCount - Result.Offers.Num();
+	// 뽑을 증강이 없는 경우, 제시하지 못한 슬롯 수를 UnfilledSlots 에 기록
+	Result.UnfilledSlots = CardCount - Result.SlotCards.Num();
 
 	return Result;
 }
