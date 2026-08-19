@@ -9,15 +9,16 @@
 class UAnimMontage;
 
 // 재장전을 트리거하는 GameplayAbility.
-// 실제 재장전 상태 머신(탄약 갱신 타이밍 포함)은 AWeaponBase::StartReload()가 갖고 있고,
-// 이 어빌리티는 재장전 시작/완료 시점에 GAS 이벤트(Event.Weapon.ReloadStart/Complete)만 발신한다.
-// 재장전 도중 사격 차단은 AWeaponBase::IsReloading()으로 이미 처리되므로 여기서 별도 태그 관리를 하지 않는다.
+// 실제 탄약 갱신과 타이머는 AWeaponBase가 담당하고, 이 Ability는 재장전 이벤트와
+// State.Combat.IsReloading 태그의 수명주기를 Ability 활성 시간에 맞춰 관리한다.
 UCLASS()
 class FPS_API UGA_Reload : public UGA_WeaponAbilityBase
 {
 	GENERATED_BODY()
 
 public:
+	UGA_Reload();
+
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	                                 const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
 	                                 FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;

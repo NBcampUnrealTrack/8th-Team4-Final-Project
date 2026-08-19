@@ -4,15 +4,15 @@
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
+#include "GAS/RogueAbilitySystemComponent.h"
+#include "GameMode/BaseRoundGameMode.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
-#include "GAS/RogueAbilitySystemComponent.h"
-#include "GameFlow/Round/BaseRoundGameMode.h"
-#include "GameFlow/Round/BaseRoundGameState.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
-#include "TimerManager.h"
+#include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "Weapon/WeaponTypes.h"
 
@@ -51,6 +51,47 @@ void AShooterPlayerController::BeginPlay()
 	if (InputSubsystem)
 	{
 		InputSubsystem->AddMappingContext(InputConfig->DefaultMappingContext, InputConfig->MappingPriority);
+	}
+}
+
+void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopMatchLoadReadyCheck();
+	HideLoadingScreen();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
+{
+	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
+
+	if (!bFinalDest)
+	{
+		return;
+	}
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		ABaseRoundGameState* RoundGameState = nullptr;
+		if (UWorld* World = GetWorld())
+		{
+			RoundGameState = World->GetGameState<ABaseRoundGameState>();
+		}
+
+		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+	}
+
+	StartMatchLoadReadyCheck();
+}
+
+void AShooterPlayerController::ReceivedPlayer()
+{
+	Super::ReceivedPlayer();
+
+	if (IsLocalController() && NetworkTimeSyncComponent)
+	{
+		NetworkTimeSyncComponent->StartTimeSync();
 	}
 }
 
@@ -113,44 +154,6 @@ void AShooterPlayerController::SetupInputComponent()
 	}
 }
 
-void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	StopMatchLoadReadyCheck();
-	HideLoadingScreen();
-
-	Super::EndPlay(EndPlayReason);
-}
-
-void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
-{
-	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
-
-	if (bFinalDest)
-	{
-		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
-		{
-			ABaseRoundGameState* RoundGameState = nullptr;
-			if (UWorld* World = GetWorld())
-			{
-				RoundGameState = World->GetGameState<ABaseRoundGameState>();
-			}
-
-			LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
-		}
-		StartMatchLoadReadyCheck();
-	}
-}
-
-void AShooterPlayerController::ReceivedPlayer()
-{
-	Super::ReceivedPlayer();
-
-	if (IsLocalController() && NetworkTimeSyncComponent)
-	{
-		NetworkTimeSyncComponent->StartTimeSync();
-	}
-}
-
 void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 {
 	if (HasAuthority())
@@ -189,9 +192,12 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
 	}
 
-	if (GetWorld() && GetWorld()->GetGameState<ABaseRoundGameState>())
+	if (UWorld* World = GetWorld())
 	{
-		StartMatchLoadReadyCheck();
+		if (World->GetGameState<ABaseRoundGameState>())
+		{
+			StartMatchLoadReadyCheck();
+		}
 	}
 }
 
@@ -199,6 +205,13 @@ void AShooterPlayerController::SetLoadingProgress(const float Progress)
 {
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
+		ABaseRoundGameState* RoundGameState = nullptr;
+		if (UWorld* World = GetWorld())
+		{
+			RoundGameState = World->GetGameState<ABaseRoundGameState>();
+		}
+
+		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 		LoadingScreenSubsystem->SetLoadingProgress(Progress);
 	}
 }
@@ -211,12 +224,12 @@ void AShooterPlayerController::HideLoadingScreen()
 	}
 }
 
-void AShooterPlayerController::ClientShowLoadingScreen_Implementation(float InitialProgress)
+void AShooterPlayerController::ClientShowLoadingScreen_Implementation(const float InitialProgress)
 {
 	ShowLoadingScreen(InitialProgress);
 }
 
-void AShooterPlayerController::ClientSetLoadingProgress_Implementation(float Progress)
+void AShooterPlayerController::ClientSetLoadingProgress_Implementation(const float Progress)
 {
 	SetLoadingProgress(Progress);
 }
@@ -224,6 +237,14 @@ void AShooterPlayerController::ClientSetLoadingProgress_Implementation(float Pro
 void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 {
 	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
+{
+	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+	{
+		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+	}
 }
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
@@ -295,32 +316,37 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	}
 }
 
-ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() const
+bool AShooterPlayerController::CanProcessGameplayInput() const
 {
-	if (!IsLocalController())
-	{
-		return nullptr;
-	}
-
-	UGameInstance* GameInstance = GetGameInstance();
-	if (GameInstance)
-	{
-		return GameInstance->GetSubsystem<ULoadingScreenSubsystem>();
-	}
-
-	return nullptr;
+	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
+	return !IsValid(AbilitySystem)
+		|| !AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked);
 }
 
-void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
+bool AShooterPlayerController::CanProcessMovementInput() const
 {
-	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
-	{
-		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
-	}
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+}
+
+bool AShooterPlayerController::CanProcessActionInput() const
+{
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+}
+
+bool AShooterPlayerController::HasDataJackInteractionInputBlock() const
+{
+	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
+	return IsValid(AbilitySystem)
+		&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_DataJack_Interacting);
 }
 
 void AShooterPlayerController::Input_Move(const FInputActionValue& Value)
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleMoveInput(Value);
@@ -329,6 +355,11 @@ void AShooterPlayerController::Input_Move(const FInputActionValue& Value)
 
 void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 {
+	if (!CanProcessGameplayInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleLookInput(Value);
@@ -337,6 +368,11 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 
 void AShooterPlayerController::Input_JumpPressed()
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleJumpPressed();
@@ -353,6 +389,11 @@ void AShooterPlayerController::Input_JumpReleased()
 
 void AShooterPlayerController::Input_SprintPressed()
 {
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintPressed();
@@ -369,6 +410,11 @@ void AShooterPlayerController::Input_SprintReleased()
 
 void AShooterPlayerController::Input_PrimaryWeaponPressed()
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
@@ -377,6 +423,11 @@ void AShooterPlayerController::Input_PrimaryWeaponPressed()
 
 void AShooterPlayerController::Input_SecondaryWeaponPressed()
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
@@ -385,6 +436,11 @@ void AShooterPlayerController::Input_SecondaryWeaponPressed()
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagPressed(InputTag);
@@ -405,6 +461,22 @@ URogueAbilitySystemComponent* AShooterPlayerController::GetRogueAbilitySystemCom
 	if (IsValid(ShooterPlayerState))
 	{
 		return ShooterPlayerState->GetRogueAbilitySystemComponent();
+	}
+
+	return nullptr;
+}
+
+ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() const
+{
+	if (!IsLocalController())
+	{
+		return nullptr;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (IsValid(GameInstance))
+	{
+		return GameInstance->GetSubsystem<ULoadingScreenSubsystem>();
 	}
 
 	return nullptr;
