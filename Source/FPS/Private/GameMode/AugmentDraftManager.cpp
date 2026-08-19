@@ -1,8 +1,10 @@
-#include "GameMode/AugmentDraftManager.h"
+﻿#include "GameMode/AugmentDraftManager.h"
 
+#include "Augment/AugmentDraft.h"
 #include "Augment/AugmentInventoryComponent.h"
 #include "Augment/AugmentRegistrySubsystem.h"
 #include "Augment/AugmentTypes.h"
+#include "Augment/RogueAugmentSettings.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameMode/BaseRoundGameMode.h"
@@ -22,6 +24,7 @@ void UAugmentDraftManager::Initialize(ABaseRoundGameMode* InOwnerGameMode, const
 	OwnerGameMode = InOwnerGameMode;
 	bDraftEnabled = bInDraftEnabled;
 	RegenerateMatchSeed();
+	BuildDraftRules();
 
 	if (!bDraftEnabled)
 	{
@@ -113,7 +116,16 @@ bool UAugmentDraftManager::PrepareDraft(
 		return false;
 	}
 
+	const int32 TeamAScore = RoundGameState->GetTeamAScore();
+	const int32 TeamBScore = RoundGameState->GetTeamBScore();
+
 	const int32 RoundSeed = MakeRoundSeed(RoundNumber);
+
+	// 등급은 팀 단위로 결정
+	EAugmentTier TeamATier = EAugmentTier::Common;
+	EAugmentTier TeamBTier = EAugmentTier::Common;
+	ResolveTeamTiers(RoundNumber, RoundSeed, TeamAScore, TeamBScore, TeamATier, TeamBTier);
+
 	for (const TWeakObjectPtr<AShooterPlayerState>& Participant : DraftParticipants)
 	{
 		AShooterPlayerState* PlayerState = Participant.Get();
@@ -124,21 +136,17 @@ bool UAugmentDraftManager::PrepareDraft(
 			return false;
 		}
 
+		const bool bIsTeamA = PlayerState->GetTeam() == EGameTeam::TeamA;
+
 		FAugmentDraftContext DraftContext;
 		DraftContext.RoundNumber = RoundNumber;
 		DraftContext.RoundSeed = RoundSeed;
-		if (PlayerState->GetTeam() == EGameTeam::TeamA)
-		{
-			DraftContext.TeamScore = RoundGameState->GetTeamAScore();
-			DraftContext.OpponentScore = RoundGameState->GetTeamBScore();
-		}
-		else
-		{
-			DraftContext.TeamScore = RoundGameState->GetTeamBScore();
-			DraftContext.OpponentScore = RoundGameState->GetTeamAScore();
-		}
+		DraftContext.TeamScore = bIsTeamA ? TeamAScore : TeamBScore;
+		DraftContext.OpponentScore = bIsTeamA ? TeamBScore : TeamAScore;
 
-		if (!Inventory->ServerRollOffers(DraftContext, OfferCount)
+		const EAugmentTier Tier = bIsTeamA ? TeamATier : TeamBTier;
+
+		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext, Tier, OfferCount)
 			|| Inventory->GetOffers().Num() != OfferCount)
 		{
 			UE_LOG(LogAugmentDraftManager, Error,
@@ -195,7 +203,7 @@ bool UAugmentDraftManager::CompleteDraft()
 	{
 		UAugmentInventoryComponent* Inventory = GetInventory(Participant.Get());
 		if (!IsValid(Inventory)
-			|| (!Inventory->HasStagedOfferSelection() && !Inventory->ServerAutoSelectOffer()))
+			|| (!Inventory->HasStagedOfferSelection() && !Inventory->AutoSelectOffer()))
 		{
 			return false;
 		}
@@ -279,7 +287,7 @@ void UAugmentDraftManager::CancelDraft()
 	{
 		if (UAugmentInventoryComponent* Inventory = GetInventory(Participant.Get()))
 		{
-			Inventory->ServerClearOffers();
+			Inventory->ClearOffers();
 		}
 	}
 
@@ -327,7 +335,7 @@ void UAugmentDraftManager::ResetPlayerForNewMatch(AShooterPlayerState* PlayerSta
 
 	if (UAugmentInventoryComponent* Inventory = GetInventory(PlayerState))
 	{
-		Inventory->ServerRemoveAllAugments();
+		Inventory->RemoveAllAugments();
 	}
 
 	SetPlayerGameplayInputBlocked(PlayerState, false);
@@ -361,13 +369,139 @@ int32 UAugmentDraftManager::MakeRoundSeed(const int32 RoundNumber) const
 	return Seed == 0u ? 1 : static_cast<int32>(Seed);
 }
 
+void UAugmentDraftManager::BuildDraftRules()
+{
+	DraftRules = FAugmentDraftRules();
+
+	// 가중치만 프로젝트 세팅에서 가져오고 나머지는 기본값
+	if (const URogueAugmentSettings* Settings = GetDefault<URogueAugmentSettings>())
+	{
+		DraftRules.TierWeights = Settings->TierDraftWeights;
+	}
+}
+
+int32 UAugmentDraftManager::MakeDraftSeed(
+	const AShooterPlayerState* PlayerState,
+	const FAugmentDraftContext& DraftContext)
+{
+	// 시드가 없으면 랜덤
+	if (DraftContext.RoundSeed == 0)
+	{
+		return FMath::Rand();
+	}
+
+	const int32 PlayerKey = IsValid(PlayerState) ? PlayerState->GetPlayerId() : 0;
+
+	const uint32 WithPlayer =
+		HashCombine(static_cast<uint32>(DraftContext.RoundSeed), static_cast<uint32>(PlayerKey));
+
+	return static_cast<int32>(HashCombine(WithPlayer, static_cast<uint32>(DraftContext.RoundNumber)));
+}
+
+// 등급은 팀 단위로 한 번만
+void UAugmentDraftManager::ResolveTeamTiers(
+	const int32 RoundNumber,
+	const int32 RoundSeed,
+	const int32 TeamAScore,
+	const int32 TeamBScore,
+	EAugmentTier& OutTeamATier,
+	EAugmentTier& OutTeamBTier) const
+{
+	// 동점일 경우 한 번만 등급
+	if (TeamAScore == TeamBScore)
+	{
+		OutTeamATier = RogueAugmentDraft::ResolveTier(DraftRules, RoundNumber, RoundSeed, /*bIsBehind*/ false);
+		OutTeamBTier = OutTeamATier;
+		return;
+	}
+
+	// 팀마다 다른 등급이 나오도록 시드 분리
+	const int32 SeedA = static_cast<int32>(
+		HashCombine(static_cast<uint32>(RoundSeed), static_cast<uint32>(EGameTeam::TeamA)));
+	const int32 SeedB = static_cast<int32>(
+		HashCombine(static_cast<uint32>(RoundSeed), static_cast<uint32>(EGameTeam::TeamB)));
+
+	// 점수가 낮은 팀에게 등급 가중치 적용
+	const bool bIsTeamABehind = TeamAScore < TeamBScore;
+
+	if (bIsTeamABehind)
+	{
+		OutTeamBTier = RogueAugmentDraft::ResolveTier(DraftRules, RoundNumber, SeedB, /*bIsBehind*/ false);
+		OutTeamATier = RogueAugmentDraft::ResolveTier(
+			DraftRules, RoundNumber, SeedA, /*bIsBehind*/ true, /*MinimumTier*/ OutTeamBTier);
+	}
+	else
+	{
+		OutTeamATier = RogueAugmentDraft::ResolveTier(DraftRules, RoundNumber, SeedA, /*bIsBehind*/ false);
+		OutTeamBTier = RogueAugmentDraft::ResolveTier(
+			DraftRules, RoundNumber, SeedB, /*bIsBehind*/ true, /*MinimumTier*/ OutTeamATier);
+	}
+}
+
+bool UAugmentDraftManager::RollOffersForParticipant(
+	AShooterPlayerState* PlayerState,
+	UAugmentInventoryComponent* Inventory,
+	const FAugmentDraftContext& DraftContext,
+	const EAugmentTier Tier,
+	const int32 OfferCount) const
+{
+	const UAugmentRegistrySubsystem* Registry = BoundRegistry.Get();
+	if (!Registry || !Registry->IsReady() || !IsValid(Inventory) || !IsValid(PlayerState))
+	{
+		return false;
+	}
+
+	const int32 Seed = MakeDraftSeed(PlayerState, DraftContext);
+
+	// 플레이어의 인벤토리 상태 저장 및 등급 저장
+	FAugmentDraftEligibility State;
+	Inventory->FillDraftEligibility(State);
+	State.Tier = Tier;
+
+	// 선택한 등급에 대한 후보 버킷 생성
+	TArray<FAugmentInventoryEntry> Bucket;
+	RogueAugmentDraft::BuildCandidateBucket(DraftRules, State, Registry->GetDefinitionsByTier(Tier), Bucket);
+
+	// 버킷이 비어있는 경우, 드래프트를 진행할 수 없으므로 실패
+	if (Bucket.IsEmpty())
+	{
+		UE_LOG(LogAugmentDraftManager, Error,
+			TEXT("%s has no augment candidates for tier %s in round %d."),
+			*GetNameSafe(PlayerState), *UEnum::GetValueAsString(Tier), DraftContext.RoundNumber);
+		return false;
+	}
+
+	// 버킷에서 랜덤으로 후보를 선택
+	const FAugmentOfferResult Offer = RogueAugmentDraft::PickOffers(Bucket, OfferCount, Seed);
+
+	// 버킷의 증강이 부족해 요청한 수량보다 적게 선택된 경우, 로그를 남김
+	if (Offer.UnfilledSlots > 0)
+	{
+		UE_LOG(LogAugmentDraftManager, Warning,
+			TEXT("%s could only fill %d of %d augment offers for round %d (tier %s)."),
+			*GetNameSafe(PlayerState), Offer.Offers.Num(), OfferCount, DraftContext.RoundNumber,
+			*UEnum::GetValueAsString(Tier));
+	}
+
+	// 선택된 후보를 플레이어의 인벤토리에 등록
+	if (!Inventory->SetOffers(Offer.Offers, Seed))
+	{
+		return false;
+	}
+
+	// 등장한 증강은 다시 등장하지 못하도록 저장
+	Inventory->MarkOffersSeen(Offer.Offers);
+
+	return true;
+}
+
 bool UAugmentDraftManager::SetSelectionGate(const bool bEnabled) const
 {
 	bool bAllUpdated = true;
 	for (const TWeakObjectPtr<AShooterPlayerState>& Participant : DraftParticipants)
 	{
 		UAugmentInventoryComponent* Inventory = GetInventory(Participant.Get());
-		bAllUpdated &= IsValid(Inventory) && Inventory->ServerSetOfferSelectionEnabled(bEnabled);
+		bAllUpdated &= IsValid(Inventory) && Inventory->SetOfferSelectionEnabled(bEnabled);
 	}
 	return bAllUpdated;
 }

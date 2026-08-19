@@ -12,6 +12,7 @@
 class UAbilitySystemComponent;
 class UAugmentDefinition;
 class UAugmentRegistrySubsystem;
+struct FAugmentDraftEligibility;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentOffersChanged);
@@ -56,12 +57,16 @@ public:
 
 	// 매치 초기화. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
-	void ServerRemoveAllAugments();
+	void RemoveAllAugments();
 
-	// 이번 라운드 후보를 뽑아 Offers 에 채움, 서버 전용
-	// 카드마다 등급을 굴리고, 그 등급 버킷에서 균등 추출
-	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
-	bool ServerRollOffers(const FAugmentDraftContext& DraftContext, int32 CardCount = 3);
+	// 드래프트 매니저가 추첨한 결과를 후보로 저장, 서버 전용
+	bool SetOffers(const TArray<FAugmentInventoryEntry>& InOffers, int32 DraftSeed);
+
+	// 후보 판정에 필요한 인벤토리 상태를 채워 반환, 서버 전용
+	void FillDraftEligibility(FAugmentDraftEligibility& OutState) const;
+
+	// 제시된 후보를 매치 등장 이력에 남긴다. 레벨업 후보는 재등장이 정상이라 제외, 서버 전용
+	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
 	// 카드 선택. 이 클래스의 유일한 실제 RPC, 소유 클라이언트가 호출
 	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음
@@ -69,11 +74,11 @@ public:
 	void ServerSelectOffer(int32 OfferIndex);
 
 	// 후보 생성과 실제 선택 가능 시점을 분리한다. DraftManager만 호출하는 서버 API.
-	bool ServerSetOfferSelectionEnabled(bool bEnabled);
+	bool SetOfferSelectionEnabled(bool bEnabled);
 
 	// 미선택자 자동 선택. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
-	bool ServerAutoSelectOffer();
+	bool AutoSelectOffer();
 
 	// 선택은 먼저 스테이징하고, 모든 참가자가 확정 가능한 경우 DraftManager가 일괄 커밋한다.
 	bool HasStagedOfferSelection() const { return StagedOfferState != EAugmentOfferCommitState::Empty; }
@@ -84,16 +89,12 @@ public:
 
 	// 라운드 준비가 취소됐을 때 보유 증강은 유지하고 미선택 후보만 폐기. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
-	void ServerClearOffers();
+	void ClearOffers();
 
 	// 이번 라운드에 제시된 후보
 	// 비어있는 경우 = 선택 완료
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	const TArray<FAugmentInventoryEntry>& GetOffers() const { return Offers; }
-
-	// 이 라운드의 등급 가중치
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	static float GetTierDraftWeight(EAugmentTier Tier, int32 RoundNumber);
 
 	// 현재 보유한 증강 목록, 서버에서만 변경하며 클라이언트에게 복제
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
@@ -132,9 +133,6 @@ private:
 	bool RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot);
 	void RebuildConditionalRuleCache();
 
-	// 등급별 후보. 인덱스가 EAugmentTier 값이고 크기는 항상 MAX
-	void GatherCandidatesByTier(TArray<TArray<FAugmentInventoryEntry>>& OutBuckets) const;
-
 	// 선택한 후보를 이번 드래프트의 확정 대기 상태로 옮긴다. 서버 전용
 	bool StageOfferSelection(int32 OfferIndex, const TCHAR* Reason);
 	void ClearStagedOffer();
@@ -144,9 +142,6 @@ private:
 
 	// 부여한 GE/GA 를 현재 ASC 에서 전부 제거
 	void RemoveAllGrants();
-
-	// 플레이어별로 다른 시드 생성
-	int32 MakeDraftSeed(const FAugmentDraftContext& DraftContext) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
@@ -166,7 +161,11 @@ private:
 
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
 
-	// 서버 전용. 마지막 추첨에 쓴 시드.
+	// 이 매치에서 한 번이라도 후보로 제시된 증강, 서버 전용
+	// 한번 등장한 증강은 재등장하지 않음, 레벨업 증강은 예외
+	TSet<FPrimaryAssetId> SeenDefinitions;
+
+	// 서버 전용. 매니저가 이번 라운드 추첨에 쓴 시드.
 	// 자동 선택이 이걸 재사용해야 "이 라운드에 왜 이 카드가 자동 선택됐나" 를 재현 가능
 	int32 LastDraftSeed = 0;
 
