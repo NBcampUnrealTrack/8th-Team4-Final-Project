@@ -126,6 +126,10 @@ bool UAugmentDraftManager::PrepareDraft(
 	EAugmentTier TeamBTier = EAugmentTier::Common;
 	ResolveTeamTiers(RoundNumber, RoundSeed, TeamAScore, TeamBScore, TeamATier, TeamBTier);
 
+	// 후보를 실제로 받은 참가자만 남긴다
+	TArray<TWeakObjectPtr<AShooterPlayerState>> OfferedParticipants;
+	OfferedParticipants.Reserve(DraftParticipants.Num());
+
 	for (const TWeakObjectPtr<AShooterPlayerState>& Participant : DraftParticipants)
 	{
 		AShooterPlayerState* PlayerState = Participant.Get();
@@ -146,16 +150,20 @@ bool UAugmentDraftManager::PrepareDraft(
 
 		const EAugmentTier Tier = bIsTeamA ? TeamATier : TeamBTier;
 
-		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext, Tier, OfferCount)
-			|| Inventory->GetOffers().Num() != OfferCount)
+		// 후보를 못 받은 플레이어를 이 라운드 드래프트에서 제외
+		// 증강 종류가 추가되고, 삭제 로직이 생기면 발생하지 않을 것으로 예상
+		// 라운드가 열리지 않는 것을 막기 위한 임시 처리
+		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext, Tier, OfferCount))
 		{
-			UE_LOG(LogAugmentDraftManager, Error,
-				TEXT("%s failed to prepare all %d augment offers for round %d."),
-				*GetNameSafe(PlayerState), OfferCount, RoundNumber);
-			CancelDraft();
-			return false;
+			UE_LOG(LogAugmentDraftManager, Warning,
+				TEXT("%s skips the round %d augment draft."), *GetNameSafe(PlayerState), RoundNumber);
+			continue;
 		}
+
+		OfferedParticipants.Add(Participant);
 	}
+
+	DraftParticipants = MoveTemp(OfferedParticipants);
 
 	UE_LOG(LogAugmentDraftManager, Log,
 		TEXT("Round %d augment draft prepared for %d participants. MatchSeed=%d RoundSeed=%d"),
@@ -165,9 +173,15 @@ bool UAugmentDraftManager::PrepareDraft(
 
 bool UAugmentDraftManager::OpenDraft()
 {
-	if (!bDraftEnabled || !AreDependenciesReady() || DraftParticipants.IsEmpty())
+	if (!bDraftEnabled || !AreDependenciesReady())
 	{
 		return false;
+	}
+
+	// 후보를 받은 참가자가 없으면 열 드래프트도 없다. 입력도 막지 않는다
+	if (DraftParticipants.IsEmpty())
+	{
+		return true;
 	}
 
 	if (!SetGameplayInputBlocked(true))
@@ -188,9 +202,15 @@ bool UAugmentDraftManager::OpenDraft()
 
 bool UAugmentDraftManager::CompleteDraft()
 {
-	if (!bDraftEnabled || DraftParticipants.IsEmpty())
+	if (!bDraftEnabled)
 	{
 		return false;
+	}
+
+	// OpenDraft 가 아무것도 열지 않았으므로 닫을 것도 없다
+	if (DraftParticipants.IsEmpty())
+	{
+		return true;
 	}
 
 	// 자동 선택과 늦게 도착한 선택 RPC가 경합하지 않도록 먼저 게이트를 닫는다.
@@ -378,6 +398,14 @@ void UAugmentDraftManager::BuildDraftRules()
 	{
 		DraftRules.TierWeights = Settings->TierDraftWeights;
 	}
+
+	// TODO 임시
+	// 현재 등급별 증강 후보가 충분하지 않아 희귀, 영웅, 전설 증강 등장 시 게임이 진행되지 않습니다.
+	// 테스트를 위해 일반 등급만 등장하도록 고정했습니다.
+	// 이후, 증강 후보가 충분히 확보되면 해당 주석과 아래 코드를 지우면 됩니다.
+	DraftRules.TierWeights.Reset();
+	DraftRules.TierWeights.Add(EAugmentTier::Common, { 1.f, 0.f });
+	DraftRules.ForcedTierRound = 0;
 }
 
 int32 UAugmentDraftManager::MakeDraftSeed(
@@ -462,10 +490,10 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 	TArray<FAugmentInventoryEntry> Bucket;
 	RogueAugmentDraft::BuildCandidateBucket(DraftRules, State, Registry->GetDefinitionsByTier(Tier), Bucket);
 
-	// 버킷이 비어있는 경우, 드래프트를 진행할 수 없으므로 실패
+	// 뽑을 후보가 없는 경우
 	if (Bucket.IsEmpty())
 	{
-		UE_LOG(LogAugmentDraftManager, Error,
+		UE_LOG(LogAugmentDraftManager, Warning,
 			TEXT("%s has no augment candidates for tier %s in round %d."),
 			*GetNameSafe(PlayerState), *UEnum::GetValueAsString(Tier), DraftContext.RoundNumber);
 		return false;
