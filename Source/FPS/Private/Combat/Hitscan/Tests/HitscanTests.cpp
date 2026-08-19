@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Combat/Hitscan/HitZoneDefinition.h"
+#include "Combat/CombatHitZoneDefinition.h"
 #include "Combat/Hitscan/HitscanBallistics.h"
 #include "Combat/Hitscan/HitscanShotTypes.h"
 #include "Tags/GameplayTags.h"
@@ -190,31 +190,31 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FHitscanHitZoneResolveTest::RunTest(const FString& Parameters)
 {
-	FHitscanHitZoneRule Torso;
+	FCombatHitZoneRule Torso;
 	Torso.HitZoneTag = RogueTags::Hit_Zone_Torso;
 	Torso.BoneNames = { TEXT("spine_03") };
 	Torso.Priority = 50;
 
-	FHitscanHitZoneRule LowPriorityHead;
+	FCombatHitZoneRule LowPriorityHead;
 	LowPriorityHead.HitZoneTag = RogueTags::Hit_Zone_Torso;
 	LowPriorityHead.BoneNames = { TEXT("head") };
 	LowPriorityHead.Priority = 10;
 
-	FHitscanHitZoneRule InvalidHighPriorityRule;
+	FCombatHitZoneRule InvalidHighPriorityRule;
 	InvalidHighPriorityRule.BoneNames = { TEXT("head") };
 	InvalidHighPriorityRule.Priority = 200;
 
-	FHitscanHitZoneRule Head;
+	FCombatHitZoneRule Head;
 	Head.HitZoneTag = RogueTags::Hit_Zone_Head;
 	Head.BoneNames = { TEXT("head") };
 	Head.Priority = 100;
 
-	const TArray<FHitscanHitZoneRule> Rules = { Torso, LowPriorityHead, InvalidHighPriorityRule, Head };
-	const FGameplayTag ResolvedHead = UHitscanHitZoneDefinition::ResolveRules(
+	const TArray<FCombatHitZoneRule> Rules = { Torso, LowPriorityHead, InvalidHighPriorityRule, Head };
+	const FGameplayTag ResolvedHead = UCombatHitZoneDefinition::ResolveRules(
 		Rules,
 		TEXT("head"),
 		RogueTags::Hit_Zone_Torso);
-	const FGameplayTag Fallback = UHitscanHitZoneDefinition::ResolveRules(
+	const FGameplayTag Fallback = UCombatHitZoneDefinition::ResolveRules(
 		Rules,
 		TEXT("missing_bone"),
 		RogueTags::Hit_Zone_Torso);

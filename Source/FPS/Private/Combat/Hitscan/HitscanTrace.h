@@ -13,6 +13,7 @@ struct FHitscanImpactSample
 	FVector ShotDirection = FVector::ForwardVector;
 	float WallRetention = 1.0f;
 	int32 PelletIndex = 0;
+	FGameplayTag HitZoneTag;
 };
 
 // 월드 충돌, 표면 통과, 피해 후보 충돌 추출만 담당한다.

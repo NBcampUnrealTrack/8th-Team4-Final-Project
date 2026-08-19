@@ -4,10 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "LagCompensationComponent.generated.h"
 
 class UBoxComponent;
-class ULagCompensationHitBoxProfile;
+class UCombatHitZoneDefinition;
 
 USTRUCT()
 struct FLagCompensatedHitBoxInfo
@@ -22,6 +23,9 @@ struct FLagCompensatedHitBoxInfo
 
 	UPROPERTY()
 	FVector BoxExtent = FVector::ZeroVector;
+
+	UPROPERTY()
+	FGameplayTag HitZoneTag;
 };
 
 USTRUCT()
@@ -63,7 +67,7 @@ protected:
 	FName HitBoxComponentTag = TEXT("LagCompensationHitBox");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation")
-	TObjectPtr<ULagCompensationHitBoxProfile> HitBoxProfile;
+	TObjectPtr<UCombatHitZoneDefinition> HitZoneDefinition;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
 	bool bDrawDebugHitBoxes = false;
@@ -79,7 +83,7 @@ private:
 	void StopRecording();
 	void SaveFramePackage();
 	void CacheHitBoxComponents();
-	void CreateHitBoxesFromProfile();
+	void CreateHitBoxesFromHitZoneDefinition();
 	void CaptureBoxComponent(const UBoxComponent* BoxComponent, FLagCompensationFramePackage& OutFramePackage) const;
 	void CaptureFallbackCapsule(FLagCompensationFramePackage& OutFramePackage) const;
 	void DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const;
@@ -92,6 +96,9 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UBoxComponent>> GeneratedHitBoxes;
+
+	UPROPERTY()
+	TMap<FName, FGameplayTag> HitBoxZoneTags;
 
 	UPROPERTY()
 	TArray<FLagCompensationFramePackage> FrameHistory;

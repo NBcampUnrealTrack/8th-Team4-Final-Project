@@ -1,6 +1,6 @@
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 
-#include "Combat/Hitscan/HitZoneDefinition.h"
+#include "Combat/CombatHitZoneDefinition.h"
 #include "Combat/Hitscan/HitscanBallistics.h"
 #include "Engine/World.h"
 #include "GAS/Damage/RogueDamageSubsystem.h"
@@ -229,9 +229,48 @@ namespace
 	FGameplayTag ResolveHitZoneTag(const FHitscanShotRequest& Request, const FName BoneName)
 	{
 		const FHitscanDamageSettings& Settings = Request.DamageSettings;
-		return IsValid(Settings.HitZoneDefinition.Get())
-			? Settings.HitZoneDefinition->ResolveHitZone(BoneName, Settings.DefaultHitZoneTag)
-			: Settings.DefaultHitZoneTag;
+		if (IsValid(Settings.HitZoneDefinition.Get()))
+		{
+			return Settings.HitZoneDefinition->ResolveHitZone(BoneName, Settings.DefaultHitZoneTag);
+		}
+
+		return Settings.DefaultHitZoneTag;
+	}
+
+	FGameplayTag ResolveImpactHitZoneTag(
+		const FHitscanShotRequest& Request,
+		const FHitscanImpactSample& Impact)
+	{
+		if (Impact.HitZoneTag.IsValid())
+		{
+			return Impact.HitZoneTag;
+		}
+
+		return ResolveHitZoneTag(Request, Impact.BoneName);
+	}
+
+	void ResolveCurrentServerImpacts(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		TArray<FHitscanImpactSample>& OutImpactSamples)
+	{
+		OutImpactSamples.Reset();
+		OutImpactSamples.Reserve(Request.PelletDirections.Num());
+
+		for (int32 PelletIndex = 0; PelletIndex < Request.PelletDirections.Num(); ++PelletIndex)
+		{
+			FHitscanImpactSample ImpactSample;
+			if (HitscanTrace::ResolvePellet(
+				World,
+				Request,
+				Request.PelletDirections[PelletIndex],
+				PelletIndex,
+				ImpactSample))
+			{
+				ImpactSample.HitZoneTag = ResolveHitZoneTag(Request, ImpactSample.BoneName);
+				OutImpactSamples.Add(MoveTemp(ImpactSample));
+			}
+		}
 	}
 
 	void AccumulateImpactSamples(
@@ -293,7 +332,7 @@ namespace
 					FVector::Distance(Request.DamageDistanceOrigin, Impact.ImpactPoint) / 100.0f);
 			}
 
-			const FGameplayTag HitZoneTag = ResolveHitZoneTag(Request, Impact.BoneName);
+			const FGameplayTag HitZoneTag = ResolveImpactHitZoneTag(Request, Impact);
 			FRogueHitGroup* HitGroup = Accumulator.HitContext.HitGroups.FindByPredicate(
 				[HitZoneTag](const FRogueHitGroup& Group)
 				{
@@ -493,20 +532,7 @@ FHitscanShotResult UHitscanResolverSubsystem::ResolveServerShot(
 
 	// 한 발은 요청 검증 -> 펠릿 Trace -> 대상/부위 집계 -> GAS 적용 순서로 처리한다.
 	TArray<FHitscanImpactSample> ImpactSamples;
-	ImpactSamples.Reserve(Request.PelletDirections.Num());
-	for (int32 PelletIndex = 0; PelletIndex < Request.PelletDirections.Num(); ++PelletIndex)
-	{
-		FHitscanImpactSample ImpactSample;
-		if (HitscanTrace::ResolvePellet(
-			World,
-			Request,
-			Request.PelletDirections[PelletIndex],
-			PelletIndex,
-			ImpactSample))
-		{
-			ImpactSamples.Add(MoveTemp(ImpactSample));
-		}
-	}
+	ResolveCurrentServerImpacts(World, Request, ImpactSamples);
 
 	TArray<FTargetHitAccumulator> TargetAccumulators;
 	AccumulateImpactSamples(Request, ImpactSamples, TargetAccumulators);

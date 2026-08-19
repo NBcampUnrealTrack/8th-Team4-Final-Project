@@ -2,13 +2,14 @@
 
 #include "Combat/LagCompensationComponent.h"
 
-#include "Combat/LagCompensationHitBoxProfile.h"
+#include "Combat/CombatHitZoneDefinition.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
+#include "Tags/GameplayTags.h"
 #include "TimerManager.h"
 
 ULagCompensationComponent::ULagCompensationComponent()
@@ -134,8 +135,9 @@ void ULagCompensationComponent::CacheHitBoxComponents()
 {
 	CachedHitBoxes.Reset();
 	GeneratedHitBoxes.Reset();
+	HitBoxZoneTags.Reset();
 
-	CreateHitBoxesFromProfile();
+	CreateHitBoxesFromHitZoneDefinition();
 	if (!CachedHitBoxes.IsEmpty())
 	{
 		return;
@@ -166,9 +168,9 @@ void ULagCompensationComponent::CacheHitBoxComponents()
 	}
 }
 
-void ULagCompensationComponent::CreateHitBoxesFromProfile()
+void ULagCompensationComponent::CreateHitBoxesFromHitZoneDefinition()
 {
-	if (!IsValid(HitBoxProfile.Get()))
+	if (!IsValid(HitZoneDefinition.Get()))
 	{
 		return;
 	}
@@ -185,29 +187,39 @@ void ULagCompensationComponent::CreateHitBoxesFromProfile()
 		return;
 	}
 
-	for (const FLagCompensationHitBoxDefinition& Definition : HitBoxProfile->HitBoxes)
+	for (const FCombatHitZoneRule& ZoneRule : HitZoneDefinition->GetZoneRules())
 	{
-		if (Definition.HitBoxName.IsNone() || Definition.AttachBoneName.IsNone())
+		if (!ZoneRule.HitZoneTag.IsValid())
 		{
 			continue;
 		}
 
-		UBoxComponent* HitBox = NewObject<UBoxComponent>(OwnerCharacter, Definition.HitBoxName);
-		if (!IsValid(HitBox))
+		for (const FCombatHitBoxDefinition& Definition : ZoneRule.HitBoxes)
 		{
-			continue;
+			if (Definition.HitBoxName.IsNone() || Definition.AttachBoneName.IsNone())
+			{
+				continue;
+			}
+
+			UBoxComponent* HitBox = NewObject<UBoxComponent>(OwnerCharacter, Definition.HitBoxName);
+			if (!IsValid(HitBox))
+			{
+				continue;
+			}
+
+			HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			HitBox->SetGenerateOverlapEvents(false);
+			HitBox->ComponentTags.AddUnique(HitBoxComponentTag);
+			HitBox->SetBoxExtent(Definition.BoxExtent, false);
+			HitBox->SetupAttachment(MeshComponent, Definition.AttachBoneName);
+			HitBox->RegisterComponent();
+			HitBox->SetRelativeLocationAndRotation(Definition.RelativeLocation, Definition.RelativeRotation);
+
+			HitBoxZoneTags.Add(HitBox->GetFName(), ZoneRule.HitZoneTag);
+
+			GeneratedHitBoxes.Add(HitBox);
+			CachedHitBoxes.Add(HitBox);
 		}
-
-		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		HitBox->SetGenerateOverlapEvents(false);
-		HitBox->ComponentTags.AddUnique(HitBoxComponentTag);
-		HitBox->SetBoxExtent(Definition.BoxExtent, false);
-		HitBox->SetupAttachment(MeshComponent, Definition.AttachBoneName);
-		HitBox->RegisterComponent();
-		HitBox->SetRelativeLocationAndRotation(Definition.RelativeLocation, Definition.RelativeRotation);
-
-		GeneratedHitBoxes.Add(HitBox);
-		CachedHitBoxes.Add(HitBox);
 	}
 }
 
@@ -224,6 +236,10 @@ void ULagCompensationComponent::CaptureBoxComponent(
 	HitBoxInfo.Location = BoxComponent->GetComponentLocation();
 	HitBoxInfo.Rotation = BoxComponent->GetComponentRotation();
 	HitBoxInfo.BoxExtent = BoxComponent->GetScaledBoxExtent();
+	if (const FGameplayTag* HitZoneTag = HitBoxZoneTags.Find(BoxComponent->GetFName()))
+	{
+		HitBoxInfo.HitZoneTag = *HitZoneTag;
+	}
 
 	OutFramePackage.HitBoxes.Add(BoxComponent->GetFName(), HitBoxInfo);
 }
@@ -249,13 +265,41 @@ void ULagCompensationComponent::CaptureFallbackCapsule(FLagCompensationFramePack
 		CapsuleComponent->GetScaledCapsuleRadius(),
 		CapsuleComponent->GetScaledCapsuleRadius(),
 		CapsuleComponent->GetScaledCapsuleHalfHeight());
+	HitBoxInfo.HitZoneTag = RogueTags::Hit_Zone_Torso;
 
 	OutFramePackage.HitBoxes.Add(CapsuleComponent->GetFName(), HitBoxInfo);
+}
+
+namespace
+{
+	FColor GetDebugColorForHitZone(const FGameplayTag& HitZoneTag, const FColor& FallbackColor)
+	{
+		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
+		{
+			return FColor::Red;
+		}
+		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Torso))
+		{
+			return FColor::Green;
+		}
+		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Limb))
+		{
+			return FColor::Blue;
+		}
+
+		return FallbackColor;
+	}
 }
 
 void ULagCompensationComponent::DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const
 {
 	if (!bDrawDebugHitBoxes)
+	{
+		return;
+	}
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (OwnerPawn && OwnerPawn->IsLocallyControlled())
 	{
 		return;
 	}
@@ -269,14 +313,30 @@ void ULagCompensationComponent::DrawFramePackage(const FLagCompensationFramePack
 	for (const TPair<FName, FLagCompensatedHitBoxInfo>& HitBoxPair : FramePackage.HitBoxes)
 	{
 		const FLagCompensatedHitBoxInfo& HitBoxInfo = HitBoxPair.Value;
+		const FColor HitBoxColor = GetDebugColorForHitZone(HitBoxInfo.HitZoneTag, DebugDrawColor);
 		DrawDebugBox(
 			World,
 			HitBoxInfo.Location,
 			HitBoxInfo.BoxExtent,
 			FQuat(HitBoxInfo.Rotation),
-			DebugDrawColor,
+			HitBoxColor,
 			false,
 			DebugDrawDuration);
+
+		FString Label = HitBoxPair.Key.ToString();
+		if (HitBoxInfo.HitZoneTag.IsValid())
+		{
+			Label = FString::Printf(TEXT("%s | %s"), *HitBoxPair.Key.ToString(), *HitBoxInfo.HitZoneTag.ToString());
+		}
+
+		DrawDebugString(
+			World,
+			HitBoxInfo.Location,
+			Label,
+			nullptr,
+			HitBoxColor,
+			DebugDrawDuration,
+			false);
 	}
 }
 

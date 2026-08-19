@@ -262,7 +262,7 @@ void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 
 	if (RoundGameMode)
 	{
-		RoundGameMode->NotifyPlayerLoadedIntoMatch(this);
+		RoundGameMode->NotifyPlayerReadyForGameFlow(this);
 	}
 }
 

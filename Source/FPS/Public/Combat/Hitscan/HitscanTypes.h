@@ -5,7 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "HitscanTypes.generated.h"
 
-class UHitscanHitZoneDefinition;
+class UCombatHitZoneDefinition;
 
 // 기존 HitscanWeaponDefinition DataAsset의 직렬화 경계를 유지하기 위해 이름은 보존한다.
 // 신규 대미지 파이프라인에서는 절대 대미지를 계산하지 않고 부위/후방 판정 정책만 가진다.
@@ -15,7 +15,7 @@ struct FHitscanDamageSettings
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Hit")
-	TObjectPtr<UHitscanHitZoneDefinition> HitZoneDefinition = nullptr;
+	TObjectPtr<UCombatHitZoneDefinition> HitZoneDefinition = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Combat|Hitscan|Hit")
 	FGameplayTag DefaultHitZoneTag;
