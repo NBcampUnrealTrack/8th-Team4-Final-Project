@@ -18,7 +18,9 @@ URogueDashAbility::URogueDashAbility()
 	CooldownTag = RogueTags::Cooldown_Augment_Dash;
 	BaseCooldown = 10.f;
 
-	// 사망 태그가 존재하면 사용 불가
+	// 동시 행동 정책은 공통 증강 부모가 아니라 각 증강에서 명시한다.
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
 }
 
