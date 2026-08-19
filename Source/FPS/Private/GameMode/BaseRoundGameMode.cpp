@@ -1,10 +1,12 @@
 #include "GameMode/BaseRoundGameMode.h"
 
+#include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
@@ -25,6 +27,7 @@ ABaseRoundGameMode::ABaseRoundGameMode()
 	GameStateClass = ABaseRoundGameState::StaticClass();
 	bDelayedStart = true;
 	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
+	CreditEconomyManager = CreateDefaultSubobject<UCreditEconomyManager>(TEXT("CreditEconomyManager"));
 }
 
 void ABaseRoundGameMode::Logout(AController* Exiting)
@@ -79,6 +82,13 @@ void ABaseRoundGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerC
 
 void ABaseRoundGameMode::NotifyPlayerEliminated(AController* EliminatedController)
 {
+	NotifyPlayerEliminatedBy(EliminatedController, nullptr);
+}
+
+void ABaseRoundGameMode::NotifyPlayerEliminatedBy(
+	AController* EliminatedController,
+	AShooterPlayerState* KillerPlayerState)
+{
 	if (!HasAuthority() || !IsValid(EliminatedController))
 	{
 		return;
@@ -98,6 +108,23 @@ void ABaseRoundGameMode::NotifyPlayerEliminated(AController* EliminatedControlle
 		return;
 	}
 
+	const bool bEnemyKill = IsValid(KillerPlayerState)
+		&& KillerPlayerState != EliminatedPlayerState
+		&& PlayerManager->IsRoundParticipant(KillerPlayerState)
+		&& KillerPlayerState->GetTeam() != EGameTeam::None
+		&& EliminatedPlayerState->GetTeam() != EGameTeam::None
+		&& KillerPlayerState->GetTeam() != EliminatedPlayerState->GetTeam();
+
+	if (bEnemyKill)
+	{
+		UCreditEconomyManager* Economy = GetCreditEconomyManager();
+		if (!IsValid(Economy) || !Economy->RecordKillReward(KillerPlayerState))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Failed to record a kill reward for %s."),
+				*GetNameSafe(KillerPlayerState));
+		}
+	}
+
 	SetPlayerRoundInputEnabled(Cast<APlayerController>(EliminatedController), false);
 	HandleModePlayerEliminated(EliminatedPlayerState);
 }
@@ -106,6 +133,12 @@ void ABaseRoundGameMode::RestartGameFlow()
 {
 	if (!HasAuthority())
 	{
+		return;
+	}
+
+	if (!ResetEconomyForNewMatch())
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Cannot restart game flow because credit reset failed."));
 		return;
 	}
 
@@ -205,6 +238,13 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 	AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>();
 	if (IsValid(PlayerState))
 	{
+		UCreditEconomyManager* Economy = GetCreditEconomyManager();
+		if (!IsValid(Economy) || !Economy->InitializePlayerForMatch(PlayerState))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Failed to initialize credits for %s."),
+				*GetNameSafe(PlayerState));
+		}
+
 		PlayerState->SetAlive(false);
 		if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 		{
@@ -312,6 +352,7 @@ void ABaseRoundGameMode::EndRound(const EGameTeam WinningTeam, const ERoundEndRe
 	RoundGameState->AddTeamScore(WinningTeam);
 	RoundGameState->SetRoundResult(WinningTeam, EndReason);
 	LastCompletedRoundNumber = RoundGameState->GetCurrentRoundNumber();
+	SettleCompletedRoundCredits(LastCompletedRoundNumber, WinningTeam);
 
 	EGameTeam MatchWinner = EGameTeam::None;
 	if (IsMatchComplete(MatchWinner))
@@ -349,9 +390,115 @@ void ABaseRoundGameMode::FreezeRoundTimer()
 	}
 }
 
+void ABaseRoundGameMode::RecordRoleObjectiveReward(const ETeamRole ObjectiveRole)
+{
+	const EGameTeam Team = GetTeamForRole(ObjectiveRole);
+	if (Team == EGameTeam::None)
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Cannot resolve the team for role %s while recording an objective reward."),
+			*UEnum::GetValueAsString(ObjectiveRole));
+		return;
+	}
+
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	if (!IsValid(Economy))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Credit economy is unavailable for the %s objective reward."),
+			*UEnum::GetValueAsString(Team));
+		return;
+	}
+
+	if (!Economy->RecordTeamObjectiveReward(Team))
+	{
+		// 라운드 종료와 겹친 늦은 목표 통지는 게임 결과를 되돌리지 않고 보상만 폐기한다.
+		UE_LOG(LogBaseRoundGameMode, Warning, TEXT("Could not record an objective reward for %s."),
+			*UEnum::GetValueAsString(Team));
+	}
+}
+
+bool ABaseRoundGameMode::InitializeRoundParticipantCredits()
+{
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	if (!IsValid(Economy) || !IsValid(PlayerManager))
+	{
+		return false;
+	}
+
+	TArray<AShooterPlayerState*> Participants;
+	PlayerManager->GetRoundParticipants(Participants);
+	if (Participants.IsEmpty())
+	{
+		return false;
+	}
+
+	for (AShooterPlayerState* PlayerState : Participants)
+	{
+		if (!Economy->InitializePlayerForMatch(PlayerState))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error, TEXT("Failed to initialize round credits for %s."),
+				*GetNameSafe(PlayerState));
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool ABaseRoundGameMode::ResetEconomyForNewMatch()
+{
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(Economy) || !IsValid(RoundGameState))
+	{
+		return false;
+	}
+
+	TArray<AShooterPlayerState*> MatchPlayers;
+	MatchPlayers.Reserve(RoundGameState->PlayerArray.Num());
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		{
+			MatchPlayers.Add(ShooterPlayerState);
+		}
+	}
+
+	return Economy->ResetForNewMatch(MatchPlayers);
+}
+
+void ABaseRoundGameMode::SettleCompletedRoundCredits(const int32 RoundNumber, const EGameTeam WinningTeam)
+{
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	if (!IsValid(Economy) || !IsValid(PlayerManager))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Cannot settle credits for round %d: dependency missing."), RoundNumber);
+		if (IsValid(Economy))
+		{
+			Economy->CancelActiveRound();
+		}
+		return;
+	}
+
+	TArray<AShooterPlayerState*> Participants;
+	PlayerManager->GetRoundParticipants(Participants);
+	if (!Economy->SettleRoundCredits(RoundNumber, WinningTeam, Participants))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Credit settlement failed for round %d."), RoundNumber);
+		Economy->CancelActiveRound();
+	}
+}
+
 ABaseRoundGameState* ABaseRoundGameMode::GetBaseRoundGameState() const
 {
 	return GetGameState<ABaseRoundGameState>();
+}
+
+
+UCreditEconomyManager* ABaseRoundGameMode::GetCreditEconomyManager() const
+{
+	return CreditEconomyManager.Get();
 }
 
 ETeamRole ABaseRoundGameMode::GetRoleForTeam(const EGameTeam Team) const

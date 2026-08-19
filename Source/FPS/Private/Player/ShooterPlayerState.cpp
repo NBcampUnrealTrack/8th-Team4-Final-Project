@@ -3,6 +3,7 @@
 #include "Player/ShooterPlayerState.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueGASSettings.h"
@@ -25,6 +26,7 @@ AShooterPlayerState::AShooterPlayerState()
 
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
+	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
