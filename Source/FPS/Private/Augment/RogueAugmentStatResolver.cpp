@@ -210,3 +210,15 @@ float URogueAugmentStatResolver::GetFinalHealingReceived(const AActor* Actor, fl
 
 	return BaseHealAmount * Set->GetHealingReceivedMultiplier();
 }
+
+// 드래프트 관련
+int32 URogueAugmentStatResolver::GetBonusRerollCount(const AActor* Actor)
+{
+	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
+	if (!Set)
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, FMath::FloorToInt(Set->GetBonusFreeRerolls()));
+}
