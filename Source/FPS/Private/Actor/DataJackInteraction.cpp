@@ -313,6 +313,13 @@ void ADataJack::CompleteDefusing()
 		return;
 	}
 
+	UBombObjectiveManager* BombObjectiveManager = GetObjectiveManager();
+	if (!IsValid(BombObjectiveManager) || !BombObjectiveManager->CanCompleteDefusing(this))
+	{
+		CancelInteraction();
+		return;
+	}
+
 	APlayerController* CompletedInteractionController = InteractionController.Get();
 	ResetInteractionState();
 	ClearDetonationTimer();
@@ -321,11 +328,7 @@ void ADataJack::CompleteDefusing()
 	SetDataJackState(EDataJackState::Defused);
 	BroadcastDataChanged();
 	NotifyInteractionStopped(CompletedInteractionController);
-
-	if (UBombObjectiveManager* BombObjectiveManager = GetObjectiveManager())
-	{
-		BombObjectiveManager->NotifyDataJackDefused(this);
-	}
+	BombObjectiveManager->NotifyDataJackDefused(this);
 }
 
 void ADataJack::CompleteDropHold()

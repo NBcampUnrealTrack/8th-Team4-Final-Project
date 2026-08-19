@@ -1,5 +1,6 @@
 #include "GameMode/BaseRoundGameMode.h"
 
+#include "Economy/CreditEconomyManager.h"
 #include "Engine/World.h"
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/PlayerController.h"
@@ -79,6 +80,7 @@ bool ABaseRoundGameMode::IsBaseConfigurationValid() const
 	const bool bRolesAreValid = StartingTeamARole != ETeamRole::None
 		&& StartingTeamBRole != ETeamRole::None
 		&& StartingTeamARole != StartingTeamBRole;
+	const UCreditEconomyManager* Economy = GetCreditEconomyManager();
 
 	return DefaultPawnClass != nullptr
 		&& !DefaultPawnClass->IsChildOf(ADefaultPawn::StaticClass())
@@ -105,6 +107,8 @@ bool ABaseRoundGameMode::IsBaseConfigurationValid() const
 		&& SideSwitchRound >= 0
 		&& RoundsToWin >= 0
 		&& MaxRounds >= 0
+		&& IsValid(Economy)
+		&& Economy->IsConfigurationValid()
 		&& bRolesAreValid;
 }
 

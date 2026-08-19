@@ -9,6 +9,7 @@
 #include "ShooterPlayerState.generated.h"
 
 class UAugmentInventoryComponent;
+class UCreditWalletComponent;
 class URogueAbilitySystemComponent;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
@@ -34,6 +35,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Augment")
 	UAugmentInventoryComponent* GetAugmentInventory() const { return AugmentInventory; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Economy")
+	UCreditWalletComponent* GetCreditWallet() const { return CreditWallet; }
 
 	// 어트리뷰트는 StatResolver 와 ExecCalc 을 통해 읽는 것이 정상 경로
 	// 이 둘은 초기화/디버그용
@@ -118,6 +122,9 @@ private:
 	// 증강 인벤토리
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Augment")
 	TObjectPtr<UAugmentInventoryComponent> AugmentInventory;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Economy")
+	TObjectPtr<UCreditWalletComponent> CreditWallet;
 
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
 	bool bIsLobbyReady = false;

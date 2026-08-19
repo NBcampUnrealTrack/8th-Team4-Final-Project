@@ -198,16 +198,20 @@ bool UBombObjectiveManager::IsActiveDataJack(const ADataJack* DataJack) const
 
 bool UBombObjectiveManager::CanCompletePlanting(const ADataJack* DataJack) const
 {
-	const ABombGameMode* GameMode = GetOwnerGameMode();
-	const ABaseRoundGameState* RoundGameState = IsValid(GameMode)
-		? GameMode->GetGameState<ABaseRoundGameState>()
-		: nullptr;
-	return IsActiveDataJack(DataJack)
-		&& IsValid(GameMode)
-		&& GameMode->HasAuthority()
-		&& IsValid(RoundGameState)
-		&& RoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress
-		&& RoundGameState->GetRoundTimeRemaining() > 0.0f;
+	if (!IsActiveDataJack(DataJack) || !IsObjectiveRoundLive())
+	{
+		return false;
+	}
+
+	// 설치는 라운드 시간 안에서만 완료된다. 완료 즉시 라운드 타이머가 얼어붙는다.
+	return GetRoundGameState()->GetRoundTimeRemaining() > 0.0f;
+}
+
+bool UBombObjectiveManager::CanCompleteDefusing(const ADataJack* DataJack) const
+{
+	// 해체의 마감은 라운드 타이머가 아니라 폭발 카운트다운이므로 남은 시간은 보지 않는다.
+	// 카운트다운 초과 여부는 ADataJack::CompleteDefusing이 직접 판정한다.
+	return IsActiveDataJack(DataJack) && IsObjectiveRoundLive();
 }
 
 void UBombObjectiveManager::NotifyDataJackPlanted(ADataJack* DataJack)
@@ -246,6 +250,22 @@ bool UBombObjectiveManager::IsPlantedOrDefusing() const
 EDataJackState UBombObjectiveManager::GetObjectiveState() const
 {
 	return IsValid(ActiveDataJack) ? ActiveDataJack->GetDataJackState() : EDataJackState::Idle;
+}
+
+const ABaseRoundGameState* UBombObjectiveManager::GetRoundGameState() const
+{
+	const ABombGameMode* GameMode = GetOwnerGameMode();
+	return IsValid(GameMode) ? GameMode->GetGameState<ABaseRoundGameState>() : nullptr;
+}
+
+bool UBombObjectiveManager::IsObjectiveRoundLive() const
+{
+	const ABombGameMode* GameMode = GetOwnerGameMode();
+	const ABaseRoundGameState* RoundGameState = GetRoundGameState();
+	return IsValid(GameMode)
+		&& GameMode->HasAuthority()
+		&& IsValid(RoundGameState)
+		&& RoundGameState->GetGameFlowPhase() == EGameFlowPhase::RoundInProgress;
 }
 
 bool UBombObjectiveManager::SpawnObjective(const FBombObjectiveConfig& Config)

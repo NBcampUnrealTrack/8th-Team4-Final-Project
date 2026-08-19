@@ -1,5 +1,6 @@
 #include "GameMode/BaseRoundGameMode.h"
 
+#include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
@@ -157,6 +158,12 @@ void ABaseRoundGameMode::OpenNextRound()
 	}
 	SpawnPreparationRetryCount = 0;
 
+	if (!InitializeRoundParticipantCredits())
+	{
+		SuspendRoundOpening(TEXT("A round participant could not be initialized for the credit economy."));
+		return;
+	}
+
 	if (!PrepareModeRound(RoundContext))
 	{
 		SuspendRoundOpening(TEXT("Mode-specific round preparation failed."));
@@ -250,7 +257,15 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 	// Draft 태그가 먼저 복제돼도 전투 페이즈 공개 전에는 입력이 열리지 않게 한다.
 	SetRoundParticipantInputEnabled(false);
 
-	// 입력 차단 해제 뒤 실패 가능한 작업이 남지 않도록 모드를 먼저 활성화한다.
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const int32 RoundNumber = RoundGameState->GetCurrentRoundNumber();
+	if (!IsValid(Economy) || !Economy->BeginRound(RoundNumber))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Credit economy could not begin round %d."), RoundNumber);
+		return false;
+	}
+
+	// Economy가 열린 뒤 모드와 드래프트의 되돌리기 어려운 작업을 확정한다.
 	if (!ActivateModeRound())
 	{
 		return false;
@@ -320,6 +335,11 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 	ClearAllFlowTimers();
 	SetAllPlayersRoundInputEnabled(false);
 	SpawnPreparationRetryCount = 0;
+
+	if (UCreditEconomyManager* Economy = GetCreditEconomyManager())
+	{
+		Economy->CancelActiveRound();
+	}
 
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{

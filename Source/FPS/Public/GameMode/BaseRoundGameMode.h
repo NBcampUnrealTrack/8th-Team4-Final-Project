@@ -9,7 +9,9 @@
 class ABaseRoundGameState;
 class ABaseTeamPlayerState;
 class APlayerController;
+class AShooterPlayerState;
 class UAugmentDraftManager;
+class UCreditEconomyManager;
 enum class EPlayerStartReservationResult : uint8;
 
 /**
@@ -27,6 +29,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Round")
 	void NotifyPlayerEliminated(AController* EliminatedController);
+
+	// DeathContext가 있는 C++ 사망 경로에서 킬러 정보까지 전달한다.
+	void NotifyPlayerEliminatedBy(AController* EliminatedController, AShooterPlayerState* KillerPlayerState);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Match")
 	void RestartGameFlow();
@@ -60,6 +65,12 @@ protected:
 	void EndRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
 	void FreezeRoundTimer();
 
+	/**
+	 * 목표를 달성한 역할의 팀에 라운드 보상을 예약한다. 지급은 라운드 정산 시점이다.
+	 * 파생 모드가 크레딧에 접근하는 유일한 통로이며, 실패해도 게임 규칙 진행은 중단하지 않는다.
+	 */
+	void RecordRoleObjectiveReward(ETeamRole ObjectiveRole);
+
 	ABaseRoundGameState* GetBaseRoundGameState() const;
 	ETeamRole GetRoleForTeam(EGameTeam Team) const;
 	EGameTeam GetTeamForRole(ETeamRole TeamRole) const;
@@ -69,6 +80,9 @@ private:
 	void InitializeGameFlow();
 	void HandlePlayerRosterChanged();
 	void HandleDraftDependenciesReady();
+	bool InitializeRoundParticipantCredits();
+	bool ResetEconomyForNewMatch();
+	void SettleCompletedRoundCredits(int32 RoundNumber, EGameTeam WinningTeam);
 
 	// 상위 흐름은 아래 전이만 따라가면 된다.
 	void TryBeginNextRound();       // Waiting/Ready -> RoundStarting
@@ -103,6 +117,7 @@ private:
 	void SetRoundParticipantInputEnabled(bool bEnabled);
 	void SetPlayerRoundInputEnabled(APlayerController* PlayerController, bool bEnabled) const;
 	UAugmentDraftManager* GetAugmentDraftManager() const;
+	UCreditEconomyManager* GetCreditEconomyManager() const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Players", meta = (ClampMin = "1"))
@@ -159,6 +174,9 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCreditEconomyManager> CreditEconomyManager;
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle RoundTimerHandle;
