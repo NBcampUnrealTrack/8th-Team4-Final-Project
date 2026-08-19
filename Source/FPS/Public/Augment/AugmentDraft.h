@@ -48,6 +48,19 @@ struct FAugmentDraftEligibility
 	TSet<FPrimaryAssetId> SeenDefinitions;
 };
 
+// 증강 추첨 결과
+struct FAugmentOfferResult
+{
+	// 플레이어에게 제시할 증강 후보
+	TArray<FAugmentInventoryEntry> Offers;
+
+	// 증강이 부족 해 못채운 슬롯 수
+	int32 UnfilledSlots = 0;
+
+	// 0번 칸 레벨업 증강 여부
+	bool bLevelUpSlotReserved = false;
+};
+
 // 증강 드래프트 관련 함수
 namespace RogueAugmentDraft
 {
@@ -69,4 +82,17 @@ namespace RogueAugmentDraft
 		const FAugmentDraftRules& Rules,
 		const FAugmentDraftEligibility& State,
 		const UAugmentDefinition& Definition);
+
+	// 후보로 제시될 수 있는 증강 모은 버킷
+	FPS_API void BuildCandidateBucket(
+		const FAugmentDraftRules& Rules,
+		const FAugmentDraftEligibility& State,
+		const TArray<UAugmentDefinition*>& Definitions,
+		TArray<FAugmentInventoryEntry>& OutBucket);
+
+	// 버킷에서 플레이어에게 제시할 증강 뽑기
+	FPS_API FAugmentOfferResult PickOffers(
+		TArray<FAugmentInventoryEntry>& Bucket,
+		int32 CardCount,
+		int32 Seed);
 }
