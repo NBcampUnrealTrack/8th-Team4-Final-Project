@@ -41,4 +41,10 @@ bool UShooterAttributeWidget::TryBindToAbilitySystem()
 	return true;
 }
 
+void UShooterAttributeWidget::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
+{
+}
 
+void UShooterAttributeWidget::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
+{
+}

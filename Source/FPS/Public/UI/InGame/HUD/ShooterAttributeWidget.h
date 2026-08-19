@@ -25,8 +25,8 @@ protected:
 	// ASC를 찾아 성공하면 true 반환 함수
 	bool TryBindToAbilitySystem();
 	
-	virtual void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC) override;
-	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC) override;
+	virtual void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC);
+	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC);
 	
 	TWeakObjectPtr<URogueAbilitySystemComponent> BoundASC;
 	
