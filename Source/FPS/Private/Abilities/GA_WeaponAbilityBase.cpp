@@ -5,14 +5,18 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Combat/CombatComponent.h"
 #include "GameplayTagContainer.h"
-#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 UGA_WeaponAbilityBase::UGA_WeaponAbilityBase()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 }
 
 bool UGA_WeaponAbilityBase::CanActivateAbility(

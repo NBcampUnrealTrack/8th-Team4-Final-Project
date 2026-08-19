@@ -36,6 +36,11 @@ void UShooterUIManagerSubsystem::InitializeUI(
 	RootLayoutInstance->AddToViewport(-1);
 }
 
+bool UShooterUIManagerSubsystem::IsUIInitialized() const
+{
+	return IsValid(RootLayoutInstance) && RootLayoutInstance->IsInViewport();
+}
+
 UCommonActivatableWidget* UShooterUIManagerSubsystem::PushWidgetToLayer(
 	FGameplayTag LayerTag,
 	TSubclassOf<UCommonActivatableWidget> WidgetClass)

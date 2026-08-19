@@ -5,14 +5,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
-#include "TimerManager.h"
 
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UShooterInputConfig;
-class ULoadingScreenSubsystem;
 struct FInputActionValue;
 
 UCLASS()
@@ -44,6 +43,17 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
 
+	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessGameplayInput() const;
+
+	// Data Jack 설치·해체 중에는 이동과 행동만 막고 Look은 공통 게이트만 사용한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessMovementInput() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessActionInput() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -53,19 +63,16 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
 
-	UFUNCTION(Server, Reliable)
-	void ServerNotifyLoadedIntoMatch();
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
+
 private:
-	void StartMatchLoadReadyCheck();
-	void StopMatchLoadReadyCheck();
-	void CheckMatchLoadReady();
+	bool HasDataJackInteractionInputBlock() const;
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	void Input_Move(const FInputActionValue& Value);
@@ -78,9 +85,4 @@ private:
 	void Input_SecondaryWeaponPressed();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
-	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
-
-private:
-	FTimerHandle MatchLoadReadyCheckTimerHandle;
-	bool bNotifiedLoadedIntoMatch = false;
 };

@@ -48,7 +48,7 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 
 void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid())
+	if (!InputTag.IsValid() || HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
 	{
 		return;
 	}
