@@ -134,10 +134,10 @@ namespace
 	// 조건부 증강 누산
 	struct FRogueRuleTotals
 	{
-		float Multiplier     = 1.f;
-		float Flat           = 0.f;
-		float HeadMultiplier = 1.f;
-		float HeadFlat       = 0.f;
+		float BonusRateSum     = 0.f;
+		float Flat             = 0.f;
+		float HeadBonusRateSum = 0.f;
+		float HeadFlat         = 0.f;
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -276,15 +276,16 @@ namespace
 			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
 			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
 
+			// 규칙끼리 합산. 하한은 배율로 환산할 때
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Bucket.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Bucket.HeadFlat       += Rule.FlatDamageBonus;
+				Bucket.HeadBonusRateSum += Rule.DamageBonusRate;
+				Bucket.HeadFlat         += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Bucket.Multiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Bucket.Flat       += Rule.FlatDamageBonus;
+				Bucket.BonusRateSum += Rule.DamageBonusRate;
+				Bucket.Flat         += Rule.FlatDamageBonus;
 			}
 		}
 	}
@@ -530,20 +531,27 @@ namespace
 		}
 	}
 
-	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
-	void ApplyRuleTotals(const FRogueRuleTotals& Totals, FRogueDamageAccumulator& Acc)
+	// 증감률 합을 배율로 환산
+	float ResolveRuleScale(const float BonusRateSum, const float MinScale)
 	{
-		Acc.Scale(Totals.Multiplier);
+		return FMath::Max(MinScale, 1.f + BonusRateSum);
+	}
+
+	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
+	void ApplyRuleTotals(const FRogueRuleTotals& Totals, const float MinScale, FRogueDamageAccumulator& Acc)
+	{
+		Acc.Scale(ResolveRuleScale(Totals.BonusRateSum, MinScale));
 		Acc.AddFlat(Totals.Flat);
 
-		Acc.ScaleHeadshot(Totals.HeadMultiplier);
+		Acc.ScaleHeadshot(ResolveRuleScale(Totals.HeadBonusRateSum, MinScale));
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
 	}
 
 	// 5. 공격 측 조건부 증강
 	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
 	{
-		ApplyRuleTotals(Totals.Dealt, Acc);
+		// 공격 측 하한 0.f
+		ApplyRuleTotals(Totals.Dealt, 0.f, Acc);
 	}
 
 	// 6. 방어 측 상시 증강
@@ -578,7 +586,8 @@ namespace
 			return;
 		}
 
-		ApplyRuleTotals(Totals.Taken, Acc);
+		// 방어 측 하한 1.f - MaxReductionRate
+		ApplyRuleTotals(Totals.Taken, 1.f - MaxReductionRate, Acc);
 	}
 
 	// 8. 최종 대미지를 보호막 대미지와 체력 대미지로 분리

@@ -113,9 +113,10 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
 
-    // 조건을 만족했을 때 곱하는 배율. 1.0 이면 변화 없음
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect", meta = (ClampMin = "0.0"))
-    float DamageMultiplier = 1.f;
+    // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
+    // 상시 증강 GE 의 SetByCaller 와 같은 표기
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    float DamageBonusRate = 0.f;
 
     // 배율 이후에 더하는 고정값. 경감 규칙은 음수
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")

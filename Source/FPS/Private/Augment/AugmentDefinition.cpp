@@ -64,6 +64,14 @@ namespace
 			Reject(LOCTEXT("ContradictoryTags", "Required 와 Blocked 태그가 겹칩니다"));
 		}
 
+		// 조건만 있고 효과가 없는 규칙
+		if (FMath::IsNearlyZero(Rule.DamageBonusRate) && FMath::IsNearlyZero(Rule.FlatDamageBonus))
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("NoEffectRule", "{0}: 증감률과 고정값이 모두 0 입니다. 이 규칙은 아무 효과가 없습니다"),
+				FText::FromString(Where)));
+		}
+
 		return bValid;
 	}
 
