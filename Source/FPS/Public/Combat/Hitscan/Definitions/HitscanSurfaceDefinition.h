@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
-#include "Combat/Hitscan/HitscanTypes.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 #include "HitscanSurfaceDefinition.generated.h"
 
 USTRUCT(BlueprintType)

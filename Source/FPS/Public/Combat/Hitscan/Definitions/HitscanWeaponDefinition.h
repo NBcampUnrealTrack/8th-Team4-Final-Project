@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "Combat/Hitscan/HitscanShotTypes.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 #include "HitscanWeaponDefinition.generated.h"
 
 UCLASS(BlueprintType)
@@ -14,9 +14,7 @@ public:
 	// 정적 판정 정책을 한 발의 요청에 복사한다.
 	void ConfigureShotRequest(
 		FHitscanShotRequest& Request,
-		float MaximumRangeCentimeters,
-		float FallbackSurfaceThicknessCentimeters,
-		float RuntimeDefaultSurfaceHardness) const
+		float MaximumRangeCentimeters) const
 	{
 		Request.WeaponTag = WeaponTag;
 		Request.DamageSettings = DamageSettings;
@@ -25,13 +23,6 @@ public:
 		Request.SurfaceDefinition = SurfaceDefinition.Get();
 
 		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, MaximumRangeCentimeters);
-		Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(
-			0.1f,
-			FallbackSurfaceThicknessCentimeters);
-		if (RuntimeDefaultSurfaceHardness > KINDA_SMALL_NUMBER)
-		{
-			Request.TraceSettings.DefaultSurfaceRule.Hardness = RuntimeDefaultSurfaceHardness;
-		}
 	}
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|Weapon")
@@ -49,7 +40,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Weapon", meta = (AllowPrivateAccess = "true"))
 	FHitscanPenetrationSettings PenetrationSettings;
 
-	// MaximumRange/FallbackThickness/기본 Hardness는 Weapon의 런타임 값이 최종 우선한다.
+	// MaximumRange는 Weapon의 런타임 값이 최종 우선한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Weapon", meta = (AllowPrivateAccess = "true"))
 	FHitscanTraceSettings TraceSettings;
 
