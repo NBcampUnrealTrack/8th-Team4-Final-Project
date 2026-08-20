@@ -225,34 +225,6 @@ void UShooterUIInitComponent::ScheduleInGameUIRetry()
 		true);
 }
 
-void UShooterUIInitComponent::SetAugmentSelectionInput(bool bSelecting)
-{
-	APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
-	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
-	{
-		return;
-	}
-
-	if (bSelecting)
-	{
-		FInputModeGameAndUI InputMode;
-		if (IsValid(AugmentSelectInstance))
-		{
-			InputMode.SetWidgetToFocus(AugmentSelectInstance->TakeWidget());
-		}
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputMode.SetHideCursorDuringCapture(false);
-
-		PlayerController->SetInputMode(InputMode);
-		PlayerController->SetShowMouseCursor(true);
-		return;
-	}
-
-	const FInputModeGameOnly InputMode;
-	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(false);
-}
-
 UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const
 {
 	const UWorld* World = GetWorld();
