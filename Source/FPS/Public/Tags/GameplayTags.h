@@ -98,6 +98,9 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_LethalSurvived);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Team_AllyDeath);
 
+	// 스킬 관련 이벤트
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Skill_Used);
+
 	// 무기 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Fired);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_ReloadStart);

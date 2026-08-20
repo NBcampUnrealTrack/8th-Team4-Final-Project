@@ -3,6 +3,7 @@
 
 #include "Augment/Abilities/RogueGameplayAbility.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Augment/RogueAugmentStatResolver.h"
@@ -37,6 +38,37 @@ UClass* URogueGameplayAbility::GetCooldownEffectClass()
 UClass* URogueGameplayAbility::GetStatusEffectClass()
 {
 	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->StatusEffectClass, TEXT("StatusEffectClass"));
+}
+
+void URogueGameplayAbility::CommitExecute(const FGameplayAbilitySpecHandle Handle,
+                                          const FGameplayAbilityActorInfo* ActorInfo,
+                                          const FGameplayAbilityActivationInfo ActivationInfo)
+{
+	Super::CommitExecute(Handle, ActorInfo, ActivationInfo);
+
+	if (!bBroadcastSkillUsed)
+	{
+		return;
+	}
+
+	// 이벤트 발신은 서버에서만
+	if (!HasAuthority(&ActivationInfo))
+	{
+		return;
+	}
+
+	AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	if (!Avatar)
+	{
+		return;
+	}
+
+	FGameplayEventData Payload;
+	Payload.EventTag   = RogueTags::Event_Skill_Used;
+	Payload.Instigator = Avatar;
+	Payload.Target     = Avatar;
+
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, RogueTags::Event_Skill_Used, Payload);
 }
 
 int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const

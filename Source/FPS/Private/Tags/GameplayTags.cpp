@@ -93,6 +93,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_LethalSurvived,    "Event.Combat.LethalSurvived",    "생존 개입 발동 -> 피격자");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Team_AllyDeath,           "Event.Team.AllyDeath",           "팀원 사망 -> 같은 팀 전원");
 
+	// 스킬 관련 이벤트
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Skill_Used, "Event.Skill.Used", "액티브 스킬 시전 확정 -> 시전자");
+
 	// 무기 관련 이벤트
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Fired,          "Event.Weapon.Fired",          "매 발사");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_ReloadStart,    "Event.Weapon.ReloadStart",    "재장전 시작");

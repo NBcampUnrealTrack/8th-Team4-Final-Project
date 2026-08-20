@@ -24,7 +24,17 @@ public:
 	                           const FGameplayAbilityActorInfo* ActorInfo,
 	                           OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
+	// Event.Skill.Used 발신
+	virtual void CommitExecute(const FGameplayAbilitySpecHandle Handle,
+	                           const FGameplayAbilityActorInfo* ActorInfo,
+	                           const FGameplayAbilityActivationInfo ActivationInfo) override;
+
 protected:
+	// true이면 시전 확정 시 Event.Skill.Used 를 발신
+	// 액티브 증강만 활성화, 이벤트로 발동하는 증강은 액티브 스킬이 아님
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
+	bool bBroadcastSkillUsed = false;
+
 	// 어빌리티 레벨에 해당하는 최대 충전 수
 	int32 GetMaxCharges(int32 Level) const;
 
