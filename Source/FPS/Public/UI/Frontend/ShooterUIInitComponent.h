@@ -50,7 +50,6 @@ protected:
 
 	void RefreshAugmentSelection();
 	void ScheduleInGameUIRetry();
-	void SetAugmentSelectionInput(bool bSelecting);
 	void UnbindRuntimeDelegates();
 
 	// 구독 대상은 소유하지 않으며, PlayerState/GameState 교체 시 다시 바인딩한다.

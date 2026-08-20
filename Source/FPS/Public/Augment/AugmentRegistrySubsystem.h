@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Augment/AugmentTypes.h"
 #include "AugmentRegistrySubsystem.generated.h"
 
 class UAugmentDefinition;
@@ -31,6 +32,9 @@ public:
 	// 애셋 하나가 계열 하나
 	const TArray<TObjectPtr<UAugmentDefinition>>& GetAllDefinitions() const { return AllDefinitions; }
 
+	// 등급별로 미리 걸러둔 목록. 드래프트 후보 스캔 비용 절감용
+	const TArray<UAugmentDefinition*>& GetDefinitionsByTier(EAugmentTier Tier) const;
+
 private:
 	void StartAsyncLoad();
 	void OnCatalogLoaded();
@@ -41,6 +45,9 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UAugmentDefinition>> AllDefinitions;
+
+	// AllDefinitions 를 등급별로 나눈 색인
+	TMap<EAugmentTier, TArray<UAugmentDefinition*>> DefinitionsByTier;
 
 	TSharedPtr<FStreamableHandle> LoadHandle;
 

@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "CommonUserWidget.h"
+#include "ShooterAttributeWidget.h"
 #include "ShooterHealthBar.generated.h"
 
 class UShooterGauge;
@@ -25,7 +25,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnLowHealthStateChanged, bool /*bIsLow*/);
  * 체력 델리게이트가 없으므로 ASC 직접 구독 
  */
 UCLASS()
-class FPS_API UShooterHealthBar : public UCommonUserWidget
+class FPS_API UShooterHealthBar : public UShooterAttributeWidget
 {
 	GENERATED_BODY()
 	
@@ -38,12 +38,8 @@ public:
 	bool IsLowHealth() const;
 	
 protected:
-	virtual auto NativeOnInitialized() -> void override;
+	virtual void NativeOnInitialized() override;
 	virtual void NativeDestruct() override;
-	
-	// ASC 찾는걸 성공하면 true 실패하면 Tick에서 다시 시도
-	// 스킬 슬롯 ASC 찾는 창구를 만든다. 
-	bool TryBindToAbilitySystem();
 	
 	// Attribute Delegate 설정
 	void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC);
@@ -61,6 +57,14 @@ protected:
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Health;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_MaxHealth;
+	// Text 연출용
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_Health_Ghost;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_MaxHealth_Ghost;
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Shield;
 	// WBP_ShooterGauge 
@@ -79,17 +83,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	float LowHealthThreshold = 0.3f;
 	
-	// 구독중인 ASC 죽으면 무효
-	TWeakObjectPtr<URogueAbilitySystemComponent> BoundASC;
-	
 	// 마지막으로 받은 값
 	float CachedHealth = 0.f;
-	float CachedMaxHealth = 0.f;
+	float CachedMaxHealth = 0.f; 
 	float CachedShield = 0.f;
 	float CachedMaxShield = 0.f; 
-	
-	// 저체력 판정에 사용
-	float HealthRatio = 1.f;
 	
 	bool bIsLowHealth = false;
 };

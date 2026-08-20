@@ -34,6 +34,7 @@ void UAugmentRegistrySubsystem::Deinitialize()
 
 	DefinitionsById.Reset();
 	AllDefinitions.Reset();
+	DefinitionsByTier.Reset();
 	bReady = false;
 
 	Super::Deinitialize();
@@ -43,6 +44,14 @@ UAugmentDefinition* UAugmentRegistrySubsystem::FindDefinition(const FPrimaryAsse
 {
 	const TObjectPtr<UAugmentDefinition>* Found = DefinitionsById.Find(DefinitionId);
 	return Found ? *Found : nullptr;
+}
+
+const TArray<UAugmentDefinition*>& UAugmentRegistrySubsystem::GetDefinitionsByTier(const EAugmentTier Tier) const
+{
+	static const TArray<UAugmentDefinition*> Empty;
+
+	const TArray<UAugmentDefinition*>* Found = DefinitionsByTier.Find(Tier);
+	return Found ? *Found : Empty;
 }
 
 void UAugmentRegistrySubsystem::StartAsyncLoad()
@@ -76,6 +85,7 @@ void UAugmentRegistrySubsystem::BuildIndex()
 {
 	DefinitionsById.Reset();
 	AllDefinitions.Reset();
+	DefinitionsByTier.Reset();
 
 	UAssetManager& Manager = UAssetManager::Get();
 
@@ -122,5 +132,6 @@ void UAugmentRegistrySubsystem::BuildIndex()
 		LineOwners.Add(Definition->LineTag, Id);
 		DefinitionsById.Add(Id, Definition);
 		AllDefinitions.Add(Definition);
+		DefinitionsByTier.FindOrAdd(Definition->Tier).Add(Definition);
 	}
 }
