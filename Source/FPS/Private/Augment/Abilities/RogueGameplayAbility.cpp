@@ -1,14 +1,12 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "Augment/RogueGameplayAbility.h"
+#include "Augment/Abilities/RogueGameplayAbility.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "GAS/RogueGASSettings.h"
-#include "Player/BaseRoundPlayerController.h"
-#include "GameFramework/Pawn.h"
 #include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAbility, Log, All);
@@ -39,29 +37,6 @@ UClass* URogueGameplayAbility::GetCooldownEffectClass()
 UClass* URogueGameplayAbility::GetStatusEffectClass()
 {
 	return LoadConfiguredEffectClass(GetDefault<URogueGASSettings>()->StatusEffectClass, TEXT("StatusEffectClass"));
-}
-
-bool URogueGameplayAbility::CanActivateAbility(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayTagContainer* SourceTags,
-	const FGameplayTagContainer* TargetTags,
-	FGameplayTagContainer* OptionalRelevantTags) const
-{
-	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
-	{
-		return false;
-	}
-
-	// 입력 매핑 제거만으로 막지 않고 서버의 어빌리티 활성화 검증에도
-	// 라운드/사망/공통 입력 차단 상태를 반영한다.
-	// Data Jack 등 행동별 상호 배제는 각 구체 증강의 Activation 태그가 결정한다.
-	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
-	const ABaseRoundPlayerController* RoundPlayerController = IsValid(AvatarPawn)
-		? Cast<ABaseRoundPlayerController>(AvatarPawn->GetController())
-		: nullptr;
-
-	return !IsValid(RoundPlayerController) || RoundPlayerController->CanProcessGameplayInput();
 }
 
 int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const

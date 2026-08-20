@@ -13,12 +13,6 @@ class FPS_API URogueGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
-	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
-	                                const FGameplayAbilityActorInfo* ActorInfo,
-	                                const FGameplayTagContainer* SourceTags = nullptr,
-	                                const FGameplayTagContainer* TargetTags = nullptr,
-	                                FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
-
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 
 	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle,
