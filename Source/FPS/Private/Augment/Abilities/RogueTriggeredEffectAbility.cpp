@@ -43,12 +43,24 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 		return;
 	}
 
+	// PDA의 GrantedAbilities 항목에서 해당 GA가 없는 경우
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(Handle, ActorInfo);
+	if (!Entry)
+	{
+		UE_LOG(LogTriggeredAugment, Error,
+			TEXT("[TriggeredAugment] %s 를 부여한 증강 정의에서 자기 GrantedAbilities 항목을 찾지 못했습니다. ")
+			TEXT("PDA 의 AbilityClass 가 이 클래스를 가리키는지 확인하세요"), *GetName());
+
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	// 무기 조건이 안 맞는 이벤트는 발동 X
-	if (!RequiredWeaponTags.IsEmpty())
+	if (!Entry->RequiredWeaponTags.IsEmpty())
 	{
 		const FGameplayTag EventWeaponTag = ResolveEventWeaponTag(Avatar, TriggerEventData);
 
-		if (!EventWeaponTag.MatchesAny(RequiredWeaponTags))
+		if (!EventWeaponTag.MatchesAny(Entry->RequiredWeaponTags))
 		{
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 			return;
@@ -56,7 +68,7 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 	}
 
 	// 이벤트 대상이 없으면 발동 X
-	AActor* TargetActor = ResolveTarget(Avatar, TriggerEventData);
+	AActor* TargetActor = ResolveTarget(Avatar, TriggerEventData, *Entry);
 	if (!TargetActor)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
@@ -72,10 +84,10 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 	}
 
 	// 발동할 GE가 없으면 발동 X
-	if (EffectsToApply.IsEmpty())
+	if (Entry->EffectsToApply.IsEmpty())
 	{
 		UE_LOG(LogTriggeredAugment, Error,
-			TEXT("[TriggeredAugment] %s 의 EffectsToApply 가 비어 있습니다"), *GetName());
+			TEXT("[TriggeredAugment] %s 를 부여한 계열의 EffectsToApply 가 비어 있습니다"), *GetName());
 
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -83,11 +95,11 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 
 	// GE 를 먼저 전부 로드해 두고, 하나라도 실패하면 발동 X
 	TArray<UClass*> EffectClasses;
-	EffectClasses.Reserve(EffectsToApply.Num());
+	EffectClasses.Reserve(Entry->EffectsToApply.Num());
 
-	for (int32 Index = 0; Index < EffectsToApply.Num(); ++Index)
+	for (int32 Index = 0; Index < Entry->EffectsToApply.Num(); ++Index)
 	{
-		UClass* EffectClass = EffectsToApply[Index].LoadSynchronous();
+		UClass* EffectClass = Entry->EffectsToApply[Index].LoadSynchronous();
 		if (!EffectClass)
 		{
 			UE_LOG(LogTriggeredAugment, Error,
@@ -132,6 +144,25 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
+// 이 어빌리티를 부여한 계열의 GrantedAbilities 항목
+const FAugmentGrantedAbility* URogueTriggeredEffectAbility::FindGrantedEntry(
+	const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	const UAugmentDefinition* Definition = Cast<UAugmentDefinition>(GetSourceObject(Handle, ActorInfo));
+	if (!Definition)
+	{
+		return nullptr;
+	}
+
+	const FSoftObjectPath SelfPath(GetClass());
+
+	return Definition->GrantedAbilities.FindByPredicate(
+		[&SelfPath](const FAugmentGrantedAbility& Granted)
+		{
+			return Granted.AbilityClass.ToSoftObjectPath() == SelfPath;
+		});
+}
+
 FGameplayTag URogueTriggeredEffectAbility::ResolveEventWeaponTag(
 	AActor* Avatar, const FGameplayEventData* TriggerEventData) const
 {
@@ -157,9 +188,10 @@ FGameplayTag URogueTriggeredEffectAbility::ResolveEventWeaponTag(
 
 // 효과를 받을 액터 결정
 AActor* URogueTriggeredEffectAbility::ResolveTarget(AActor* Avatar,
-                                                    const FGameplayEventData* TriggerEventData) const
+                                                    const FGameplayEventData* TriggerEventData,
+                                                    const FAugmentGrantedAbility& Entry) const
 {
-	if (!bApplyToEventTarget)
+	if (!Entry.bApplyToEventTarget)
 	{
 		return Avatar;
 	}
@@ -175,7 +207,7 @@ AActor* URogueTriggeredEffectAbility::ResolveTarget(AActor* Avatar,
 		return nullptr;
 	}
 
-	if (bHostileTargetOnly
+	if (Entry.bHostileTargetOnly
 		&& URogueTargetFilter::GetRelation(Avatar, TargetActor) != ERogueTargetRelation::Hostile)
 	{
 		return nullptr;
@@ -212,27 +244,12 @@ EDataValidationResult URogueTriggeredEffectAbility::IsDataValid(FDataValidationC
 {
 	EDataValidationResult Result = Super::IsDataValid(Context);
 
-	if (EffectsToApply.IsEmpty())
-	{
-		Context.AddError(LOCTEXT("NoEffects",
-			"EffectsToApply 가 비어 있습니다. 이벤트가 와도 아무 효과가 없습니다"));
-		Result = EDataValidationResult::Invalid;
-	}
-
-	for (int32 Index = 0; Index < EffectsToApply.Num(); ++Index)
-	{
-		if (EffectsToApply[Index].IsNull())
-		{
-			Context.AddError(FText::Format(
-				LOCTEXT("NullEffect", "EffectsToApply[{0}] 가 비어 있습니다"), Index));
-			Result = EDataValidationResult::Invalid;
-		}
-	}
-
+	// 트리거 태그가 없는 경우
 	if (AbilityTriggers.IsEmpty())
 	{
-		Context.AddWarning(LOCTEXT("NoTriggers",
+		Context.AddError(LOCTEXT("NoTriggers",
 			"Ability Triggers 가 비어 있습니다. Gameplay Event 트리거를 지정하세요"));
+		Result = EDataValidationResult::Invalid;
 	}
 
 	return Result;

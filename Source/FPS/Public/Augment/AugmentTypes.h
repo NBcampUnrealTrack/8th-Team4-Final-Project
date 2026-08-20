@@ -6,6 +6,7 @@
 #include "AugmentTypes.generated.h"
 
 class UAugmentDefinition;
+class UGameplayEffect;
 class URogueGameplayAbility;
 
 
@@ -140,6 +141,25 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
         meta = (Categories = "InputTag.Ability"))
     FGameplayTag InputTag;
+
+    // 이벤트가 왔을 때 적용할 GE
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    TArray<TSoftClassPtr<UGameplayEffect>> EffectsToApply;
+
+    // 켜면 이벤트가 실어 온 대상에게, 끄면 자신에게 적용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bApplyToEventTarget = false;
+
+    // 대상에게 걸 때 적만 허용. 아군 오폭 방지
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bApplyToEventTarget"))
+    bool bHostileTargetOnly = true;
+
+    // 이 무기로 발생한 이벤트만 발동. 비어 있으면 무기 조건 없음.
+    // 대미지 이벤트는 컨텍스트의 무기 태그 사용, 그 외에는 현재 장착 무기 태그 사용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (Categories = "Weapon.Type"))
+    FGameplayTagContainer RequiredWeaponTags;
 };
 
 // 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1
