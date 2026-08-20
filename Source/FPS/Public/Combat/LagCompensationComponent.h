@@ -2,13 +2,15 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "CoreMinimal.h"
+#include "Engine/EngineTypes.h"
 #include "GameplayTagContainer.h"
 #include "LagCompensationComponent.generated.h"
 
 class UBoxComponent;
 class UCombatHitZoneDefinition;
+class UPrimitiveComponent;
 
 USTRUCT()
 struct FLagCompensatedHitBoxInfo
@@ -40,7 +42,29 @@ struct FLagCompensationFramePackage
 	TMap<FName, FLagCompensatedHitBoxInfo> HitBoxes;
 };
 
-UCLASS(ClassGroup=(Combat), meta=(BlueprintSpawnableComponent))
+struct FLagCompensationBoxRestoreState
+{
+	TWeakObjectPtr<UBoxComponent> BoxComponent;
+	FTransform Transform;
+	FVector BoxExtent = FVector::ZeroVector;
+	ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::NoCollision;
+	ECollisionChannel CollisionObjectType = ECC_WorldDynamic;
+	FCollisionResponseContainer CollisionResponses;
+};
+
+struct FLagCompensationPrimitiveRestoreState
+{
+	TWeakObjectPtr<UPrimitiveComponent> PrimitiveComponent;
+	ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::NoCollision;
+};
+
+struct FLagCompensationRewindRestoreState
+{
+	TArray<FLagCompensationBoxRestoreState> HitBoxes;
+	TArray<FLagCompensationPrimitiveRestoreState> DisabledPrimitives;
+};
+
+UCLASS(ClassGroup = (Combat), meta = (BlueprintSpawnableComponent))
 class FPS_API ULagCompensationComponent : public UActorComponent
 {
 	GENERATED_BODY()
@@ -48,10 +72,16 @@ class FPS_API ULagCompensationComponent : public UActorComponent
 public:
 	ULagCompensationComponent();
 
-	bool GetClosestFramePackage(float ServerTime, FLagCompensationFramePackage& OutFramePackage) const;
+	bool GetFramePackageAtTime(float ServerTime, FLagCompensationFramePackage& OutFramePackage) const;
+	bool ApplyFramePackageForTrace(float ServerTime, ECollisionChannel TraceChannel, FLagCompensationRewindRestoreState& OutRestoreState);
+	void RestoreAfterTrace(const FLagCompensationRewindRestoreState& RestoreState);
+	bool TryGetHitZoneForComponent(const UPrimitiveComponent* HitComponent, FGameplayTag& OutHitZoneTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Lag Compensation")
-	int32 GetFrameHistoryCount() const { return FrameHistory.Num(); }
+	int32 GetFrameHistoryCount() const
+	{
+		return FrameHistory.Num();
+	}
 
 protected:
 	virtual void BeginPlay() override;
@@ -66,13 +96,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation")
 	FName HitBoxComponentTag = TEXT("LagCompensationHitBox");
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation")
-	TObjectPtr<UCombatHitZoneDefinition> HitZoneDefinition;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
 	bool bDrawDebugHitBoxes = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
+	bool bDrawDebugHitBoxLabels = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug",
+			  meta = (ClampMin = "0.0"))
 	float DebugDrawDuration = 0.05f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Lag Compensation|Debug")
@@ -84,12 +115,14 @@ private:
 	void SaveFramePackage();
 	void CacheHitBoxComponents();
 	void CreateHitBoxesFromHitZoneDefinition();
+	const UCombatHitZoneDefinition* GetOwnerHitZoneDefinition() const;
 	void CaptureBoxComponent(const UBoxComponent* BoxComponent, FLagCompensationFramePackage& OutFramePackage) const;
 	void CaptureFallbackCapsule(FLagCompensationFramePackage& OutFramePackage) const;
 	void DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const;
 	void TrimFrameHistory(float CurrentServerTime);
 
 	bool ShouldRecordHistory() const;
+	static FColor GetDebugColorForHitZone(const FGameplayTag& HitZoneTag, const FColor& FallbackColor);
 
 	UPROPERTY()
 	TArray<TObjectPtr<UBoxComponent>> CachedHitBoxes;

@@ -4,7 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
-#include "Combat/Hitscan/HitscanWeaponDefinition.h"
+#include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveFloat.h"
 #include "Engine/DataTable.h"
@@ -15,8 +15,6 @@
 
 // ** 임시
 #include "Kismet/GameplayStatics.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
 AWeaponBase::AWeaponBase()
 {
@@ -407,20 +405,11 @@ void AWeaponBase::ResolveHitscanShot(
 	UHitscanResolverSubsystem* Resolver = World->GetSubsystem<UHitscanResolverSubsystem>();
 	if (!IsValid(Resolver))
 	{
-		if (HasAuthority())
-		{
-			UE_LOG(LogWeaponHitscanBridge, Warning, TEXT("Hitscan Resolver subsystem is unavailable. Weapon=%s"), *GetNameSafe(this));
-		}
 		return;
 	}
 
 	if (!IsValid(HitscanDefinition.Get()))
 	{
-		UE_LOG(
-			LogWeaponHitscanBridge,
-			Error,
-			TEXT("HitscanDefinition is required by the GAS damage pipeline. Weapon=%s"),
-			*GetNameSafe(this));
 		return;
 	}
 
@@ -429,11 +418,7 @@ void AWeaponBase::ResolveHitscanShot(
 	(void)ShotDamage;
 
 	FHitscanShotRequest Request;
-	HitscanDefinition->ConfigureShotRequest(
-		Request,
-		TraceRange,
-		DefaultSurfaceThickness,
-		DefaultSurfaceHardness);
+	HitscanDefinition->ConfigureShotRequest(Request, TraceRange);
 
 	Request.InstigatorActor = GetOwner();
 	Request.CauserActor = this;
@@ -474,23 +459,10 @@ void AWeaponBase::ResolveHitscanShot(
 		}
 	}
 
-	Request.bHasDamageDistanceOrigin = true;
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
-	Request.InitialPenetrationPower = FMath::Max(0.0f, PenetrationPower);
-	Request.SurfaceHardnessOverrides = &SurfaceHardnessMap;
 
-	const FHitscanShotResult ShotResult = Resolver->ResolveServerShot(Request);
-	if (HasAuthority() && !ShotResult.bProcessed)
-	{
-		UE_LOG(
-			LogWeaponHitscanBridge,
-			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
-			*GetNameSafe(this),
-			PelletDirections.Num(),
-			TraceRange);
-	}
+	Resolver->ResolveServerShot(Request);
 }

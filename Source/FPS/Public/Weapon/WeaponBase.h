@@ -286,27 +286,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Hitscan")
 	TObjectPtr<UHitscanWeaponDefinition> HitscanDefinition;
 
-	// --- 관통 튜닝 값 ---
-	// B Resolver에 전달할 무기 기본 관통력.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float PenetrationPower = 70.f;
-
 	// B Resolver의 최대 Trace 사거리 (cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float TraceRange = 4000.f;
-
-	// 실제 출구점을 찾지 못했고 UPenetrableSurfaceComponent도 없는 표면에 적용할 Fallback 두께
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float DefaultSurfaceThickness = 10.f;
-
-	// SurfaceDefinition, SurfaceHardnessMap, PenetrableSurfaceComponent에 별도 값이 없을 때 사용할 기본 경도.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float DefaultSurfaceHardness = 0.f;
-
-	// 기존 무기 BP의 EPhysicalSurface별 경도 오버라이드.
-	// 최종 우선순위는 PenetrableSurfaceComponent > 이 맵 > HitscanDefinition/기본 규칙이다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
 
 	// --- 메쉬 ---
 	// 1인칭(로컬 플레이어 본인 시점) 전용 메쉬. bOnlyOwnerSee로 오너만 본다.

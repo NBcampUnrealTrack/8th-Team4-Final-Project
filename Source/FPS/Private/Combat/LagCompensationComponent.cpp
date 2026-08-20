@@ -9,6 +9,7 @@
 #include "DrawDebugHelpers.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
+#include "Interfaces/RogueDamageableTarget.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
 
@@ -31,32 +32,197 @@ void ULagCompensationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 	Super::EndPlay(EndPlayReason);
 }
 
-bool ULagCompensationComponent::GetClosestFramePackage(float ServerTime, FLagCompensationFramePackage& OutFramePackage) const
+bool ULagCompensationComponent::GetFramePackageAtTime(float ServerTime,
+													  FLagCompensationFramePackage& OutFramePackage) const
 {
 	if (FrameHistory.IsEmpty())
 	{
 		return false;
 	}
 
-	int32 ClosestIndex = INDEX_NONE;
-	float ClosestDelta = TNumericLimits<float>::Max();
-
-	for (int32 Index = 0; Index < FrameHistory.Num(); ++Index)
+	if (FrameHistory.Num() == 1 || ServerTime <= FrameHistory[0].ServerTime)
 	{
-		const float Delta = FMath::Abs(FrameHistory[Index].ServerTime - ServerTime);
-		if (Delta < ClosestDelta)
-		{
-			ClosestDelta = Delta;
-			ClosestIndex = Index;
-		}
+		OutFramePackage = FrameHistory[0];
+		return true;
 	}
 
-	if (ClosestIndex == INDEX_NONE)
+	const int32 LastIndex = FrameHistory.Num() - 1;
+	if (ServerTime >= FrameHistory[LastIndex].ServerTime)
+	{
+		OutFramePackage = FrameHistory[LastIndex];
+		return true;
+	}
+
+	for (int32 NewerIndex = 1; NewerIndex < FrameHistory.Num(); ++NewerIndex)
+	{
+		const FLagCompensationFramePackage& NewerFrame = FrameHistory[NewerIndex];
+		if (NewerFrame.ServerTime < ServerTime)
+		{
+			continue;
+		}
+
+		const FLagCompensationFramePackage& OlderFrame = FrameHistory[NewerIndex - 1];
+		const float TimeRange = NewerFrame.ServerTime - OlderFrame.ServerTime;
+		if (TimeRange <= KINDA_SMALL_NUMBER)
+		{
+			OutFramePackage = NewerFrame;
+			return true;
+		}
+
+		const float Alpha = FMath::Clamp((ServerTime - OlderFrame.ServerTime) / TimeRange, 0.0f, 1.0f);
+		OutFramePackage.ServerTime = ServerTime;
+		OutFramePackage.HitBoxes.Reset();
+		OutFramePackage.HitBoxes.Reserve(OlderFrame.HitBoxes.Num());
+
+		for (const TPair<FName, FLagCompensatedHitBoxInfo>& OlderHitBoxPair : OlderFrame.HitBoxes)
+		{
+			const FLagCompensatedHitBoxInfo* NewerHitBox = NewerFrame.HitBoxes.Find(OlderHitBoxPair.Key);
+			if (!NewerHitBox)
+			{
+				continue;
+			}
+
+			FLagCompensatedHitBoxInfo InterpolatedHitBox;
+			InterpolatedHitBox.Location = FMath::Lerp(OlderHitBoxPair.Value.Location, NewerHitBox->Location, Alpha);
+			InterpolatedHitBox.Rotation = FMath::Lerp(OlderHitBoxPair.Value.Rotation, NewerHitBox->Rotation, Alpha);
+			InterpolatedHitBox.BoxExtent = FMath::Lerp(OlderHitBoxPair.Value.BoxExtent, NewerHitBox->BoxExtent, Alpha);
+			InterpolatedHitBox.HitZoneTag =
+				OlderHitBoxPair.Value.HitZoneTag.IsValid() ? OlderHitBoxPair.Value.HitZoneTag : NewerHitBox->HitZoneTag;
+			OutFramePackage.HitBoxes.Add(OlderHitBoxPair.Key, InterpolatedHitBox);
+		}
+
+		return !OutFramePackage.HitBoxes.IsEmpty();
+	}
+
+	return false;
+}
+
+bool ULagCompensationComponent::ApplyFramePackageForTrace(float ServerTime, ECollisionChannel TraceChannel,
+														  FLagCompensationRewindRestoreState& OutRestoreState)
+{
+	OutRestoreState = FLagCompensationRewindRestoreState();
+
+	if (CachedHitBoxes.IsEmpty())
+	{
+		CacheHitBoxComponents();
+	}
+
+	FLagCompensationFramePackage FramePackage;
+	if (!GetFramePackageAtTime(ServerTime, FramePackage) || FramePackage.HitBoxes.IsEmpty())
 	{
 		return false;
 	}
 
-	OutFramePackage = FrameHistory[ClosestIndex];
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor))
+	{
+		return false;
+	}
+
+	TArray<UPrimitiveComponent*> PrimitiveComponents;
+	OwnerActor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (!IsValid(PrimitiveComponent) || PrimitiveComponent->ComponentHasTag(HitBoxComponentTag))
+		{
+			continue;
+		}
+
+		FLagCompensationPrimitiveRestoreState RestoreState;
+		RestoreState.PrimitiveComponent = PrimitiveComponent;
+		RestoreState.CollisionEnabled = PrimitiveComponent->GetCollisionEnabled();
+		OutRestoreState.DisabledPrimitives.Add(RestoreState);
+
+		PrimitiveComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	for (const TObjectPtr<UBoxComponent>& BoxComponent : CachedHitBoxes)
+	{
+		UBoxComponent* HitBox = BoxComponent.Get();
+		if (!IsValid(HitBox))
+		{
+			continue;
+		}
+
+		const FLagCompensatedHitBoxInfo* HitBoxInfo = FramePackage.HitBoxes.Find(HitBox->GetFName());
+		if (!HitBoxInfo)
+		{
+			continue;
+		}
+
+		FLagCompensationBoxRestoreState RestoreState;
+		RestoreState.BoxComponent = HitBox;
+		RestoreState.Transform = HitBox->GetComponentTransform();
+		RestoreState.BoxExtent = HitBox->GetUnscaledBoxExtent();
+		RestoreState.CollisionEnabled = HitBox->GetCollisionEnabled();
+		RestoreState.CollisionObjectType = HitBox->GetCollisionObjectType();
+		RestoreState.CollisionResponses = HitBox->GetCollisionResponseToChannels();
+		OutRestoreState.HitBoxes.Add(RestoreState);
+
+		HitBox->SetWorldLocationAndRotation(HitBoxInfo->Location, HitBoxInfo->Rotation);
+		HitBox->SetBoxExtent(HitBoxInfo->BoxExtent, false);
+		HitBox->SetCollisionObjectType(ECC_WorldDynamic);
+		HitBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+		HitBox->SetCollisionResponseToChannel(TraceChannel, ECR_Block);
+		HitBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+
+	if (OutRestoreState.HitBoxes.IsEmpty())
+	{
+		RestoreAfterTrace(OutRestoreState);
+		OutRestoreState = FLagCompensationRewindRestoreState();
+		return false;
+	}
+
+	return true;
+}
+
+void ULagCompensationComponent::RestoreAfterTrace(const FLagCompensationRewindRestoreState& RestoreState)
+{
+	for (const FLagCompensationBoxRestoreState& HitBoxState : RestoreState.HitBoxes)
+	{
+		UBoxComponent* HitBox = HitBoxState.BoxComponent.Get();
+		if (!IsValid(HitBox))
+		{
+			continue;
+		}
+
+		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		HitBox->SetWorldTransform(HitBoxState.Transform);
+		HitBox->SetBoxExtent(HitBoxState.BoxExtent, false);
+		HitBox->SetCollisionObjectType(HitBoxState.CollisionObjectType);
+		HitBox->SetCollisionResponseToChannels(HitBoxState.CollisionResponses);
+		HitBox->SetCollisionEnabled(HitBoxState.CollisionEnabled);
+	}
+
+	for (const FLagCompensationPrimitiveRestoreState& PrimitiveState : RestoreState.DisabledPrimitives)
+	{
+		UPrimitiveComponent* PrimitiveComponent = PrimitiveState.PrimitiveComponent.Get();
+		if (!IsValid(PrimitiveComponent))
+		{
+			continue;
+		}
+
+		PrimitiveComponent->SetCollisionEnabled(PrimitiveState.CollisionEnabled);
+	}
+}
+
+bool ULagCompensationComponent::TryGetHitZoneForComponent(const UPrimitiveComponent* HitComponent,
+														  FGameplayTag& OutHitZoneTag) const
+{
+	OutHitZoneTag = FGameplayTag();
+	if (!IsValid(HitComponent))
+	{
+		return false;
+	}
+
+	const FGameplayTag* HitZoneTag = HitBoxZoneTags.Find(HitComponent->GetFName());
+	if (!HitZoneTag || !HitZoneTag->IsValid())
+	{
+		return false;
+	}
+
+	OutHitZoneTag = *HitZoneTag;
 	return true;
 }
 
@@ -77,12 +243,8 @@ void ULagCompensationComponent::StartRecording()
 
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimer(
-			SnapshotTimerHandle,
-			this,
-			&ThisClass::SaveFramePackage,
-			SnapshotInterval,
-			true);
+		World->GetTimerManager().SetTimer(SnapshotTimerHandle, this, &ThisClass::SaveFramePackage, SnapshotInterval,
+										  true);
 	}
 }
 
@@ -170,7 +332,8 @@ void ULagCompensationComponent::CacheHitBoxComponents()
 
 void ULagCompensationComponent::CreateHitBoxesFromHitZoneDefinition()
 {
-	if (!IsValid(HitZoneDefinition.Get()))
+	const UCombatHitZoneDefinition* OwnerHitZoneDefinition = GetOwnerHitZoneDefinition();
+	if (!IsValid(OwnerHitZoneDefinition))
 	{
 		return;
 	}
@@ -187,7 +350,7 @@ void ULagCompensationComponent::CreateHitBoxesFromHitZoneDefinition()
 		return;
 	}
 
-	for (const FCombatHitZoneRule& ZoneRule : HitZoneDefinition->GetZoneRules())
+	for (const FCombatHitZoneRule& ZoneRule : OwnerHitZoneDefinition->GetZoneRules())
 	{
 		if (!ZoneRule.HitZoneTag.IsValid())
 		{
@@ -223,9 +386,19 @@ void ULagCompensationComponent::CreateHitBoxesFromHitZoneDefinition()
 	}
 }
 
-void ULagCompensationComponent::CaptureBoxComponent(
-	const UBoxComponent* BoxComponent,
-	FLagCompensationFramePackage& OutFramePackage) const
+const UCombatHitZoneDefinition* ULagCompensationComponent::GetOwnerHitZoneDefinition() const
+{
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->Implements<URogueDamageableTarget>())
+	{
+		return nullptr;
+	}
+
+	return IRogueDamageableTarget::Execute_GetCombatHitZoneDefinition(Owner);
+}
+
+void ULagCompensationComponent::CaptureBoxComponent(const UBoxComponent* BoxComponent,
+													FLagCompensationFramePackage& OutFramePackage) const
 {
 	if (!IsValid(BoxComponent))
 	{
@@ -261,34 +434,30 @@ void ULagCompensationComponent::CaptureFallbackCapsule(FLagCompensationFramePack
 	FLagCompensatedHitBoxInfo HitBoxInfo;
 	HitBoxInfo.Location = CapsuleComponent->GetComponentLocation();
 	HitBoxInfo.Rotation = CapsuleComponent->GetComponentRotation();
-	HitBoxInfo.BoxExtent = FVector(
-		CapsuleComponent->GetScaledCapsuleRadius(),
-		CapsuleComponent->GetScaledCapsuleRadius(),
-		CapsuleComponent->GetScaledCapsuleHalfHeight());
+	HitBoxInfo.BoxExtent =
+		FVector(CapsuleComponent->GetScaledCapsuleRadius(), CapsuleComponent->GetScaledCapsuleRadius(),
+				CapsuleComponent->GetScaledCapsuleHalfHeight());
 	HitBoxInfo.HitZoneTag = RogueTags::Hit_Zone_Torso;
 
 	OutFramePackage.HitBoxes.Add(CapsuleComponent->GetFName(), HitBoxInfo);
 }
 
-namespace
+FColor ULagCompensationComponent::GetDebugColorForHitZone(const FGameplayTag& HitZoneTag, const FColor& FallbackColor)
 {
-	FColor GetDebugColorForHitZone(const FGameplayTag& HitZoneTag, const FColor& FallbackColor)
+	if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
 	{
-		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Head))
-		{
-			return FColor::Red;
-		}
-		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Torso))
-		{
-			return FColor::Green;
-		}
-		if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Limb))
-		{
-			return FColor::Blue;
-		}
-
-		return FallbackColor;
+		return FColor::Red;
 	}
+	if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Torso))
+	{
+		return FColor::Green;
+	}
+	if (HitZoneTag.MatchesTag(RogueTags::Hit_Zone_Limb))
+	{
+		return FColor::Blue;
+	}
+
+	return FallbackColor;
 }
 
 void ULagCompensationComponent::DrawFramePackage(const FLagCompensationFramePackage& FramePackage) const
@@ -314,29 +483,19 @@ void ULagCompensationComponent::DrawFramePackage(const FLagCompensationFramePack
 	{
 		const FLagCompensatedHitBoxInfo& HitBoxInfo = HitBoxPair.Value;
 		const FColor HitBoxColor = GetDebugColorForHitZone(HitBoxInfo.HitZoneTag, DebugDrawColor);
-		DrawDebugBox(
-			World,
-			HitBoxInfo.Location,
-			HitBoxInfo.BoxExtent,
-			FQuat(HitBoxInfo.Rotation),
-			HitBoxColor,
-			false,
-			DebugDrawDuration);
+		DrawDebugBox(World, HitBoxInfo.Location, HitBoxInfo.BoxExtent, FQuat(HitBoxInfo.Rotation), HitBoxColor, false,
+					 DebugDrawDuration);
 
-		FString Label = HitBoxPair.Key.ToString();
-		if (HitBoxInfo.HitZoneTag.IsValid())
+		if (bDrawDebugHitBoxLabels)
 		{
-			Label = FString::Printf(TEXT("%s | %s"), *HitBoxPair.Key.ToString(), *HitBoxInfo.HitZoneTag.ToString());
-		}
+			FString Label = HitBoxPair.Key.ToString();
+			if (HitBoxInfo.HitZoneTag.IsValid())
+			{
+				Label = FString::Printf(TEXT("%s | %s"), *HitBoxPair.Key.ToString(), *HitBoxInfo.HitZoneTag.ToString());
+			}
 
-		DrawDebugString(
-			World,
-			HitBoxInfo.Location,
-			Label,
-			nullptr,
-			HitBoxColor,
-			DebugDrawDuration,
-			false);
+			DrawDebugString(World, HitBoxInfo.Location, Label, nullptr, HitBoxColor, DebugDrawDuration, false);
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 
 #include "Combat/Hitscan/HitscanHitContextBuilder.h"
+#include "Combat/LagCompensationRewindScope.h"
 #include "Engine/World.h"
 #include "GAS/Damage/RogueDamageSubsystem.h"
 #include "GameFramework/Actor.h"
@@ -35,6 +36,16 @@ void UHitscanResolverSubsystem::ResolveImpactSamples(
 	const FHitscanShotRequest& Request,
 	TArray<FHitscanImpactSample>& OutImpactSamples) const
 {
+	if (Request.ClientFireServerTime > 0.0f)
+	{
+		FLagCompensationRewindScope RewindScope(World, Request);
+		if (RewindScope.IsActive())
+		{
+			FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples);
+			return;
+		}
+	}
+
 	FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples);
 }
 
