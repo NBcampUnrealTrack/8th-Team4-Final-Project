@@ -1,6 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Character/ShooterCharacter.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
@@ -9,10 +8,10 @@
 #include "Combat/CombatComponent.h"
 #include "Combat/LagCompensationComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameMode/BaseRoundGameMode.h"
-#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameMode/BaseRoundGameMode.h"
 #include "InputActionValue.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
@@ -20,7 +19,8 @@
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(
+		  ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -74,23 +74,19 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 
 	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
 	{
-		UE_LOG(
-			LogShooterCharacter,
-			Error,
-			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
-			*GetNameSafe(this),
-			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
-			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+		UE_LOG(LogShooterCharacter, Error,
+			   TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. "
+					"Primary=%s Secondary=%s"),
+			   *GetNameSafe(this), *GetNameSafe(DefaultPrimaryWeaponClass.Get()),
+			   *GetNameSafe(DefaultSecondaryWeaponClass.Get()));
 		return false;
 	}
 
-	UE_LOG(
-		LogShooterCharacter,
-		Log,
-		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+	UE_LOG(LogShooterCharacter, Log,
+		   TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s "
+				"Secondary=%s"),
+		   *GetNameSafe(this), *GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
+		   *GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
 
 	return true;
 }
@@ -146,6 +142,11 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 	{
 		RoundGameMode->NotifyPlayerEliminated(OwningController);
 	}
+}
+
+UCombatHitZoneDefinition* AShooterCharacter::GetCombatHitZoneDefinition_Implementation() const
+{
+	return CombatHitZoneDefinition.Get();
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const

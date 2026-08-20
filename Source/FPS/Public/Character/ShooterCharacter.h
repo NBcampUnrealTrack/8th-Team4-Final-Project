@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Interfaces/RogueDamageableTarget.h"
@@ -12,6 +12,7 @@
 
 class UAbilitySystemComponent;
 class UCameraComponent;
+class UCombatHitZoneDefinition;
 class UCombatComponent;
 class UInputAction;
 class ULagCompensationComponent;
@@ -21,7 +22,10 @@ class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
-class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface, public IRogueDamageableTarget
+class FPS_API AShooterCharacter : public ACharacter,
+								  public IPlayerInterface,
+								  public IAbilitySystemInterface,
+								  public IRogueDamageableTarget
 {
 	GENERATED_BODY()
 
@@ -43,6 +47,7 @@ public:
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
+	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
@@ -88,6 +93,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<ULagCompensationComponent> LagCompensation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Hit Zone")
+	TObjectPtr<UCombatHitZoneDefinition> CombatHitZoneDefinition;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
