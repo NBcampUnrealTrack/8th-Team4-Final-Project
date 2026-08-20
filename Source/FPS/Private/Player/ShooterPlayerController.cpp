@@ -80,6 +80,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 		}
 
 		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+		LoadingScreenSubsystem->SetLoadingProgress(0.5f);
 	}
 
 	StartMatchLoadReadyCheck();
