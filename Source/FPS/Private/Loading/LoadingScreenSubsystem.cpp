@@ -5,6 +5,12 @@
 #include "GameMode/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 
+namespace
+{
+	constexpr float MapEnteredProgress = 0.7f;
+	constexpr float ReadyGateProgressRange = 0.25f;
+}
+
 void ULoadingScreenSubsystem::Deinitialize()
 {
 	UnbindFromRoundGameState();
@@ -95,12 +101,19 @@ void ULoadingScreenSubsystem::SyncWithRoundGameState()
 		return;
 	}
 
-	SetLoadingProgress(FMath::Max(CurrentProgress, BoundRoundGameState->GetLoadingProgress()));
-
 	const EGameFlowPhase Phase = BoundRoundGameState->GetGameFlowPhase();
+	if (Phase == EGameFlowPhase::WaitingForPlayers
+		|| Phase == EGameFlowPhase::WaitingForPlayersReady)
+	{
+		const float FlowProgress = MapEnteredProgress + BoundRoundGameState->GetLoadingProgress() * ReadyGateProgressRange;
+		SetLoadingProgress(FMath::Max(CurrentProgress, FlowProgress));
+		return;
+	}
+
 	if (Phase == EGameFlowPhase::AugmentSelecting
 		|| Phase == EGameFlowPhase::RoundInProgress)
 	{
+		SetLoadingProgress(1.0f);
 		HideLoadingScreen();
 	}
 }
