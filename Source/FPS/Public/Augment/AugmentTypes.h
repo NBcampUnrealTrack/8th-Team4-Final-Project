@@ -24,16 +24,16 @@ enum class EAugmentTier : uint8
 UENUM(BlueprintType)
 enum class EAugmentCategory : uint8
 {
-    Stat            UMETA(DisplayName = "신체강화"),
-    Passive         UMETA(DisplayName = "지속효과"),
-    Active          UMETA(DisplayName = "액티브스킬"),
-    Util            UMETA(DisplayName = "전술유틸리티"),
-    Weapon_General  UMETA(DisplayName = "총기공통"),
-    Weapon_Rifle    UMETA(DisplayName = "돌격소총"),
-    Weapon_Sniper   UMETA(DisplayName = "저격소총"),
-    Weapon_Shotgun  UMETA(DisplayName = "산탄총"),
-    Weapon_Pistol   UMETA(DisplayName = "권총"),
-    Weapon_Knife    UMETA(DisplayName = "전술칼")
+    None            = 0 UMETA(Hidden),
+    Passive         = 1 UMETA(DisplayName = "지속효과"),
+    Active          = 2 UMETA(DisplayName = "액티브스킬"),
+    Util            = 3 UMETA(DisplayName = "전술유틸리티"),
+    Weapon_General  = 4 UMETA(DisplayName = "총기공통"),
+    Weapon_Rifle    = 5 UMETA(DisplayName = "돌격소총"),
+    Weapon_Sniper   = 6 UMETA(DisplayName = "저격소총"),
+    Weapon_Shotgun  = 7 UMETA(DisplayName = "산탄총"),
+    Weapon_Pistol   = 8 UMETA(DisplayName = "권총"),
+    Weapon_Knife    = 9 UMETA(DisplayName = "전술칼")
 };
 
 // 조건부 대미지 규칙이 걸리는 방향

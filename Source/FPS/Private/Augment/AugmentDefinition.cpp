@@ -171,6 +171,14 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
+	// EAugmentCategory::None인 경우, 기존의 Stat 자리가 삭제됨
+	if (AugmentCategory == EAugmentCategory::None)
+	{
+		Context.AddError(LOCTEXT("NoCategory",
+			"AugmentCategory 가 비어 있습니다. 기획 시트의 '타입(Category)' 열에 맞춰 고르세요"));
+		MarkInvalid();
+	}
+
 	// 레벨 배열이 빈 증강은 상점 후보에서 제외
 	if (Levels.IsEmpty())
 	{
