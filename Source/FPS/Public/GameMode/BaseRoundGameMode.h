@@ -84,6 +84,15 @@ private:
 	bool ResetEconomyForNewMatch();
 	void SettleCompletedRoundCredits(int32 RoundNumber, EGameTeam WinningTeam);
 
+	// 개별 플레이어의 미확정 거래를 같은 정책과 로그 형식으로 정리한다.
+	void RefundPendingShopPurchasesForPlayer(
+		AShooterPlayerState* PlayerState,
+		const TCHAR* Context);
+
+	// 흐름이 되감기거나 끝날 때 모든 플레이어의 미확정 상점 결제를 되돌린다.
+	// 거래가 자기가 열린 페이즈를 넘기지 않도록 라운드/매치 경계에서 호출한다.
+	void RefundPendingShopPurchases(const TCHAR* Context);
+
 	// 상위 흐름은 아래 전이만 따라가면 된다.
 	void TryBeginNextRound();       // Waiting/Ready -> RoundStarting
 	void OpenNextRound();           // RoundStarting -> Draft 또는 Combat
@@ -149,8 +158,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment")
 	bool bEnableAugmentDraft = true;
 
+	// AugmentSelecting은 상점 구매와 증강 선택이 함께 열리는 30초 준비 구간이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment", meta = (EditCondition = "bEnableAugmentDraft", ClampMin = "0.1"))
-	float AugmentSelectionDuration = 10.0f;
+	float AugmentSelectionDuration = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment", meta = (EditCondition = "bEnableAugmentDraft", ClampMin = "1", ClampMax = "8"))
 	int32 AugmentOfferCount = 3;

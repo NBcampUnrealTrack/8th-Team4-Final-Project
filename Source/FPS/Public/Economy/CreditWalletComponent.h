@@ -12,7 +12,8 @@ enum class ECreditChangeReason : uint8
 	NewMatchReset UMETA(DisplayName = "New Match Reset"),
 	RoundWin UMETA(DisplayName = "Round Win"),
 	RoundLoss UMETA(DisplayName = "Round Loss"),
-	Purchase UMETA(DisplayName = "Purchase")
+	Purchase UMETA(DisplayName = "Purchase"),
+	PurchaseRefund UMETA(DisplayName = "Purchase Refund")
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(

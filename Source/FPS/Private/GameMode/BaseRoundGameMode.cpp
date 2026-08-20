@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Shop/ShopComponent.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogBaseRoundGameMode);
@@ -41,6 +42,12 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
+
+	// Super::Logout 이전에는 PlayerState와 Wallet이 유효하므로 미확정 거래를 정상 환불할 수 있다.
+	if (IsValid(ExitingPlayerState))
+	{
+		RefundPendingShopPurchasesForPlayer(ExitingPlayerState, TEXT("logout"));
+	}
 
 	if (Phase == EGameFlowPhase::RoundInProgress)
 	{
@@ -234,7 +241,8 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		return;
 	}
 
-	// 라운드 모드는 다음 라운드를 열 때 참가자를 한 번에 스폰한다.
+	// 의도적으로 Super를 호출하지 않는다. 라운드 모드는 입장 시 즉시 스폰하지 않고,
+	// 팀 초기화 후 다음 라운드 준비 단계에서 참가자를 한 번에 스폰한다.
 	AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>();
 	if (IsValid(PlayerState))
 	{
@@ -455,16 +463,124 @@ bool ABaseRoundGameMode::ResetEconomyForNewMatch()
 	}
 
 	TArray<AShooterPlayerState*> MatchPlayers;
+	TArray<UShopComponent*> MatchShops;
 	MatchPlayers.Reserve(RoundGameState->PlayerArray.Num());
+	MatchShops.Reserve(RoundGameState->PlayerArray.Num());
+
+	// 1단계: 아무것도 바꾸지 않고 상점과 경제를 모두 검증한다.
+	// 거래 파기는 되돌릴 수 없으므로 실패 가능성이 남아 있는 동안에는 실행하지 않는다.
 	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
 	{
-		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState))
 		{
-			MatchPlayers.Add(ShooterPlayerState);
+			continue;
+		}
+
+		UShopComponent* Shop = ShooterPlayerState->GetShopComponent();
+		FString ShopFailureReason;
+		if (!IsValid(Shop) || !Shop->CanDiscardAllActiveTransactionsForNewMatch(&ShopFailureReason))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error,
+				TEXT("Cannot reset economy because shop transactions could not be closed for %s: %s."),
+				*GetNameSafe(ShooterPlayerState),
+				IsValid(Shop) ? *ShopFailureReason : TEXT("the shop component is missing"));
+			return false;
+		}
+
+		MatchPlayers.Add(ShooterPlayerState);
+		MatchShops.Add(Shop);
+	}
+
+	FString EconomyFailureReason;
+	if (!Economy->CanResetForNewMatch(MatchPlayers, &EconomyFailureReason))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("Cannot reset economy for a new match: %s."),
+			*EconomyFailureReason);
+		return false;
+	}
+
+	// 2단계: 검증이 끝났으므로 거래를 닫고 Wallet을 초기화한다.
+	// 사전 검증을 통과했으므로 여기서 중단하면 일부만 파기된 채 Wallet 초기화를 놓친다.
+	// 실패는 버그로 보고, 나머지 상점의 파기와 Wallet 초기화는 끝까지 진행한다.
+	bool bAllTransactionsDiscarded = true;
+
+	for (UShopComponent* Shop : MatchShops)
+	{
+		if (!ensureMsgf(
+			IsValid(Shop) && Shop->DiscardAllActiveTransactionsForNewMatch(),
+			TEXT("Shop transaction discard failed for %s after validation succeeded."),
+			IsValid(Shop) ? *GetNameSafe(Shop->GetOwner()) : TEXT("None")))
+		{
+			bAllTransactionsDiscarded = false;
+			continue;
 		}
 	}
 
-	return Economy->ResetForNewMatch(MatchPlayers);
+	const bool bEconomyReset = Economy->ResetForNewMatch(MatchPlayers);
+	return bEconomyReset && bAllTransactionsDiscarded;
+}
+
+void ABaseRoundGameMode::RefundPendingShopPurchasesForPlayer(
+	AShooterPlayerState* PlayerState,
+	const TCHAR* Context)
+{
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	const TCHAR* CleanupContext = Context ? Context : TEXT("unspecified cleanup");
+	UShopComponent* Shop = PlayerState->GetShopComponent();
+	if (!IsValid(Shop))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("Cannot refund shop transactions for %s during %s: ShopComponent is missing."),
+			*GetNameSafe(PlayerState),
+			CleanupContext);
+		return;
+	}
+
+	const int32 UnresolvedTransactionCount = Shop->GetActiveTransactionCount();
+	if (UnresolvedTransactionCount == 0)
+	{
+		return;
+	}
+
+	if (!Shop->RefundAllActiveTransactions())
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("Failed to refund shop transactions for %s during %s. Remaining=%d."),
+			*GetNameSafe(PlayerState),
+			CleanupContext,
+			Shop->GetActiveTransactionCount());
+		return;
+	}
+
+	UE_LOG(LogBaseRoundGameMode, Verbose,
+		TEXT("Refunded %d unresolved shop transaction(s) for %s during %s."),
+		UnresolvedTransactionCount,
+		*GetNameSafe(PlayerState),
+		CleanupContext);
+}
+
+void ABaseRoundGameMode::RefundPendingShopPurchases(const TCHAR* Context)
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (IsValid(ShooterPlayerState))
+		{
+			RefundPendingShopPurchasesForPlayer(ShooterPlayerState, Context);
+		}
+	}
 }
 
 void ABaseRoundGameMode::SettleCompletedRoundCredits(const int32 RoundNumber, const EGameTeam WinningTeam)

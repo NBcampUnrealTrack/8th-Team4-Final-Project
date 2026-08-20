@@ -320,6 +320,10 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	PendingRoundContext.Reset();
 	bRoundOpeningSuspended = false;
 
+	// 다음 매치의 ResetEconomyForNewMatch가 어차피 파기하지만, 결과 화면에서
+	// 잔액이 차감된 채로 보이지 않도록 매치 종료 시점에 원장을 비운다.
+	RefundPendingShopPurchases(TEXT("match end"));
+
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
 		DraftManager->CancelDraft();
@@ -335,6 +339,10 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 	ClearAllFlowTimers();
 	SetAllPlayersRoundInputEnabled(false);
 	SpawnPreparationRetryCount = 0;
+
+	// 상점 창은 AugmentSelecting에서 열린다. 라운드가 되감기면 같은 매치이므로
+	// Wallet 초기화가 없다. 미확정 결제를 여기서 되돌려 원장을 비운다.
+	RefundPendingShopPurchases(TEXT("round rollback"));
 
 	if (UCreditEconomyManager* Economy = GetCreditEconomyManager())
 	{

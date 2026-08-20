@@ -1,4 +1,4 @@
-#include "Economy/CreditWalletComponent.h"
+ï»¿#include "Economy/CreditWalletComponent.h"
 
 #include "GameFramework/Actor.h"
 #include "Net/UnrealNetwork.h"
@@ -15,7 +15,7 @@ void UCreditWalletComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// Å©·¹µ÷Àº ¼ÒÀ¯ ÇÃ·¹ÀÌ¾î¿¡°Ô¸¸ º¹Á¦ÇÏ°í º¯°æ ½Ã Ç×»ó OnRep¸¦ È£ÃâÇÑ´Ù.
+	// í¬ë ˆë”§ì€ ì†Œìœ  í”Œë ˆì´ì–´ì—ê²Œë§Œ ë³µì œí•˜ê³  ë³€ê²½ ì‹œ í•­ìƒ OnRepë¥¼ í˜¸ì¶œí•œë‹¤.
 	DOREPLIFETIME_CONDITION_NOTIFY(
 		UCreditWalletComponent,
 		Credits,
@@ -68,7 +68,7 @@ bool UCreditWalletComponent::TrySpendCredits(const int32 Cost, const ECreditChan
 
 void UCreditWalletComponent::OnRep_Credits(const int32 PreviousCredits)
 {
-	// Å¬¶óÀÌ¾ðÆ®¿¡¼­´Â º¹Á¦µÈ °ª º¯°æÀ» µ¿ÀÏÇÑ µ¨¸®°ÔÀÌÆ®·Î Àü´ÞÇÑ´Ù.
+	// í´ë¼ì´ì–¸íŠ¸ì—ì„œëŠ” ë³µì œëœ ê°’ ë³€ê²½ì„ ë™ì¼í•œ ë¸ë¦¬ê²Œì´íŠ¸ë¡œ ì „ë‹¬í•œë‹¤.
 	OnCreditsChanged.Broadcast(PreviousCredits, Credits);
 }
 
@@ -97,7 +97,7 @@ void UCreditWalletComponent::SetCreditsInternal(const int32 NewCredits, const EC
 		Credits,
 		*UEnum::GetValueAsString(Reason));
 
-	// ¼­¹ö¿¡¼­µµ Áï½Ã µ¿ÀÏÇÑ º¯°æ ÀÌº¥Æ®¸¦ ¹ß»ý½ÃÄÑ UI/½Ã½ºÅÛÀÌ ÇÑ °æ·Î·Î Ã³¸®ÇÏ°Ô ÇÑ´Ù.
+	// ì„œë²„ì—ì„œë„ ì¦‰ì‹œ ë™ì¼í•œ ë³€ê²½ ì´ë²¤íŠ¸ë¥¼ ë°œìƒì‹œì¼œ UI/ì‹œìŠ¤í…œì´ í•œ ê²½ë¡œë¡œ ì²˜ë¦¬í•˜ê²Œ í•œë‹¤.
 	OnCreditsChanged.Broadcast(PreviousCredits, Credits);
 
 	GetOwner()->ForceNetUpdate();
