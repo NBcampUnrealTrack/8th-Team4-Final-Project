@@ -67,6 +67,13 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 		return FRogueDamageResult();
 	}
 
+	// 무적 태그 검사, 자가 피해는 무적 태그를 무시
+	if (Params.SourceTag != RogueTags::Damage_Source_SelfCost
+		&& DamageTarget.ASC->HasMatchingGameplayTag(RogueTags::State_Combat_Invulnerable))
+	{
+		return FRogueDamageResult();
+	}
+
 	// 대미지 GE 확보
 	UClass* DamageGEClass = ResolveDamageEffectClass();
 	if (!DamageGEClass)
