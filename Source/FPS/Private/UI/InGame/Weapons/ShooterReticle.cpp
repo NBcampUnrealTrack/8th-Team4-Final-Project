@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Weapon/WeaponBase.h"
 
 static void ConfigureCenteredCanvasSlot(UWidget* Widget)
 {
@@ -101,8 +102,8 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 float UShooterReticle::GetSpreadDegrees() const
 {
-	// TODO: WeaponBase::GetCurrentSpreadDegrees() 탄퍼짐을 받아온다.
-	return 0.f;
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return Weapon ? Weapon->GetCurrentSpreadDegrees() : 0.f;
 }
 
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const

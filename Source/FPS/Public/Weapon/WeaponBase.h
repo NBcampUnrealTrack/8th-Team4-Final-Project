@@ -143,6 +143,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
 
+	// 지금 이 순간 실제로 적용 중인 탄퍼짐 각도(도). ADS/연사 블룸/이동 배율/증강까지 전부 반영된 최종값.
+	// 크로스헤어 UI(UShooterReticle) 등 외부에서 화면 스프레드를 그리는 용도로 공개한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetCurrentSpreadDegrees() const { return CalculateCurrentSpreadDegrees(); }
+
 	// B Hitscan Resolver에 넘어가는 실제 Trace 사거리(cm). GetFinalMeleeRange 배선 전 기본값.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetTraceRange() const { return TraceRange; }
