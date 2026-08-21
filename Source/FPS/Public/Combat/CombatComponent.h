@@ -88,6 +88,12 @@ public:
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Combat")
 	bool bAiming = false;
 
+	// GA_ADS가 로컬 예측으로 호출한다(WeaponBase::SetEffectiveRPM과 같은 패턴 - 서버/클라 양쪽에서
+	// 그대로 호출되고, 서버 값이 Replicated로 최종 동기화된다). ShooterAnimInstance가 bAiming을 읽어
+	// 조준 블렌드에 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	void SetAiming(bool bNewAiming);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

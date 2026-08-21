@@ -213,6 +213,10 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 	{
 		PreviousWeapon->SetADS(false);
 	}
+	// GA_ADS가 이 스왑을 못 보고(예: 다른 입력으로 트리거된 스왑) 여전히 조준 애니메이션을 유지한 채로
+	// 남지 않도록, 스왑 시점에 조준 상태를 즉시 해제한다. GA_ADS가 나중에 입력 해제로 정상 종료돼도
+	// 자신이 캐싱해둔 이전 무기에 SetADS(false)를 한 번 더 호출할 뿐이라 문제 없다.
+	SetAiming(false);
 
 	ApplyCurrentWeapon(TargetWeapon);
 	BeginEquipCycle(CurrentWeapon.Get());
@@ -272,6 +276,11 @@ FGameplayTag UCombatComponent::GetCurrentWeaponTag() const
 bool UCombatComponent::IsWeaponReady() const
 {
 	return IsValid(CurrentWeapon.Get()) && !bIsCycling;
+}
+
+void UCombatComponent::SetAiming(const bool bNewAiming)
+{
+	bAiming = bNewAiming;
 }
 
 void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)

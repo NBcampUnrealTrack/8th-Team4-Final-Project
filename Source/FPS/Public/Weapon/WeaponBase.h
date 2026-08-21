@@ -123,6 +123,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsADS() const { return bIsADS; }
 
+	// 이 무기가 애초에 ADS를 지원하는지(샷건/칼 등은 false). GA_ADS가 활성화 전에 확인한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	bool CanADS() const { return bCanADS; }
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
