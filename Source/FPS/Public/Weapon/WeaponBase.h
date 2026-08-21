@@ -110,6 +110,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	FGameplayTag GetWeaponTag() const;
 
+	// 이 무기를 장착했을 때 ASC에 붙는 State.Weapon.Equipped.* 태그(예: State.Weapon.Equipped.Firearm.Pistol).
+	// 무기별 BP에서 값을 지정한다. GA_SwitchWeapon과 초기 로드아웃이 CombatComponent 경유로 이 값을 읽어
+	// RogueAbilitySystemComponent::SetEquippedWeaponType에 전달한다 (WeaponBase는 ASC를 직접 모른다).
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	FGameplayTag GetEquippedStateTag() const { return EquippedStateTag; }
+
 	// 1인칭(캐릭터 팔)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh1P에 붙인다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
@@ -189,6 +195,10 @@ protected:
 	void Multicast_PlayFireSound(FVector Location);
 
 protected:
+	// GetEquippedStateTag() 참고. 무기별 BP 기본값에서 지정.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon")
+	FGameplayTag EquippedStateTag;
+
 	// 발당 기본 대미지 (관통 감쇠 이전 값)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float BaseDamage = 26.f;

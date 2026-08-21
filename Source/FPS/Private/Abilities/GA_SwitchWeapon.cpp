@@ -3,6 +3,7 @@
 #include "Abilities/GA_SwitchWeapon.h"
 
 #include "Combat/CombatComponent.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -35,6 +36,11 @@ void UGA_SwitchWeapon::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 	if (bSwitched && CombatComponent->GetCurrentWeapon() != PreviousWeapon)
 	{
 		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Swap);
+
+		if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+		{
+			RogueASC->SetEquippedWeaponType(CombatComponent->GetCurrentWeapon()->GetEquippedStateTag());
+		}
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
