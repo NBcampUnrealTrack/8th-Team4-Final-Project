@@ -11,7 +11,7 @@
 #include "WeaponBase.generated.h"
 
 class UCameraComponent;
-class UCurveFloat;
+class UCurveVector;
 class UDataTable;
 class UHitscanWeaponDefinition;
 class UNiagaraSystem;
@@ -205,9 +205,15 @@ protected:
 	float CalculateCurrentSpreadDegrees() const;
 	void TickSpreadDecay(float DeltaTime);
 
-	// --- 반동 ---
-	void ApplyProceduralRecoil();
+	// --- 반동(ADS 전용 - 전투 시스템 명세서 "ADS 반동" 참고) ---
+	// ADS 중 사격 유지 구간(TimeSinceLastShot < RecoilRecoveryDelay)에 매 프레임 호출된다. RecoilCurve
+	// (UCurveVector, X=Yaw/Y=Pitch)를 FiringElapsedTime으로 계속 evaluate해 이전 프레임과의 델타만
+	// 컨트롤러에 적용한다 - 발당 1회가 아니라 시간 기반 연속 적용이라 프레임/RPM과 무관하게 항상 같은
+	// 반동 패턴을 그린다.
+	void TickProceduralRecoilGeneration(float DeltaTime);
 	void TickRecoilRecovery(float DeltaTime);
+	// GA_Reload 진입/ADS 해제/무기 교체 시 호출해 반동 상태를 즉시 0으로 리셋한다(서서히 복귀하지 않음).
+	void ResetProceduralRecoilState();
 
 	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;
@@ -223,8 +229,6 @@ protected:
 	float ResolveRPMForShot(bool bHeavyAttack) const;
 	// LastFireTime/LastFireInterval을 갱신해 다음 CanFireNow() 쿨다운 기준을 세운다.
 	void RegisterFireCooldown(const UWorld& World, float RPMUsed);
-	// 연사가 끊겼다가 다시 시작되는 시점(ConsecutiveShotCount == 0)에 BurstStartTime을 기록한다.
-	void BeginBurstIfNeeded(const UWorld& World);
 	// 탄창에서 이번 발의 탄약을 소모하고, 관통/데미지 계산에 쓰일 탄창 내 인덱스를 반환한다.
 	int32 ConsumeAmmoForShot();
 	// bHeavyAttack에 따라 이번 발사에 적용할 기본 대미지(Base/Alt)를 고른다.
@@ -233,9 +237,8 @@ protected:
 	TArray<FVector> GeneratePelletDirections() const;
 	// ** 임시 - 담당자 코드로 수정해주세요 (발사 사운드만 재생. 화염/트레일은 SpawnMuzzleFlash/SpawnProjectileTrails 참고)
 	void PlayFireEffects(const FVector& TraceStart, const TArray<FVector>& PelletDirections);
-	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
-	void ApplyRecoilIfADS();
-	// 연사 카운트 증가 및 탄퍼짐 블룸 감쇠 타이머 리셋.
+	// 연사 카운트 증가 및 탄퍼짐 블룸 감쇠 타이머 리셋. 반동은 여기서 발생시키지 않는다 - ADS 반동은
+	// 발당 1회가 아니라 Tick(TickProceduralRecoilGeneration)에서 시간 기반으로 연속 생성된다.
 	void AdvanceFireCounters();
 
 	// --- 재장전 ---
@@ -413,14 +416,23 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float MovementSpreadMultiplier = 1.f;
 
-	// --- 반동 튜닝 값 ---
-	// 피치(위/아래) 반동 커브. 발사 시점부터의 경과 시간을 기준으로 샘플링한다.
+	// --- 반동 튜닝 값 (전투 시스템 명세서 2.1/2.2) ---
+	// ADS 반동 커브. X채널=Yaw(좌우, +우측), Y채널=Pitch(상하, +위쪽). In 값은 "연속 사격 시작 후
+	// 경과 시간(초)"이고, 값은 매 사격마다 더하는 게 아니라 그 시점까지 쌓여야 할 절대 누적
+	// 오프셋이다 - TickProceduralRecoilGeneration이 매 프레임 다시 evaluate해서 이전 프레임과의
+	// 차이만 적용한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	TObjectPtr<UCurveFloat> RecoilCurve;
+	TObjectPtr<UCurveVector> RecoilCurve;
 
-	// RecoilCurve 값에 곱해 요(좌우) 반동을 만드는 계수. 0이면 순수 상방 반동만 발생.
+	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±). Pitch는 커브값을 그대로 따르는 결정론적
+	// 패턴으로 남겨 학습 가능하게 하고, Yaw만 소폭 랜덤화해 완전한 예측 사격을 막는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilYawFactor = 0.f;
+	float RecoilRandomness = 0.f;
+
+	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp - 연사 중 반동이 무한정 커지지 않고 이 이상은
+	// 좌우 흔들림(RecoilRandomness)만 남는 상한선 역할을 한다. Yaw에는 상한이 없다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
+	float RecoilMaxPitch = 10.f;
 
 	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
@@ -505,9 +517,18 @@ private:
 	float LastFireInterval = 0.f;
 
 	float TimeSinceLastShot = 1000.f;
-	float BurstStartTime = 0.f;
 	float ConsecutiveShotDecayAccumulator = 0.f;
 
 	float AccumulatedRecoilPitch = 0.f;
 	float AccumulatedRecoilYaw = 0.f;
+
+	// ADS 반동 전용 - 연속 사격 시작 후 경과 시간(초). RecoilCurve를 이 값으로 evaluate한다.
+	float FiringElapsedTime = 0.f;
+	// 직전 프레임에 evaluate한 RecoilCurve 값(X=Yaw, Y=Pitch, Pitch는 RecoilMaxPitch로 Clamp된 값).
+	// 이번 프레임 값과의 차이만 컨트롤러에 적용하므로 매 프레임 갱신해둔다.
+	FVector2D PrevRecoilOffset = FVector2D::ZeroVector;
+	// 지금 ADS 반동을 생성 중인지(사격 유지 구간). 새 버스트 시작 감지에 쓰인다. 탄퍼짐 블룸
+	// 카운터(ConsecutiveShotCount)와는 별개로 관리해서, ADS 중 사격 후 지향 사격으로 전환해도
+	// 그동안 쌓인 블룸이 갑자기 튀어나오지 않는다.
+	bool bRecoilBurstActive = false;
 };

@@ -51,7 +51,7 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		const float FinalSpreadDegrees = URogueAugmentStatResolver::GetFinalSpread(Avatar, Weapon->GetBaseSpreadDegrees());
 		Weapon->SetEffectiveSpreadDegrees(FinalSpreadDegrees);
 
-		// 반동은 ADS 중에만 실제로 적용되지만(WeaponBase::ApplyRecoilIfADS), 매번 최신 배율을 반영해둔다.
+		// 반동은 ADS 중에만 실제로 적용되지만(WeaponBase::TickProceduralRecoilGeneration), 매번 최신 배율을 반영해둔다.
 		// GetFinalRecoil은 배율(1.0 기준) 함수라 Base 인자로 1.0을 넘긴다.
 		const float FinalRecoilMultiplier = URogueAugmentStatResolver::GetFinalRecoil(Avatar, 1.f);
 		Weapon->SetEffectiveRecoilMultiplier(FinalRecoilMultiplier);

@@ -7,7 +7,7 @@
 #include "WeaponTypes.generated.h"
 
 class AActor;
-class UCurveFloat;
+class UCurveVector;
 
 // 런타임 무기 슬롯 식별용.
 // 슬롯은 1/2/3번 입력 및 Primary/Secondary/Melee 인스턴스 보관에만 사용한다.
@@ -104,12 +104,18 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
-	// --- 반동 ---
+	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
+	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
-	TObjectPtr<UCurveFloat> RecoilCurve;
+	TObjectPtr<UCurveVector> RecoilCurve;
 
+	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
-	float RecoilYawFactor = 0.f;
+	float RecoilRandomness = 0.f;
+
+	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilMaxPitch = 10.f;
 
 	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")

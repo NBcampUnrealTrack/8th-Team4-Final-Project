@@ -6,7 +6,7 @@
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Curves/CurveFloat.h"
+#include "Curves/CurveVector.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -102,7 +102,8 @@ void AWeaponBase::ApplySpreadRecoilTuningTable()
 	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
 
 	RecoilCurve = Row->RecoilCurve;
-	RecoilYawFactor = Row->RecoilYawFactor;
+	RecoilRandomness = Row->RecoilRandomness;
+	RecoilMaxPitch = Row->RecoilMaxPitch;
 	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
 	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
 }
@@ -114,6 +115,7 @@ void AWeaponBase::Tick(float DeltaTime)
 	TimeSinceLastShot += DeltaTime;
 
 	TickSpreadDecay(DeltaTime);
+	TickProceduralRecoilGeneration(DeltaTime);
 	TickRecoilRecovery(DeltaTime);
 }
 
@@ -191,6 +193,13 @@ FGameplayTag AWeaponBase::GetWeaponTag() const
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
 	bIsADS = bCanADS && bNewIsADS;
+
+	// ADS 해제 시 반동 값을 즉시 0으로 리셋한다(서서히 복귀하지 않음) - 지향 사격으로 전환되면
+	// 탄퍼짐 계산으로 넘어가므로 잔여 반동이 이어지면 안 된다.
+	if (!bIsADS)
+	{
+		ResetProceduralRecoilState();
+	}
 }
 
 void AWeaponBase::SetPresentationActive(const bool bActive)
@@ -257,7 +266,6 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
 	RegisterFireCooldown(*World, RPMUsed);
-	BeginBurstIfNeeded(*World);
 
 	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
@@ -265,7 +273,6 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
 	PlayFireEffects(TraceStart, PelletDirections);
-	ApplyRecoilIfADS();
 	AdvanceFireCounters();
 
 	return true;
@@ -281,14 +288,6 @@ void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
 {
 	LastFireTime = World.GetTimeSeconds();
 	LastFireInterval = 60.f / RPMUsed;
-}
-
-void AWeaponBase::BeginBurstIfNeeded(const UWorld& World)
-{
-	if (ConsecutiveShotCount == 0)
-	{
-		BurstStartTime = World.GetTimeSeconds();
-	}
 }
 
 int32 AWeaponBase::ConsumeAmmoForShot()
@@ -341,15 +340,6 @@ void AWeaponBase::PlayFireEffects(const FVector& TraceStart, const TArray<FVecto
 	if (MuzzleFlashEffect || ProjectileTrailEffect)
 	{
 		Multicast_PlayMuzzleEffects(PelletDirections);
-	}
-}
-
-void AWeaponBase::ApplyRecoilIfADS()
-{
-	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
-	if (bIsADS)
-	{
-		ApplyProceduralRecoil();
 	}
 }
 
@@ -445,6 +435,9 @@ void AWeaponBase::StartReload()
 	}
 
 	bIsReloading = true;
+	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
+	// 항상 무반동 상태로 시작한다.
+	ResetProceduralRecoilState();
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
@@ -504,29 +497,52 @@ void AWeaponBase::TickSpreadDecay(float DeltaTime)
 	}
 }
 
-void AWeaponBase::ApplyProceduralRecoil()
+void AWeaponBase::TickProceduralRecoilGeneration(const float DeltaTime)
 {
-	if (!RecoilCurve)
+	// ADS 중 사격 유지 구간(마지막 발사 이후 RecoilRecoveryDelay가 지나지 않은 동안)에만 생성한다.
+	// 이 구간을 벗어나면(사격 중단/ADS 해제) 다음 진입 시 새 버스트로 취급하도록 플래그를 내린다.
+	if (!bIsADS || !RecoilCurve || TimeSinceLastShot >= RecoilRecoveryDelay)
 	{
+		bRecoilBurstActive = false;
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	const float ElapsedTime = World ? (World->GetTimeSeconds() - BurstStartTime) : 0.f;
-	const float RecoilValue = RecoilCurve->GetFloatValue(ElapsedTime) * EffectiveRecoilMultiplier;
+	if (!bRecoilBurstActive)
+	{
+		FiringElapsedTime = 0.f;
+		PrevRecoilOffset = FVector2D::ZeroVector;
+		bRecoilBurstActive = true;
+	}
 
-	// 위로 튀어오르는 반동이므로 Pitch는 음수 방향으로 적용한다.
-	const float PitchDelta = -RecoilValue;
-	const float YawDelta = RecoilValue * RecoilYawFactor;
+	FiringElapsedTime += DeltaTime;
+
+	const FVector RawCurveValue = RecoilCurve->GetVectorValue(FiringElapsedTime);
+	// Pitch만 RecoilMaxPitch로 상한을 둔다(초과분 Clamp) - Yaw는 상한 없이 커브+랜덤을 그대로 따른다.
+	const FVector2D TargetOffset(RawCurveValue.X, FMath::Min(RawCurveValue.Y, RecoilMaxPitch));
+
+	FVector2D Delta = TargetOffset - PrevRecoilOffset;
+	Delta.X += FMath::FRandRange(-RecoilRandomness, RecoilRandomness);
+	Delta *= EffectiveRecoilMultiplier;
 
 	if (APawn* OwningPawn = Cast<APawn>(GetOwner()))
 	{
-		OwningPawn->AddControllerPitchInput(PitchDelta);
-		OwningPawn->AddControllerYawInput(YawDelta);
+		OwningPawn->AddControllerYawInput(Delta.X);
+		// 위로 튀어오르는 반동이므로 Pitch는 음수 방향으로 적용한다(엔진 Pitch 부호 규약 반전).
+		OwningPawn->AddControllerPitchInput(-Delta.Y);
 	}
 
-	AccumulatedRecoilPitch += PitchDelta;
-	AccumulatedRecoilYaw += YawDelta;
+	AccumulatedRecoilPitch = TargetOffset.Y;
+	AccumulatedRecoilYaw += Delta.X;
+	PrevRecoilOffset = TargetOffset;
+}
+
+void AWeaponBase::ResetProceduralRecoilState()
+{
+	FiringElapsedTime = 0.f;
+	PrevRecoilOffset = FVector2D::ZeroVector;
+	AccumulatedRecoilPitch = 0.f;
+	AccumulatedRecoilYaw = 0.f;
+	bRecoilBurstActive = false;
 }
 
 void AWeaponBase::TickRecoilRecovery(float DeltaTime)
