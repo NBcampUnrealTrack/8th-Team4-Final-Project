@@ -127,6 +127,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	bool CanADS() const { return bCanADS; }
 
+	// ADS 중 목표 카메라 FOV(도). CombatComponent의 카메라 줌 보간이 참고한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	float GetADSFieldOfView() const { return ADSFieldOfView; }
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
@@ -330,6 +334,11 @@ protected:
 	// false면 SetADS(true)를 호출해도 무시된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS")
 	bool bCanADS = true;
+
+	// ADS 중 목표 카메라 FOV(도). 무기마다 줌 배율이 다르므로(예: 저격소총이 가장 좁게 줌) 여기서
+	// 값을 갖는다. CombatComponent가 bAiming/CanADS()를 보고 이 값과 평상시 FOV 사이를 보간한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "5.0", ClampMax = "170.0"))
+	float ADSFieldOfView = 60.f;
 
 	// 무기 자체의 고정 발사속도. 증강/스탯 보정 이전 값.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")

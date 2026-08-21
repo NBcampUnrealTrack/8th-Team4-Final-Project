@@ -2,11 +2,13 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
@@ -34,6 +36,15 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 void UCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		if (const UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor))
+		{
+			DefaultFieldOfView = Camera->FieldOfView;
+		}
+	}
 }
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -53,6 +64,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	UpdateMovementSpreadMultiplier();
+	UpdateCameraZoom(DeltaTime);
 }
 
 void UCombatComponent::UpdateMovementSpreadMultiplier() const
@@ -88,6 +100,35 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	}
 
 	Weapon->SetMovementSpreadMultiplier(Multiplier);
+}
+
+void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor);
+	if (!IsValid(Camera))
+	{
+		return;
+	}
+
+	const AWeaponBase* Weapon = CurrentWeapon.Get();
+	// 조준 중이고, 장착 무기가 ADS를 지원할 때만 줌 목표 FOV를 쓴다 - 그 외(무기 없음/ADS 불가/
+	// 조준 해제)에는 평상시 FOV로 되돌아간다.
+	const float TargetFieldOfView = (bAiming && IsValid(Weapon) && Weapon->CanADS())
+		? Weapon->GetADSFieldOfView()
+		: DefaultFieldOfView;
+
+	if (FMath::IsNearlyEqual(Camera->FieldOfView, TargetFieldOfView, 0.01f))
+	{
+		return;
+	}
+
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
 }
 
 AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)

@@ -132,6 +132,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
 	float SpreadMultiplier_AirOrSprint = 2.5f;
 
+	// --- ADS 카메라 줌 ---
+	// 평상시 FOV <-> 장착 무기의 AWeaponBase::ADSFieldOfView 사이를 보간하는 속도(FInterpTo).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|ADS")
+	float ADSZoomInterpSpeed = 10.f;
+
 private:
 	AWeaponBase* SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass);
 	void ClearWeaponLoadout();
@@ -142,6 +147,13 @@ private:
 	void SetCyclingState(bool bNewIsCycling);
 	// 매 틱 장착 무기의 SetMovementSpreadMultiplier를 이동 상태(정지/걷기/뛰기/공중) 기준으로 갱신한다.
 	void UpdateMovementSpreadMultiplier() const;
+	// 매 틱 카메라 FOV를 평상시 값 <-> 조준 시 목표값 사이로 보간한다.
+	void UpdateCameraZoom(float DeltaTime) const;
+
+	// BeginPlay 시점에 캐싱해두는 오너 카메라의 평상시(비-ADS) FOV. 무기별 ADS FOV와 보간할 때
+	// 기준값으로 쓴다 - 캐릭터 BP마다 카메라 기본 FOV가 다를 수 있어 하드코딩하지 않는다.
+	UPROPERTY(Transient)
+	float DefaultFieldOfView = 90.f;
 
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);
