@@ -65,25 +65,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Movement")
 	static int32 GetExtraJumpCount(const AActor* Actor);
 
-	// 내가 내는 발소리
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Movement")
-	static float GetFinalFootstepVolume(const AActor* Actor, float BaseVolume);
-
-	// 내가 남의 소리를 듣는 범위
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Movement")
-	static float GetFinalHearingRange(const AActor* Actor, float BaseRange);
-
 	// -----------------------------------
 	// 증강 관련
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Skill")
 	static float GetFinalCooldown(const AActor* Actor, float BaseCooldownSeconds);
-
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Skill")
-	static float GetFinalThrowRange(const AActor* Actor, float BaseRangeMeters);
-
-	// Actor 는 회복을 '받는' 쪽
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Defense")
-	static float GetFinalHealingReceived(const AActor* Actor, float BaseHealAmount);
 
 private:
 	// Character / PlayerState / Controller 중 무엇을 넘겨도 해석
