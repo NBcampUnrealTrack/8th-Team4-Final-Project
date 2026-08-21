@@ -17,7 +17,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogCombatComponent, Log, All);
 
 UCombatComponent::UCombatComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// UpdateMovementSpreadMultiplier/UpdateCameraZoom이 매 프레임 갱신되어야 해서 켜둔다.
+	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
 }
 
