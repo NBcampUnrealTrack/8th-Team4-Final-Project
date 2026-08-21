@@ -3,7 +3,6 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 
 #include "GAS/RogueAbilitySet.h"
-#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
@@ -16,22 +15,6 @@ namespace
 		return Instances.IsEmpty()
 			? FPredictionKey()
 			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
-	}
-
-	// 무기 종류를 장착 상태 태그로
-	FGameplayTag WeaponTypeToEquippedStateTag(EWeaponType WeaponType)
-	{
-		switch (WeaponType)
-		{
-		case EWeaponType::None:    return FGameplayTag();
-		case EWeaponType::AR:      return RogueTags::State_Weapon_Equipped_Firearm_Rifle;
-		case EWeaponType::Pistol:  return RogueTags::State_Weapon_Equipped_Firearm_Pistol;
-		case EWeaponType::Shotgun: return RogueTags::State_Weapon_Equipped_Firearm_Shotgun;
-		case EWeaponType::Sniper:  return RogueTags::State_Weapon_Equipped_Firearm_Sniper;
-		case EWeaponType::Knife:   return RogueTags::State_Weapon_Equipped_Melee_Knife;
-		}
-
-		return FGameplayTag();
 	}
 }
 
@@ -173,11 +156,9 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 	}
 }
 
-void URogueAbilitySystemComponent::SetEquippedWeaponType(EWeaponType WeaponType)
+void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedStateTag)
 {
-	const FGameplayTag NewTag = WeaponTypeToEquippedStateTag(WeaponType);
-
-	if (NewTag == CurrentEquippedWeaponTag)
+	if (EquippedStateTag == CurrentEquippedWeaponTag)
 	{
 		return;
 	}
@@ -188,16 +169,16 @@ void URogueAbilitySystemComponent::SetEquippedWeaponType(EWeaponType WeaponType)
 		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0);
 	}
 
-	CurrentEquippedWeaponTag = NewTag;
+	CurrentEquippedWeaponTag = EquippedStateTag;
 
-	if (NewTag.IsValid())
+	if (EquippedStateTag.IsValid())
 	{
-		SetLooseGameplayTagCount(NewTag, 1);
+		SetLooseGameplayTagCount(EquippedStateTag, 1);
 	}
 
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] 장착 태그 -> %s"),
-		NewTag.IsValid() ? *NewTag.ToString() : TEXT("(없음 - 맨몸)"));
+		EquippedStateTag.IsValid() ? *EquippedStateTag.ToString() : TEXT("(없음 - 맨몸)"));
 }
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)

@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
 #include "GameplayTagContainer.h"
-#include "Weapon/WeaponTypes.h"
 
 #include "RogueAbilitySystemComponent.generated.h"
 
@@ -30,10 +29,10 @@ public:
 	// 목록의 어빌리티를 부여 서버 전용.
 	void GrantAbilitySet(const URogueAbilitySet* AbilitySet);
 
-	// 현재 장착 무기 종류를 장착 상태 태그로 바꿔서 붙임
-	// 이전 태그는 제거
+	// 현재 장착 무기의 장착 상태 태그(State.Weapon.Equipped.*)를 붙임. 이전 태그는 제거.
+	// 무기 종류 판별은 호출부(WeaponBase/CombatComponent) 책임이며, 이 ASC는 태그만 받는다.
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
-	void SetEquippedWeaponType(EWeaponType WeaponType);
+	void SetEquippedWeaponType(FGameplayTag EquippedStateTag);
 
 private:
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그

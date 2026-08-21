@@ -7,6 +7,11 @@
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
+UGA_Reload::UGA_Reload()
+{
+	ActivationOwnedTags.AddTag(RogueTags::State_Combat_IsReloading);
+}
+
 bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
                                      const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,
                                      FGameplayTagContainer* OptionalRelevantTags) const
