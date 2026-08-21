@@ -82,6 +82,10 @@ public:
 	FGameplayAttributeData IncomingHealing;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingHealing)
 
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
+	FGameplayAttributeData IncomingShieldHealing;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingShieldHealing)
+
 private:
 	// 중복 호출 방지를 위한 사망 여부 플래그
 	bool bDeathDeclared = false;

@@ -118,6 +118,20 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 		return;
 	}
 
+	// 보호막 회복
+	if (Attribute == GetIncomingShieldHealingAttribute())
+	{
+		const float Delta = GetIncomingShieldHealing();
+		SetIncomingShieldHealing(0.f);
+
+		// 체력 회복과 같은 기준. 사망한 상태면 보호막도 채우지 않음
+		if (Delta > 0.f && !bDeathDeclared)
+		{
+			SetShield(FMath::Clamp(GetShield() + Delta, 0.f, GetMaxShield()));
+		}
+		return;
+	}
+
 	// GE가 직접 Health/Shield 를 수정하는 경우 클램핑
 	// 해당 경로는 사용하지 않는 것을 권장, 일단 구현
 	if (Attribute == GetHealthAttribute())
