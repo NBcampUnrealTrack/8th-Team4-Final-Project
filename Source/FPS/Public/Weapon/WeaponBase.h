@@ -11,6 +11,7 @@
 #include "WeaponBase.generated.h"
 
 class UCameraComponent;
+class UCameraShakeBase;
 class UCurveVector;
 class UDataTable;
 class UHitscanWeaponDefinition;
@@ -274,6 +275,11 @@ protected:
 	void SpawnProjectileTrails(const TArray<FVector>& PelletDirections) const;
 	void SpawnProjectileTrailsFromMesh(USkeletalMeshComponent* Mesh, FName SocketName, const TArray<FVector>& PelletDirections) const;
 
+	// FireCameraShake가 지정된 경우 발사할 때마다 재생한다. 사운드/이펙트와 달리 멀티캐스트로
+	// 보내지 않는다 - 화면 흔들림은 쏜 본인 화면에만 있어야 하므로, HasAuthority() 대신 로컬
+	// 컨트롤러 여부로 걸러서 Fire()에서 직접(예측 클라이언트/서버 양쪽 실행 경로 모두에서) 호출한다.
+	void PlayFireCameraShake() const;
+
 	// ** 임시 - 담당자 코드로 수정해주세요
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_PlayFireSound(FVector Location);
@@ -327,6 +333,12 @@ protected:
 	// 3인칭(Mesh3P) 총구 소켓 이름.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
 	FName MuzzleSocketName3P;
+
+	// 발사할 때마다 재생할 화면 흔들림. 반동(컨트롤러 회전, 마우스로 상쇄 가능)과는 별개의 순수
+	// 시각 효과다 - 무기마다(예: 샷건이 권총보다 강하게) 다르게 줄 수 있도록 무기 쪽에 둔다.
+	// 비어 있으면 재생하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	TSubclassOf<UCameraShakeBase> FireCameraShake;
 
 	// 강공격(예: 전술 칼 우클릭) 대미지. 0이면 강공격이 없는 무기로 취급해 BaseDamage를 그대로 쓴다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")

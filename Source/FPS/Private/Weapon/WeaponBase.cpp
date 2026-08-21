@@ -3,6 +3,8 @@
 #include "Weapon/WeaponBase.h"
 
 #include "Camera/CameraComponent.h"
+#include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -10,6 +12,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -302,6 +305,7 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
 	PlayFireEffects(TraceStart, PelletDirections);
+	PlayFireCameraShake();
 	AdvanceFireCounters();
 
 	return true;
@@ -459,6 +463,25 @@ void AWeaponBase::SpawnProjectileTrailsFromMesh(
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 			this, ProjectileTrailEffect, MuzzleLocation, Direction.Rotation());
+	}
+}
+
+void AWeaponBase::PlayFireCameraShake() const
+{
+	if (!FireCameraShake)
+	{
+		return;
+	}
+
+	const APawn* OwningPawn = Cast<APawn>(GetOwner());
+	APlayerController* PC = OwningPawn ? Cast<APlayerController>(OwningPawn->GetController()) : nullptr;
+
+	// 화면 흔들림은 쏜 본인의 화면에만 있어야 한다. Fire()는 LocalPredicted 어빌리티라
+	// 예측 클라이언트/서버 양쪽에서 실행되므로, 로컬 컨트롤러가 아닌 쪽(예: 리슨 서버가
+	// 원격 클라이언트의 Fire()를 권위 실행하는 경우)에서는 재생하지 않는다.
+	if (PC && PC->IsLocalController() && PC->PlayerCameraManager)
+	{
+		PC->PlayerCameraManager->StartCameraShake(FireCameraShake);
 	}
 }
 
