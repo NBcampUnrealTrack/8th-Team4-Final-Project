@@ -4,6 +4,7 @@
 
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Animation/AnimInstance.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -27,7 +28,7 @@ bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, con
 		return false;
 	}
 
-	return Weapon->UsesAmmo() && !Weapon->IsReloading() && Weapon->GetCurrentAmmo() < Weapon->GetMagazineSize();
+	return Weapon->UsesAmmo() && !Weapon->IsReloading() && Weapon->GetCurrentAmmo() < Weapon->GetEffectiveMagazineSize();
 }
 
 void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -38,6 +39,18 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	// StartReload()가 내부 타이머를 세우기 전에 최종값을 먼저 배선해야, WeaponBase의 실제 재장전
+	// 시간/탄창 크기와 아래 WaitDelay가 같은 값을 보고 동기화된다.
+	float FinalReloadDuration = Weapon->GetReloadDuration();
+	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
+	{
+		const int32 FinalMagazineSize = URogueAugmentStatResolver::GetFinalMagazineSize(Avatar, Weapon->GetMagazineSize());
+		Weapon->SetEffectiveMagazineSize(FinalMagazineSize);
+
+		FinalReloadDuration = URogueAugmentStatResolver::GetFinalReloadTime(Avatar, Weapon->GetReloadDuration());
+		Weapon->SetEffectiveReloadDuration(FinalReloadDuration);
 	}
 
 	Weapon->StartReload();
@@ -52,8 +65,9 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	}
 
 	// AWeaponBase가 내부 타이머로 재장전을 끝내는 시점과 맞춰서, 같은 시간만큼 대기한 뒤
-	// 이 어빌리티도 종료한다. 재장전 도중 사격 차단은 AWeaponBase::IsReloading()이 이미 처리한다.
-	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, Weapon->GetReloadDuration()))
+	// 이 어빌리티도 종료한다(위에서 배선한 것과 같은 FinalReloadDuration을 써야 서로 어긋나지 않는다).
+	// 재장전 도중 사격 차단은 AWeaponBase::IsReloading()이 이미 처리한다.
+	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, FinalReloadDuration))
 	{
 		WaitTask->OnFinish.AddDynamic(this, &UGA_Reload::HandleReloadFinished);
 		WaitTask->ReadyForActivation();

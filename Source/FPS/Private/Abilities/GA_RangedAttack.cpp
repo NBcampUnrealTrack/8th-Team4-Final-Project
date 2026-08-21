@@ -39,11 +39,22 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		return;
 	}
 
-	// ASC 가 없으면 BaseRPM 을 그대로 반환
+	// ASC 가 없으면 Base 값을 그대로 반환
 	if (const AActor* Avatar = GetAvatarActorFromActorInfo())
 	{
 		const float FinalRPM = URogueAugmentStatResolver::GetFinalRPM(Avatar, Weapon->GetBaseRPM());
 		Weapon->SetEffectiveRPM(FinalRPM);
+
+		const int32 FinalPelletCount = URogueAugmentStatResolver::GetFinalPelletCount(Avatar, Weapon->GetPelletCountPerShot());
+		Weapon->SetEffectivePelletCount(FinalPelletCount);
+
+		const float FinalSpreadDegrees = URogueAugmentStatResolver::GetFinalSpread(Avatar, Weapon->GetBaseSpreadDegrees());
+		Weapon->SetEffectiveSpreadDegrees(FinalSpreadDegrees);
+
+		// 반동은 ADS 중에만 실제로 적용되지만(WeaponBase::ApplyRecoilIfADS), 매번 최신 배율을 반영해둔다.
+		// GetFinalRecoil은 배율(1.0 기준) 함수라 Base 인자로 1.0을 넘긴다.
+		const float FinalRecoilMultiplier = URogueAugmentStatResolver::GetFinalRecoil(Avatar, 1.f);
+		Weapon->SetEffectiveRecoilMultiplier(FinalRecoilMultiplier);
 	}
 
 	const bool bFired = Weapon->Fire();

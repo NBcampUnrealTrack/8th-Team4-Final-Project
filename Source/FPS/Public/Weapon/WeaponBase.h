@@ -69,6 +69,35 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetMovementSpreadMultiplier(float NewMultiplier);
 
+	// 아래 SetEffective* 계열은 전부 같은 규칙: 증강/스탯 보정을 반영해 "지금 이 무기에 실제로
+	// 적용할 값"을 외부(GA_RangedAttack/GA_MeleeAttack/GA_Reload)가 URogueAugmentStatResolver로
+	// 계산해서 꽂아주는 Setter다. AWeaponBase는 누가 어떻게 계산했는지 몰라도 된다.
+
+	// 현재 적용 중인 실제 탄창 크기.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveMagazineSize(int32 NewMagazineSize);
+
+	// 현재 적용 중인 실제 재장전 시간(초).
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveReloadDuration(float NewReloadDuration);
+
+	// 현재 적용 중인 실제 사격 1회당 펠릿 수.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectivePelletCount(int32 NewPelletCount);
+
+	// 현재 적용 중인 실제 기본 탄퍼짐 각도(도).
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveSpreadDegrees(float NewSpreadDegrees);
+
+	// 현재 적용 중인 실제 반동 배율. RecoilCurve 샘플링 값에 곱해진다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveRecoilMultiplier(float NewMultiplier);
+
+	// 현재 적용 중인 실제 Trace 사거리(cm). 근접무기의 GetFinalMeleeRange 배선용 - 원거리 무기의
+	// 사거리/관통(Range/Penetration)은 데미지 파이프라인 쪽에서 별도로 처리하므로 여기서 건드리지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetEffectiveTraceRange(float NewTraceRangeCentimeters);
+
 	// bHeavyAttack: 확인하려는 공격이 강공격인지. 실제 쿨다운 차단 여부는 좌/우 중 마지막으로 발사된
 	// 쪽의 간격(LastFireInterval) 기준이므로, 반대쪽 클릭의 쿨다운 중에는 bHeavyAttack 값과 무관하게 막힌다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
@@ -100,7 +129,23 @@ public:
 	int32 GetMagazineSize() const { return MagazineSize; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	int32 GetEffectiveMagazineSize() const { return EffectiveMagazineSize; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetReloadDuration() const { return ReloadDuration; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetEffectiveReloadDuration() const { return EffectiveReloadDuration; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	int32 GetPelletCountPerShot() const { return PelletCountPerShot; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
+
+	// B Hitscan Resolver에 넘어가는 실제 Trace 사거리(cm). GetFinalMeleeRange 배선 전 기본값.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	float GetTraceRange() const { return TraceRange; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
@@ -215,6 +260,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	int32 PelletCountPerShot = 1;
 
+	// 현재 적용 중인 실제 펠릿 수. SetEffectivePelletCount로만 갱신되며, 기본값은 PelletCountPerShot과 동일하게 초기화된다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
+	int32 EffectivePelletCount = 1;
+
 	// 탄약/재장전을 사용하는 무기인지 여부. 전술 칼처럼 탄약이 없는 무기는 false로 설정한다.
 	// false면 CanFireNow()가 탄약을 확인하지 않고, StartReload()도 아무 동작을 하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
@@ -246,8 +295,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MagazineSize = 30;
 
+	// 현재 적용 중인 실제 탄창 크기. SetEffectiveMagazineSize로만 갱신되며, 기본값은 MagazineSize와 동일하게 초기화된다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	int32 EffectiveMagazineSize = 30;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float ReloadDuration = 2.1f;
+
+	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	float EffectiveReloadDuration = 2.1f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;
@@ -276,6 +333,11 @@ protected:
 	// 무기 기본 탄퍼짐 각도. SpreadRecoilTable 미지정 시 사용되는 기본값(=fallback).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float BaseSpreadDegrees = 1.f;
+
+	// 현재 적용 중인 실제 기본 탄퍼짐 각도. SetEffectiveSpreadDegrees로만 갱신되며, 기본값은
+	// (SpreadRecoilTable 적용 이후의) BaseSpreadDegrees와 동일하게 초기화된다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	float EffectiveBaseSpreadDegrees = 1.f;
 
 	// 연속 사격 시 사격당 누적되는 탄퍼짐 각도
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
@@ -314,6 +376,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoverySpeed = 10.f;
 
+	// 현재 적용 중인 실제 반동 배율. SetEffectiveRecoilMultiplier로만 갱신되며, RecoilCurve 샘플링
+	// 값에 곱해진다. 기본값 1이면 배율 없음(원본 커브 그대로).
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
+	float EffectiveRecoilMultiplier = 1.f;
+
 	// --- B Hitscan Resolver 설정 ---
 	// 부위, 거리 감쇄, 연속 관통, Trace 안전 설정을 담는 B 전용 DataAsset.
 	// 미지정 시 직접 Hit는 기본 1배 대미지로 처리되며 표면 관통은 비활성화된다.
@@ -328,6 +395,12 @@ protected:
 	// B Resolver의 최대 Trace 사거리 (cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float TraceRange = 4000.f;
+
+	// 현재 적용 중인 실제 Trace 사거리(cm). SetEffectiveTraceRange로만 갱신되며, 기본값은 TraceRange와
+	// 동일하게 초기화된다. 근접무기(GA_MeleeAttack)만 GetFinalMeleeRange로 이 값을 갱신하므로,
+	// 원거리 무기는 값을 건드리는 호출자가 없어 항상 TraceRange와 같다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
+	float EffectiveTraceRange = 4000.f;
 
 	// 실제 출구점을 찾지 못했고 UPenetrableSurfaceComponent도 없는 표면에 적용할 Fallback 두께
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")

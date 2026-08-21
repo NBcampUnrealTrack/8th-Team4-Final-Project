@@ -71,7 +71,13 @@ void AWeaponBase::BeginPlay()
 
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
-	CurrentAmmo = MagazineSize;
+	EffectiveMagazineSize = MagazineSize;
+	EffectiveReloadDuration = ReloadDuration;
+	EffectivePelletCount = PelletCountPerShot;
+	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
+	EffectiveRecoilMultiplier = 1.f;
+	EffectiveTraceRange = TraceRange;
+	CurrentAmmo = EffectiveMagazineSize;
 }
 
 void AWeaponBase::ApplySpreadRecoilTuningTable()
@@ -144,6 +150,36 @@ void AWeaponBase::SetEffectiveAltRPM(float NewRPM)
 void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 {
 	MovementSpreadMultiplier = NewMultiplier;
+}
+
+void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
+{
+	EffectiveMagazineSize = NewMagazineSize;
+}
+
+void AWeaponBase::SetEffectiveReloadDuration(const float NewReloadDuration)
+{
+	EffectiveReloadDuration = NewReloadDuration;
+}
+
+void AWeaponBase::SetEffectivePelletCount(const int32 NewPelletCount)
+{
+	EffectivePelletCount = NewPelletCount;
+}
+
+void AWeaponBase::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
+{
+	EffectiveBaseSpreadDegrees = NewSpreadDegrees;
+}
+
+void AWeaponBase::SetEffectiveRecoilMultiplier(const float NewMultiplier)
+{
+	EffectiveRecoilMultiplier = NewMultiplier;
+}
+
+void AWeaponBase::SetEffectiveTraceRange(const float NewTraceRangeCentimeters)
+{
+	EffectiveTraceRange = NewTraceRangeCentimeters;
 }
 
 FGameplayTag AWeaponBase::GetWeaponTag() const
@@ -257,7 +293,7 @@ void AWeaponBase::BeginBurstIfNeeded(const UWorld& World)
 int32 AWeaponBase::ConsumeAmmoForShot()
 {
 	const int32 ShotIndexInMagazine = bUsesAmmo
-		? FMath::Max(0, MagazineSize - CurrentAmmo)
+		? FMath::Max(0, EffectiveMagazineSize - CurrentAmmo)
 		: 0;
 
 	if (bUsesAmmo)
@@ -276,7 +312,7 @@ float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
 TArray<FVector> AWeaponBase::GeneratePelletDirections() const
 {
 	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
-	const int32 PelletCount = FMath::Max(PelletCountPerShot, 1);
+	const int32 PelletCount = FMath::Max(EffectivePelletCount, 1);
 
 	TArray<FVector> PelletDirections;
 	PelletDirections.Reserve(PelletCount);
@@ -329,7 +365,7 @@ void AWeaponBase::Multicast_PlayFireSound_Implementation(FVector Location)
 
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= MagazineSize)
+	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize)
 	{
 		return;
 	}
@@ -342,13 +378,13 @@ void AWeaponBase::StartReload()
 
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, ReloadDuration, false);
+		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
 	}
 }
 
 void AWeaponBase::FinishReload()
 {
-	CurrentAmmo = MagazineSize;
+	CurrentAmmo = EffectiveMagazineSize;
 	bIsReloading = false;
 	if (HasAuthority())
 	{
@@ -365,7 +401,7 @@ float AWeaponBase::CalculateCurrentSpreadDegrees() const
 	}
 
 	const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
-	return (BaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
+	return (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
 }
 
 void AWeaponBase::TickSpreadDecay(float DeltaTime)
@@ -393,7 +429,7 @@ void AWeaponBase::ApplyProceduralRecoil()
 
 	const UWorld* World = GetWorld();
 	const float ElapsedTime = World ? (World->GetTimeSeconds() - BurstStartTime) : 0.f;
-	const float RecoilValue = RecoilCurve->GetFloatValue(ElapsedTime);
+	const float RecoilValue = RecoilCurve->GetFloatValue(ElapsedTime) * EffectiveRecoilMultiplier;
 
 	// 위로 튀어오르는 반동이므로 Pitch는 음수 방향으로 적용한다.
 	const float PitchDelta = -RecoilValue;
@@ -491,7 +527,7 @@ void AWeaponBase::ResolveHitscanShot(
 		HitscanDefinition->ConfigureShotRequest(
 			Request,
 			ShotDamage,
-			TraceRange,
+			EffectiveTraceRange,
 			DefaultSurfaceThickness,
 			DefaultSurfaceHardness);
 	}
@@ -499,8 +535,8 @@ void AWeaponBase::ResolveHitscanShot(
 	{
 		// Definition이 없는 레거시 무기도 기본 사격은 동작하되, 정적 정책은 기본값을 사용한다.
 		Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
-		Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = FMath::Max(0.0f, TraceRange / 100.0f);
-		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, TraceRange);
+		Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = FMath::Max(0.0f, EffectiveTraceRange / 100.0f);
+		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, EffectiveTraceRange);
 		Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(0.1f, DefaultSurfaceThickness);
 		Request.TraceSettings.DefaultSurfaceRule.Hardness = FMath::Max(0.0f, DefaultSurfaceHardness);
 	}
@@ -523,7 +559,7 @@ void AWeaponBase::ResolveHitscanShot(
 			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.2f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
-			TraceRange,
+			EffectiveTraceRange,
 			ShotDamage);
 	}
 }
