@@ -13,6 +13,7 @@
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraFunctionLibrary.h"
 
 // ** 임시
 #include "Kismet/GameplayStatics.h"
@@ -263,7 +264,7 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
-	PlayFireEffects(TraceStart);
+	PlayFireEffects(TraceStart, PelletDirections);
 	ApplyRecoilIfADS();
 	AdvanceFireCounters();
 
@@ -325,11 +326,21 @@ TArray<FVector> AWeaponBase::GeneratePelletDirections() const
 }
 
 // ** 임시 - 담당자 코드로 수정해주세요
-void AWeaponBase::PlayFireEffects(const FVector& TraceStart)
+void AWeaponBase::PlayFireEffects(const FVector& TraceStart, const TArray<FVector>& PelletDirections)
 {
-	if (HasAuthority() && FireSound)
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (FireSound)
 	{
 		Multicast_PlayFireSound(TraceStart);
+	}
+
+	if (MuzzleFlashEffect || ProjectileTrailEffect)
+	{
+		Multicast_PlayMuzzleEffects(PelletDirections);
 	}
 }
 
@@ -363,6 +374,69 @@ void AWeaponBase::Multicast_PlayFireSound_Implementation(FVector Location)
 	}
 }
 
+void AWeaponBase::Multicast_PlayWeaponSound_Implementation(USoundBase* Sound)
+{
+	if (Sound)
+	{
+		UGameplayStatics::SpawnSoundAttached(Sound, GetRootComponent());
+	}
+}
+
+void AWeaponBase::Multicast_PlayMuzzleEffects_Implementation(const TArray<FVector>& PelletDirections)
+{
+	SpawnMuzzleFlash();
+	SpawnProjectileTrails(PelletDirections);
+}
+
+void AWeaponBase::SpawnMuzzleFlash() const
+{
+	if (!MuzzleFlashEffect)
+	{
+		return;
+	}
+
+	if (IsValid(Mesh1P) && !MuzzleSocketName1P.IsNone())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			MuzzleFlashEffect, Mesh1P, MuzzleSocketName1P, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget, true);
+	}
+
+	if (IsValid(Mesh3P) && !MuzzleSocketName3P.IsNone())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			MuzzleFlashEffect, Mesh3P, MuzzleSocketName3P, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget, true);
+	}
+}
+
+void AWeaponBase::SpawnProjectileTrails(const TArray<FVector>& PelletDirections) const
+{
+	if (!ProjectileTrailEffect)
+	{
+		return;
+	}
+
+	SpawnProjectileTrailsFromMesh(Mesh1P, MuzzleSocketName1P, PelletDirections);
+	SpawnProjectileTrailsFromMesh(Mesh3P, MuzzleSocketName3P, PelletDirections);
+}
+
+void AWeaponBase::SpawnProjectileTrailsFromMesh(
+	USkeletalMeshComponent* Mesh, const FName SocketName, const TArray<FVector>& PelletDirections) const
+{
+	if (!IsValid(Mesh) || SocketName.IsNone())
+	{
+		return;
+	}
+
+	const FVector MuzzleLocation = Mesh->GetSocketLocation(SocketName);
+	for (const FVector& Direction : PelletDirections)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this, ProjectileTrailEffect, MuzzleLocation, Direction.Rotation());
+	}
+}
+
 void AWeaponBase::StartReload()
 {
 	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize)
@@ -374,6 +448,11 @@ void AWeaponBase::StartReload()
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+
+		if (ReloadStartSound)
+		{
+			Multicast_PlayWeaponSound(ReloadStartSound);
+		}
 	}
 
 	if (UWorld* World = GetWorld())
@@ -389,6 +468,11 @@ void AWeaponBase::FinishReload()
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+
+		if (ReloadFinishSound)
+		{
+			Multicast_PlayWeaponSound(ReloadFinishSound);
+		}
 	}
 }
 
