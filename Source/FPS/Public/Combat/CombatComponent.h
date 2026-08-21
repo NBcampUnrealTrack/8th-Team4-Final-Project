@@ -31,11 +31,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat")
 	void UnequipWeapon();
 
-	// 프로토타입 1/2번 슬롯용. 무기를 한 번만 생성해 보관하므로 스왑 후에도 탄약/런타임 상태가 유지된다.
+	// 1/2/3번 슬롯(주무기/보조무기/근접무기)용. 무기를 한 번만 생성해 보관하므로 스왑 후에도
+	// 탄약/런타임 상태가 유지된다. MeleeWeaponClass는 비워도 되며(예: 근접무기 없는 로드아웃),
+	// 그 경우 Melee 슬롯은 빈 채로 남는다.
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool InitializeWeaponLoadout(
 		TSubclassOf<AWeaponBase> PrimaryWeaponClass,
-		TSubclassOf<AWeaponBase> SecondaryWeaponClass);
+		TSubclassOf<AWeaponBase> SecondaryWeaponClass,
+		TSubclassOf<AWeaponBase> MeleeWeaponClass);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool SwitchWeaponSlot(EWeaponSlot WeaponSlot);
@@ -98,6 +101,9 @@ protected:
 	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponSlots, Category = "FPS|Combat|Loadout")
 	TObjectPtr<AWeaponBase> SecondaryWeapon;
 
+	UPROPERTY(Transient, BlueprintReadOnly, ReplicatedUsing = OnRep_WeaponSlots, Category = "FPS|Combat|Loadout")
+	TObjectPtr<AWeaponBase> MeleeWeapon;
+
 	// 실제 Equip Montage가 연결되기 전에도 스왑 중 사격/재장전이 열리지 않도록 하는 서버 fallback 시간.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout", meta = (ClampMin = "0.0"))
 	float WeaponSwitchDuration = 0.35f;
@@ -107,8 +113,6 @@ private:
 	void ClearWeaponLoadout();
 	void ApplyCurrentWeapon(AWeaponBase* NewWeapon);
 	void RefreshWeaponPresentation();
-	void SetWeaponPresentationActive(AWeaponBase* Weapon, bool bActive) const;
-	void AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const;
 	void BeginEquipCycle(AWeaponBase* Weapon);
 	float ResolveEquipDuration(AWeaponBase* Weapon) const;
 	void SetCyclingState(bool bNewIsCycling);

@@ -23,13 +23,14 @@ enum class EWeaponType : uint8
 };
 
 // 런타임 무기 슬롯 식별용. EWeaponType(무기 종류)과 역할이 다르다.
-// 슬롯은 1번/2번 입력 및 Primary/Secondary 인스턴스 보관에만 사용한다.
+// 슬롯은 1/2/3번 입력 및 Primary/Secondary/Melee 인스턴스 보관에만 사용한다.
 UENUM(BlueprintType)
 enum class EWeaponSlot : uint8
 {
 	None UMETA(Hidden),
 	Primary UMETA(DisplayName = "Primary"),
-	Secondary UMETA(DisplayName = "Secondary")
+	Secondary UMETA(DisplayName = "Secondary"),
+	Melee UMETA(DisplayName = "Melee")
 };
 
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.

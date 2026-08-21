@@ -2,11 +2,9 @@
 
 #include "Combat/CombatComponent.h"
 
-#include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
-#include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
@@ -26,6 +24,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
 	DOREPLIFETIME(UCombatComponent, PrimaryWeapon);
 	DOREPLIFETIME(UCombatComponent, SecondaryWeapon);
+	DOREPLIFETIME(UCombatComponent, MeleeWeapon);
 	DOREPLIFETIME(UCombatComponent, bIsCycling);
 	DOREPLIFETIME(UCombatComponent, bAiming);
 }
@@ -118,6 +117,10 @@ void UCombatComponent::UnequipWeapon()
 	{
 		SecondaryWeapon = nullptr;
 	}
+	if (MeleeWeapon.Get() == WeaponToDestroy)
+	{
+		MeleeWeapon = nullptr;
+	}
 
 	ApplyCurrentWeapon(nullptr);
 	WeaponToDestroy->Destroy();
@@ -125,7 +128,8 @@ void UCombatComponent::UnequipWeapon()
 
 bool UCombatComponent::InitializeWeaponLoadout(
 	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
-	TSubclassOf<AWeaponBase> SecondaryWeaponClass)
+	TSubclassOf<AWeaponBase> SecondaryWeaponClass,
+	TSubclassOf<AWeaponBase> MeleeWeaponClass)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !PrimaryWeaponClass)
@@ -152,18 +156,30 @@ bool UCombatComponent::InitializeWeaponLoadout(
 		}
 	}
 
+	if (MeleeWeaponClass)
+	{
+		MeleeWeapon = SpawnWeaponInstance(MeleeWeaponClass);
+		if (!IsValid(MeleeWeapon.Get()))
+		{
+			ClearWeaponLoadout();
+			return false;
+		}
+	}
+
 	ApplyCurrentWeapon(PrimaryWeapon.Get());
 	BeginEquipCycle(CurrentWeapon.Get());
 
 	UE_LOG(
 		LogCombatComponent,
 		Log,
-		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Tag=%s Secondary=%s Tag=%s"),
+		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Tag=%s Secondary=%s Tag=%s Melee=%s Tag=%s"),
 		*GetNameSafe(OwnerActor),
 		*GetNameSafe(PrimaryWeapon.Get()),
 		*PrimaryWeapon->GetWeaponTag().ToString(),
 		*GetNameSafe(SecondaryWeapon.Get()),
-		IsValid(SecondaryWeapon.Get()) ? *SecondaryWeapon->GetWeaponTag().ToString() : TEXT("None"));
+		IsValid(SecondaryWeapon.Get()) ? *SecondaryWeapon->GetWeaponTag().ToString() : TEXT("None"),
+		*GetNameSafe(MeleeWeapon.Get()),
+		IsValid(MeleeWeapon.Get()) ? *MeleeWeapon->GetWeaponTag().ToString() : TEXT("None"));
 
 	return true;
 }
@@ -206,7 +222,7 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 		Log,
 		TEXT("[CombatComponent] %s weapon swap. Slot=%s Previous=%s Current=%s WeaponTag=%s PrimaryAmmo=%d SecondaryAmmo=%d"),
 		*GetNameSafe(OwnerActor),
-		WeaponSlot == EWeaponSlot::Primary ? TEXT("Primary") : TEXT("Secondary"),
+		*UEnum::GetDisplayValueAsText(WeaponSlot).ToString(),
 		*GetNameSafe(PreviousWeapon),
 		*GetNameSafe(CurrentWeapon.Get()),
 		*GetCurrentWeaponTag().ToString(),
@@ -224,6 +240,8 @@ AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) con
 		return PrimaryWeapon.Get();
 	case EWeaponSlot::Secondary:
 		return SecondaryWeapon.Get();
+	case EWeaponSlot::Melee:
+		return MeleeWeapon.Get();
 	default:
 		return nullptr;
 	}
@@ -238,6 +256,10 @@ EWeaponSlot UCombatComponent::GetCurrentWeaponSlot() const
 	if (CurrentWeapon.Get() == SecondaryWeapon.Get())
 	{
 		return EWeaponSlot::Secondary;
+	}
+	if (CurrentWeapon.Get() == MeleeWeapon.Get())
+	{
+		return EWeaponSlot::Melee;
 	}
 	return EWeaponSlot::None;
 }
@@ -287,10 +309,12 @@ void UCombatComponent::ClearWeaponLoadout()
 	AWeaponBase* CurrentToDestroy = CurrentWeapon.Get();
 	AWeaponBase* PrimaryToDestroy = PrimaryWeapon.Get();
 	AWeaponBase* SecondaryToDestroy = SecondaryWeapon.Get();
+	AWeaponBase* MeleeToDestroy = MeleeWeapon.Get();
 
 	CurrentWeapon = nullptr;
 	PrimaryWeapon = nullptr;
 	SecondaryWeapon = nullptr;
+	MeleeWeapon = nullptr;
 
 	if (IsValid(PrimaryToDestroy))
 	{
@@ -300,7 +324,14 @@ void UCombatComponent::ClearWeaponLoadout()
 	{
 		SecondaryToDestroy->Destroy();
 	}
-	if (IsValid(CurrentToDestroy) && CurrentToDestroy != PrimaryToDestroy && CurrentToDestroy != SecondaryToDestroy)
+	if (IsValid(MeleeToDestroy) && MeleeToDestroy != PrimaryToDestroy && MeleeToDestroy != SecondaryToDestroy)
+	{
+		MeleeToDestroy->Destroy();
+	}
+	if (IsValid(CurrentToDestroy)
+		&& CurrentToDestroy != PrimaryToDestroy
+		&& CurrentToDestroy != SecondaryToDestroy
+		&& CurrentToDestroy != MeleeToDestroy)
 	{
 		CurrentToDestroy->Destroy();
 	}
@@ -404,7 +435,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 {
 	if (IsValid(LastWeapon) && LastWeapon != CurrentWeapon.Get())
 	{
-		SetWeaponPresentationActive(LastWeapon, false);
+		LastWeapon->SetPresentationActive(false);
 	}
 
 	RefreshWeaponPresentation();
@@ -422,59 +453,24 @@ void UCombatComponent::OnRep_IsCycling()
 
 void UCombatComponent::RefreshWeaponPresentation()
 {
-	SetWeaponPresentationActive(PrimaryWeapon.Get(), PrimaryWeapon.Get() == CurrentWeapon.Get());
-	SetWeaponPresentationActive(SecondaryWeapon.Get(), SecondaryWeapon.Get() == CurrentWeapon.Get());
-
-	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != PrimaryWeapon.Get() && CurrentWeapon.Get() != SecondaryWeapon.Get())
+	if (IsValid(PrimaryWeapon.Get()))
 	{
-		SetWeaponPresentationActive(CurrentWeapon.Get(), true);
+		PrimaryWeapon->SetPresentationActive(PrimaryWeapon.Get() == CurrentWeapon.Get());
 	}
-}
-
-void UCombatComponent::SetWeaponPresentationActive(AWeaponBase* Weapon, const bool bActive) const
-{
-	if (!IsValid(Weapon))
+	if (IsValid(SecondaryWeapon.Get()))
 	{
-		return;
+		SecondaryWeapon->SetPresentationActive(SecondaryWeapon.Get() == CurrentWeapon.Get());
+	}
+	if (IsValid(MeleeWeapon.Get()))
+	{
+		MeleeWeapon->SetPresentationActive(MeleeWeapon.Get() == CurrentWeapon.Get());
 	}
 
-	Weapon->SetActorHiddenInGame(!bActive);
-
-	if (USkeletalMeshComponent* WeaponMesh1P = Weapon->GetMesh1P())
+	if (IsValid(CurrentWeapon.Get())
+		&& CurrentWeapon.Get() != PrimaryWeapon.Get()
+		&& CurrentWeapon.Get() != SecondaryWeapon.Get()
+		&& CurrentWeapon.Get() != MeleeWeapon.Get())
 	{
-		WeaponMesh1P->SetVisibility(bActive, true);
-	}
-	if (USkeletalMeshComponent* WeaponMesh3P = Weapon->GetMesh3P())
-	{
-		WeaponMesh3P->SetVisibility(bActive, true);
-	}
-
-	if (bActive)
-	{
-		AttachWeaponMeshesToOwner(Weapon);
-	}
-}
-
-void UCombatComponent::AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const
-{
-	AActor* OwnerActor = GetOwner();
-	if (!IsValid(Weapon) || !IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
-	{
-		return;
-	}
-
-	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
-	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
-
-	if (IsValid(CharacterMesh1P) && IsValid(Weapon->GetMesh1P()))
-	{
-		Weapon->GetMesh1P()->AttachToComponent(
-			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName1P());
-	}
-
-	if (IsValid(CharacterMesh3P) && IsValid(Weapon->GetMesh3P()))
-	{
-		Weapon->GetMesh3P()->AttachToComponent(
-			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName3P());
+		CurrentWeapon->SetPresentationActive(true);
 	}
 }

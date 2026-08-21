@@ -40,8 +40,6 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
-	void Input_PrimaryWeaponPressed();
-	void Input_SecondaryWeaponPressed();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;

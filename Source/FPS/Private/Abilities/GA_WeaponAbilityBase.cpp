@@ -37,22 +37,20 @@ bool UGA_WeaponAbilityBase::CanActivateAbility(
 		return false;
 	}
 
-	const UCombatComponent* CombatComponent = IsValid(AvatarPawn)
-		? AvatarPawn->FindComponentByClass<UCombatComponent>()
-		: nullptr;
+	const UCombatComponent* CombatComponent = GetCombatComponent();
 
 	return !IsValid(CombatComponent) || CombatComponent->IsWeaponReady();
 }
 
+UCombatComponent* UGA_WeaponAbilityBase::GetCombatComponent() const
+{
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	return IsValid(AvatarActor) ? AvatarActor->FindComponentByClass<UCombatComponent>() : nullptr;
+}
+
 AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const
 {
-	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor)
-	{
-		return nullptr;
-	}
-
-	const UCombatComponent* CombatComponent = AvatarActor->FindComponentByClass<UCombatComponent>();
+	const UCombatComponent* CombatComponent = GetCombatComponent();
 	return CombatComponent ? CombatComponent->GetEquippedWeapon() : nullptr;
 }
 

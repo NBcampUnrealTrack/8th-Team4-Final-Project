@@ -10,6 +10,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 
@@ -155,6 +156,49 @@ void AWeaponBase::SetADS(bool bNewIsADS)
 	bIsADS = bCanADS && bNewIsADS;
 }
 
+void AWeaponBase::SetPresentationActive(const bool bActive)
+{
+	SetActorHiddenInGame(!bActive);
+
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetVisibility(bActive, true);
+	}
+	if (IsValid(Mesh3P))
+	{
+		Mesh3P->SetVisibility(bActive, true);
+	}
+
+	if (bActive)
+	{
+		AttachToOwnerMeshes();
+	}
+}
+
+void AWeaponBase::AttachToOwnerMeshes() const
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
+	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
+
+	if (IsValid(CharacterMesh1P) && IsValid(Mesh1P))
+	{
+		Mesh1P->AttachToComponent(
+			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName1P);
+	}
+
+	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
+	{
+		Mesh3P->AttachToComponent(
+			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+	}
+}
+
 bool AWeaponBase::Fire(bool bHeavyAttack)
 {
 	if (!CanFireNow(bHeavyAttack))
@@ -174,12 +218,44 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		return false;
 	}
 
+	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
+	RegisterFireCooldown(*World, RPMUsed);
+	BeginBurstIfNeeded(*World);
+
+	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
+	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
+	const TArray<FVector> PelletDirections = GeneratePelletDirections();
+
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
+	PlayFireEffects(TraceStart);
+	ApplyRecoilIfADS();
+	AdvanceFireCounters();
+
+	return true;
+}
+
+float AWeaponBase::ResolveRPMForShot(const bool bHeavyAttack) const
+{
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
-	const float RPMUsed = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+	return bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+}
 
-	LastFireTime = World->GetTimeSeconds();
+void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
+{
+	LastFireTime = World.GetTimeSeconds();
 	LastFireInterval = 60.f / RPMUsed;
+}
 
+void AWeaponBase::BeginBurstIfNeeded(const UWorld& World)
+{
+	if (ConsecutiveShotCount == 0)
+	{
+		BurstStartTime = World.GetTimeSeconds();
+	}
+}
+
+int32 AWeaponBase::ConsumeAmmoForShot()
+{
 	const int32 ShotIndexInMagazine = bUsesAmmo
 		? FMath::Max(0, MagazineSize - CurrentAmmo)
 		: 0;
@@ -189,12 +265,16 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		CurrentAmmo--;
 	}
 
-	if (ConsecutiveShotCount == 0)
-	{
-		BurstStartTime = World->GetTimeSeconds();
-	}
+	return ShotIndexInMagazine;
+}
 
-	const float ShotDamage = (bHeavyAttack && AltBaseDamage > 0.f) ? AltBaseDamage : BaseDamage;
+float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
+{
+	return (bHeavyAttack && AltBaseDamage > 0.f) ? AltBaseDamage : BaseDamage;
+}
+
+TArray<FVector> AWeaponBase::GeneratePelletDirections() const
+{
 	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
 	const int32 PelletCount = FMath::Max(PelletCountPerShot, 1);
 
@@ -205,24 +285,31 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		PelletDirections.Add(CalculateTraceDirection(AimDirection));
 	}
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
+	return PelletDirections;
+}
 
-	// ** 임시 - 담당자 코드로 수정해주세요
+// ** 임시 - 담당자 코드로 수정해주세요
+void AWeaponBase::PlayFireEffects(const FVector& TraceStart)
+{
 	if (HasAuthority() && FireSound)
 	{
 		Multicast_PlayFireSound(TraceStart);
 	}
+}
 
+void AWeaponBase::ApplyRecoilIfADS()
+{
 	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
 	if (bIsADS)
 	{
 		ApplyProceduralRecoil();
 	}
+}
 
+void AWeaponBase::AdvanceFireCounters()
+{
 	ConsecutiveShotCount++;
 	TimeSinceLastShot = 0.f;
-
-	return true;
 }
 
 // ** 임시 코드 - 담당자 코드로 수정해주세요

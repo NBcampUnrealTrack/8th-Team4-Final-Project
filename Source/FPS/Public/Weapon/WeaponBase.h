@@ -127,6 +127,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
 	FName GetGripSocketName3P() const { return GripSocketName3P; }
 
+	// CombatComponent가 장착 상태를 바꿀 때 호출한다. 액터/Mesh1P/Mesh3P의 Visibility를 토글하고,
+	// bActive가 true면 오너(IPlayerInterface)의 Mesh1P/Mesh3P에 GripSocketName1P/3P로 재부착한다.
+	// 부착 메쉬/소켓을 자기 자신이 갖고 있으므로 CombatComponent는 활성화 여부만 알려주면 된다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon|Mesh")
+	void SetPresentationActive(bool bActive);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -151,8 +157,32 @@ protected:
 		float ShotDamage,
 		int32 ShotIndexInMagazine);
 
+	// --- Fire() 단계 분리 ---
+	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.
+	float ResolveRPMForShot(bool bHeavyAttack) const;
+	// LastFireTime/LastFireInterval을 갱신해 다음 CanFireNow() 쿨다운 기준을 세운다.
+	void RegisterFireCooldown(const UWorld& World, float RPMUsed);
+	// 연사가 끊겼다가 다시 시작되는 시점(ConsecutiveShotCount == 0)에 BurstStartTime을 기록한다.
+	void BeginBurstIfNeeded(const UWorld& World);
+	// 탄창에서 이번 발의 탄약을 소모하고, 관통/데미지 계산에 쓰일 탄창 내 인덱스를 반환한다.
+	int32 ConsumeAmmoForShot();
+	// bHeavyAttack에 따라 이번 발사에 적용할 기본 대미지(Base/Alt)를 고른다.
+	float ResolveShotDamage(bool bHeavyAttack) const;
+	// 탄퍼짐이 반영된 펠릿별 최종 발사 방향을 생성한다.
+	TArray<FVector> GeneratePelletDirections() const;
+	// ** 임시 - 담당자 코드로 수정해주세요 (사운드/이펙트 슬롯 작업 시 이 함수만 교체하면 됨)
+	void PlayFireEffects(const FVector& TraceStart);
+	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
+	void ApplyRecoilIfADS();
+	// 연사 카운트 증가 및 탄퍼짐 블룸 감쇠 타이머 리셋.
+	void AdvanceFireCounters();
+
 	// --- 재장전 ---
 	void FinishReload();
+
+	// SetPresentationActive(true)에서 호출. 오너의 Mesh1P/Mesh3P(IPlayerInterface)에
+	// GripSocketName1P/3P로 Mesh1P/Mesh3P를 재부착한다.
+	void AttachToOwnerMeshes() const;
 
 	// ** 임시 - 담당자 코드로 수정해주세요
 	UFUNCTION(NetMulticast, Reliable)

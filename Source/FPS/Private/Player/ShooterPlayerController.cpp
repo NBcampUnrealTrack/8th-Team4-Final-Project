@@ -7,7 +7,6 @@
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Player/ShooterPlayerState.h"
-#include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -63,15 +62,6 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
 	}
-	if (InputConfig->PrimaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->PrimaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_PrimaryWeaponPressed);
-	}
-	if (InputConfig->SecondaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->SecondaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_SecondaryWeaponPressed);
-	}
-
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
 		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
@@ -159,22 +149,6 @@ void AShooterPlayerController::Input_SprintReleased()
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintReleased();
-	}
-}
-
-void AShooterPlayerController::Input_PrimaryWeaponPressed()
-{
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
-	}
-}
-
-void AShooterPlayerController::Input_SecondaryWeaponPressed()
-{
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
 	}
 }
 
