@@ -345,7 +345,13 @@ void AWeaponBase::PlayFireEffects(const FVector& TraceStart, const TArray<FVecto
 
 void AWeaponBase::AdvanceFireCounters()
 {
-	ConsecutiveShotCount++;
+	// 3.3.1 개정 원칙: 탄퍼짐 블룸은 지향 사격 전용이다. ADS 중에는 늘리지 않는다 - 안 그러면
+	// ADS 중 사격이 화면엔 안 보이게(스프레드 0 고정) 블룸을 몰래 쌓다가, ADS를 풀자마자
+	// 그 값이 한꺼번에 튀어나와 크로스헤어가 갑자기 벌어져 보인다.
+	if (!bIsADS)
+	{
+		ConsecutiveShotCount++;
+	}
 	TimeSinceLastShot = 0.f;
 }
 
