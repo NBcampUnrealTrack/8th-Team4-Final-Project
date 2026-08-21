@@ -11,16 +11,12 @@
 #include "WeaponBase.generated.h"
 
 class UCameraComponent;
-class UCameraShakeBase;
 class UCurveVector;
 class UDataTable;
 class UHitscanWeaponDefinition;
-class UNiagaraSystem;
 class USkeletalMeshComponent;
+class UWeaponEffectsComponent;
 struct FHitResult;
-
-// ** 임시
-class USoundBase;
 
 
 // 무기 발사 상태와 최종 발사 방향 생성까지 담당한다.
@@ -251,47 +247,16 @@ protected:
 	float ResolveShotDamage(bool bHeavyAttack) const;
 	// 탄퍼짐이 반영된 펠릿별 최종 발사 방향을 생성한다.
 	TArray<FVector> GeneratePelletDirections() const;
-	// ** 임시 - 담당자 코드로 수정해주세요 (발사 사운드만 재생. 화염/트레일은 SpawnMuzzleFlash/SpawnProjectileTrails 참고)
-	void PlayFireEffects(const FVector& TraceStart, const TArray<FVector>& PelletDirections);
 	// 연사 카운트 증가 및 탄퍼짐 블룸 감쇠 타이머 리셋. 반동은 여기서 발생시키지 않는다 - ADS 반동은
 	// 발당 1회가 아니라 Tick(TickProceduralRecoilGeneration)에서 시간 기반으로 연속 생성된다.
 	void AdvanceFireCounters();
 
 	// --- 재장전 ---
 	void FinishReload();
-	// ReloadChargeSoundDelay 타이머가 만료되면 호출된다.
-	void PlayReloadChargeSound();
 
 	// SetPresentationActive(true)에서 호출. 오너의 Mesh1P/Mesh3P(IPlayerInterface)에
 	// GripSocketName1P/3P로 Mesh1P/Mesh3P를 재부착한다.
 	void AttachToOwnerMeshes() const;
-
-	// --- 사운드/이펙트 스폰 ---
-	// MuzzleFlashEffect가 지정된 경우 Mesh1P/Mesh3P 각 Muzzle 소켓에 부착해 재생한다(둘 다 시도 -
-	// bOnlyOwnerSee/bOwnerNoSee가 이미 보는 사람을 갈라주므로 중복 재생처럼 보이지 않는다).
-	void SpawnMuzzleFlash() const;
-	// ProjectileTrailEffect가 지정된 경우 펠릿별 방향으로 Mesh1P/Mesh3P 각 Muzzle 소켓에서 재생한다.
-	// 실제 피격 위치는 아직 Hitscan Resolver 결과에 없어(FHitscanShotResult 참고) 방향만 맞추고
-	// 도착 지점은 맞추지 못한다 - 추후 Resolver가 히트 위치를 반환하게 되면 Niagara User Parameter로
-	// 종료 지점을 배선해야 한다.
-	void SpawnProjectileTrails(const TArray<FVector>& PelletDirections) const;
-	void SpawnProjectileTrailsFromMesh(USkeletalMeshComponent* Mesh, FName SocketName, const TArray<FVector>& PelletDirections) const;
-
-	// FireCameraShake가 지정된 경우 발사할 때마다 재생한다. 사운드/이펙트와 달리 멀티캐스트로
-	// 보내지 않는다 - 화면 흔들림은 쏜 본인 화면에만 있어야 하므로, HasAuthority() 대신 로컬
-	// 컨트롤러 여부로 걸러서 Fire()에서 직접(예측 클라이언트/서버 양쪽 실행 경로 모두에서) 호출한다.
-	void PlayFireCameraShake() const;
-
-	// ** 임시 - 담당자 코드로 수정해주세요
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_PlayFireSound(FVector Location);
-
-	// 재장전 시작/완료 사운드 등, 위치 부착이 필요 없는 무기 자체 사운드 재생용 공용 RPC.
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_PlayWeaponSound(USoundBase* Sound);
-
-	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_PlayMuzzleEffects(const TArray<FVector>& PelletDirections);
 
 protected:
 	// GetEquippedStateTag() 참고. 무기별 BP 기본값에서 지정.
@@ -301,56 +266,6 @@ protected:
 	// 발당 기본 대미지 (관통 감쇠 이전 값)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float BaseDamage = 26.f;
-	
-	// ** 임시 - 담당자 코드로 수정해주세요
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
-	TObjectPtr<USoundBase> FireSound;
-
-	// --- 사운드/이펙트 슬롯 ---
-	// 재장전 시작 시 재생할 사운드. 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
-	TObjectPtr<USoundBase> ReloadStartSound;
-
-	// 재장전 완료 시 재생할 사운드. 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
-	TObjectPtr<USoundBase> ReloadFinishSound;
-
-	// 재장전 도중(예: 노리쇠 장전음) 재생할 사운드. 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
-	TObjectPtr<USoundBase> ReloadChargeSound;
-
-	// StartReload() 시점부터 ReloadChargeSound를 재생하기까지의 지연(초). 재장전 애니메이션에서
-	// 노리쇠를 당기는 타이밍에 맞춰 무기마다 조정한다. EffectiveReloadDuration보다 크거나 같으면
-	// 재생되지 않는다(타이머가 FinishReload보다 늦게 잡히지 않도록).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
-	float ReloadChargeSoundDelay = 1.f;
-
-	// 탄약 없이 발사를 시도했을 때 재생할 사운드(딸깍 소리). 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
-	TObjectPtr<USoundBase> EmptyClipSound;
-
-	// 총구화염. 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
-	TObjectPtr<UNiagaraSystem> MuzzleFlashEffect;
-
-	// 발사 방향으로 재생되는 탄 궤적(트레이서). 비어 있으면 재생하지 않는다.
-	// SpawnProjectileTrails() 주석 참고 - 아직 방향만 맞추고 도착 지점은 못 맞춘다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
-	TObjectPtr<UNiagaraSystem> ProjectileTrailEffect;
-
-	// 1인칭(Mesh1P) 총구 소켓 이름. GripSocketName1P와 같은 이유로 3인칭과 분리한다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
-	FName MuzzleSocketName1P;
-
-	// 3인칭(Mesh3P) 총구 소켓 이름.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
-	FName MuzzleSocketName3P;
-
-	// 발사할 때마다 재생할 화면 흔들림. 반동(컨트롤러 회전, 마우스로 상쇄 가능)과는 별개의 순수
-	// 시각 효과다 - 무기마다(예: 샷건이 권총보다 강하게) 다르게 줄 수 있도록 무기 쪽에 둔다.
-	// 비어 있으면 재생하지 않는다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
-	TSubclassOf<UCameraShakeBase> FireCameraShake;
 
 	// 강공격(예: 전술 칼 우클릭) 대미지. 0이면 강공격이 없는 무기로 취급해 BaseDamage를 그대로 쓴다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
@@ -529,6 +444,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
 
+	// 발사/재장전/화면흔들림 사운드·VFX 슬롯과 재생 로직을 전담하는 서브 컴포넌트. 이 무기의
+	// 발사/탄약/탄퍼짐/반동 상태와는 결합이 없어 별도 컴포넌트로 분리했다 - WeaponBase는 "언제"
+	// 재생할지(Fire()/StartReload() 등 호출 시점)만 알려주고, "무엇을 어떻게"는 이쪽이 담당한다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon")
+	TObjectPtr<UWeaponEffectsComponent> Effects;
+
 	// --- 메쉬 ---
 	// 1인칭(로컬 플레이어 본인 시점) 전용 메쉬. bOnlyOwnerSee로 오너만 본다.
 	// CombatComponent가 장착 시 오너 캐릭터의 Mesh1P 산하 GripSocketName1P에 붙인다.
@@ -557,7 +478,6 @@ private:
 	TObjectPtr<UCameraComponent> CachedOwnerCamera;
 
 	FTimerHandle ReloadTimerHandle;
-	FTimerHandle ReloadChargeTimerHandle;
 
 	float LastFireTime = -1000.f;
 

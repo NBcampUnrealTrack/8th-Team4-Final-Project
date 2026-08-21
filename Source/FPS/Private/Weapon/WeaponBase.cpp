@@ -3,8 +3,6 @@
 #include "Weapon/WeaponBase.h"
 
 #include "Camera/CameraComponent.h"
-#include "Camera/CameraShakeBase.h"
-#include "Camera/PlayerCameraManager.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -12,14 +10,10 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
-#include "GameFramework/PlayerController.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
-#include "NiagaraFunctionLibrary.h"
-
-// ** 임시
-#include "Kismet/GameplayStatics.h"
+#include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
@@ -52,6 +46,8 @@ AWeaponBase::AWeaponBase()
 	Mesh3P->SetOwnerNoSee(true);
 	Mesh3P->bReceivesDecals = false;
 	Mesh3P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	Effects = CreateDefaultSubobject<UWeaponEffectsComponent>(TEXT("Effects"));
 }
 
 
@@ -145,7 +141,7 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 
 void AWeaponBase::TryPlayEmptyClipSound()
 {
-	if (!IsOutOfAmmo() || !EmptyClipSound)
+	if (!IsOutOfAmmo())
 	{
 		return;
 	}
@@ -166,9 +162,9 @@ void AWeaponBase::TryPlayEmptyClipSound()
 
 	LastFireTime = World->GetTimeSeconds();
 
-	if (HasAuthority())
+	if (Effects)
 	{
-		Multicast_PlayWeaponSound(EmptyClipSound);
+		Effects->PlayEmptyClipSound();
 	}
 }
 
@@ -304,8 +300,11 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
-	PlayFireEffects(TraceStart, PelletDirections);
-	PlayFireCameraShake();
+	if (Effects)
+	{
+		Effects->PlayFireEffects(TraceStart, PelletDirections);
+		Effects->PlayFireCameraShake();
+	}
 	AdvanceFireCounters();
 
 	return true;
@@ -357,25 +356,6 @@ TArray<FVector> AWeaponBase::GeneratePelletDirections() const
 	return PelletDirections;
 }
 
-// ** 임시 - 담당자 코드로 수정해주세요
-void AWeaponBase::PlayFireEffects(const FVector& TraceStart, const TArray<FVector>& PelletDirections)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	if (FireSound)
-	{
-		Multicast_PlayFireSound(TraceStart);
-	}
-
-	if (MuzzleFlashEffect || ProjectileTrailEffect)
-	{
-		Multicast_PlayMuzzleEffects(PelletDirections);
-	}
-}
-
 void AWeaponBase::AdvanceFireCounters()
 {
 	// 3.3.1 개정 원칙: 탄퍼짐 블룸은 지향 사격 전용이다. ADS 중에는 늘리지 않는다 - 안 그러면
@@ -386,103 +366,6 @@ void AWeaponBase::AdvanceFireCounters()
 		ConsecutiveShotCount++;
 	}
 	TimeSinceLastShot = 0.f;
-}
-
-// ** 임시 코드 - 담당자 코드로 수정해주세요
-void AWeaponBase::Multicast_PlayFireSound_Implementation(FVector Location)
-{
-	if (FireSound)
-	{
-		UGameplayStatics::SpawnSoundAttached(
-			FireSound,
-			GetRootComponent(),
-			NAME_None,
-			Location,
-			FRotator::ZeroRotator,
-			EAttachLocation::KeepWorldPosition);
-	}
-}
-
-void AWeaponBase::Multicast_PlayWeaponSound_Implementation(USoundBase* Sound)
-{
-	if (Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Sound, GetRootComponent());
-	}
-}
-
-void AWeaponBase::Multicast_PlayMuzzleEffects_Implementation(const TArray<FVector>& PelletDirections)
-{
-	SpawnMuzzleFlash();
-	SpawnProjectileTrails(PelletDirections);
-}
-
-void AWeaponBase::SpawnMuzzleFlash() const
-{
-	if (!MuzzleFlashEffect)
-	{
-		return;
-	}
-
-	if (IsValid(Mesh1P) && !MuzzleSocketName1P.IsNone())
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
-			MuzzleFlashEffect, Mesh1P, MuzzleSocketName1P, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, true);
-	}
-
-	if (IsValid(Mesh3P) && !MuzzleSocketName3P.IsNone())
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
-			MuzzleFlashEffect, Mesh3P, MuzzleSocketName3P, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, true);
-	}
-}
-
-void AWeaponBase::SpawnProjectileTrails(const TArray<FVector>& PelletDirections) const
-{
-	if (!ProjectileTrailEffect)
-	{
-		return;
-	}
-
-	SpawnProjectileTrailsFromMesh(Mesh1P, MuzzleSocketName1P, PelletDirections);
-	SpawnProjectileTrailsFromMesh(Mesh3P, MuzzleSocketName3P, PelletDirections);
-}
-
-void AWeaponBase::SpawnProjectileTrailsFromMesh(
-	USkeletalMeshComponent* Mesh, const FName SocketName, const TArray<FVector>& PelletDirections) const
-{
-	if (!IsValid(Mesh) || SocketName.IsNone())
-	{
-		return;
-	}
-
-	const FVector MuzzleLocation = Mesh->GetSocketLocation(SocketName);
-	for (const FVector& Direction : PelletDirections)
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this, ProjectileTrailEffect, MuzzleLocation, Direction.Rotation());
-	}
-}
-
-void AWeaponBase::PlayFireCameraShake() const
-{
-	if (!FireCameraShake)
-	{
-		return;
-	}
-
-	const APawn* OwningPawn = Cast<APawn>(GetOwner());
-	APlayerController* PC = OwningPawn ? Cast<APlayerController>(OwningPawn->GetController()) : nullptr;
-
-	// 화면 흔들림은 쏜 본인의 화면에만 있어야 한다. Fire()는 LocalPredicted 어빌리티라
-	// 예측 클라이언트/서버 양쪽에서 실행되므로, 로컬 컨트롤러가 아닌 쪽(예: 리슨 서버가
-	// 원격 클라이언트의 Fire()를 권위 실행하는 경우)에서는 재생하지 않는다.
-	if (PC && PC->IsLocalController() && PC->PlayerCameraManager)
-	{
-		PC->PlayerCameraManager->StartCameraShake(FireCameraShake);
-	}
 }
 
 void AWeaponBase::StartReload()
@@ -499,30 +382,16 @@ void AWeaponBase::StartReload()
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+	}
 
-		if (ReloadStartSound)
-		{
-			Multicast_PlayWeaponSound(ReloadStartSound);
-		}
+	if (Effects)
+	{
+		Effects->NotifyReloadStarted(EffectiveReloadDuration);
 	}
 
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
-
-		if (ReloadChargeSound && ReloadChargeSoundDelay < EffectiveReloadDuration)
-		{
-			World->GetTimerManager().SetTimer(
-				ReloadChargeTimerHandle, this, &AWeaponBase::PlayReloadChargeSound, ReloadChargeSoundDelay, false);
-		}
-	}
-}
-
-void AWeaponBase::PlayReloadChargeSound()
-{
-	if (HasAuthority() && ReloadChargeSound)
-	{
-		Multicast_PlayWeaponSound(ReloadChargeSound);
 	}
 }
 
@@ -533,11 +402,11 @@ void AWeaponBase::FinishReload()
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+	}
 
-		if (ReloadFinishSound)
-		{
-			Multicast_PlayWeaponSound(ReloadFinishSound);
-		}
+	if (Effects)
+	{
+		Effects->PlayReloadFinishSound();
 	}
 }
 

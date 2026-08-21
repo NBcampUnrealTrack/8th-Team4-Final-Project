@@ -122,15 +122,15 @@ protected:
 
 	// 정지(또는 브레이킹 성공) 상태 탄퍼짐 배율.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
-	float SpreadMultiplier_Stationary = 1.f;
+	float SpreadMultiplierStationary = 1.f;
 
 	// 걷기 상태 탄퍼짐 배율.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
-	float SpreadMultiplier_Walking = 1.5f;
+	float SpreadMultiplierWalking = 1.5f;
 
 	// 공중/스프린트 상태 탄퍼짐 배율.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
-	float SpreadMultiplier_AirOrSprint = 2.5f;
+	float SpreadMultiplierAirOrSprint = 2.5f;
 
 	// --- ADS 카메라 줌 ---
 	// 평상시 FOV <-> 장착 무기의 AWeaponBase::ADSFieldOfView 사이를 보간하는 속도(FInterpTo).

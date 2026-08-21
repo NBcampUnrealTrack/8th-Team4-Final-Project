@@ -88,16 +88,16 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	float Multiplier;
 	if (Movement->IsFalling() || Movement->IsSprinting())
 	{
-		Multiplier = SpreadMultiplier_AirOrSprint;
+		Multiplier = SpreadMultiplierAirOrSprint;
 	}
 	else if (Movement->Velocity.Size2D() <= StationarySpeedThreshold)
 	{
 		// 완전 정지든 방금 브레이킹(감속)으로 멈춘 것이든 동일하게 취급한다.
-		Multiplier = SpreadMultiplier_Stationary;
+		Multiplier = SpreadMultiplierStationary;
 	}
 	else
 	{
-		Multiplier = SpreadMultiplier_Walking;
+		Multiplier = SpreadMultiplierWalking;
 	}
 
 	Weapon->SetMovementSpreadMultiplier(Multiplier);
