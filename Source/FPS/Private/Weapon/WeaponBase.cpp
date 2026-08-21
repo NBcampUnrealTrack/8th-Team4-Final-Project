@@ -509,6 +509,20 @@ void AWeaponBase::StartReload()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
+
+		if (ReloadChargeSound && ReloadChargeSoundDelay < EffectiveReloadDuration)
+		{
+			World->GetTimerManager().SetTimer(
+				ReloadChargeTimerHandle, this, &AWeaponBase::PlayReloadChargeSound, ReloadChargeSoundDelay, false);
+		}
+	}
+}
+
+void AWeaponBase::PlayReloadChargeSound()
+{
+	if (HasAuthority() && ReloadChargeSound)
+	{
+		Multicast_PlayWeaponSound(ReloadChargeSound);
 	}
 }
 

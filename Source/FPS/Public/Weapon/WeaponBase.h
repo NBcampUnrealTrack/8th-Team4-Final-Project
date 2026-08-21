@@ -259,6 +259,8 @@ protected:
 
 	// --- 재장전 ---
 	void FinishReload();
+	// ReloadChargeSoundDelay 타이머가 만료되면 호출된다.
+	void PlayReloadChargeSound();
 
 	// SetPresentationActive(true)에서 호출. 오너의 Mesh1P/Mesh3P(IPlayerInterface)에
 	// GripSocketName1P/3P로 Mesh1P/Mesh3P를 재부착한다.
@@ -312,6 +314,16 @@ protected:
 	// 재장전 완료 시 재생할 사운드. 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
 	TObjectPtr<USoundBase> ReloadFinishSound;
+
+	// 재장전 도중(예: 노리쇠 장전음) 재생할 사운드. 비어 있으면 재생하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
+	TObjectPtr<USoundBase> ReloadChargeSound;
+
+	// StartReload() 시점부터 ReloadChargeSound를 재생하기까지의 지연(초). 재장전 애니메이션에서
+	// 노리쇠를 당기는 타이밍에 맞춰 무기마다 조정한다. EffectiveReloadDuration보다 크거나 같으면
+	// 재생되지 않는다(타이머가 FinishReload보다 늦게 잡히지 않도록).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
+	float ReloadChargeSoundDelay = 1.f;
 
 	// 탄약 없이 발사를 시도했을 때 재생할 사운드(딸깍 소리). 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
@@ -545,6 +557,7 @@ private:
 	TObjectPtr<UCameraComponent> CachedOwnerCamera;
 
 	FTimerHandle ReloadTimerHandle;
+	FTimerHandle ReloadChargeTimerHandle;
 
 	float LastFireTime = -1000.f;
 
