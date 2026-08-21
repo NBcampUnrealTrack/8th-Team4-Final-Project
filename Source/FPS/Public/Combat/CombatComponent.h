@@ -114,6 +114,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout", meta = (ClampMin = "0.0"))
 	float WeaponSwitchDuration = 0.35f;
 
+	// --- 이동 상태 탄퍼짐 배율 ---
+	// 이 속도(cm/s, 수평 기준) 이하면 정지로 취급한다. 브레이킹(감속)으로 이 속도 밑으로 떨어져도
+	// 같은 취급이라 별도의 "브레이킹 성공" 판정을 두지 않는다 - 정지든 방금 멈췄든 결과는 같다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread", meta = (ClampMin = "0.0"))
+	float StationarySpeedThreshold = 10.f;
+
+	// 정지(또는 브레이킹 성공) 상태 탄퍼짐 배율.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
+	float SpreadMultiplier_Stationary = 1.f;
+
+	// 걷기 상태 탄퍼짐 배율.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
+	float SpreadMultiplier_Walking = 1.5f;
+
+	// 공중/스프린트 상태 탄퍼짐 배율.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")
+	float SpreadMultiplier_AirOrSprint = 2.5f;
+
 private:
 	AWeaponBase* SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass);
 	void ClearWeaponLoadout();
@@ -122,6 +140,8 @@ private:
 	void BeginEquipCycle(AWeaponBase* Weapon);
 	float ResolveEquipDuration(AWeaponBase* Weapon) const;
 	void SetCyclingState(bool bNewIsCycling);
+	// 매 틱 장착 무기의 SetMovementSpreadMultiplier를 이동 상태(정지/걷기/뛰기/공중) 기준으로 갱신한다.
+	void UpdateMovementSpreadMultiplier() const;
 
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);

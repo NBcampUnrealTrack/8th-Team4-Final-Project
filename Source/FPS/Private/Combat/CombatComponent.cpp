@@ -2,8 +2,10 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "Character/ShooterMovementComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
@@ -49,6 +51,43 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                      FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UpdateMovementSpreadMultiplier();
+}
+
+void UCombatComponent::UpdateMovementSpreadMultiplier() const
+{
+	AWeaponBase* Weapon = CurrentWeapon.Get();
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+	const UShooterMovementComponent* Movement = OwnerCharacter
+		? Cast<UShooterMovementComponent>(OwnerCharacter->GetCharacterMovement())
+		: nullptr;
+	if (!Movement)
+	{
+		return;
+	}
+
+	float Multiplier;
+	if (Movement->IsFalling() || Movement->IsSprinting())
+	{
+		Multiplier = SpreadMultiplier_AirOrSprint;
+	}
+	else if (Movement->Velocity.Size2D() <= StationarySpeedThreshold)
+	{
+		// 완전 정지든 방금 브레이킹(감속)으로 멈춘 것이든 동일하게 취급한다.
+		Multiplier = SpreadMultiplier_Stationary;
+	}
+	else
+	{
+		Multiplier = SpreadMultiplier_Walking;
+	}
+
+	Weapon->SetMovementSpreadMultiplier(Multiplier);
 }
 
 AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)
