@@ -1,5 +1,6 @@
 #include "GameMode/LobbyGameMode.h"
 
+#include "Algo/RandomShuffle.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameMode/LobbyGameState.h"
@@ -57,6 +58,10 @@ bool ALobbyGameMode::RequestStartRoomGame(APlayerController* RequestingPlayer, c
 		return false;
 	}
 
+	// 게임 시작이 확정된 시점에만 팀을 확정
+	// 로비에서 실시간으로 강제 이동시키면 직접 고른 팀이 예고 없이 바뀌므로 여기서 한 번만 정리
+	BalanceTeamsForMatchStart();
+
 	PendingGameMapPath = ResolveMapPathFromName(GameMapName.IsEmpty() ? TEXT("BombMap") : GameMapName);
 	bStartRoomGamePending = true;
 	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(this, &ThisClass::HandleStartRoomGameComplete);
@@ -67,6 +72,137 @@ bool ALobbyGameMode::RequestStartRoomGame(APlayerController* RequestingPlayer, c
 bool ALobbyGameMode::CanStartRoomGame() const
 {
 	return AreAllClientsReady();
+}
+
+bool ALobbyGameMode::RequestLobbyTeam(APlayerController* RequestingPlayer, const EGameTeam RequestedTeam)
+{
+	AShooterPlayerState* ShooterPlayerState = IsValid(RequestingPlayer)
+		? RequestingPlayer->GetPlayerState<AShooterPlayerState>()
+		: nullptr;
+	if (!IsValid(ShooterPlayerState))
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: %s has no ShooterPlayerState."), *GetNameSafe(RequestingPlayer));
+		return false;
+	}
+
+	// None 은 "아직 고르지 않음"을 뜻하는 내부 상태이므로 선택 대상이 아님
+	if (RequestedTeam == EGameTeam::None)
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: None is not selectable."));
+		return false;
+	}
+
+	if (ShooterPlayerState->GetTeam() == RequestedTeam)
+	{
+		return true;
+	}
+
+	if (CountTeamPlayers(RequestedTeam) >= MaxPlayersPerTeam)
+	{
+		UE_LOG(LogLobbyGameMode, Warning,
+			TEXT("Team change blocked: requested team is full (%d/%d)."),
+			CountTeamPlayers(RequestedTeam),
+			MaxPlayersPerTeam);
+		return false;
+	}
+
+	ShooterPlayerState->SetTeam(RequestedTeam);
+	NotifyLobbyPlayerListChanged();
+	return true;
+}
+
+int32 ALobbyGameMode::CountTeamPlayers(const EGameTeam Team) const
+{
+	const AGameStateBase* CurrentGameState = GameState;
+	if (!CurrentGameState)
+	{
+		return 0;
+	}
+
+	int32 PlayerCount = 0;
+	for (const APlayerState* PlayerState : CurrentGameState->PlayerArray)
+	{
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (IsValid(ShooterPlayerState) && ShooterPlayerState->GetTeam() == Team)
+		{
+			++PlayerCount;
+		}
+	}
+
+	return PlayerCount;
+}
+
+void ALobbyGameMode::BalanceTeamsForMatchStart()
+{
+	const AGameStateBase* CurrentGameState = GameState;
+	if (!CurrentGameState)
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team balancing skipped: GameState is invalid."));
+		return;
+	}
+
+	TArray<AShooterPlayerState*> TeamAPlayers;
+	TArray<AShooterPlayerState*> TeamBPlayers;
+	TArray<AShooterPlayerState*> UnassignedPlayers;
+
+	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
+	{
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState))
+		{
+			continue;
+		}
+
+		switch (ShooterPlayerState->GetTeam())
+		{
+		case EGameTeam::TeamA:
+			TeamAPlayers.Add(ShooterPlayerState);
+			break;
+		case EGameTeam::TeamB:
+			TeamBPlayers.Add(ShooterPlayerState);
+			break;
+		default:
+			UnassignedPlayers.Add(ShooterPlayerState);
+			break;
+		}
+	}
+
+	// 팀을 고르지 않은 플레이어는 무작위 순서로 인원이 적은 팀에 한 명씩 채움
+	Algo::RandomShuffle(UnassignedPlayers);
+	for (AShooterPlayerState* PlayerState : UnassignedPlayers)
+	{
+		const bool bJoinTeamA = TeamAPlayers.Num() == TeamBPlayers.Num()
+			? FMath::RandBool()
+			: TeamAPlayers.Num() < TeamBPlayers.Num();
+
+		TArray<AShooterPlayerState*>& TargetTeam = bJoinTeamA ? TeamAPlayers : TeamBPlayers;
+		TargetTeam.Add(PlayerState);
+		PlayerState->SetTeam(bJoinTeamA ? EGameTeam::TeamA : EGameTeam::TeamB);
+	}
+
+	// 직접 고른 인원이 한쪽에 쏠려 2명 이상 차이나면 마지막에 합류한 순서대로 반대 팀으로 옮김
+	while (FMath::Abs(TeamAPlayers.Num() - TeamBPlayers.Num()) > 1)
+	{
+		const bool bMoveFromTeamA = TeamAPlayers.Num() > TeamBPlayers.Num();
+		TArray<AShooterPlayerState*>& SourceTeam = bMoveFromTeamA ? TeamAPlayers : TeamBPlayers;
+		TArray<AShooterPlayerState*>& TargetTeam = bMoveFromTeamA ? TeamBPlayers : TeamAPlayers;
+		const EGameTeam TargetTeamId = bMoveFromTeamA ? EGameTeam::TeamB : EGameTeam::TeamA;
+
+		AShooterPlayerState* MovedPlayerState = SourceTeam.Pop();
+		TargetTeam.Add(MovedPlayerState);
+		MovedPlayerState->SetTeam(TargetTeamId);
+
+		UE_LOG(LogLobbyGameMode, Log,
+			TEXT("Team balancing moved %s to the other team."),
+			*GetNameSafe(MovedPlayerState));
+	}
+
+	UE_LOG(LogLobbyGameMode, Log,
+		TEXT("Team balancing finished. TeamA=%d TeamB=%d"),
+		TeamAPlayers.Num(),
+		TeamBPlayers.Num());
+
+	NotifyLobbyPlayerListChanged();
 }
 
 void ALobbyGameMode::NotifyLobbyPlayerListChanged()
