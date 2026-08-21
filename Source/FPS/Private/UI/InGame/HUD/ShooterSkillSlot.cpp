@@ -160,6 +160,11 @@ void UShooterSkillSlot::SetCooldownState(float RemainingSeconds, float TotalCool
 		return;
 	}
 	
+	if (Image_ReadyGlow)
+	{
+		Image_ReadyGlow->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	
 	Text_Cooldown->SetVisibility(ESlateVisibility::HitTestInvisible);
 	
 	// 스킬 쿨타임 시각화 표시 위한 Alpha. 경과 비율 = 1 - (남은시간/전체시간)
@@ -193,20 +198,9 @@ void UShooterSkillSlot::SetCharges(int32 AvailableCharges, int32 InMaxCharges)
 	
 	// 사용 가능 충전이 0 -> 1 이상으로 늘어난 다시 쓸 수 있게 된 순간만 체크
 	// 최대치까지 다 안 찼어도 Animation 연출을 재생해야 충전형 스킬의 피드백이 된다.
-	if (LastAvailableCharges >= 0 && Available > LastAvailableCharges && Anim_ReadyGlow)
+	if (LastAvailableCharges >= 0 && Available > LastAvailableCharges)
 	{
-		StopAnimation(Anim_ReadyGlow);
-		PlayAnimation(Anim_ReadyGlow, 0.f, 1);
-
-		if (UMaterialInstanceDynamic* MID = GetGlitchMID())
-		{
-			MID->SetScalarParameterValue(TEXT("GlitchStrength"), 1.0f);
-		}
-	}
-	
-	if (Image_ReadyGlow)
-	{
-		Image_ReadyGlow->SetVisibility(Available == MaxCharges ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
+		PlayReadyGlow();
 	}
 	
 	LastAvailableCharges = Available;
@@ -228,6 +222,9 @@ void UShooterSkillSlot::SetReady()
 	{
 		Gauge_Cooldown->SetProgressImmediate(1.f);
 	}
+	
+	// 충전 연출 재생
+	PlayReadyGlow();
 }
 
 void UShooterSkillSlot::Debug_ConsumeCharge()
@@ -308,22 +305,26 @@ bool UShooterSkillSlot::BuildStateFromAbility(FSkillSlotState& Out) const
 	// 현재 다충전 Bar/Gauge 동작은 Debug Driver에서만 검증한다.
 	const TArray<TPair<float, float>> Times = ASC->GetActiveEffectsTimeRemainingAndDuration(Query);
 	
-	// 같은 CooldownTag를 가진 Active GE가 여러 개일 수 있고 반환 순서는 보장되지 않으므로,
-	// 가장 짧은 Remaining을 찾아 다음 Charge가 회복되는 시간으로 임시 사용
-	// TODO: Gameplay 쪽에서 NextRecoveryRemaining을 직접 제공하면 이 부분 제거
 	if (Times.IsEmpty())
 	{
 		return false;
 	}
 	
 	float MinRemaining = TNumericLimits<float>::Max();
+	float DurationAtMin = 0.f;
 	
 	for (const TPair<float, float>& Pair : Times)
 	{
+		if (Pair.Key < MinRemaining)
+		{
+			MinRemaining = Pair.Key;
+			DurationAtMin = Pair.Value;
+		}
 		MinRemaining = FMath::Min(MinRemaining, Pair.Key);
 	}
 	
 	Out.NextRecoveryRemaining = FMath::Max(0.f, MinRemaining);
+	Out.CooldownDuration = DurationAtMin;
 	
 	return true;
 }
@@ -481,6 +482,25 @@ void UShooterSkillSlot::TryBindCooldownTag(URogueAbilitySystemComponent* ASC)
 	
 	// 늦게 발견 됐을 경우 이미 쿨다운 중일 수 있으므로 즉시 한번 반영
 	RefreshCooldownDisplay(); 
+}
+
+void UShooterSkillSlot::PlayReadyGlow()
+{
+	if (Anim_ReadyGlow)
+	{
+		StopAnimation(Anim_ReadyGlow);
+		PlayAnimation(Anim_ReadyGlow, 0.f, 1);
+
+		if (UMaterialInstanceDynamic* MID = GetGlitchMID())
+		{
+			MID->SetScalarParameterValue(TEXT("GlitchStrength"), 1.0f);
+		}
+	}
+	
+	if (Image_ReadyGlow)
+	{
+		Image_ReadyGlow->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
 }
 
 void UShooterSkillSlot::HandleInventoryChanged()
