@@ -7,6 +7,7 @@
 #include "Augment/AugmentDefinition.h"
 #include "Augment/AugmentDraft.h"
 #include "Augment/AugmentRegistrySubsystem.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
@@ -55,6 +56,9 @@ void UAugmentInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	// 소유자에게만. 남에게 보일 목록은 밖에서 스냅샷으로
 	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, Entries, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, Offers, COND_OwnerOnly);
+
+	// UI 표시를 위한 슬롯별 리롤 횟수
+	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, SlotRerollsRemaining, COND_OwnerOnly);
 }
 
 void UAugmentInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InASC)
@@ -100,7 +104,9 @@ void UAugmentInventoryComponent::RemoveAllGrants()
 	GrantHandlesByLine.Reset();
 }
 
-bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers, const int32 DraftSeed)
+bool UAugmentInventoryComponent::SetOffers(
+	const TArray<TArray<FAugmentInventoryEntry>>& SlotCards,
+	const int32 DraftSeed)
 {
 	if (!HasServerAuthority(TEXT("후보 설정")))
 	{
@@ -120,7 +126,7 @@ bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>&
 		return false;
 	}
 
-	if (InOffers.IsEmpty())
+	if (SlotCards.IsEmpty())
 	{
 		UE_LOG(LogAugmentInventory, Error,
 			TEXT("[AugmentInventory] %s: 빈 후보 목록을 받았습니다"), *GetNameSafe(Owner));
@@ -136,14 +142,31 @@ bool UAugmentInventoryComponent::SetOffers(const TArray<FAugmentInventoryEntry>&
 			*GetNameSafe(Owner), Offers.Num());
 	}
 
-	Offers = InOffers;
+	ClearRoundDraftState();
+
+	// 각 체인의 첫 장이 이번에 제시할 후보, 나머지는 리롤 예비
+	Offers.Reserve(SlotCards.Num());
+	SlotReserves.Reserve(SlotCards.Num());
+	SlotRerollsRemaining.Reserve(SlotCards.Num());
+
+	// 가장 앞에 있는 후보를 제시하고 나머지를 후보에 저장
+	for (const TArray<FAugmentInventoryEntry>& Chain : SlotCards)
+	{
+		Offers.Add(Chain[0]);
+
+		TArray<FAugmentInventoryEntry>& Reserve = SlotReserves.AddDefaulted_GetRef();
+		Reserve.Append(Chain.GetData() + 1, Chain.Num() - 1);
+
+		SlotRerollsRemaining.Add(Reserve.Num());
+	}
 
 	// 자동 선택에서 사용할 시드
 	LastDraftSeed = DraftSeed;
 
 	UE_LOG(LogAugmentInventory, Log,
-		TEXT("[AugmentInventory] %s: 후보 %d장 수신 (시드 %d)"),
-		*GetNameSafe(Owner), Offers.Num(), DraftSeed);
+		TEXT("[AugmentInventory] %s: 후보 %d장 수신 (시드 %d, 슬롯별 리롤 %s)"),
+		*GetNameSafe(Owner), Offers.Num(), DraftSeed,
+		*FString::JoinBy(SlotRerollsRemaining, TEXT("/"), [](const int32 Count) { return FString::FromInt(Count); }));
 
 	// 서버에는 OnRep 이 오지 않으므로 직접 발신
 	OnOffersChanged.Broadcast();
@@ -175,6 +198,9 @@ void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& 
 
 	// 이미 등장한 후보는 다시 나오지 않음
 	OutState.SeenDefinitions = SeenDefinitions;
+
+	// 제시할 1장 + 리롤 몫(기본 1회 + 리롤 횟수 증강)
+	OutState.CardsPerSlot = 2 + URogueAugmentStatResolver::GetBonusRerollCount(GetOwner());
 }
 
 void UAugmentInventoryComponent::MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers)
@@ -205,6 +231,72 @@ void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferInd
 	}
 
 	StageOfferSelection(OfferIndex, TEXT("클라이언트 선택"));
+}
+
+// 0보다 크면 UI의 버튼 활성화
+int32 UAugmentInventoryComponent::GetSlotRerollsRemaining(const int32 OfferIndex) const
+{
+	return SlotRerollsRemaining.IsValidIndex(OfferIndex) ? SlotRerollsRemaining[OfferIndex] : 0;
+}
+
+void UAugmentInventoryComponent::ServerRerollOffer_Implementation(const int32 OfferIndex)
+{
+	const AActor* Owner = GetOwner();
+
+	// 선택 페이즈가 닫힌 경우
+	if (!bOfferSelectionEnabled)
+	{
+		UE_LOG(LogAugmentInventory, Warning,
+			TEXT("[AugmentInventory] %s: 선택 페이즈가 닫힌 상태에서 리롤 요청을 거부했습니다"),
+			*GetNameSafe(Owner));
+		return;
+	}
+
+	// 이미 카드를 고른 경우
+	if (StagedOfferState != EAugmentOfferCommitState::Empty)
+	{
+		UE_LOG(LogAugmentInventory, Warning,
+			TEXT("[AugmentInventory] %s: 선택을 완료한 상태에서 리롤 요청이 들어왔습니다"),
+			*GetNameSafe(Owner));
+		return;
+	}
+
+	// 후보 인덱스가 범위를 벗어난 경우
+	if (!Offers.IsValidIndex(OfferIndex) || !SlotReserves.IsValidIndex(OfferIndex))
+	{
+		UE_LOG(LogAugmentInventory, Warning,
+			TEXT("[AugmentInventory] %s: 리롤 인덱스 %d가 후보 %d개 범위 밖입니다"),
+			*GetNameSafe(Owner), OfferIndex, Offers.Num());
+		return;
+	}
+
+	// 예비 슬롯이 비어 있는 경우
+	TArray<FAugmentInventoryEntry>& Reserve = SlotReserves[OfferIndex];
+	if (Reserve.IsEmpty())
+	{
+		UE_LOG(LogAugmentInventory, Warning,
+			TEXT("[AugmentInventory] %s: %d번 슬롯의 리롤 횟수가 남아 있지 않습니다"),
+			*GetNameSafe(Owner), OfferIndex);
+		return;
+	}
+
+	// 예비에서 다음 장을 꺼내 슬롯을 교체
+	const FAugmentInventoryEntry NewOffer = Reserve[0];
+	Reserve.RemoveAt(0);
+	SlotRerollsRemaining[OfferIndex] = Reserve.Num();
+
+	UE_LOG(LogAugmentInventory, Log,
+		TEXT("[AugmentInventory] %s: %d번 슬롯 리롤 %s -> %s (잔여 %d회)"),
+		*GetNameSafe(Owner), OfferIndex,
+		*Offers[OfferIndex].DefinitionId.ToString(), *NewOffer.DefinitionId.ToString(), Reserve.Num());
+
+	Offers[OfferIndex] = NewOffer;
+
+	// 새로운 후보를 등장 이력에 기록. 레벨업 후보는 제외
+	MarkOffersSeen({ NewOffer });
+
+	// 서버에는 OnRep 이 오지 않으므로 직접 발신
+	OnOffersChanged.Broadcast();
 }
 
 bool UAugmentInventoryComponent::SetOfferSelectionEnabled(const bool bEnabled)
@@ -366,8 +458,7 @@ bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCH
 		return false;
 	}
 
-	bOfferSelectionEnabled = false;
-	Offers.Reset();
+	ClearRoundDraftState();
 	OnOffersChanged.Broadcast();
 	return true;
 }
@@ -377,6 +468,15 @@ void UAugmentInventoryComponent::ClearStagedOffer()
 	StagedOffer = FAugmentInventoryEntry();
 	StagedPreviousLine.Reset();
 	StagedOfferState = EAugmentOfferCommitState::Empty;
+}
+
+void UAugmentInventoryComponent::ClearRoundDraftState()
+{
+	bOfferSelectionEnabled = false;
+
+	Offers.Reset();
+	SlotReserves.Reset();
+	SlotRerollsRemaining.Reset();
 }
 
 void UAugmentInventoryComponent::ClearOffers()
@@ -390,8 +490,8 @@ void UAugmentInventoryComponent::ClearOffers()
 
 	const bool bHadPendingDraftState = !Offers.IsEmpty()
 		|| StagedOfferState != EAugmentOfferCommitState::Empty;
-	bOfferSelectionEnabled = false;
-	Offers.Reset();
+
+	ClearRoundDraftState();
 
 	if (StagedOfferState == EAugmentOfferCommitState::Applied
 		|| StagedOfferState == EAugmentOfferCommitState::RecoveryPending)
@@ -421,15 +521,12 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 		return;
 	}
 
-	bOfferSelectionEnabled = false;
 	ClearStagedOffer();
 	RemoveAllGrants();
 
 	Entries.Reset();
 	CachedConditionalRules.Reset();
-
-	// 선택되지 않은 후보 제거
-	Offers.Reset();
+	ClearRoundDraftState();
 
 	// 등장 이력 초기화
 	SeenDefinitions.Reset();
