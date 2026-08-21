@@ -32,14 +32,15 @@ void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attri
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
+	// 최대치는 정수로 유지
 	if (Attribute == GetMaxHealthAttribute())
 	{
 		// 최대 체력은 반드시 1 이상
-		NewValue = FMath::Max(1.f, NewValue);
+		NewValue = FMath::Max(1.f, FMath::RoundToFloat(NewValue));
 	}
 	else if (Attribute == GetMaxShieldAttribute())
 	{
-		NewValue = FMath::Max(0.f, NewValue);
+		NewValue = FMath::Max(0.f, FMath::RoundToFloat(NewValue));
 	}
 	else if (Attribute == GetHealthAttribute())
 	{
