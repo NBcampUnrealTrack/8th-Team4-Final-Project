@@ -6,13 +6,11 @@
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Curves/CurveVector.h"
-#include "Engine/DataTable.h"
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
@@ -48,6 +46,7 @@ AWeaponBase::AWeaponBase()
 	Mesh3P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	Effects = CreateDefaultSubobject<UWeaponEffectsComponent>(TEXT("Effects"));
+	Aim = CreateDefaultSubobject<UWeaponAimComponent>(TEXT("Aim"));
 }
 
 
@@ -67,55 +66,23 @@ void AWeaponBase::BeginPlay()
 		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
 	}
 
-	ApplySpreadRecoilTuningTable();
-
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
 	EffectiveMagazineSize = MagazineSize;
 	EffectiveReloadDuration = ReloadDuration;
 	EffectivePelletCount = PelletCountPerShot;
-	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
-	EffectiveRecoilMultiplier = 1.f;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
-}
-
-void AWeaponBase::ApplySpreadRecoilTuningTable()
-{
-	if (!SpreadRecoilTable || SpreadRecoilRowName.IsNone())
-	{
-		return;
-	}
-
-	const FWeaponSpreadRecoilRow* Row = SpreadRecoilTable->FindRow<FWeaponSpreadRecoilRow>(
-		SpreadRecoilRowName, TEXT("AWeaponBase::ApplySpreadRecoilTuningTable"));
-	if (!Row)
-	{
-		return;
-	}
-
-	BaseSpreadDegrees = Row->BaseSpreadDegrees;
-	BloomPerShotDegrees = Row->BloomPerShotDegrees;
-	MaxBloomDegrees = Row->MaxBloomDegrees;
-	SpreadDecayDelay = Row->SpreadDecayDelay;
-	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
-
-	RecoilCurve = Row->RecoilCurve;
-	RecoilRandomness = Row->RecoilRandomness;
-	RecoilMaxPitch = Row->RecoilMaxPitch;
-	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
-	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
 }
 
 void AWeaponBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	TimeSinceLastShot += DeltaTime;
-
-	TickSpreadDecay(DeltaTime);
-	TickProceduralRecoilGeneration(DeltaTime);
-	TickRecoilRecovery(DeltaTime);
+	if (Aim)
+	{
+		Aim->TickAim(DeltaTime);
+	}
 }
 
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
@@ -180,7 +147,10 @@ void AWeaponBase::SetEffectiveAltRPM(float NewRPM)
 
 void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 {
-	MovementSpreadMultiplier = NewMultiplier;
+	if (Aim)
+	{
+		Aim->SetMovementSpreadMultiplier(NewMultiplier);
+	}
 }
 
 void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
@@ -200,12 +170,18 @@ void AWeaponBase::SetEffectivePelletCount(const int32 NewPelletCount)
 
 void AWeaponBase::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
 {
-	EffectiveBaseSpreadDegrees = NewSpreadDegrees;
+	if (Aim)
+	{
+		Aim->SetEffectiveSpreadDegrees(NewSpreadDegrees);
+	}
 }
 
 void AWeaponBase::SetEffectiveRecoilMultiplier(const float NewMultiplier)
 {
-	EffectiveRecoilMultiplier = NewMultiplier;
+	if (Aim)
+	{
+		Aim->SetEffectiveRecoilMultiplier(NewMultiplier);
+	}
 }
 
 void AWeaponBase::SetEffectiveTraceRange(const float NewTraceRangeCentimeters)
@@ -220,14 +196,35 @@ FGameplayTag AWeaponBase::GetWeaponTag() const
 
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
-	bIsADS = bCanADS && bNewIsADS;
-
-	// ADS 해제 시 반동 값을 즉시 0으로 리셋한다(서서히 복귀하지 않음) - 지향 사격으로 전환되면
-	// 탄퍼짐 계산으로 넘어가므로 잔여 반동이 이어지면 안 된다.
-	if (!bIsADS)
+	if (Aim)
 	{
-		ResetProceduralRecoilState();
+		Aim->SetADS(bNewIsADS);
 	}
+}
+
+bool AWeaponBase::IsADS() const
+{
+	return Aim && Aim->IsADS();
+}
+
+bool AWeaponBase::CanADS() const
+{
+	return Aim && Aim->CanADS();
+}
+
+float AWeaponBase::GetADSFieldOfView() const
+{
+	return Aim ? Aim->GetADSFieldOfView() : 0.f;
+}
+
+float AWeaponBase::GetBaseSpreadDegrees() const
+{
+	return Aim ? Aim->GetBaseSpreadDegrees() : 0.f;
+}
+
+float AWeaponBase::GetCurrentSpreadDegrees() const
+{
+	return Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
 }
 
 void AWeaponBase::SetPresentationActive(const bool bActive)
@@ -358,14 +355,10 @@ TArray<FVector> AWeaponBase::GeneratePelletDirections() const
 
 void AWeaponBase::AdvanceFireCounters()
 {
-	// 3.3.1 개정 원칙: 탄퍼짐 블룸은 지향 사격 전용이다. ADS 중에는 늘리지 않는다 - 안 그러면
-	// ADS 중 사격이 화면엔 안 보이게(스프레드 0 고정) 블룸을 몰래 쌓다가, ADS를 풀자마자
-	// 그 값이 한꺼번에 튀어나와 크로스헤어가 갑자기 벌어져 보인다.
-	if (!bIsADS)
+	if (Aim)
 	{
-		ConsecutiveShotCount++;
+		Aim->NotifyShotFired();
 	}
-	TimeSinceLastShot = 0.f;
 }
 
 void AWeaponBase::StartReload()
@@ -378,7 +371,10 @@ void AWeaponBase::StartReload()
 	bIsReloading = true;
 	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
 	// 항상 무반동 상태로 시작한다.
-	ResetProceduralRecoilState();
+	if (Aim)
+	{
+		Aim->ResetRecoilState();
+	}
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
@@ -410,111 +406,6 @@ void AWeaponBase::FinishReload()
 	}
 }
 
-float AWeaponBase::CalculateCurrentSpreadDegrees() const
-{
-	// 3.3.1 개정 원칙: ADS 중에는 탄퍼짐이 0으로 고정된다.
-	if (bIsADS)
-	{
-		return 0.f;
-	}
-
-	const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
-	return (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
-}
-
-void AWeaponBase::TickSpreadDecay(float DeltaTime)
-{
-	if (ConsecutiveShotCount <= 0 || TimeSinceLastShot < SpreadDecayDelay)
-	{
-		return;
-	}
-
-	ConsecutiveShotDecayAccumulator += ConsecutiveShotDecayPerSecond * DeltaTime;
-
-	while (ConsecutiveShotDecayAccumulator >= 1.f && ConsecutiveShotCount > 0)
-	{
-		ConsecutiveShotCount--;
-		ConsecutiveShotDecayAccumulator -= 1.f;
-	}
-}
-
-void AWeaponBase::TickProceduralRecoilGeneration(const float DeltaTime)
-{
-	// ADS 중 사격 유지 구간(마지막 발사 이후 RecoilRecoveryDelay가 지나지 않은 동안)에만 생성한다.
-	// 이 구간을 벗어나면(사격 중단/ADS 해제) 다음 진입 시 새 버스트로 취급하도록 플래그를 내린다.
-	if (!bIsADS || !RecoilCurve || TimeSinceLastShot >= RecoilRecoveryDelay)
-	{
-		bRecoilBurstActive = false;
-		return;
-	}
-
-	if (!bRecoilBurstActive)
-	{
-		FiringElapsedTime = 0.f;
-		PrevRecoilOffset = FVector2D::ZeroVector;
-		bRecoilBurstActive = true;
-	}
-
-	FiringElapsedTime += DeltaTime;
-
-	const FVector RawCurveValue = RecoilCurve->GetVectorValue(FiringElapsedTime);
-	// Pitch만 RecoilMaxPitch로 상한을 둔다(초과분 Clamp) - Yaw는 상한 없이 커브+랜덤을 그대로 따른다.
-	const FVector2D TargetOffset(RawCurveValue.X, FMath::Min(RawCurveValue.Y, RecoilMaxPitch));
-
-	FVector2D Delta = TargetOffset - PrevRecoilOffset;
-	Delta.X += FMath::FRandRange(-RecoilRandomness, RecoilRandomness);
-	Delta *= EffectiveRecoilMultiplier;
-
-	if (APawn* OwningPawn = Cast<APawn>(GetOwner()))
-	{
-		OwningPawn->AddControllerYawInput(Delta.X);
-		// 위로 튀어오르는 반동이므로 Pitch는 음수 방향으로 적용한다(엔진 Pitch 부호 규약 반전).
-		OwningPawn->AddControllerPitchInput(-Delta.Y);
-	}
-
-	AccumulatedRecoilPitch = TargetOffset.Y;
-	AccumulatedRecoilYaw += Delta.X;
-	PrevRecoilOffset = TargetOffset;
-}
-
-void AWeaponBase::ResetProceduralRecoilState()
-{
-	FiringElapsedTime = 0.f;
-	PrevRecoilOffset = FVector2D::ZeroVector;
-	AccumulatedRecoilPitch = 0.f;
-	AccumulatedRecoilYaw = 0.f;
-	bRecoilBurstActive = false;
-}
-
-void AWeaponBase::TickRecoilRecovery(float DeltaTime)
-{
-	if (TimeSinceLastShot < RecoilRecoveryDelay)
-	{
-		return;
-	}
-
-	if (FMath::IsNearlyZero(AccumulatedRecoilPitch) && FMath::IsNearlyZero(AccumulatedRecoilYaw))
-	{
-		return;
-	}
-
-	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	if (!OwningPawn)
-	{
-		return;
-	}
-
-	const float NewPitch = FMath::FInterpTo(AccumulatedRecoilPitch, 0.f, DeltaTime, RecoilRecoverySpeed);
-	const float NewYaw = FMath::FInterpTo(AccumulatedRecoilYaw, 0.f, DeltaTime, RecoilRecoverySpeed);
-
-	// 누적된 반동을 되돌리는 방향(반대 부호)으로 입력을 넣어 원위치로 보간 복귀시킨다.
-	OwningPawn->AddControllerPitchInput(-(NewPitch - AccumulatedRecoilPitch));
-	OwningPawn->AddControllerYawInput(-(NewYaw - AccumulatedRecoilYaw));
-
-	AccumulatedRecoilPitch = NewPitch;
-	AccumulatedRecoilYaw = NewYaw;
-}
-
 bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
 {
 	if (!CachedOwnerCamera)
@@ -528,7 +419,7 @@ bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
 
 FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 {
-	if (bIsADS)
+	if (Aim && Aim->IsADS())
 	{
 		// ADS 중에는 탄퍼짐이 없으므로 조준선 정중앙으로 발사한다.
 		return AimDirection;
@@ -536,7 +427,7 @@ FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 
 	// 펠릿마다 독립적으로 호출되므로, 샷건처럼 PelletCountPerShot > 1인 무기는
 	// 매 펠릿이 콘 안에서 각각 다른 방향으로 무작위 샘플링된다.
-	const float SpreadDegrees = CalculateCurrentSpreadDegrees();
+	const float SpreadDegrees = Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
 	return UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
 }
 
