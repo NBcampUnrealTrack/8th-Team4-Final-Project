@@ -11,6 +11,7 @@
 #include "GameFramework/PlayerState.h"
 #include "Augment/RogueAugmentSettings.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
 
@@ -426,6 +427,13 @@ bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCH
 
 	bOfferSelectionEnabled = false;
 	Offers.Reset();
+	if (IsValid(AbilitySystemComponent))
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(
+			RogueTags::State_Gameplay_InputBlocked_AugmentDraft,
+			0,
+			EGameplayTagReplicationState::TagOnly);
+	}
 	OnOffersChanged.Broadcast();
 	return true;
 }

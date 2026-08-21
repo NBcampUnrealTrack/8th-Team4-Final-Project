@@ -24,6 +24,8 @@ public:
 	bool CanStartRoomGame() const;
 
 private:
+	void AssignHostPlayerIfNeeded(APlayerController* NewPlayer);
+	void ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState);
 	void NotifyLobbyPlayerListChanged();
 	bool AreAllClientsReady() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;
@@ -34,6 +36,7 @@ private:
 	void HandleStartRoomGameComplete(bool bWasSuccessful);
 
 private:
+	TWeakObjectPtr<APlayerState> HostPlayerState;
 	FString PendingGameMapPath = TEXT("/Game/Maps/BombMap");
 	bool bStartRoomGamePending = false;
 	bool bTravelingToGameMap = false;

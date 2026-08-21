@@ -21,12 +21,15 @@ ALobbyGameMode::ALobbyGameMode()
 void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
+	AssignHostPlayerIfNeeded(NewPlayer);
 	NotifyLobbyPlayerListChanged();
 }
 
 void ALobbyGameMode::Logout(AController* Exiting)
 {
+	const APlayerState* ExitingPlayerState = Exiting ? Exiting->PlayerState : nullptr;
 	Super::Logout(Exiting);
+	ReassignHostPlayerIfNeeded(ExitingPlayerState);
 	NotifyLobbyPlayerListChanged();
 }
 
@@ -67,6 +70,41 @@ bool ALobbyGameMode::RequestStartRoomGame(APlayerController* RequestingPlayer, c
 bool ALobbyGameMode::CanStartRoomGame() const
 {
 	return AreAllClientsReady();
+}
+
+void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
+{
+	if (HostPlayerState.IsValid() || !IsValid(NewPlayer) || !IsValid(NewPlayer->PlayerState))
+	{
+		return;
+	}
+
+	HostPlayerState = NewPlayer->PlayerState;
+}
+
+void ALobbyGameMode::ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState)
+{
+	if (!HostPlayerState.IsValid() || HostPlayerState.Get() != ExitingPlayerState)
+	{
+		return;
+	}
+
+	HostPlayerState.Reset();
+
+	const AGameStateBase* CurrentGameState = GameState;
+	if (!IsValid(CurrentGameState))
+	{
+		return;
+	}
+
+	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
+	{
+		if (IsValid(PlayerState) && PlayerState != ExitingPlayerState)
+		{
+			HostPlayerState = PlayerState;
+			return;
+		}
+	}
 }
 
 void ALobbyGameMode::NotifyLobbyPlayerListChanged()
@@ -114,8 +152,7 @@ bool ALobbyGameMode::AreAllClientsReady() const
 
 bool ALobbyGameMode::IsHostPlayerState(const APlayerState* PlayerState) const
 {
-	const APlayerController* HostController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-	return IsValid(PlayerState) && IsValid(HostController) && HostController->PlayerState == PlayerState;
+	return IsValid(PlayerState) && HostPlayerState.IsValid() && HostPlayerState.Get() == PlayerState;
 }
 
 FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
