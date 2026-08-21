@@ -59,6 +59,11 @@ public:
 
 	void SetLoadedIntoMatch(bool bNewLoadedIntoMatch);
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Voice")
+	bool IsVoiceTalking() const { return bIsVoiceTalking; }
+
+	void SetVoiceTalking(bool bNewVoiceTalking);
+
 protected:
 	virtual void PostInitializeComponents() override;
 
@@ -74,6 +79,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LoadedIntoMatch();
+
+	UFUNCTION()
+	void OnRep_VoiceTalking();
 
 	void ServerResetVitals();
 
@@ -124,4 +132,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_LoadedIntoMatch, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Loading", meta = (AllowPrivateAccess = "true"))
 	bool bLoadedIntoMatch = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_VoiceTalking, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Voice", meta = (AllowPrivateAccess = "true"))
+	bool bIsVoiceTalking = false;
 };

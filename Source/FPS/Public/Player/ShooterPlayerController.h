@@ -27,6 +27,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void StartVoiceTalking();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void StopVoiceTalking();
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
 
@@ -70,6 +76,9 @@ protected:
 	void ServerSetLobbyReady(bool bNewLobbyReady);
 
 	UFUNCTION(Server, Reliable)
+	void ServerSetVoiceTalking(bool bNewVoiceTalking);
+
+	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
@@ -95,6 +104,8 @@ private:
 	void Input_SprintReleased();
 	void Input_PrimaryWeaponPressed();
 	void Input_SecondaryWeaponPressed();
+	void Input_PushToTalkPressed();
+	void Input_PushToTalkReleased();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 

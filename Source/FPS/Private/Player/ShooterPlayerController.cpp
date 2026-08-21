@@ -56,6 +56,14 @@ void AShooterPlayerController::BeginPlay()
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (HasAuthority())
+	{
+		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+		{
+			ShooterPlayerState->SetVoiceTalking(false);
+		}
+	}
+
 	StopMatchLoadReadyCheck();
 	HideLoadingScreen();
 
@@ -132,6 +140,12 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		EnhancedInputComponent->BindAction(InputConfig->SecondaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_SecondaryWeaponPressed);
 	}
+	if (InputConfig->PushToTalkAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
+		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Completed, this, &ThisClass::Input_PushToTalkReleased);
+		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Canceled, this, &ThisClass::Input_PushToTalkReleased);
+	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
@@ -167,6 +181,34 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	}
 
 	ServerSetLobbyReady(bNewLobbyReady);
+}
+
+void AShooterPlayerController::StartVoiceTalking()
+{
+	if (HasAuthority())
+	{
+		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+		{
+			ShooterPlayerState->SetVoiceTalking(true);
+		}
+		return;
+	}
+
+	ServerSetVoiceTalking(true);
+}
+
+void AShooterPlayerController::StopVoiceTalking()
+{
+	if (HasAuthority())
+	{
+		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+		{
+			ShooterPlayerState->SetVoiceTalking(false);
+		}
+		return;
+	}
+
+	ServerSetVoiceTalking(false);
 }
 
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
@@ -245,6 +287,14 @@ void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobby
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
 		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+	}
+}
+
+void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoiceTalking)
+{
+	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+	{
+		ShooterPlayerState->SetVoiceTalking(bNewVoiceTalking);
 	}
 }
 
@@ -433,6 +483,16 @@ void AShooterPlayerController::Input_SecondaryWeaponPressed()
 	{
 		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
 	}
+}
+
+void AShooterPlayerController::Input_PushToTalkPressed()
+{
+	StartVoiceTalking();
+}
+
+void AShooterPlayerController::Input_PushToTalkReleased()
+{
+	StopVoiceTalking();
 }
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)

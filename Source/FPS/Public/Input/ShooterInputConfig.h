@@ -57,6 +57,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> SecondaryWeaponAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> PushToTalkAction;
+
 	// Fire/Reload/Q/E 같은 GAS 어빌리티 입력을 코드에 하드코딩하지 않고 태그 계약으로 연결한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Abilities")
 	TArray<FShooterAbilityInputAction> AbilityInputActions;
