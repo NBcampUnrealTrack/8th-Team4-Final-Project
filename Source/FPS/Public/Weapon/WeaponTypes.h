@@ -9,20 +9,7 @@
 class AActor;
 class UCurveFloat;
 
-// 무기 종류 식별용. GAS 쪽 TAG_WeaponType_*(GameplayTags.h)와는 별개 - AWeaponBase는 GAS 타입을
-// 모르므로, 순수 C++/블루프린트에서 무기 종류를 식별해야 할 때 이 enum을 쓴다.
-UENUM(BlueprintType)
-enum class EWeaponType : uint8
-{
-	None,
-	AR,
-	Pistol,
-	Shotgun,
-	Sniper,
-	Knife
-};
-
-// 런타임 무기 슬롯 식별용. EWeaponType(무기 종류)과 역할이 다르다.
+// 런타임 무기 슬롯 식별용.
 // 슬롯은 1/2/3번 입력 및 Primary/Secondary/Melee 인스턴스 보관에만 사용한다.
 UENUM(BlueprintType)
 enum class EWeaponSlot : uint8
