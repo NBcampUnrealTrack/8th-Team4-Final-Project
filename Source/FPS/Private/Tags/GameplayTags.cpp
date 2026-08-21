@@ -121,6 +121,12 @@ namespace RogueTags
 	// 증강 계열
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Line, "Augment.Line", "증강 계열 앵커. 하위 계열 태그는 에디터에서 추가");
 
+	// 효과 수명
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Lifetime_Round, "Effect.Lifetime.Round", "이번 라운드에만 유지되는 효과. 라운드 시작 시 제거");
+
+	// 상호 배타 효과 그룹
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
+
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
 

@@ -3,13 +3,14 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
-#include "GameplayTagContainer.h"
+#include "UI/InGame/HUD/ShooterHUDTypes.h"
 #include "ShooterWeaponStatus.generated.h"
 
 class AWeaponBase;
 class UCommonTextBlock;
 class UImage;
 class UShooterWeaponDisplaySet;
+class UBorder;
 
 /**
  * HUD의 자식으로 탄약 표시 목적
@@ -29,25 +30,52 @@ protected:
 	
 	// Weapon Change시 이름,아이콘 갱신
 	void RebuildFromWeapon(AWeaponBase* NewWeapon);
-	
 	void RefreshAmmo(AWeaponBase* Weapon);
+	
+	// Threshold로 퍼센트를 가져온다.
+	EShooterHUDVisualTypes GetAmmoVisualType(float AmmoPercent) const;
+	// Set Style 적용
+	void ApplyHUDVisualStyle(const FShooterAmmoVisualStyle& Style);
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Ammo;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonTextBlock> Text_MaxAmmo;
 	
 	// 무기이름 없으면 비워둠
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_WeaponName;
-	
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_WeaponIcon;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Ammo;
+	// Ammo / MaxAmmo 사이의 / <-이거
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Panel;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Frame;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Accent;
 	
-	// WeaponType Tag로 Find -> 이름/아이콘 맵핑 비어있어도 탄약은 보임
+	// Weapon 상태 변화 per
+	UPROPERTY(EditDefaultsOnly, Category = "Ammo|Edit")
+	float WarningThreshold = 0.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "Ammo|Edit")
+	float CriticalThreshold = 0.25f;
+	
+	// Weapon Panel 탄약에 따른 표시 상태 변화
+	UPROPERTY(EditDefaultsOnly, Category = "Ammo|Visual")
+	FShooterAmmoVisualStyleSet AmmoVisualStyles;
+	
+	// WeaponType Tag로 Find
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TObjectPtr<UShooterWeaponDisplaySet> WeaponDisplaySet
 	;
 	// 현재 착용중인 무기 Cashing
 	TWeakObjectPtr<AWeaponBase> CachedWeapon;
+	
+	int32 CachedAmmo = INDEX_NONE;
+	int32 CachedMaxAmmo = INDEX_NONE;
 	
 	bool bLoggedNoWeapon = false;
 };

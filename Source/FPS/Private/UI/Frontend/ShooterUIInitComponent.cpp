@@ -10,6 +10,8 @@
 #include "Tags/UITags.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "Augment/AugmentInventoryComponent.h"
+#include "Input/CommonUIActionRouterBase.h"
+#include "Engine/GameViewportClient.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterUIInitComp, Log, All);
 
@@ -119,7 +121,7 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 	if (AugmentSelectInstance && AugmentSelectInstance->IsInViewport())
 	{
 		AugmentSelectInstance->SetOffers(InOffers);
-		SetAugmentSelectionInput(true);
+
 		return;
 	}
 
@@ -135,7 +137,7 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 		return;
 	}
 
-	AugmentSelectInstance = Cast<UShooterAugmentSelectScreen>(UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, AugmentSelectClass));
+	AugmentSelectInstance = Cast<UShooterAugmentSelectScreen>(UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, AugmentSelectClass));
 	if (IsValid(AugmentSelectInstance) == false)
 	{
 		return;
@@ -144,7 +146,7 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 	AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(this, &ThisClass::HandleAugmentSelected);
 	AugmentSelectInstance->OnAugmentSelected.AddUniqueDynamic(this, &ThisClass::HandleAugmentSelected);
 	AugmentSelectInstance->SetOffers(InOffers);
-	SetAugmentSelectionInput(true);
+
 }
 
 void UShooterUIInitComponent::HideAugmentSelect()
@@ -156,7 +158,6 @@ void UShooterUIInitComponent::HideAugmentSelect()
 		AugmentSelectInstance = nullptr;
 	}
 
-	SetAugmentSelectionInput(false);
 }
 
 void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
@@ -222,34 +223,6 @@ void UShooterUIInitComponent::ScheduleInGameUIRetry()
 		&ThisClass::TryStartInGameUI,
 		0.1f,
 		true);
-}
-
-void UShooterUIInitComponent::SetAugmentSelectionInput(bool bSelecting)
-{
-	APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
-	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
-	{
-		return;
-	}
-
-	if (bSelecting)
-	{
-		FInputModeGameAndUI InputMode;
-		if (IsValid(AugmentSelectInstance))
-		{
-			InputMode.SetWidgetToFocus(AugmentSelectInstance->TakeWidget());
-		}
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputMode.SetHideCursorDuringCapture(false);
-
-		PlayerController->SetInputMode(InputMode);
-		PlayerController->SetShowMouseCursor(true);
-		return;
-	}
-
-	const FInputModeGameOnly InputMode;
-	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(false);
 }
 
 UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const

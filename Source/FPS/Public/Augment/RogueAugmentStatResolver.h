@@ -70,6 +70,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Skill")
 	static float GetFinalCooldown(const AActor* Actor, float BaseCooldownSeconds);
 
+	// -----------------------------------
+	// 드래프트 관련
+
+	// 추가 리롤 횟수
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Draft")
+	static int32 GetBonusRerollCount(const AActor* Actor);
+
 private:
 	// Character / PlayerState / Controller 중 무엇을 넘겨도 해석
 	// 없으면 nullptr

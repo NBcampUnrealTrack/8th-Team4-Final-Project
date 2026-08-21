@@ -166,3 +166,15 @@ float URogueAugmentStatResolver::GetFinalCooldown(const AActor* Actor, float Bas
 	// 쿨타임 음수 방지
 	return FMath::Max(0.f, Final);
 }
+
+// 드래프트 관련
+int32 URogueAugmentStatResolver::GetBonusRerollCount(const AActor* Actor)
+{
+	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
+	if (!Set)
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, FMath::FloorToInt(Set->GetBonusFreeRerolls()));
+}

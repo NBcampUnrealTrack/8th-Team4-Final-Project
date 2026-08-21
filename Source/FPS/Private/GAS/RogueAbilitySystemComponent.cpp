@@ -244,3 +244,28 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s 어빌리티 %d개 부여"), *AbilitySet->GetName(), AbilitySet->Abilities.Num());
 }
+
+int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
+{
+	if (!IsOwnerActorAuthoritative())
+	{
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
+			     "서버에서 제거하면 클라이언트로 복제됩니다"));
+		return 0;
+	}
+
+	// 라운드 한정 효과 태그를 가진 모든 GE 제거
+	const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
+		FGameplayTagContainer(RogueTags::Effect_Lifetime_Round));
+
+	const int32 RemovedCount = RemoveActiveEffects(Query);
+	if (RemovedCount > 0)
+	{
+		UE_LOG(LogRogueAbility, Log,
+			TEXT("[RogueAbility] %s: 라운드 한정 효과 %d 개 제거"),
+			*GetNameSafe(GetOwnerActor()), RemovedCount);
+	}
+
+	return RemovedCount;
+}

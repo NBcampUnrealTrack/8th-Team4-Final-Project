@@ -10,7 +10,7 @@ URogueVitalAttributeSet::URogueVitalAttributeSet()
 	InitHealth(100.f);
 	InitMaxHealth(100.f);
 	InitShield(0.f);
-	InitMaxShield(50.f);
+	InitMaxShield(0.f);
 	InitShopDamageAmplification(0.f);
 }
 
