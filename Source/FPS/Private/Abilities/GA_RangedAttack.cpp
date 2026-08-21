@@ -17,7 +17,7 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 		return false;
 	}
 
-	const AWeaponBase* Weapon = GetEquippedWeapon();
+	AWeaponBase* Weapon = GetEquippedWeapon();
 	if (!Weapon)
 	{
 		return false;
@@ -26,7 +26,18 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 	// 연사 입력은 Enhanced Input의 Triggered 동안 매 프레임 활성화를 재시도한다.
 	// CanFireNow()를 여기서도 게이트해 실제 발사 간격이 되기 전의 불필요한 LocalPredicted
 	// 어빌리티 활성화/RPC를 줄이고, Fire()의 동일 검증은 최종 권위 안전망으로 그대로 둔다.
-	return Weapon->CanFireNow();
+	if (Weapon->CanFireNow())
+	{
+		return true;
+	}
+
+	// 탄약이 없어서 못 쐈다면 빈 탄창 사운드를 시도한다(내부적으로 RPM 간격만큼 스스로 디바운스함).
+	if (Weapon->IsOutOfAmmo())
+	{
+		Weapon->TryPlayEmptyClipSound();
+	}
+
+	return false;
 }
 
 void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,

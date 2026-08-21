@@ -140,6 +140,35 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
 }
 
+void AWeaponBase::TryPlayEmptyClipSound()
+{
+	if (!IsOutOfAmmo() || !EmptyClipSound)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 연사 입력을 누르고 있으면 CanActivateAbility가 매 프레임 재평가되므로, 실제 총이 쐈을 법한
+	// RPM 간격으로만 딸깍 소리가 나도록 LastFireTime을 그대로 재사용해 스스로 스팸을 막는다.
+	const float ClickInterval = EffectiveRPM > 0.f ? (60.f / EffectiveRPM) : 0.5f;
+	if ((World->GetTimeSeconds() - LastFireTime) < ClickInterval)
+	{
+		return;
+	}
+
+	LastFireTime = World->GetTimeSeconds();
+
+	if (HasAuthority())
+	{
+		Multicast_PlayWeaponSound(EmptyClipSound);
+	}
+}
+
 void AWeaponBase::SetEffectiveRPM(float NewRPM)
 {
 	EffectiveRPM = NewRPM;

@@ -104,6 +104,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool CanFireNow(bool bHeavyAttack = false) const;
 
+	// CanFireNow()가 false인 여러 사유(재장전/쿨다운/탄약없음) 중 "탄약이 없어서"만 콕 집어 확인한다.
+	// GA_RangedAttack이 빈 탄창 사운드를 재생할지 판단할 때 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
+	bool IsOutOfAmmo() const { return bUsesAmmo && CurrentAmmo <= 0; }
+
+	// 탄약이 없어 발사가 막혔을 때 호출한다. 실제 RPM 간격과 같은 쿨다운으로 스스로 스팸을 막으므로
+	// (CanActivateAbility는 트리거를 누르고 있는 동안 매 프레임 재평가되지만) 호출자가 별도로 디바운스할
+	// 필요가 없다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void TryPlayEmptyClipSound();
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseRPM() const { return BaseRPM; }
 
@@ -295,6 +306,10 @@ protected:
 	// 재장전 완료 시 재생할 사운드. 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
 	TObjectPtr<USoundBase> ReloadFinishSound;
+
+	// 탄약 없이 발사를 시도했을 때 재생할 사운드(딸깍 소리). 비어 있으면 재생하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
+	TObjectPtr<USoundBase> EmptyClipSound;
 
 	// 총구화염. 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
