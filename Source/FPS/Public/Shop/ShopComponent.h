@@ -24,19 +24,27 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Shop")
 	bool FindItemDefinition(FGameplayTag ItemId, FShopItemDefinition& OutDefinition) const;
 
-	// UI에서 구매 가능 상태를 미리 조회할 수 있지만 실제 거래 시 서버가 동일한 규칙을 다시 검증한다.
 	UFUNCTION(BlueprintPure, Category = "Shop")
 	EShopPurchaseResult GetPurchaseEligibility(FGameplayTag ItemId, int32& OutPrice) const;
+
+	UFUNCTION(BlueprintPure, Category = "Shop")
+	int32 GetConfirmedPurchaseCount(FGameplayTag ItemId) const;
 
 	/**
 	 * 서버에서 구매 조건을 검증하고 크레딧을 차감해 미확정 거래를 생성한다.
 	 * 성공한 거래는 반드시 CommitTransaction 또는 RefundTransaction으로 종료해야 한다.
 	 */
 	FShopTransactionResult TryBeginTransaction(FGameplayTag ItemId);
+
+	// 진행 중인 같은 종류의 거래를 다른 상품으로 교체하고 가격 차액만 정산한다.
+	FShopTransactionResult TryReplaceTransaction(
+		const FShopTransactionHandle& CurrentTransaction,
+		FGameplayTag NewItemId);
 
 	// 외부 시스템의 상품 적용이 성공한 거래를 최종 확정한다.
 	EShopPurchaseResult CommitTransaction(const FShopTransactionHandle& Transaction);
@@ -74,7 +82,10 @@ private:
 		int32 Price = 0;
 	};
 
-	FShopPurchaseResolution ResolvePurchaseRequest(FGameplayTag ItemId) const;
+	FShopPurchaseResolution ResolvePurchaseRequest(
+		FGameplayTag ItemId,
+		int32 CreditOffset = 0) const;
+
 	const URogueShopSettings* GetShopSettings() const;
 	UCreditWalletComponent* GetCreditWallet() const;
 	int32 ResolvePrice(const FShopItemDefinition& Definition) const;
@@ -88,6 +99,14 @@ private:
 private:
 	// 결제됐지만 아직 확정 또는 환불되지 않은 서버 전용 거래 원장이다.
 	TMap<FGuid, FShopTransactionHandle> ActiveTransactions;
+
+	// 영구 스탯 강화의 확정 구매 횟수다.
+	// PlayerState 소유 ShopComponent에 있으므로 라운드가 바뀌어도 유지된다.
+	UPROPERTY(Replicated)
+	int32 HealthUpgradePurchaseCount = 0;
+
+	UPROPERTY(Replicated)
+	int32 DamageUpgradePurchaseCount = 0;
 
 	// Wallet 변경 델리게이트 등으로 같은 거래 처리에 재진입하는 것을 차단한다.
 	bool bIsProcessingTransaction = false;

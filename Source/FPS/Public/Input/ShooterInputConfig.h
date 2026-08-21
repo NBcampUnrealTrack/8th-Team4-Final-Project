@@ -60,4 +60,8 @@ public:
 	// Fire/Reload/Q/E 같은 GAS 어빌리티 입력을 코드에 하드코딩하지 않고 태그 계약으로 연결한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Abilities")
 	TArray<FShooterAbilityInputAction> AbilityInputActions;
+
+	// 준비 단계에서 상점 화면을 열고 닫는 로컬 UI 입력이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> ToggleShopAction;
 };

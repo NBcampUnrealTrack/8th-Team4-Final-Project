@@ -280,6 +280,16 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		}
 	}
 
+	if (!CommitPendingShopPurchases())
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot start round combat because shop purchases could not be committed."));
+
+		return false;
+	}
+
 	if (!HasMatchStarted())
 	{
 		StartMatch();

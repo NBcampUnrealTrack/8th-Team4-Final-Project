@@ -5,6 +5,8 @@
 
 #include "ShopTypes.generated.h"
 
+class UGameplayEffect;
+
 UENUM(BlueprintType)
 enum class EShopItemType : uint8
 {
@@ -32,6 +34,7 @@ enum class EShopPurchaseResult : uint8
 	TransactionInProgress UMETA(DisplayName = "Transaction In Progress"),
 	InvalidTransaction UMETA(DisplayName = "Invalid Transaction"),
 	TransactionMismatch UMETA(DisplayName = "Transaction Mismatch"),
+	PurchaseLimitReached UMETA(DisplayName = "Purchase Limit Reached"),
 	RefundFailed UMETA(DisplayName = "Refund Failed")
 };
 
@@ -64,6 +67,15 @@ struct FShopItemDefinition
 	// 동적 가격 규칙이 추가되기 전의 기준 가격이다. 서버가 최종 결제 가격을 결정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop", meta = (ClampMin = "1", UIMin = "1"))
 	int32 BasePrice = 0;
+
+	// 반복 구매 상품의 단계별 가격이다.
+	// 비어 있으면 BasePrice를 고정 가격으로 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
+	TArray<int32> TierPrices;
+
+	// 상품 적용에 사용할 GameplayEffect다. GE가 필요 없는 상품은 비워둔다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
+	TSoftClassPtr<UGameplayEffect> EffectClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
 	FText DisplayName;

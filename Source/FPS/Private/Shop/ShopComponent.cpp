@@ -6,6 +6,7 @@
 #include "GameMode/BaseRoundGameState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
+#include "Net/UnrealNetwork.h"
 #include "Templates/UnrealTemplate.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShop, Log, All);
@@ -16,11 +17,18 @@ UShopComponent::UShopComponent()
 	SetIsReplicatedByDefault(true);
 }
 
+void UShopComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(UShopComponent, HealthUpgradePurchaseCount, COND_OwnerOnly);
+
+	DOREPLIFETIME_CONDITION(UShopComponent, DamageUpgradePurchaseCount, COND_OwnerOnly);
+}
+
 #if WITH_DEV_AUTOMATION_TESTS
 // 실제 GameState 페이즈를 구성하지 않는 자동화 테스트에서만 구매 가능 상태를 강제로 대체한다.
-void UShopComponent::SetPurchaseAvailabilityOverrideForTesting(
-	const bool bEnabled,
-	const bool bShopOpen)
+void UShopComponent::SetPurchaseAvailabilityOverrideForTesting(const bool bEnabled, const bool bShopOpen)
 {
 	bHasPurchaseAvailabilityOverrideForTesting = bEnabled;
 	bPurchaseAvailabilityOverrideForTesting = bShopOpen;
@@ -102,7 +110,9 @@ bool UShopComponent::FindItemDefinition(
 		return false;
 	}
 
-	const FShopItemDefinition* Definition = Settings->FindItemDefinition(ItemId);
+	const FShopItemDefinition* Definition =
+		Settings->FindItemDefinition(ItemId);
+
 	if (!Definition)
 	{
 		return false;
@@ -117,9 +127,39 @@ EShopPurchaseResult UShopComponent::GetPurchaseEligibility(
 	int32& OutPrice) const
 {
 	// UI 사전 조회와 실제 구매가 같은 검증 경로를 사용해 구매 조건의 불일치를 막는다.
-	const FShopPurchaseResolution Resolution = ResolvePurchaseRequest(ItemId);
+	const FShopPurchaseResolution Resolution =
+		ResolvePurchaseRequest(ItemId);
+
 	OutPrice = Resolution.Price;
 	return Resolution.Result;
+}
+
+int32 UShopComponent::GetConfirmedPurchaseCount(const FGameplayTag ItemId) const
+{
+	const URogueShopSettings* Settings = GetShopSettings();
+	if (!IsValid(Settings))
+	{
+		return 0;
+	}
+
+	const FShopItemDefinition* Definition = Settings->FindItemDefinition(ItemId);
+
+	if (!Definition)
+	{
+		return 0;
+	}
+
+	switch (Definition->ItemType)
+	{
+	case EShopItemType::HealthUpgrade:
+		return HealthUpgradePurchaseCount;
+
+	case EShopItemType::DamageUpgrade:
+		return DamageUpgradePurchaseCount;
+
+	default:
+		return 0;
+	}
 }
 
 FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag ItemId)
@@ -225,6 +265,157 @@ FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag It
 	return TransactionResult;
 }
 
+FShopTransactionResult UShopComponent::TryReplaceTransaction(
+	const FShopTransactionHandle& CurrentTransaction,
+	const FGameplayTag NewItemId)
+{
+	FShopTransactionResult TransactionResult;
+
+	if (!HasServerAuthority())
+	{
+		TransactionResult.Result = EShopPurchaseResult::NotAuthority;
+		return TransactionResult;
+	}
+
+	if (bIsProcessingTransaction)
+	{
+		TransactionResult.Result = EShopPurchaseResult::TransactionInProgress;
+		return TransactionResult;
+	}
+
+	TGuardValue<bool> ProcessingGuard(bIsProcessingTransaction, true);
+
+	const FShopTransactionHandle* ActiveTransaction = nullptr;
+	const EShopPurchaseResult ValidationResult =
+		ValidateActiveTransaction(
+			CurrentTransaction,
+			ActiveTransaction);
+
+	if (ValidationResult != EShopPurchaseResult::Success)
+	{
+		TransactionResult.Result = ValidationResult;
+		return TransactionResult;
+	}
+
+	// Map 갱신 이후에도 안전하게 사용할 수 있도록 서버 원본을 복사한다.
+	const FShopTransactionHandle PreviousTransaction =
+		*ActiveTransaction;
+
+	const FShopPurchaseResolution Resolution =
+		ResolvePurchaseRequest(
+			NewItemId,
+			PreviousTransaction.PaidCredits);
+
+	if (Resolution.Result != EShopPurchaseResult::Success)
+	{
+		TransactionResult.Result = Resolution.Result;
+		return TransactionResult;
+	}
+
+	if (!Resolution.Definition || !IsValid(Resolution.Wallet))
+	{
+		TransactionResult.Result = EShopPurchaseResult::InvalidItem;
+		return TransactionResult;
+	}
+
+	// 같은 종류의 상품끼리만 교체한다.
+	if (Resolution.Definition->ItemType != PreviousTransaction.ItemType)
+	{
+		TransactionResult.Result = EShopPurchaseResult::InvalidItem;
+		return TransactionResult;
+	}
+
+	UCreditWalletComponent* Wallet = Resolution.Wallet;
+
+	TransactionResult.CreditsBefore = Wallet->GetCredits();
+
+	// 같은 상품이면 아무것도 변경하지 않는다.
+	if (PreviousTransaction.ItemId.MatchesTagExact(Resolution.Definition->ItemId))
+	{
+		TransactionResult.Transaction = PreviousTransaction;
+		TransactionResult.CreditsAfter = TransactionResult.CreditsBefore;
+		TransactionResult.Result = EShopPurchaseResult::Success;
+		return TransactionResult;
+	}
+
+	FShopTransactionHandle ReplacementTransaction;
+	ReplacementTransaction.TransactionId = PreviousTransaction.TransactionId;
+	ReplacementTransaction.ItemId = Resolution.Definition->ItemId;
+	ReplacementTransaction.ItemType = Resolution.Definition->ItemType;
+	ReplacementTransaction.PaidCredits = Resolution.Price;
+
+	if (!ReplacementTransaction.IsValid())
+	{
+		TransactionResult.CreditsAfter = TransactionResult.CreditsBefore;
+		TransactionResult.Result = EShopPurchaseResult::InvalidTransaction;
+		return TransactionResult;
+	}
+
+	const int64 PriceDelta =
+		static_cast<int64>(ReplacementTransaction.PaidCredits)
+		- static_cast<int64>(PreviousTransaction.PaidCredits);
+
+	// Wallet 변경 이벤트가 발생했을 때도 새 거래 상태가 보이도록
+	// 먼저 서버 원장을 교체한다.
+	ActiveTransactions.Add(
+		ReplacementTransaction.TransactionId, ReplacementTransaction);
+
+	auto RestorePreviousTransaction = [this, &PreviousTransaction]()
+		{
+			ActiveTransactions.Add(PreviousTransaction.TransactionId, PreviousTransaction);
+		};
+
+	if (PriceDelta > 0)
+	{
+		const int32 AdditionalCost = static_cast<int32>(PriceDelta);
+
+		if (!Wallet->TrySpendCredits(AdditionalCost, ECreditChangeReason::Purchase))
+		{
+			RestorePreviousTransaction();
+
+			TransactionResult.CreditsAfter = Wallet->GetCredits();
+			TransactionResult.Result =
+				Wallet->CanAfford(AdditionalCost) ? EShopPurchaseResult::PaymentFailed : EShopPurchaseResult::NotEnoughCredits;
+
+			return TransactionResult;
+		}
+	}
+	else if (PriceDelta < 0)
+	{
+		const int32 RefundAmount =
+			static_cast<int32>(-PriceDelta);
+
+		if (!Wallet->AddCredits(RefundAmount, ECreditChangeReason::PurchaseRefund))
+		{
+			RestorePreviousTransaction();
+
+			TransactionResult.CreditsAfter = Wallet->GetCredits();
+			TransactionResult.Result = EShopPurchaseResult::RefundFailed;
+			return TransactionResult;
+		}
+	}
+
+	TransactionResult.Transaction = ReplacementTransaction;
+	TransactionResult.CreditsAfter = Wallet->GetCredits();
+	TransactionResult.Result = EShopPurchaseResult::Success;
+
+	UE_LOG(
+		LogShop,
+		Verbose,
+		TEXT("Transaction replaced for %s: Id=%s PreviousItem=%s NewItem=%s PreviousPrice=%d NewPrice=%d Credits=%d->%d"),
+		*GetNameSafe(GetOwner()),
+		*ReplacementTransaction.TransactionId.ToString(
+			EGuidFormats::DigitsWithHyphensLower),
+		*PreviousTransaction.ItemId.ToString(),
+		*ReplacementTransaction.ItemId.ToString(),
+		PreviousTransaction.PaidCredits,
+		ReplacementTransaction.PaidCredits,
+		TransactionResult.CreditsBefore,
+		TransactionResult.CreditsAfter);
+
+	return TransactionResult;
+}
+
 EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHandle& Transaction)
 {
 	if (!HasServerAuthority())
@@ -252,9 +443,37 @@ EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHand
 	}
 
 	// 실제 상품 적용은 호출자가 완료하고 Commit은 미확정 거래를 원장에서 닫는 역할만 한다.
-	const FShopTransactionHandle CommittedTransaction = *ActiveTransaction;
+	const FShopTransactionHandle CommittedTransaction =	*ActiveTransaction;
+
+	bool bPurchaseCountChanged = false;
+
+	switch (CommittedTransaction.ItemType)
+	{
+	case EShopItemType::HealthUpgrade:
+		++HealthUpgradePurchaseCount;
+		bPurchaseCountChanged = true;
+		break;
+
+	case EShopItemType::DamageUpgrade:
+		++DamageUpgradePurchaseCount;
+		bPurchaseCountChanged = true;
+		break;
+
+	default:
+		break;
+	}
+
 	ActiveTransaction = nullptr;
-	ActiveTransactions.Remove(CommittedTransaction.TransactionId);
+	ActiveTransactions.Remove(
+		CommittedTransaction.TransactionId);
+
+	if (bPurchaseCountChanged)
+	{
+		if (AActor* OwnerActor = GetOwner())
+		{
+			OwnerActor->ForceNetUpdate();
+		}
+	}
 
 	UE_LOG(LogShop, Verbose,
 		TEXT("Transaction committed for %s: Id=%s Item=%s Price=%d"),
@@ -418,8 +637,8 @@ bool UShopComponent::HasActiveTransaction(const FGuid& TransactionId) const
 	return TransactionId.IsValid() && ActiveTransactions.Contains(TransactionId);
 }
 
-UShopComponent::FShopPurchaseResolution UShopComponent::ResolvePurchaseRequest(
-	const FGameplayTag ItemId) const
+UShopComponent::FShopPurchaseResolution
+UShopComponent::ResolvePurchaseRequest(const FGameplayTag ItemId, const int32 CreditOffset) const
 {
 	// 구매 가능 조회와 실제 거래가 동일한 상품, 가격, 페이즈, Wallet 검증 경로를 사용하도록 한곳에서 해석한다.
 	FShopPurchaseResolution Resolution;
@@ -434,7 +653,21 @@ UShopComponent::FShopPurchaseResolution UShopComponent::ResolvePurchaseRequest(
 
 	if (Resolution.Definition)
 	{
-		Resolution.Price = ResolvePrice(*Resolution.Definition);
+		const FShopItemDefinition& Definition =	*Resolution.Definition;
+
+		if (!Definition.TierPrices.IsEmpty())
+		{
+			const int32 PurchaseCount =	GetConfirmedPurchaseCount(Definition.ItemId);
+
+			if (PurchaseCount >= Definition.TierPrices.Num())
+			{
+				Resolution.Result =	EShopPurchaseResult::PurchaseLimitReached;
+
+				return Resolution;
+			}
+		}
+
+		Resolution.Price = ResolvePrice(Definition);
 	}
 
 	FShopPurchaseContext Context;
@@ -443,9 +676,16 @@ UShopComponent::FShopPurchaseResolution UShopComponent::ResolvePurchaseRequest(
 	Context.Price = Resolution.Price;
 	Context.bShopOpen = bCatalogValid && IsPurchaseWindowOpen(*Settings);
 	Context.bWalletAvailable = IsValid(Resolution.Wallet);
-	Context.CurrentCredits = IsValid(Resolution.Wallet)
-		? Resolution.Wallet->GetCredits()
-		: 0;
+	if (IsValid(Resolution.Wallet))
+	{
+		const int64 AvailableCredits = static_cast<int64>(Resolution.Wallet->GetCredits()) + FMath::Max(0, CreditOffset);
+
+		Context.CurrentCredits = static_cast<int32>(FMath::Min<int64>(AvailableCredits, MAX_int32));
+	}
+	else
+	{
+		Context.CurrentCredits = 0;
+	}
 
 	Resolution.Result = ShopPurchaseRules::Evaluate(Context);
 	return Resolution;
@@ -464,8 +704,20 @@ UCreditWalletComponent* UShopComponent::GetCreditWallet() const
 
 int32 UShopComponent::ResolvePrice(const FShopItemDefinition& Definition) const
 {
-	// 가격 계산 경로를 한곳에 두어 가격 정책 변경이 거래 처리 코드에 퍼지지 않게 한다.
-	return Definition.BasePrice;
+	// 단계 가격이 없는 상품은 기존 고정 가격을 사용한다.
+	if (Definition.TierPrices.IsEmpty())
+	{
+		return Definition.BasePrice;
+	}
+
+	const int32 PurchaseCount =	GetConfirmedPurchaseCount(Definition.ItemId);
+
+	if (!Definition.TierPrices.IsValidIndex(PurchaseCount))
+	{
+		return 0;
+	}
+
+	return Definition.TierPrices[PurchaseCount];
 }
 
 bool UShopComponent::IsPurchaseWindowOpen(const URogueShopSettings& Settings) const

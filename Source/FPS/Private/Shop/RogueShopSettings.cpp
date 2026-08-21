@@ -1,5 +1,4 @@
 #include "Shop/RogueShopSettings.h"
-
 #include "Shop/ShopTags.h"
 
 URogueShopSettings::URogueShopSettings()

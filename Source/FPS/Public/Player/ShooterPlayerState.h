@@ -15,6 +15,7 @@ class URogueAugmentAttributeSet;
 class URogueHealthComponent;
 class URogueVitalAttributeSet;
 class UShopComponent;
+class UShopPurchaseComponent;
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -42,6 +43,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Shop")
 	UShopComponent* GetShopComponent() const { return ShopComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Shop")
+	UShopPurchaseComponent* GetShopPurchaseComponent() const { return ShopPurchaseComponent; }
 
 	// 어트리뷰트는 StatResolver 와 ExecCalc 을 통해 읽는 것이 정상 경로
 	// 이 둘은 초기화/디버그용
@@ -129,6 +133,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Shop")
 	TObjectPtr<UShopComponent> ShopComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Shop")
+	TObjectPtr<UShopPurchaseComponent> ShopPurchaseComponent;
 
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
 	bool bIsLobbyReady = false;

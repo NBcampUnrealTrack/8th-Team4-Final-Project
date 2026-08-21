@@ -14,6 +14,7 @@
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
+#include "Shop/ShopPurchaseComponent.h"
 #include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
@@ -29,6 +30,7 @@ AShooterPlayerState::AShooterPlayerState()
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
 	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
 	ShopComponent = CreateDefaultSubobject<UShopComponent>(TEXT("ShopComponent"));
+	ShopPurchaseComponent = CreateDefaultSubobject<UShopPurchaseComponent>(TEXT("ShopPurchaseComponent"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);

@@ -12,6 +12,7 @@ class ABaseRoundGameState;
 class UShooterUIManagerSubsystem;
 struct FAugmentInventoryEntry;
 class UShooterAugmentSelectScreen;
+class UShooterShopScreen;
 class UAugmentInventoryComponent;
 
 /**
@@ -32,6 +33,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void HideAugmentSelect();
 
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void ToggleShop();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void ShowShop();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void HideShop();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Shop")
+	bool IsShopOpen() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -48,7 +61,11 @@ protected:
 	UFUNCTION()
 	void HandleAugmentSelectionStateChanged();
 
+	UFUNCTION()
+	void HandleShopCloseRequested();
+
 	void RefreshAugmentSelection();
+	bool CanShowShop() const;
 	void ScheduleInGameUIRetry();
 	void UnbindRuntimeDelegates();
 
@@ -75,4 +92,10 @@ protected:
 	// 화면에 띄워져 있는동안만 유효 없으면 비운다
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
+
+	UPROPERTY(EditAnywhere, Category = "UI|Shop")
+	TSubclassOf<UShooterShopScreen> ShopScreenClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterShopScreen> ShopScreenInstance;
 };

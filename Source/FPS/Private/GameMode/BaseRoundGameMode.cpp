@@ -10,6 +10,7 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/ShopComponent.h"
+#include "Shop/ShopPurchaseComponent.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogBaseRoundGameMode);
@@ -134,6 +135,52 @@ void ABaseRoundGameMode::NotifyPlayerEliminatedBy(
 
 	SetPlayerRoundInputEnabled(Cast<APlayerController>(EliminatedController), false);
 	HandleModePlayerEliminated(EliminatedPlayerState);
+}
+
+bool ABaseRoundGameMode::CommitPendingShopPurchases()
+{
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	if (!IsValid(PlayerManager))
+	{
+		return false;
+	}
+
+	TArray<AShooterPlayerState*> Participants;
+	PlayerManager->GetRoundParticipants(Participants);
+
+	for (AShooterPlayerState* PlayerState : Participants)
+	{
+		if (!IsValid(PlayerState))
+		{
+			return false;
+		}
+
+		UShopPurchaseComponent* PurchaseComponent = PlayerState->GetShopPurchaseComponent();
+
+		if (!IsValid(PurchaseComponent))
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Cannot commit shop purchases for %s: ShopPurchaseComponent is missing."),
+				*GetNameSafe(PlayerState));
+
+			return false;
+		}
+
+		if (!PurchaseComponent->CommitPendingPurchases())
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Failed to commit pending shop purchases for %s."),
+				*GetNameSafe(PlayerState));
+
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void ABaseRoundGameMode::RestartGameFlow()

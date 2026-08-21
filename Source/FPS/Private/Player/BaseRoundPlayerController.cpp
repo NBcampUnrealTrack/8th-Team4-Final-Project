@@ -1,6 +1,8 @@
 #include "Player/BaseRoundPlayerController.h"
 
 #include "EnhancedInputSubsystems.h"
+#include "EnhancedInputComponent.h"
+#include "UI/Frontend/ShooterUIInitComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "GameMode/BaseRoundGameMode.h"
@@ -27,6 +29,26 @@ void ABaseRoundPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	Super::EndPlay(EndPlayReason);
 }
 
+void ABaseRoundPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+
+	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
+
+	UShooterInputConfig* ShooterInputConfig = InputConfig.Get();
+
+	if (!IsValid(EnhancedInputComponent) || !IsValid(ShooterInputConfig) || !IsValid(ShooterInputConfig->ToggleShopAction))
+	{
+		return;
+	}
+
+	EnhancedInputComponent->BindAction(
+		ShooterInputConfig->ToggleShopAction,
+		ETriggerEvent::Started,
+		this,
+		&ThisClass::Input_ToggleShop);
+}
+
 bool ABaseRoundPlayerController::IsRoundInputEnabled() const
 {
 	return bIsRoundInputEnabled;
@@ -45,6 +67,19 @@ bool ABaseRoundPlayerController::CanProcessGameplayInput() const
 bool ABaseRoundPlayerController::CanUseCombatInput() const
 {
 	return CanProcessActionInput();
+}
+
+void ABaseRoundPlayerController::Input_ToggleShop()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UShooterUIInitComponent* UIInitComponent = FindComponentByClass<UShooterUIInitComponent>())
+	{
+		UIInitComponent->ToggleShop();
+	}
 }
 
 void ABaseRoundPlayerController::SetRoundInputEnabled(const bool bEnabled)

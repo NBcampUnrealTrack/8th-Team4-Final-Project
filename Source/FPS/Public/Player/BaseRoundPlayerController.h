@@ -27,6 +27,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void SetupInputComponent() override;
 
 	UFUNCTION(Client, Reliable)
 	void ClientSetRoundInputEnabled(bool bEnabled);
@@ -35,6 +36,7 @@ protected:
 	void ServerNotifyClientReadyForGameFlow();
 
 private:
+	void Input_ToggleShop();
 	void ApplyRoundInputEnabled(bool bEnabled);
 	void SetRoundInputLockApplied(bool bApplied);
 	void SetGameplayMappingContextEnabled(bool bEnabled);

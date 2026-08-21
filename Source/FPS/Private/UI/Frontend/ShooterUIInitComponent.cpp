@@ -9,6 +9,7 @@
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
+#include "UI/InGame/Shop/ShooterShopScreen.h"
 #include "Augment/AugmentInventoryComponent.h"
 #include "Input/CommonUIActionRouterBase.h"
 #include "Engine/GameViewportClient.h"
@@ -50,6 +51,7 @@ void UShooterUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
 	}
 
+	HideShop();
 	HideAugmentSelect();
 	UnbindRuntimeDelegates();
 	Super::EndPlay(EndPlayReason);
@@ -160,6 +162,78 @@ void UShooterUIInitComponent::HideAugmentSelect()
 
 }
 
+void UShooterUIInitComponent::ToggleShop()
+{
+	if (IsShopOpen())
+	{
+		HideShop();
+		return;
+	}
+
+	ShowShop();
+}
+
+void UShooterUIInitComponent::HideShop()
+{
+	if (!IsValid(ShopScreenInstance))
+	{
+		return;
+	}
+
+	ShopScreenInstance->OnCloseRequested.RemoveDynamic(this, &ThisClass::HandleShopCloseRequested);
+
+	ShopScreenInstance->DeactivateWidget();
+	ShopScreenInstance = nullptr;
+}
+
+bool UShooterUIInitComponent::IsShopOpen() const
+{
+	return IsValid(ShopScreenInstance);
+}
+
+void UShooterUIInitComponent::ShowShop()
+{
+	if (IsShopOpen() || !CanShowShop())
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!IsValid(UIManager))
+	{
+		return;
+	}
+
+	if (!IsValid(ShopScreenClass))
+	{
+		UE_LOG(
+			LogShooterUIInitComp,
+			Error,
+			TEXT("ShopScreenClass is not configured. Owner=%s"),
+			*GetNameSafe(GetOwner()));
+
+		return;
+	}
+
+	// 증강 선택이 끝난 뒤 남아 있을 수 있는 화면을 정리하고 상점을 연다.
+	HideAugmentSelect();
+
+	ShopScreenInstance = Cast<UShooterShopScreen>(UIManager->PushWidgetToLayer(	UITags::UI_Layer_Menu, ShopScreenClass));
+
+	if (!IsValid(ShopScreenInstance))
+	{
+		return;
+	}
+
+	ShopScreenInstance->OnCloseRequested.RemoveDynamic(
+		this,
+		&ThisClass::HandleShopCloseRequested);
+
+	ShopScreenInstance->OnCloseRequested.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleShopCloseRequested);
+}
+
 void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 {
 	if (BoundInventory.IsValid())
@@ -172,7 +246,17 @@ void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 
 void UShooterUIInitComponent::HandleAugmentSelectionStateChanged()
 {
+	if (!BoundRoundGameState.IsValid() || BoundRoundGameState->GetGameFlowPhase() != EGameFlowPhase::AugmentSelecting)
+	{
+		HideShop();
+	}
+
 	RefreshAugmentSelection();
+}
+
+void UShooterUIInitComponent::HandleShopCloseRequested()
+{
+	HideShop();
 }
 
 void UShooterUIInitComponent::RefreshAugmentSelection()
@@ -192,6 +276,21 @@ void UShooterUIInitComponent::RefreshAugmentSelection()
 	}
 
 	ShowAugmentSelect(Offers);
+}
+
+bool UShooterUIInitComponent::CanShowShop() const
+{
+	if (!bInGameUIReady	|| !BoundInventory.IsValid() || !BoundRoundGameState.IsValid())
+	{
+		return false;
+	}
+
+	if (BoundRoundGameState->GetGameFlowPhase() != EGameFlowPhase::AugmentSelecting)
+	{
+		return false;
+	}
+
+	return BoundInventory->GetOffers().IsEmpty();
 }
 
 void UShooterUIInitComponent::UnbindRuntimeDelegates()
