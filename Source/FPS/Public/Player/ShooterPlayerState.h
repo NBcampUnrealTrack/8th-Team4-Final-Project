@@ -88,18 +88,15 @@ private:
 	void ServerGrantStartupAbilities();
 
 protected:
-	// 보호막은 0 에서 시작한다 — 라운드 중에 얻는 자원이다
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "1.0"))
 	float InitialMaxHealth = 100.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
 	float InitialHealth = 100.f;
 
+	// 최대 보호막은 해당 라운드의 최대 보호막을 의미함, 0부터 시작
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
-	float InitialMaxShield = 50.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
-	float InitialShield = 0.f;
+	float InitialMaxShield = 0.f;
 
 private:
 	// 체력/보호막 초기화는 최초 한 번만 수행

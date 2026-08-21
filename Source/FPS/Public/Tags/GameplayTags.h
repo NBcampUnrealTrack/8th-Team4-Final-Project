@@ -123,6 +123,13 @@ namespace RogueTags
 	// 증강 계열 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Line);
 
+	// 효과 수명
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Lifetime_Round);
+
+	// 상호 배타 효과 그룹 
+	// 같은 태그를 가진 GE 는 Remove Other Effects 동시에 적용 시 기존의 것을 삭제
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Shop_Shield);
+
 	// 어빌리티 입력 슬롯 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 
