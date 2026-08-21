@@ -66,6 +66,9 @@ public:
 protected:
 	virtual void PostInitializeComponents() override;
 
+	// 팀 복제가 로비 리비전보다 늦게 도착해도 플레이어 리스트가 갱신되도록 후처리를 추가
+	virtual void OnRep_Team(EGameTeam PreviousTeam) override;
+
 private:
 	UFUNCTION()
 	void HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn);

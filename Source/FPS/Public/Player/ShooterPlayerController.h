@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 
@@ -24,6 +25,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
+
+	// 클라이언트는 GameMode 에 직접 접근할 수 없으므로 서버 RPC 로 팀 선택을 요청
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void SetLobbyTeam(EGameTeam RequestedTeam);
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
@@ -62,6 +67,9 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
