@@ -7,6 +7,7 @@
 #include "InputActionValue.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Settings/ShooterGameUserSettings.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -94,6 +95,17 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	}
 
 	ServerSetLobbyReady(bNewLobbyReady);
+}
+
+void AShooterPlayerController::ToggleDynamicCrosshair()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
