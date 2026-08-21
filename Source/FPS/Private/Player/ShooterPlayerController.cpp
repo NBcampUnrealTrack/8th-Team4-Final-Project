@@ -14,6 +14,7 @@
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
+#include "Voice/VoiceChatSubsystem.h"
 #include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
@@ -211,6 +212,28 @@ void AShooterPlayerController::StopVoiceTalking()
 	ServerSetVoiceTalking(false);
 }
 
+void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
+{
+	if (!IsLocalController() || CompressedVoiceData.IsEmpty())
+	{
+		return;
+	}
+
+	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
+	if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsVoiceTalking())
+	{
+		return;
+	}
+
+	if (HasAuthority())
+	{
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData);
+		return;
+	}
+
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData);
+}
+
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 {
 	if (!IsLocalController())
@@ -296,6 +319,75 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 	{
 		ShooterPlayerState->SetVoiceTalking(bNewVoiceTalking);
 	}
+}
+
+void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(const TArray<uint8>& CompressedVoiceData)
+{
+	if (CompressedVoiceData.IsEmpty())
+	{
+		return;
+	}
+
+	const APlayerState* SpeakerPlayerState = PlayerState;
+	if (!IsValid(SpeakerPlayerState))
+	{
+		return;
+	}
+
+	UVoiceChatSubsystem* VoiceChatSubsystem = nullptr;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
+	}
+
+	if (!IsValid(VoiceChatSubsystem) || !VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		AShooterPlayerController* ListenerController = Cast<AShooterPlayerController>(It->Get());
+		if (!IsValid(ListenerController) || ListenerController == this)
+		{
+			continue;
+		}
+
+		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
+		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState))
+		{
+			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData);
+		}
+	}
+}
+
+void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
+	APlayerState* SpeakerPlayerState,
+	const TArray<uint8>& CompressedVoiceData)
+{
+	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
+	{
+		return;
+	}
+
+	UVoiceChatSubsystem* VoiceChatSubsystem = nullptr;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
+	}
+
+	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState))
+	{
+		return;
+	}
+
+	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
 }
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()

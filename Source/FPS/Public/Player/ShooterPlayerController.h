@@ -14,6 +14,7 @@ class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
 class UShooterInputConfig;
+class APlayerState;
 struct FInputActionValue;
 
 UCLASS()
@@ -32,6 +33,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void StopVoiceTalking();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Shooter|Voice")
+	void ReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
@@ -77,6 +84,12 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);
+
+	UFUNCTION(Server, Unreliable)
+	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	UFUNCTION(Client, Unreliable)
+	void ClientReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();
