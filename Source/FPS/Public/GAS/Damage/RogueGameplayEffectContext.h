@@ -25,6 +25,8 @@ public:
 
 	UPROPERTY() int32 ReflectDepth = 0;
 
+	UPROPERTY() float LifestealRate = 0.f;
+
 	virtual UScriptStruct* GetScriptStruct() const override
 	{
 		return FRogueGameplayEffectContext::StaticStruct();
@@ -43,6 +45,8 @@ public:
 	virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
 
 	static const FRogueGameplayEffectContext* ExtractFrom(const FGameplayEffectContextHandle& Handle);
+
+	static FRogueGameplayEffectContext* ExtractMutableFrom(FGameplayEffectContextHandle& Handle);
 };
 
 template<>

@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "GAS/Damage/RogueGameplayEffectContext.h"
 #include "GAS/RogueGASSettings.h"
+#include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
 
@@ -105,7 +106,16 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 	DamageTarget.ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 
 	// 결과 수집
-	const FRogueDamageResult Result = MeasureDamageResult(*DamageTarget.Vital, ShieldBefore, HealthBefore);
+	FRogueDamageResult Result = MeasureDamageResult(*DamageTarget.Vital, ShieldBefore, HealthBefore);
+
+	// ExecCalc 이 컨텍스트에 실어 보낸 흡혈 계수를 결과에 저장
+	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
+	{
+		Result.LifestealRate = Ctx->LifestealRate;
+	}
+
+	// 흡혈 적용
+	ApplyLifesteal(SourceASC, DamageTarget, Result);
 
 	// 이벤트 발신
 	BroadcastCombatEvents(Params, TargetActor, Result, ContextHandle);
@@ -270,6 +280,80 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageParams& Params,
 			? RogueTags::Target_State_HasShield
 			: RogueTags::Target_State_NoShield);
 	}
+}
+
+void URogueDamageSubsystem::ApplyLifesteal(UAbilitySystemComponent* SourceASC,
+                                           const FRogueDamageTarget& DamageTarget,
+                                           const FRogueDamageResult& Result) const
+{
+	if (!SourceASC || Result.LifestealRate <= 0.f)
+	{
+		return;
+	}
+
+	// 흡혈량 = (실제 체력 감소 + 실제 보호막 감소) * 흡혈 계수
+	// 체력/보호막은 정수로 유지한다. SplitByShield 가 대미지를 버리는 것과 같은 규약
+	const float Amount = FMath::FloorToFloat(
+		(Result.HealthDamage + Result.ShieldDamage) * Result.LifestealRate);
+	if (Amount <= 0.f)
+	{
+		return;
+	}
+
+	// 흡혈은 아군, 자가 피해는 적용 X
+	const ERogueTargetRelation Relation =
+		URogueTargetFilter::GetRelation(SourceASC->GetAvatarActor(), DamageTarget.ASC->GetAvatarActor());
+	if (Relation == ERogueTargetRelation::Self || Relation == ERogueTargetRelation::Friendly)
+	{
+		return;
+	}
+
+	const URogueVitalAttributeSet* SourceVital = SourceASC->GetSet<URogueVitalAttributeSet>();
+	if (!SourceVital)
+	{
+		return;
+	}
+
+	// 체력 회복, 보호막 회복 분할 및 정수화 (내림)
+	const float ToHealth = FMath::FloorToFloat(FMath::Min(
+		Amount, FMath::Max(0.f, SourceVital->GetMaxHealth() - SourceVital->GetHealth())));
+	const float ToShield = Amount - ToHealth;
+
+	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+
+	if (ToHealth > 0.f)
+	{
+		ApplyInstantMagnitude(*SourceASC, Settings->HealEffectClass, ToHealth);
+	}
+
+	// 이미 보호막이 가득 차 있으면 회복 X
+	if (ToShield > 0.f && SourceVital->GetShield() < SourceVital->GetMaxShield())
+	{
+		ApplyInstantMagnitude(*SourceASC, Settings->ShieldHealEffectClass, ToShield);
+	}
+}
+
+void URogueDamageSubsystem::ApplyInstantMagnitude(UAbilitySystemComponent& ASC,
+                                                  const TSoftClassPtr<UGameplayEffect>& EffectClass,
+                                                  const float Magnitude)
+{
+	UClass* LoadedClass = EffectClass.LoadSynchronous();
+	if (!LoadedClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[RogueDamage] 회복 캐리어 GE 가 설정되지 않았습니다. "
+			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
+		return;
+	}
+
+	const FGameplayEffectSpecHandle SpecHandle = ASC.MakeOutgoingSpec(LoadedClass, 1.f, ASC.MakeEffectContext());
+	if (!SpecHandle.IsValid())
+	{
+		return;
+	}
+
+	SpecHandle.Data->SetSetByCallerMagnitude(RogueTags::Data_Magnitude_Primary, Magnitude);
+	ASC.ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
 
 void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Params,

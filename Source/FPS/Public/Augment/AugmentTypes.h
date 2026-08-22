@@ -122,6 +122,12 @@ struct FAugmentConditionalDamageRule
     // 배율 이후에 더하는 고정값. 경감 규칙은 음수
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
+
+    // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LifestealRate = 0.f;
+
     // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     bool bAppliesToHeadshotBonusOnly = false;
