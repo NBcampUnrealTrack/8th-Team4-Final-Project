@@ -64,11 +64,22 @@ namespace
 			Reject(LOCTEXT("ContradictoryTags", "Required 와 Blocked 태그가 겹칩니다"));
 		}
 
-		// 조건만 있고 효과가 없는 규칙
-		if (FMath::IsNearlyZero(Rule.DamageBonusRate) && FMath::IsNearlyZero(Rule.FlatDamageBonus))
+		// 흡혈은 주는 피해 규칙에서만 산출
+		if (Rule.Side == EAugmentDamageRuleSide::Taken && !FMath::IsNearlyZero(Rule.LifestealRate))
 		{
 			Context.AddWarning(FText::Format(
-				LOCTEXT("NoEffectRule", "{0}: 증감률과 고정값이 모두 0 입니다. 이 규칙은 아무 효과가 없습니다"),
+				LOCTEXT("TakenRuleLifesteal",
+					"{0}: 받는 피해 규칙의 흡혈률은 무시됩니다. 흡혈은 주는 피해 규칙에만 넣으세요"),
+				FText::FromString(Where)));
+		}
+
+		// 조건만 있고 효과가 없는 규칙
+		if (FMath::IsNearlyZero(Rule.DamageBonusRate)
+			&& FMath::IsNearlyZero(Rule.FlatDamageBonus)
+			&& FMath::IsNearlyZero(Rule.LifestealRate))
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("NoEffectRule", "{0}: 증감률, 고정값, 흡혈률이 모두 0 입니다. 이 규칙은 아무 효과가 없습니다"),
 				FText::FromString(Where)));
 		}
 
