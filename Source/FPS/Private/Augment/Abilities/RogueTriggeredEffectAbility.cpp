@@ -9,6 +9,7 @@
 #include "Augment/AugmentDefinition.h"
 #include "Combat/CombatComponent.h"
 #include "GAS/Damage/RogueGameplayEffectContext.h"
+#include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueTargetFilter.h"
 
 #if WITH_EDITOR
@@ -65,6 +66,13 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 			return;
 		}
+	}
+
+	// 거리 조건이 안 맞는 이벤트는 발동 X
+	if (!PassesDistanceCondition(SourceASC, TriggerEventData, *Entry))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
 	}
 
 	// 이벤트 대상이 없으면 발동 X
@@ -184,6 +192,39 @@ FGameplayTag URogueTriggeredEffectAbility::ResolveEventWeaponTag(
 		: nullptr;
 
 	return Combat ? Combat->GetCurrentWeaponTag() : FGameplayTag();
+}
+
+bool URogueTriggeredEffectAbility::PassesDistanceCondition(const UAbilitySystemComponent* SourceASC,
+                                                           const FGameplayEventData* TriggerEventData,
+                                                           const FAugmentGrantedAbility& Entry)
+{
+	if (!Entry.bUseDistanceRange)
+	{
+		return true;
+	}
+
+	const FRogueGameplayEffectContext* Context = TriggerEventData
+		? FRogueGameplayEffectContext::ExtractFrom(TriggerEventData->ContextHandle)
+		: nullptr;
+
+	// 히트스캔이 아닌 공격은 거리 조건 적용 X
+	if (!Context || Context->HitGroups.IsEmpty())
+	{
+		return false;
+	}
+
+	// 사거리 증강은 상한만 추가
+	float MaxDistance = Entry.MaxDistanceMeters;
+	if (Entry.bDistanceScalesWithRangeBonus && SourceASC)
+	{
+		if (const URogueAugmentAttributeSet* Augment = SourceASC->GetSet<URogueAugmentAttributeSet>())
+		{
+			MaxDistance += FMath::Max(0.f, Augment->GetEffectiveRangeBonus());
+		}
+	}
+
+	return Context->HitDistanceMeters >= Entry.MinDistanceMeters
+		&& Context->HitDistanceMeters <= MaxDistance;
 }
 
 // 효과를 받을 액터 결정

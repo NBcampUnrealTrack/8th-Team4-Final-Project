@@ -78,6 +78,11 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
     float MaxDistanceMeters = 0.f;
 
+	// 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseDistanceRange"))
+    bool bDistanceScalesWithRangeBonus = false;
+
     // 피해자 체력 조건 (%)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
     bool bUseTargetHealthRange = false;
@@ -166,6 +171,23 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
         meta = (Categories = "Weapon.Type"))
     FGameplayTagContainer RequiredWeaponTags;
+
+    // 교전 거리 조건
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bUseDistanceRange = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+    float MinDistanceMeters = 0.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+    float MaxDistanceMeters = 0.f;
+
+    // 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange"))
+    bool bDistanceScalesWithRangeBonus = false;
 };
 
 // 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1

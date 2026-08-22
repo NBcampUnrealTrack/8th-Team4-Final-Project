@@ -58,6 +58,7 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition TargetHeadshotDamageTakenRateDef;
 		FGameplayEffectAttributeCaptureDefinition TargetDamageReductionRateDef;
 		FGameplayEffectAttributeCaptureDefinition TargetFlatDamageReductionDef;
+		FGameplayEffectAttributeCaptureDefinition TargetEffectiveRangeBonusDef;
 
 		FRogueDamageCapture()
 		{
@@ -95,6 +96,10 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetDamageReductionRateAttribute(),    ECaptureSource::Target);
 			TargetFlatDamageReductionDef =
 				MakeDef(URogueAugmentAttributeSet::GetFlatDamageReductionAttribute(),    ECaptureSource::Target);
+
+			// 받는 피해 규칙의 거리 조건은 피해자 자신의 사거리 증강을 봐야 한다
+			TargetEffectiveRangeBonusDef =
+				MakeDef(URogueAugmentAttributeSet::GetEffectiveRangeBonusAttribute(),    ECaptureSource::Target);
 		}
 	};
 
@@ -161,6 +166,10 @@ namespace
 		float SourceHealthPct = 100.f;
 		bool  bTargetHealthKnown = false;
 		bool  bSourceHealthKnown = false;
+
+		// 사거리 증강. 규칙 Side 로 골라 쓴다
+		float SourceRangeBonusMeters = 0.f;
+		float TargetRangeBonusMeters = 0.f;
 	};
 
 	// 보호막, 체력 피해량
@@ -221,11 +230,26 @@ namespace
 			return false;
 		}
 
-		// 교전 거리가 규정 범위 밖인 경우
-		if (Rule.bUseDistanceRange
-			&& !IsInRange(RC.Ctx->HitDistanceMeters, Rule.MinDistanceMeters, Rule.MaxDistanceMeters))
+		// 사거리 증강을 적용한 교전 거리가 규정 범위 밖인 경우
+		if (Rule.bUseDistanceRange)
 		{
-			return false;
+			// 히트스캔이 아닌 공격은 거리 조건 적용 X
+			if (RC.Ctx->HitGroups.IsEmpty())
+			{
+				return false;
+			}
+
+			const float RangeBonus = Rule.bDistanceScalesWithRangeBonus
+				? ((Rule.Side == EAugmentDamageRuleSide::Dealt)
+					? RC.SourceRangeBonusMeters
+					: RC.TargetRangeBonusMeters)
+				: 0.f;
+
+			if (!IsInRange(RC.Ctx->HitDistanceMeters,
+				Rule.MinDistanceMeters, Rule.MaxDistanceMeters + RangeBonus))
+			{
+				return false;
+			}
 		}
 
 		// 피해자의 체력 구간이 밖인 경우, 체력을 읽을 수 없는 경우
@@ -316,6 +340,9 @@ namespace
 			RC.SourceHealthPct    = E.Read(E.Capture.SourceHealthDef, 0.f) / SourceMaxHealth * 100.f;
 			RC.bSourceHealthKnown = true;
 		}
+
+		RC.SourceRangeBonusMeters = FMath::Max(0.f, E.Read(E.Capture.SourceEffectiveRangeBonusDef, 0.f));
+		RC.TargetRangeBonusMeters = FMath::Max(0.f, E.Read(E.Capture.TargetEffectiveRangeBonusDef, 0.f));
 
 		return RC;
 	}
@@ -684,6 +711,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.TargetHeadshotDamageTakenRateDef);
 	RelevantAttributesToCapture.Add(C.TargetDamageReductionRateDef);
 	RelevantAttributesToCapture.Add(C.TargetFlatDamageReductionDef);
+	RelevantAttributesToCapture.Add(C.TargetEffectiveRangeBonusDef);
 }
 
 void UExecCalc_Damage::Execute_Implementation(

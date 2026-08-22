@@ -43,6 +43,14 @@ namespace
 				"거리 조건을 켜고 최대 거리를 채우지 않았습니다. 이 규칙은 영영 발동하지 않습니다 (상한이 없으면 큰 수를 넣으세요)"));
 		}
 
+		if (Rule.bDistanceScalesWithRangeBonus && !Rule.bUseDistanceRange)
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("RangeScaleWithoutDistance",
+					"{0}: 사거리 스케일을 켰지만 거리 조건이 꺼져 있습니다. 이 설정은 무시됩니다"),
+				FText::FromString(Where)));
+		}
+
 		if (Rule.bUseTargetHealthRange && Rule.TargetHealthMinPct > Rule.TargetHealthMaxPct)
 		{
 			Reject(LOCTEXT("BadTargetHealthRange", "피해자 체력 범위가 뒤집혀 있습니다"));
@@ -133,6 +141,32 @@ namespace
 				}
 
 				UsedAbilityClasses.Add(ClassPath);
+			}
+
+			// 트리거 거리 조건
+			if (Granted.bUseDistanceRange && Granted.MinDistanceMeters > Granted.MaxDistanceMeters)
+			{
+				Context.AddError(FText::Format(
+					LOCTEXT("TriggerBadDistanceRange",
+						"GrantedAbilities[{0}] 의 거리 범위가 뒤집혀 있습니다"), Index));
+				bValid = false;
+			}
+
+			if (Granted.bUseDistanceRange && Granted.MaxDistanceMeters <= 0.f)
+			{
+				Context.AddError(FText::Format(
+					LOCTEXT("TriggerZeroDistanceMax",
+						"GrantedAbilities[{0}] 가 거리 조건을 켜고 최대 거리를 채우지 않았습니다. "
+						"이 트리거는 영영 발동하지 않습니다 (상한이 없으면 큰 수를 넣으세요)"), Index));
+				bValid = false;
+			}
+
+			if (Granted.bDistanceScalesWithRangeBonus && !Granted.bUseDistanceRange)
+			{
+				Context.AddWarning(FText::Format(
+					LOCTEXT("TriggerRangeScaleWithoutDistance",
+						"GrantedAbilities[{0}] 가 사거리 스케일을 켰지만 거리 조건이 꺼져 있습니다. "
+						"이 설정은 무시됩니다"), Index));
 			}
 
 			// 입력, GE가 둘 다 없는 경우

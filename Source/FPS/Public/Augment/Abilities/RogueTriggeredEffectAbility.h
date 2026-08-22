@@ -37,6 +37,11 @@ private:
 	// 이 이벤트를 일으킨 무기. 대미지 이벤트는 컨텍스트의 무기 태그 사용, 그 외에는 현재 장착 무기 태그 사용
 	FGameplayTag ResolveEventWeaponTag(AActor* Avatar, const FGameplayEventData* TriggerEventData) const;
 
+	// 거리 조건 확인
+	static bool PassesDistanceCondition(const UAbilitySystemComponent* SourceASC,
+	                                    const FGameplayEventData* TriggerEventData,
+	                                    const FAugmentGrantedAbility& Entry);
+
 	// 효과를 받을 액터. 조건을 못 맞추면 nullptr
 	AActor* ResolveTarget(AActor* Avatar, const FGameplayEventData* TriggerEventData,
 	                      const FAugmentGrantedAbility& Entry) const;
