@@ -73,6 +73,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
 	TSubclassOf<AWeaponBase> DefaultSecondaryWeaponClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
+	TSubclassOf<AWeaponBase> DefaultMeleeWeaponClass;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Camera")
 	TObjectPtr<USpringArmComponent> SpringArm;
 

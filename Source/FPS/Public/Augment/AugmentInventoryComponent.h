@@ -91,7 +91,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	bool AutoSelectOffer();
 
-	// 선택은 먼저 스테이징하고, 모든 참가자가 확정 가능한 경우 DraftManager가 일괄 커밋한다.
+	// 선택은 먼저 스테이징한다. 직접 선택은 준비 페이즈에서 즉시 적용되지만,
+	// DraftManager가 Finalize하기 전까지는 롤백 가능한 미확정 상태로 유지한다.
 	bool HasStagedOfferSelection() const { return StagedOfferState != EAugmentOfferCommitState::Empty; }
 	bool CanCommitStagedOffer() const;
 	bool CommitStagedOffer();

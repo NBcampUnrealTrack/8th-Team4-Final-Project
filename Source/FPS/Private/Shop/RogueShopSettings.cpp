@@ -1,4 +1,4 @@
-#include "Shop/RogueShopSettings.h"
+﻿#include "Shop/RogueShopSettings.h"
 #include "Shop/ShopTags.h"
 
 URogueShopSettings::URogueShopSettings()
@@ -16,27 +16,32 @@ URogueShopSettings::URogueShopSettings()
 			RogueShopTags::Item_Weapon_Rifle,
 			EShopItemType::Weapon,
 			1500,
-			NSLOCTEXT("RogueShop", "Rifle", "Rifle")),
+			NSLOCTEXT("RogueShop", "Rifle", "Rifle"),
+			EWeaponType::AR),
 		FShopItemDefinition(
 			RogueShopTags::Item_Weapon_Sniper,
 			EShopItemType::Weapon,
 			1500,
-			NSLOCTEXT("RogueShop", "SniperRifle", "Sniper Rifle")),
+			NSLOCTEXT("RogueShop", "SniperRifle", "Sniper Rifle"),
+			EWeaponType::Sniper),
 		FShopItemDefinition(
 			RogueShopTags::Item_Weapon_Shotgun,
 			EShopItemType::Weapon,
 			1500,
-			NSLOCTEXT("RogueShop", "Shotgun", "Shotgun")),
+			NSLOCTEXT("RogueShop", "Shotgun", "Shotgun"),
+			EWeaponType::Shotgun),
 		FShopItemDefinition(
 			RogueShopTags::Item_WeaponUpgrade_Pistol,
 			EShopItemType::WeaponUpgrade,
 			1000,
-			NSLOCTEXT("RogueShop", "PistolUpgrade", "Pistol Upgrade")),
+			NSLOCTEXT("RogueShop", "PistolUpgrade", "Pistol Upgrade"),
+			EWeaponType::Pistol),
 		FShopItemDefinition(
 			RogueShopTags::Item_WeaponUpgrade_Knife,
 			EShopItemType::WeaponUpgrade,
 			1000,
-			NSLOCTEXT("RogueShop", "KnifeUpgrade", "Knife Upgrade")),
+			NSLOCTEXT("RogueShop", "KnifeUpgrade", "Knife Upgrade"),
+			EWeaponType::Knife),
 		FShopItemDefinition(
 			RogueShopTags::Item_HealthUpgrade,
 			EShopItemType::HealthUpgrade,

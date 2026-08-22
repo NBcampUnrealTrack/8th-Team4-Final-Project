@@ -119,6 +119,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Shotgun_Owned);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Pistol_Upgraded);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Knife_Upgraded);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Firearm_Any);
 
 	// 증강 계열 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Line);

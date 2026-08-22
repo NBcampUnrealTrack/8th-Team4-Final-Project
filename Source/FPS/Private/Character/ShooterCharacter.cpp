@@ -110,35 +110,39 @@ void AShooterCharacter::BeginPlay()
 
 bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 {
-	if (!HasAuthority() || !IsValid(Combat) || !DefaultPrimaryWeaponClass)
+	if (!HasAuthority()	|| !IsValid(Combat)	|| !DefaultSecondaryWeaponClass	|| !DefaultMeleeWeaponClass)
 	{
 		return false;
 	}
 
-	if (IsValid(Combat->GetWeaponInSlot(EWeaponSlot::Primary)))
+	if (IsValid(Combat->GetWeaponInSlot(EWeaponSlot::Secondary))
+		&& IsValid(Combat->GetWeaponInSlot(EWeaponSlot::Melee)))
 	{
 		return true;
 	}
 
-	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
+	if (!Combat->InitializeWeaponLoadoutWithMelee(nullptr, DefaultSecondaryWeaponClass,	DefaultMeleeWeaponClass))
 	{
 		UE_LOG(
 			LogShooterCharacter,
 			Error,
-			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
+			TEXT("[ShooterCharacter] %s: default loadout initialization failed. Secondary=%s Melee=%s"),
 			*GetNameSafe(this),
-			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
-			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+			*GetNameSafe(DefaultSecondaryWeaponClass.Get()),
+			*GetNameSafe(DefaultMeleeWeaponClass.Get()));
+
 		return false;
 	}
 
 	UE_LOG(
 		LogShooterCharacter,
 		Log,
-		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
+		TEXT("[ShooterCharacter] %s: default loadout ready. Primary=%s Secondary=%s Melee=%s Current=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)),
+		*GetNameSafe(Combat->GetCurrentWeapon()));
 
 	return true;
 }

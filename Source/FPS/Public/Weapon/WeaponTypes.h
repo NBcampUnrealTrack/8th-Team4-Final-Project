@@ -29,7 +29,8 @@ enum class EWeaponSlot : uint8
 {
 	None UMETA(Hidden),
 	Primary UMETA(DisplayName = "Primary"),
-	Secondary UMETA(DisplayName = "Secondary")
+	Secondary UMETA(DisplayName = "Secondary"),
+	Melee UMETA(DisplayName = "Melee")
 };
 
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.

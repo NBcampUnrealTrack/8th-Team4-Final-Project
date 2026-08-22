@@ -26,6 +26,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(UCombatComponent, CurrentWeapon);
 	DOREPLIFETIME(UCombatComponent, PrimaryWeapon);
 	DOREPLIFETIME(UCombatComponent, SecondaryWeapon);
+	DOREPLIFETIME(UCombatComponent, MeleeWeapon);
 	DOREPLIFETIME(UCombatComponent, bIsCycling);
 	DOREPLIFETIME(UCombatComponent, bAiming);
 }
@@ -114,9 +115,15 @@ void UCombatComponent::UnequipWeapon()
 	{
 		PrimaryWeapon = nullptr;
 	}
+
 	if (SecondaryWeapon.Get() == WeaponToDestroy)
 	{
 		SecondaryWeapon = nullptr;
+	}
+
+	if (MeleeWeapon.Get() == WeaponToDestroy)
+	{
+		MeleeWeapon = nullptr;
 	}
 
 	ApplyCurrentWeapon(nullptr);
@@ -127,24 +134,48 @@ bool UCombatComponent::InitializeWeaponLoadout(
 	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
 	TSubclassOf<AWeaponBase> SecondaryWeaponClass)
 {
+	// 기존 2슬롯 호출자는 그대로 유지한다.
+	if (!PrimaryWeaponClass)
+	{
+		return false;
+	}
+
+	return InitializeWeaponLoadoutWithMelee(PrimaryWeaponClass, SecondaryWeaponClass, nullptr);
+}
+
+bool UCombatComponent::InitializeWeaponLoadoutWithMelee(
+	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
+	TSubclassOf<AWeaponBase> SecondaryWeaponClass,
+	TSubclassOf<AWeaponBase> MeleeWeaponClass)
+{
 	AActor* OwnerActor = GetOwner();
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !PrimaryWeaponClass)
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+
+	if (!PrimaryWeaponClass	&& !SecondaryWeaponClass && !MeleeWeaponClass)
 	{
 		return false;
 	}
 
 	ClearWeaponLoadout();
 
-	PrimaryWeapon = SpawnWeaponInstance(PrimaryWeaponClass);
-	if (!IsValid(PrimaryWeapon.Get()))
+	if (PrimaryWeaponClass)
 	{
-		ClearWeaponLoadout();
-		return false;
+		PrimaryWeapon = SpawnWeaponInstance(PrimaryWeaponClass);
+
+		if (!IsValid(PrimaryWeapon.Get()))
+		{
+			ClearWeaponLoadout();
+			return false;
+		}
 	}
 
 	if (SecondaryWeaponClass)
 	{
 		SecondaryWeapon = SpawnWeaponInstance(SecondaryWeaponClass);
+
 		if (!IsValid(SecondaryWeapon.Get()))
 		{
 			ClearWeaponLoadout();
@@ -152,18 +183,46 @@ bool UCombatComponent::InitializeWeaponLoadout(
 		}
 	}
 
-	ApplyCurrentWeapon(PrimaryWeapon.Get());
-	BeginEquipCycle(CurrentWeapon.Get());
+	if (MeleeWeaponClass)
+	{
+		MeleeWeapon = SpawnWeaponInstance(MeleeWeaponClass);
+
+		if (!IsValid(MeleeWeapon.Get()))
+		{
+			ClearWeaponLoadout();
+			return false;
+		}
+	}
+
+	// Primary가 없으면 기본 권총을 먼저 든다.
+	AWeaponBase* InitialWeapon = PrimaryWeapon.Get();
+
+	if (!IsValid(InitialWeapon))
+	{
+		InitialWeapon = SecondaryWeapon.Get();
+	}
+
+	if (!IsValid(InitialWeapon))
+	{
+		InitialWeapon = MeleeWeapon.Get();
+	}
+
+	ApplyCurrentWeapon(InitialWeapon);
+
+	if (IsValid(CurrentWeapon.Get()))
+	{
+		BeginEquipCycle(CurrentWeapon.Get());
+	}
 
 	UE_LOG(
 		LogCombatComponent,
 		Log,
-		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Tag=%s Secondary=%s Tag=%s"),
+		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Secondary=%s Melee=%s Initial=%s"),
 		*GetNameSafe(OwnerActor),
 		*GetNameSafe(PrimaryWeapon.Get()),
-		*PrimaryWeapon->GetWeaponTag().ToString(),
 		*GetNameSafe(SecondaryWeapon.Get()),
-		IsValid(SecondaryWeapon.Get()) ? *SecondaryWeapon->GetWeaponTag().ToString() : TEXT("None"));
+		*GetNameSafe(MeleeWeapon.Get()),
+		*GetNameSafe(CurrentWeapon.Get()));
 
 	return true;
 }
@@ -216,14 +275,93 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 	return true;
 }
 
-AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) const
+
+bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> PrimaryWeaponClass)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+
+	AWeaponBase* PreviousPrimary = PrimaryWeapon.Get();
+
+	// Nothing to remove. This is the normal restore path for a player with no primary weapon.
+	if (!PrimaryWeaponClass && !IsValid(PreviousPrimary))
+	{
+		return true;
+	}
+
+	// Re-selecting the same class must preserve ammo/runtime state instead of respawning it.
+	if (IsValid(PreviousPrimary) && PreviousPrimary->GetClass() == PrimaryWeaponClass)
+	{
+		if (CurrentWeapon.Get() != PreviousPrimary)
+		{
+			ApplyCurrentWeapon(PreviousPrimary);
+			BeginEquipCycle(PreviousPrimary);
+		}
+
+		return true;
+	}
+
+	// Spawn first. If spawning fails, leave the previous primary and current weapon untouched.
+	AWeaponBase* NewPrimary = nullptr;
+	if (PrimaryWeaponClass)
+	{
+		NewPrimary = SpawnWeaponInstance(PrimaryWeaponClass);
+		if (!IsValid(NewPrimary))
+		{
+			return false;
+		}
+	}
+
+	PrimaryWeapon = NewPrimary;
+
+	// A purchased primary becomes current immediately. If it is cleared, fall back to pistol then melee.
+	AWeaponBase* NextCurrent = NewPrimary;
+	if (!IsValid(NextCurrent))
+	{
+		NextCurrent = SecondaryWeapon.Get();
+	}
+	if (!IsValid(NextCurrent))
+	{
+		NextCurrent = MeleeWeapon.Get();
+	}
+
+	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != NextCurrent)
+	{
+		CurrentWeapon->SetADS(false);
+	}
+
+	ApplyCurrentWeapon(NextCurrent);
+
+	if (IsValid(NextCurrent))
+	{
+		BeginEquipCycle(NextCurrent);
+	}
+
+	if (IsValid(PreviousPrimary))
+	{
+		PreviousPrimary->Destroy();
+	}
+
+	return true;
+}
+
+AWeaponBase* UCombatComponent::GetWeaponInSlot(
+	const EWeaponSlot WeaponSlot) const
 {
 	switch (WeaponSlot)
 	{
 	case EWeaponSlot::Primary:
 		return PrimaryWeapon.Get();
+
 	case EWeaponSlot::Secondary:
 		return SecondaryWeapon.Get();
+
+	case EWeaponSlot::Melee:
+		return MeleeWeapon.Get();
+
 	default:
 		return nullptr;
 	}
@@ -231,14 +369,26 @@ AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) con
 
 EWeaponSlot UCombatComponent::GetCurrentWeaponSlot() const
 {
+	if (!IsValid(CurrentWeapon.Get()))
+	{
+		return EWeaponSlot::None;
+	}
+
 	if (CurrentWeapon.Get() == PrimaryWeapon.Get())
 	{
 		return EWeaponSlot::Primary;
 	}
+
 	if (CurrentWeapon.Get() == SecondaryWeapon.Get())
 	{
 		return EWeaponSlot::Secondary;
 	}
+
+	if (CurrentWeapon.Get() == MeleeWeapon.Get())
+	{
+		return EWeaponSlot::Melee;
+	}
+
 	return EWeaponSlot::None;
 }
 
@@ -287,20 +437,35 @@ void UCombatComponent::ClearWeaponLoadout()
 	AWeaponBase* CurrentToDestroy = CurrentWeapon.Get();
 	AWeaponBase* PrimaryToDestroy = PrimaryWeapon.Get();
 	AWeaponBase* SecondaryToDestroy = SecondaryWeapon.Get();
+	AWeaponBase* MeleeToDestroy = MeleeWeapon.Get();
 
 	CurrentWeapon = nullptr;
 	PrimaryWeapon = nullptr;
 	SecondaryWeapon = nullptr;
+	MeleeWeapon = nullptr;
 
 	if (IsValid(PrimaryToDestroy))
 	{
 		PrimaryToDestroy->Destroy();
 	}
-	if (IsValid(SecondaryToDestroy) && SecondaryToDestroy != PrimaryToDestroy)
+
+	if (IsValid(SecondaryToDestroy)
+		&& SecondaryToDestroy != PrimaryToDestroy)
 	{
 		SecondaryToDestroy->Destroy();
 	}
-	if (IsValid(CurrentToDestroy) && CurrentToDestroy != PrimaryToDestroy && CurrentToDestroy != SecondaryToDestroy)
+
+	if (IsValid(MeleeToDestroy)
+		&& MeleeToDestroy != PrimaryToDestroy
+		&& MeleeToDestroy != SecondaryToDestroy)
+	{
+		MeleeToDestroy->Destroy();
+	}
+
+	if (IsValid(CurrentToDestroy)
+		&& CurrentToDestroy != PrimaryToDestroy
+		&& CurrentToDestroy != SecondaryToDestroy
+		&& CurrentToDestroy != MeleeToDestroy)
 	{
 		CurrentToDestroy->Destroy();
 	}
@@ -423,9 +588,15 @@ void UCombatComponent::OnRep_IsCycling()
 void UCombatComponent::RefreshWeaponPresentation()
 {
 	SetWeaponPresentationActive(PrimaryWeapon.Get(), PrimaryWeapon.Get() == CurrentWeapon.Get());
+
 	SetWeaponPresentationActive(SecondaryWeapon.Get(), SecondaryWeapon.Get() == CurrentWeapon.Get());
 
-	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != PrimaryWeapon.Get() && CurrentWeapon.Get() != SecondaryWeapon.Get())
+	SetWeaponPresentationActive(MeleeWeapon.Get(), MeleeWeapon.Get() == CurrentWeapon.Get());
+
+	if (IsValid(CurrentWeapon.Get())
+		&& CurrentWeapon.Get() != PrimaryWeapon.Get()
+		&& CurrentWeapon.Get() != SecondaryWeapon.Get()
+		&& CurrentWeapon.Get() != MeleeWeapon.Get())
 	{
 		SetWeaponPresentationActive(CurrentWeapon.Get(), true);
 	}

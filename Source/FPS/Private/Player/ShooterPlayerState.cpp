@@ -15,6 +15,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
+#include "Weapon/WeaponInventoryComponent.h"
 #include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
@@ -31,6 +32,7 @@ AShooterPlayerState::AShooterPlayerState()
 	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
 	ShopComponent = CreateDefaultSubobject<UShopComponent>(TEXT("ShopComponent"));
 	ShopPurchaseComponent = CreateDefaultSubobject<UShopPurchaseComponent>(TEXT("ShopPurchaseComponent"));
+	WeaponInventory = CreateDefaultSubobject<UWeaponInventoryComponent>(TEXT("WeaponInventory"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
@@ -97,6 +99,7 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
+	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
 	// TODO: 임시로 권총 장착 태그
 	AbilitySystemComponent->SetEquippedWeaponType(EWeaponType::Pistol);

@@ -1,4 +1,4 @@
-#include "GameMode/BaseRoundGameMode.h"
+﻿#include "GameMode/BaseRoundGameMode.h"
 
 #include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
@@ -11,6 +11,7 @@
 #include "Player/ShooterPlayerState.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
+#include "Weapon/WeaponInventoryComponent.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogBaseRoundGameMode);
@@ -565,6 +566,14 @@ bool ABaseRoundGameMode::ResetEconomyForNewMatch()
 		}
 	}
 
+	for (AShooterPlayerState* MatchPlayer : MatchPlayers)
+	{
+		if (UWeaponInventoryComponent* Inventory = MatchPlayer->GetWeaponInventory())
+		{
+			Inventory->ServerInitializeForNewMatch();
+		}
+	}
+
 	const bool bEconomyReset = Economy->ResetForNewMatch(MatchPlayers);
 	return bEconomyReset && bAllTransactionsDiscarded;
 }
@@ -579,35 +588,37 @@ void ABaseRoundGameMode::RefundPendingShopPurchasesForPlayer(
 	}
 
 	const TCHAR* CleanupContext = Context ? Context : TEXT("unspecified cleanup");
-	UShopComponent* Shop = PlayerState->GetShopComponent();
-	if (!IsValid(Shop))
+
+	UShopPurchaseComponent* PurchaseComponent =	PlayerState->GetShopPurchaseComponent();
+
+	if (!IsValid(PurchaseComponent))
 	{
-		UE_LOG(LogBaseRoundGameMode, Error,
-			TEXT("Cannot refund shop transactions for %s during %s: ShopComponent is missing."),
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot refund pending shop purchases for %s during %s: ShopPurchaseComponent is missing."),
 			*GetNameSafe(PlayerState),
 			CleanupContext);
+
 		return;
 	}
 
-	const int32 UnresolvedTransactionCount = Shop->GetActiveTransactionCount();
-	if (UnresolvedTransactionCount == 0)
+	if (!PurchaseComponent->CancelPendingPurchases())
 	{
-		return;
-	}
-
-	if (!Shop->RefundAllActiveTransactions())
-	{
-		UE_LOG(LogBaseRoundGameMode, Error,
-			TEXT("Failed to refund shop transactions for %s during %s. Remaining=%d."),
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Failed to cancel pending shop purchases for %s during %s."),
 			*GetNameSafe(PlayerState),
-			CleanupContext,
-			Shop->GetActiveTransactionCount());
+			CleanupContext);
+
 		return;
 	}
 
-	UE_LOG(LogBaseRoundGameMode, Verbose,
-		TEXT("Refunded %d unresolved shop transaction(s) for %s during %s."),
-		UnresolvedTransactionCount,
+	UE_LOG(
+		LogBaseRoundGameMode,
+		Verbose,
+		TEXT("Pending shop purchases cleaned up for %s during %s."),
 		*GetNameSafe(PlayerState),
 		CleanupContext);
 }
@@ -623,9 +634,10 @@ void ABaseRoundGameMode::RefundPendingShopPurchases(const TCHAR* Context)
 	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
 	{
 		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+
 		if (IsValid(ShooterPlayerState))
 		{
-			RefundPendingShopPurchasesForPlayer(ShooterPlayerState, Context);
+			RefundPendingShopPurchasesForPlayer(ShooterPlayerState,	Context);
 		}
 	}
 }

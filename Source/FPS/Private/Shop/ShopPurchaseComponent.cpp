@@ -1,9 +1,13 @@
 #include "Shop/ShopPurchaseComponent.h"
 
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
+#include "Net/UnrealNetwork.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/ShopComponent.h"
+#include "Weapon/WeaponInventoryComponent.h"
+#include "Weapon/WeaponLoadoutService.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShopPurchase, Log, All);
 
@@ -13,369 +17,760 @@ UShopPurchaseComponent::UShopPurchaseComponent()
 	SetIsReplicatedByDefault(true);
 }
 
-void UShopPurchaseComponent::ServerPurchaseItem_Implementation(const FGameplayTag ItemId)
+void UShopPurchaseComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
-	TryPurchaseItem(ItemId);
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(UShopPurchaseComponent, PendingWeaponItemId, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UShopPurchaseComponent, PendingWeaponItemIds, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UShopPurchaseComponent, PendingShieldItemId, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UShopPurchaseComponent, PendingShieldPaidCredits, COND_OwnerOnly);
 }
 
-bool UShopPurchaseComponent::TryPurchaseItem(const FGameplayTag ItemId)
+AShooterPlayerState* UShopPurchaseComponent::GetPlayerState() const
 {
-	AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(GetOwner());
+	return Cast<AShooterPlayerState>(GetOwner());
+}
 
-	if (!PlayerState)
+UWeaponInventoryComponent* UShopPurchaseComponent::GetWeaponInventory() const
+{
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	return IsValid(PlayerState) ? PlayerState->GetWeaponInventory() : nullptr;
+}
+
+APawn* UShopPurchaseComponent::GetOwningPawn() const
+{
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	return IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+}
+
+bool UShopPurchaseComponent::IsShopPhaseOpen() const
+{
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	const UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+
+	return IsValid(Shop) && Shop->IsPurchaseWindowOpen();
+}
+
+void UShopPurchaseComponent::RefreshPendingMirror()
+{
+	PendingWeaponItemIds.Reset(PendingWeaponTransactions.Num());
+	for (const TPair<FGameplayTag, FShopTransactionHandle>& Pair : PendingWeaponTransactions)
 	{
-		return false;
+		if (Pair.Key.IsValid() && Pair.Value.IsValid())
+		{
+			PendingWeaponItemIds.Add(Pair.Key);
+		}
 	}
 
-	UShopComponent* ShopComponent = PlayerState->GetShopComponent();
+	// TMap ìˆœíšŒ ìˆœì„œì™€ ë¬´ê´€í•˜ê²Œ ë™ì¼í•œ Pending ëª©ë¡ì„ ë³µì œí•œë‹¤.
+	PendingWeaponItemIds.Sort(
+		[](const FGameplayTag& Left, const FGameplayTag& Right)
+		{
+			return Left.ToString().Compare(Right.ToString()) < 0;
+		});
 
-	if (!ShopComponent)
+	if (!PendingWeaponItemId.IsValid()
+		|| !PendingWeaponTransactions.Contains(PendingWeaponItemId))
 	{
-		return false;
+		PendingWeaponItemId = FGameplayTag();
+		PendingEquippedWeaponType = EWeaponType::None;
+	}
+
+	PendingShieldItemId = PendingShieldTransaction.IsValid() ? PendingShieldTransaction.ItemId : FGameplayTag();
+	PendingShieldPaidCredits = PendingShieldTransaction.IsValid() ? PendingShieldTransaction.PaidCredits : 0;
+
+	if (AActor* OwnerActor = GetOwner())
+	{
+		OwnerActor->ForceNetUpdate();
+	}
+
+	OnPendingStateChanged.Broadcast();
+}
+
+void UShopPurchaseComponent::OnRep_PendingItems()
+{
+	OnPendingStateChanged.Broadcast();
+}
+
+int32 UShopPurchaseComponent::GetPendingCreditOffset(const FShopItemDefinition& Definition) const
+{
+	// ê¸°ì¡´ Pending ê²°ì œì•¡ì„ ì¬ì‚¬ìš©í•˜ëŠ” êµì²´ ì •ì±…ì€ ë³´í˜¸ë§‰ì—ë§Œ ì ìš©í•œë‹¤.
+	if (Definition.ItemType == EShopItemType::Shield)
+	{
+		return PendingShieldItemId.IsValid() ? PendingShieldPaidCredits : 0;
+	}
+
+	return 0;
+}
+
+EShopPurchaseResult UShopPurchaseComponent::GetPurchaseEligibility(
+	const FGameplayTag ItemId,
+	int32& OutPrice) const
+{
+	OutPrice = 0;
+
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	const UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+
+	if (!IsValid(Shop))
+	{
+		return EShopPurchaseResult::InvalidCatalog;
 	}
 
 	FShopItemDefinition Definition;
-	if (!ShopComponent->FindItemDefinition(ItemId, Definition))
+	if (!Shop->FindItemDefinition(ItemId, Definition))
+	{
+		return EShopPurchaseResult::InvalidItem;
+	}
+
+	const UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+
+	// ì†Œìœ í–ˆê±°ë‚˜ ì´ë¯¸ ê²°ì œí•œ ì£¼ë¬´ê¸°ëŠ” ì¶”ê°€ êµ¬ë§¤ ì—†ì´ ì¥ì°©ë§Œ ê°€ëŠ¥í•˜ë‹¤.
+	if (Definition.ItemType == EShopItemType::Weapon
+		&& ((IsValid(Inventory) && Inventory->IsPossessed(Definition.GrantedWeaponType))
+			|| PendingWeaponItemIds.Contains(Definition.ItemId)))
+	{
+		return Shop->IsPurchaseWindowOpen()
+			? EShopPurchaseResult::Success
+			: EShopPurchaseResult::ShopClosed;
+	}
+
+	// ì´ë¯¸ í•´ê¸ˆí•œ ê¶Œì´/ì¹¼ ì—…ê·¸ë ˆì´ë“œëŠ” ì¬êµ¬ë§¤í•  ìˆ˜ ì—†ë‹¤.
+	if (Definition.ItemType == EShopItemType::WeaponUpgrade
+		&& IsValid(Inventory)
+		&& Inventory->IsUnlocked(Definition.GrantedWeaponType))
+	{
+		return EShopPurchaseResult::PurchaseLimitReached;
+	}
+
+	// ê°€ê²©/ì”ì•¡ íŒì •ì€ ShopComponentì— ìœ„ì„í•˜ê³  ë³´í˜¸ë§‰ êµì²´ offsetë§Œ ì „ë‹¬í•œë‹¤.
+	return Shop->GetPurchaseEligibility(ItemId, OutPrice, GetPendingCreditOffset(Definition));
+}
+
+void UShopPurchaseComponent::ServerPurchaseItem_Implementation(const FGameplayTag ItemId)
+{
+	AShooterPlayerState* PlayerState = GetPlayerState();
+	UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+
+	if (!IsValid(Shop))
+	{
+		return;
+	}
+
+	FShopItemDefinition Definition;
+	if (!Shop->FindItemDefinition(ItemId, Definition))
+	{
+		return;
+	}
+
+	switch (Definition.ItemType)
+	{
+	case EShopItemType::Weapon:
+		TryPurchasePrimaryWeapon(*Shop, Definition);
+		break;
+
+	case EShopItemType::WeaponUpgrade:
+		TryPurchaseWeaponUpgrade(*Shop, Definition);
+		break;
+
+	case EShopItemType::HealthUpgrade:
+	case EShopItemType::DamageUpgrade:
+		TryPurchaseStatUpgrade(*Shop, Definition);
+		break;
+
+	case EShopItemType::Shield:
+		TryPurchaseShield(*Shop, Definition);
+		break;
+
+	default:
+		break;
+	}
+}
+
+// --------------------------------------------------
+// ì£¼ë¬´ê¸° êµ¬ë§¤ / ì¥ì°©
+
+bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
+	UShopComponent& Shop,
+	const FShopItemDefinition& Definition)
+{
+	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	const EWeaponType WeaponType = Definition.GrantedWeaponType;
+
+	if (!IsValid(Inventory) || !UWeaponInventoryComponent::IsPrimaryWeapon(WeaponType))
 	{
 		return false;
 	}
 
-	// HP / Damage´Â ±âÈ¹»ó Àå¹Ù±¸´Ï ´ë»óÀÌ ¾Æ´Ï¸ç
-	// ±¸¸Å ¼º°ø Áï½Ã Àû¿ëÇÏ°í °Å·¡¸¦ È®Á¤ÇÑ´Ù.
-	if (Definition.ItemType == EShopItemType::HealthUpgrade	|| Definition.ItemType == EShopItemType::DamageUpgrade)
+	// í™•ì • ì†Œìœ í•œ ë¬´ê¸°ëŠ” ë¬´ë£Œ ì¥ì°©í•œë‹¤.
+	if (Inventory->IsPossessed(WeaponType))
 	{
-		return TryPurchaseImmediateItem(*ShopComponent,	Definition);
+		return TryEquipOwnedWeapon(WeaponType);
 	}
 
-	// Shield´Â ÁØºñ ÆäÀÌÁî µ¿¾È Small/Large ±³Ã¼°¡ °¡´ÉÇÏ¹Ç·Î
-	// ±âÁ¸ Pending °Å·¡ Èå¸§À» »ç¿ëÇÑ´Ù.
-	FShopTransactionHandle* PendingTransaction = GetPendingTransaction(Definition.ItemType);
+	// ê°™ì€ ì¤€ë¹„ í˜ì´ì¦ˆì—ì„œ ì´ë¯¸ ê²°ì œí•œ ë¬´ê¸°ëŠ” ì¬ê²°ì œ ì—†ì´ ë‹¤ì‹œ ì¥ì°©í•œë‹¤.
+	if (PendingWeaponTransactions.Contains(Definition.ItemId))
+	{
+		if (!IsShopPhaseOpen())
+		{
+			return false;
+		}
 
-	if (!PendingTransaction)
+		if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
+		{
+			return false;
+		}
+
+		PendingEquippedWeaponType = WeaponType;
+		PendingWeaponItemId = Definition.ItemId;
+		RefreshPendingMirror();
+		return true;
+	}
+
+	// ë¯¸ì†Œì§€ ì£¼ë¬´ê¸°ëŠ” ë‹¤ë¥¸ Pendingê³¼ ë…ë¦½ì ìœ¼ë¡œ ì •ê°€ ê²°ì œí•œë‹¤.
+	const FShopTransactionResult Result = Shop.TryBeginTransaction(Definition.ItemId);
+	if (!Result.WasSuccessful())
 	{
 		return false;
 	}
 
-	// ¿ÜºÎ Á¤¸® °æ·Î¿¡¼­ ¿øÀåÀÌ ¸ÕÀú ´İÈù °æ¿ì
-	// ´õ ÀÌ»ó À¯È¿ÇÏÁö ¾ÊÀº ·ÎÄÃ ÇÚµéÀ» ¹ö¸°´Ù.
-	if (PendingTransaction->IsValid() && !ShopComponent->HasActiveTransaction(PendingTransaction->TransactionId))
+	PendingWeaponTransactions.Add(Definition.ItemId, Result.Transaction);
+
+	// ì¥ì°© ì‹¤íŒ¨ ì‹œ ë°©ê¸ˆ ìƒì„±í•œ ê±°ë˜ë§Œ ë˜ëŒë¦°ë‹¤.
+	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
 	{
-		*PendingTransaction = FShopTransactionHandle();
+		if (Shop.RefundTransaction(Result.Transaction) == EShopPurchaseResult::Success)
+		{
+			PendingWeaponTransactions.Remove(Definition.ItemId);
+		}
+
+		RefreshPendingMirror();
+		return false;
 	}
 
-	// ÇöÀç Pending »óÇ°°ú °°Àº »óÇ°À» ´Ù½Ã Å¬¸¯ÇÏ¸é
-	// Ãß°¡ °áÁ¦³ª GE ÀçÀû¿ëÀ» ÇÏÁö ¾Ê´Â´Ù.
-	if (PendingTransaction->IsValid() && PendingTransaction->ItemId.MatchesTagExact(ItemId))
+	PendingEquippedWeaponType = WeaponType;
+	PendingWeaponItemId = Definition.ItemId;
+	RefreshPendingMirror();
+
+	UE_LOG(LogShopPurchase, Log,
+		TEXT("Weapon purchase pending: Player=%s Weapon=%s Price=%d Credits=%d->%d"),
+		*GetNameSafe(GetOwner()),
+		*UEnum::GetValueAsString(WeaponType),
+		Result.Transaction.PaidCredits,
+		Result.CreditsBefore,
+		Result.CreditsAfter);
+
+	return true;
+}
+
+// --------------------------------------------------
+// ì†Œìœ  ì£¼ë¬´ê¸° ì¥ì°©
+
+bool UShopPurchaseComponent::TryEquipOwnedWeapon(const EWeaponType WeaponType)
+{
+	// ë¬´ë£Œ ì¥ì°©ì€ ê±°ë˜ë¥¼ ë§Œë“¤ì§€ ì•Šìœ¼ë¯€ë¡œ í˜ì´ì¦ˆë¥¼ ì§ì ‘ í™•ì¸í•œë‹¤.
+	if (!IsShopPhaseOpen())
+	{
+		return false;
+	}
+
+	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponType))
+	{
+		return false;
+	}
+
+	const EWeaponType PreviousConfirmedPrimary = Inventory->GetEquippedPrimary();
+
+	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
+	{
+		return false;
+	}
+
+	// í™•ì • ì†Œìœ  ë¬´ê¸°ì˜ ì¥ì°© ì„ íƒì€ ì¦‰ì‹œ Inventoryì— ë°˜ì˜í•œë‹¤.
+	if (!Inventory->ServerSetEquippedPrimary(WeaponType))
+	{
+		RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), PreviousConfirmedPrimary);
+		return false;
+	}
+
+	PendingEquippedWeaponType = EWeaponType::None;
+	PendingWeaponItemId = FGameplayTag();
+	RefreshPendingMirror();
+	return true;
+}
+
+// --------------------------------------------------
+// ê¶Œì´ / ì¹¼ ì—…ê·¸ë ˆì´ë“œ
+
+bool UShopPurchaseComponent::TryPurchaseWeaponUpgrade(
+	UShopComponent& Shop,
+	const FShopItemDefinition& Definition)
+{
+	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	const EWeaponType WeaponType = Definition.GrantedWeaponType;
+
+	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponType))
+	{
+		return false;
+	}
+
+	// ì´ë¯¸ í•´ê¸ˆëœ ì—…ê·¸ë ˆì´ë“œëŠ” ê²°ì œ ì „ì— ì°¨ë‹¨í•œë‹¤.
+	if (Inventory->IsUnlocked(WeaponType))
+	{
+		return false;
+	}
+
+	const FShopTransactionResult Result = Shop.TryBeginTransaction(Definition.ItemId);
+	if (!Result.WasSuccessful())
+	{
+		return false;
+	}
+
+	// EffectClassê°€ ì—†ëŠ” ì—…ê·¸ë ˆì´ë“œëŠ” í•´ê¸ˆë§Œ í™•ì •í•œë‹¤.
+	if (!Definition.EffectClass.IsNull() && !ApplyEffect(Definition).WasSuccessfullyApplied())
+	{
+		Shop.RefundTransaction(Result.Transaction);
+		return false;
+	}
+
+	if (Shop.CommitTransaction(Result.Transaction) != EShopPurchaseResult::Success)
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Weapon upgrade commit failed after the effect was applied: Player=%s Item=%s"),
+			*GetNameSafe(GetOwner()),
+			*Definition.ItemId.ToString());
+
+		return false;
+	}
+
+	Inventory->ServerConfirmWeaponUpgrade(WeaponType);
+
+	UE_LOG(LogShopPurchase, Log,
+		TEXT("Weapon upgraded: Player=%s Weapon=%s"),
+		*GetNameSafe(GetOwner()),
+		*UEnum::GetValueAsString(WeaponType));
+
+	return true;
+}
+
+// --------------------------------------------------
+// HP / Damage
+
+bool UShopPurchaseComponent::TryPurchaseStatUpgrade(
+	UShopComponent& Shop,
+	const FShopItemDefinition& Definition)
+{
+	const FShopTransactionResult Result = Shop.TryBeginTransaction(Definition.ItemId);
+	if (!Result.WasSuccessful())
+	{
+		return false;
+	}
+
+	if (!ApplyEffect(Definition).WasSuccessfullyApplied())
+	{
+		Shop.RefundTransaction(Result.Transaction);
+		return false;
+	}
+
+	if (Shop.CommitTransaction(Result.Transaction) != EShopPurchaseResult::Success)
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Stat upgrade commit failed after the effect was applied: Player=%s Item=%s"),
+			*GetNameSafe(GetOwner()),
+			*Definition.ItemId.ToString());
+
+		return false;
+	}
+
+	return true;
+}
+
+// --------------------------------------------------
+// ë³´í˜¸ë§‰
+//
+// ê±°ë˜ëŠ” Pendingìœ¼ë¡œ ìœ ì§€í•˜ë˜ GEëŠ” ì¦‰ì‹œ ì ìš©í•œë‹¤. ì·¨ì†Œ/êµì²´ ì‹œ PendingShieldEffectë¡œ ë˜ëŒë¦°ë‹¤.
+
+bool UShopPurchaseComponent::TryPurchaseShield(
+	UShopComponent& Shop,
+	const FShopItemDefinition& Definition)
+{
+	if (PendingShieldTransaction.IsValid()
+		&& PendingShieldTransaction.ItemId.MatchesTagExact(Definition.ItemId))
 	{
 		return true;
 	}
 
-	const FShopTransactionHandle PreviousTransaction = *PendingTransaction;
+	const FShopTransactionResult Result = PendingShieldTransaction.IsValid()
+		? Shop.TryReplaceTransaction(PendingShieldTransaction, Definition.ItemId)
+		: Shop.TryBeginTransaction(Definition.ItemId);
 
-	const bool bReplacingExistingTransaction = PreviousTransaction.IsValid();
-
-	const FShopTransactionResult TransactionResult = bReplacingExistingTransaction
-		? ShopComponent->TryReplaceTransaction(PreviousTransaction, ItemId)
-		: ShopComponent->TryBeginTransaction(ItemId);
-
-	if (!TransactionResult.WasSuccessful())
-	{
-		UE_LOG(
-			LogShopPurchase,
-			Verbose,
-			TEXT("Purchase rejected: Player=%s Item=%s Result=%s"),
-			*GetNameSafe(PlayerState),
-			*ItemId.ToString(),
-			*UEnum::GetValueAsString(TransactionResult.Result));
-
-		return false;
-	}
-
-	if (!ApplyPurchasedItem(Definition))
-	{
-		RollbackFailedApplication(
-			*ShopComponent,
-			PreviousTransaction,
-			TransactionResult.Transaction,
-			*PendingTransaction);
-
-		return false;
-	}
-
-	*PendingTransaction = TransactionResult.Transaction;
-
-	UE_LOG(
-		LogShopPurchase,
-		Log,
-		TEXT("Purchase updated: Player=%s Item=%s Credits=%d->%d"),
-		*GetNameSafe(PlayerState),
-		*ItemId.ToString(),
-		TransactionResult.CreditsBefore,
-		TransactionResult.CreditsAfter);
-
-	return true;
-}
-
-bool UShopPurchaseComponent::TryPurchaseImmediateItem(UShopComponent& ShopComponent, const FShopItemDefinition& Definition)
-{
-	const FShopTransactionResult TransactionResult = ShopComponent.TryBeginTransaction(Definition.ItemId);
-
-	if (!TransactionResult.WasSuccessful())
-	{
-		UE_LOG(
-			LogShopPurchase,
-			Verbose,
-			TEXT("Immediate purchase rejected: Player=%s Item=%s Result=%s"),
-			*GetNameSafe(GetOwner()),
-			*Definition.ItemId.ToString(),
-			*UEnum::GetValueAsString(TransactionResult.Result));
-
-		return false;
-	}
-
-	// °áÁ¦ ÈÄ ½ÇÁ¦ »óÇ° Àû¿ë.
-	// Àû¿ë¿¡ ½ÇÆĞÇÏ¸é CommitÇÏÁö ¾Ê°í °áÁ¦ ±İ¾×À» È¯ºÒÇÑ´Ù.
-	if (!ApplyPurchasedItem(Definition))
-	{
-		const EShopPurchaseResult RefundResult = ShopComponent.RefundTransaction(TransactionResult.Transaction);
-
-		if (RefundResult != EShopPurchaseResult::Success)
-		{
-			UE_LOG(
-				LogShopPurchase,
-				Error,
-				TEXT("Immediate purchase application failed and refund also failed: Player=%s Item=%s Result=%s"),
-				*GetNameSafe(GetOwner()),
-				*Definition.ItemId.ToString(),
-				*UEnum::GetValueAsString(RefundResult));
-		}
-
-		return false;
-	}
-
-	// HP / Damage´Â PendingÀ¸·Î ³²±âÁö ¾Ê°í Áï½Ã È®Á¤ÇÑ´Ù.
-	const EShopPurchaseResult CommitResult = ShopComponent.CommitTransaction(TransactionResult.Transaction);
-
-	if (CommitResult != EShopPurchaseResult::Success)
-	{
-		UE_LOG(
-			LogShopPurchase,
-			Error,
-			TEXT("Immediate purchase commit failed: Player=%s Item=%s Result=%s"),
-			*GetNameSafe(GetOwner()),
-			*Definition.ItemId.ToString(),
-			*UEnum::GetValueAsString(CommitResult));
-
-		return false;
-	}
-
-	UE_LOG(
-		LogShopPurchase,
-		Log,
-		TEXT("Immediate purchase committed: Player=%s Item=%s Price=%d Credits=%d->%d"),
-		*GetNameSafe(GetOwner()),
-		*Definition.ItemId.ToString(),
-		TransactionResult.Transaction.PaidCredits,
-		TransactionResult.CreditsBefore,
-		TransactionResult.CreditsAfter);
-
-	return true;
-}
-
-FShopTransactionHandle*
-UShopPurchaseComponent::GetPendingTransaction(const EShopItemType ItemType)
-{
-	switch (ItemType)
-	{
-	case EShopItemType::Shield:
-		return &PendingShieldTransaction;
-
-	default:
-		return nullptr;
-	}
-}
-
-bool UShopPurchaseComponent::ApplyPurchasedItem(const FShopItemDefinition& Definition)
-{
-	switch (Definition.ItemType)
-	{
-	case EShopItemType::Shield:
-	case EShopItemType::HealthUpgrade:
-	case EShopItemType::DamageUpgrade:
-		return ApplyGameplayEffectPurchase(Definition);
-
-	default:
-		return false;
-	}
-}
-
-bool UShopPurchaseComponent::ApplyGameplayEffectPurchase(const FShopItemDefinition& Definition)
-{
-	AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(GetOwner());
-
-	if (!PlayerState)
+	if (!Result.WasSuccessful())
 	{
 		return false;
 	}
 
-	URogueAbilitySystemComponent* AbilitySystem = PlayerState->GetRogueAbilitySystemComponent();
+	// êµì²´ ì‹œ ì´ì „ Pending GEë¥¼ ì œê±°í•œ ë’¤ ìƒˆ GEë¥¼ ì ìš©í•œë‹¤.
+	RemovePendingShieldEffect();
 
-	if (!AbilitySystem)
-	{
-		return false;
-	}
-
-	if (Definition.EffectClass.IsNull())
-	{
-		return false;
-	}
-
-	UClass* EffectClass =
-		Definition.EffectClass.LoadSynchronous();
-
-	if (!EffectClass)
-	{
-		return false;
-	}
-
-	const UGameplayEffect* GameplayEffect = EffectClass->GetDefaultObject<UGameplayEffect>();
-
-	if (!GameplayEffect)
-	{
-		return false;
-	}
-
-	const FGameplayEffectContextHandle EffectContext = AbilitySystem->MakeEffectContext();
-
-	const FActiveGameplayEffectHandle EffectHandle = AbilitySystem->ApplyGameplayEffectToSelf(
-			GameplayEffect,
-			1.f,
-			EffectContext);
-
+	const FActiveGameplayEffectHandle EffectHandle = ApplyEffect(Definition);
 	if (!EffectHandle.WasSuccessfullyApplied())
 	{
-		UE_LOG(
-			LogShopPurchase,
-			Error,
-			TEXT("Failed to apply shop GameplayEffect: Player=%s Item=%s Effect=%s"),
-			*GetNameSafe(PlayerState),
-			*Definition.ItemId.ToString(),
-			*GetNameSafe(EffectClass));
+		if (Shop.RefundTransaction(Result.Transaction) == EShopPurchaseResult::Success)
+		{
+			PendingShieldTransaction = FShopTransactionHandle();
+			RefreshPendingMirror();
+		}
 
 		return false;
 	}
 
+	PendingShieldTransaction = Result.Transaction;
+	PendingShieldEffect = EffectHandle;
+	RefreshPendingMirror();
 	return true;
 }
 
-void UShopPurchaseComponent::RollbackFailedApplication(
-	UShopComponent& ShopComponent,
-	const FShopTransactionHandle& PreviousTransaction,
-	const FShopTransactionHandle& CurrentTransaction,
-	FShopTransactionHandle& PendingTransaction)
+bool UShopPurchaseComponent::RefundPendingWeapon(UShopComponent& Shop, const FGameplayTag ItemId)
 {
-	// ±âÁ¸ »óÇ°À» ´Ù¸¥ »óÇ°À¸·Î ±³Ã¼ÇÏ´ø Áß Àû¿ëÀÌ ½ÇÆĞÇß´Ù¸é
-	// °°Àº °Å·¡¸¦ ÀÌÀü »óÇ°À¸·Î ´Ù½Ã ±³Ã¼ÇØ Â÷¾×°ú ¿øÀåÀ» µÇµ¹¸°´Ù.
-	if (PreviousTransaction.IsValid())
+	const FShopTransactionHandle* Transaction = PendingWeaponTransactions.Find(ItemId);
+	if (!Transaction)
 	{
-		const FShopTransactionResult RollbackResult = ShopComponent.TryReplaceTransaction(CurrentTransaction, PreviousTransaction.ItemId);
-
-		if (RollbackResult.WasSuccessful())
-		{
-			PendingTransaction = RollbackResult.Transaction;
-			return;
-		}
-
-		// µÇµ¹¸®±â¿¡ ½ÇÆĞÇß´Ù¸é ½ÇÁ¦ Shop ¿øÀå¿¡ ³²Àº ÇöÀç °Å·¡¸¦ ±âÁØÀ¸·Î º¸°üÇÑ´Ù.
-		PendingTransaction = CurrentTransaction;
-
-		UE_LOG(
-			LogShopPurchase,
-			Error,
-			TEXT("Failed to rollback replaced purchase: CurrentItem=%s PreviousItem=%s"),
-			*CurrentTransaction.ItemId.ToString(),
-			*PreviousTransaction.ItemId.ToString());
-
-		return;
+		return false;
 	}
 
-	// ÃÖÃÊ ±¸¸ÅÀÇ »óÇ° Àû¿ëÀÌ ½ÇÆĞÇß´Ù¸é °áÁ¦¸¦ Àü¾× Ãë¼ÒÇÑ´Ù.
-	const EShopPurchaseResult RefundResult = ShopComponent.RefundTransaction(CurrentTransaction);
-
-	if (RefundResult == EShopPurchaseResult::Success)
+	// í™˜ë¶ˆ ì‹¤íŒ¨ ì‹œ ì¬ì‹œë„í•  ìˆ˜ ìˆë„ë¡ Pendingì„ ìœ ì§€í•œë‹¤.
+	if (Shop.RefundTransaction(*Transaction) != EShopPurchaseResult::Success)
 	{
-		PendingTransaction = FShopTransactionHandle();
-		return;
+		return false;
 	}
 
-	// È¯ºÒ ½ÇÆĞ ½Ã °Å·¡´Â ShopComponent ¿øÀå¿¡ ³²À¸¹Ç·Î ÇÚµéµµ À¯ÁöÇÑ´Ù.
-	PendingTransaction = CurrentTransaction;
+	PendingWeaponTransactions.Remove(ItemId);
 
-	UE_LOG(
-		LogShopPurchase,
-		Error,
-		TEXT("Failed to refund unapplied purchase: Item=%s Result=%s"),
-		*CurrentTransaction.ItemId.ToString(),
-		*UEnum::GetValueAsString(RefundResult));
+	// ë³µì œìš© Pending ìƒíƒœë„ í•¨ê»˜ ê°±ì‹ í•œë‹¤.
+	RefreshPendingMirror();
+	return true;
 }
+
+bool UShopPurchaseComponent::RefundPendingShield(UShopComponent& Shop)
+{
+	if (!PendingShieldTransaction.IsValid())
+	{
+		return false;
+	}
+
+	if (Shop.RefundTransaction(PendingShieldTransaction) != EShopPurchaseResult::Success)
+	{
+		return false;
+	}
+
+	PendingShieldTransaction = FShopTransactionHandle();
+
+	// í™˜ë¶ˆëœ ë³´í˜¸ë§‰ì˜ Pending GEë„ ì œê±°í•œë‹¤.
+	RemovePendingShieldEffect();
+	RefreshPendingMirror();
+	return true;
+}
+
+void UShopPurchaseComponent::ServerRefundPendingItem_Implementation(const FGameplayTag ItemId)
+{
+	AShooterPlayerState* PlayerState = GetPlayerState();
+	UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+
+	// Pending í™˜ë¶ˆì€ ì¤€ë¹„ í˜ì´ì¦ˆì—ì„œë§Œ í—ˆìš©í•œë‹¤.
+	if (!IsValid(Shop) || !Shop->IsPurchaseWindowOpen())
+	{
+		return;
+	}
+
+	FShopItemDefinition Definition;
+	if (!Shop->FindItemDefinition(ItemId, Definition))
+	{
+		return;
+	}
+
+	switch (Definition.ItemType)
+	{
+	case EShopItemType::Weapon:
+	{
+		// ì¥ì°© ì¤‘ì¸ Pending ë¬´ê¸°ë¼ë©´ í™˜ë¶ˆ í›„ ë§ˆì§€ë§‰ í™•ì • ì¥ì°©ìœ¼ë¡œ ë³µì›í•œë‹¤.
+		const bool bWasEquipped = PendingWeaponItemId.MatchesTagExact(ItemId);
+
+		if (RefundPendingWeapon(*Shop, ItemId) && bWasEquipped)
+		{
+			RogueWeaponLoadout::RestoreConfirmedPrimary(PlayerState, GetOwningPawn());
+		}
+		break;
+	}
+
+	case EShopItemType::Shield:
+		// ìš”ì²­í•œ ìƒí’ˆê³¼ í˜„ì¬ Pending Shieldê°€ ì¼ì¹˜í•  ë•Œë§Œ í™˜ë¶ˆí•œë‹¤.
+		if (PendingShieldTransaction.IsValid()
+			&& PendingShieldTransaction.ItemId.MatchesTagExact(ItemId))
+		{
+			RefundPendingShield(*Shop);
+		}
+		break;
+
+	default:
+		// ì¦‰ì‹œ í™•ì • ìƒí’ˆì€ Pending í™˜ë¶ˆ ëŒ€ìƒì´ ì•„ë‹ˆë‹¤.
+		break;
+	}
+}
+
+void UShopPurchaseComponent::RemovePendingShieldEffect()
+{
+	if (!PendingShieldEffect.IsValid())
+	{
+		return;
+	}
+
+	if (URogueAbilitySystemComponent* ASC = GetAbilitySystem())
+	{
+		ASC->RemoveActiveGameplayEffect(PendingShieldEffect);
+	}
+
+	PendingShieldEffect = FActiveGameplayEffectHandle();
+}
+
+URogueAbilitySystemComponent* UShopPurchaseComponent::GetAbilitySystem() const
+{
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	return IsValid(PlayerState) ? PlayerState->GetRogueAbilitySystemComponent() : nullptr;
+}
+
+FActiveGameplayEffectHandle UShopPurchaseComponent::ApplyEffect(const FShopItemDefinition& Definition)
+{
+	URogueAbilitySystemComponent* ASC = GetAbilitySystem();
+
+	if (!IsValid(ASC) || Definition.EffectClass.IsNull())
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	UClass* EffectClass = Definition.EffectClass.LoadSynchronous();
+	const UGameplayEffect* Effect = EffectClass ? EffectClass->GetDefaultObject<UGameplayEffect>() : nullptr;
+
+	if (!Effect)
+	{
+		return FActiveGameplayEffectHandle();
+	}
+
+	// Instant GEëŠ” Active í•¸ë“¤ì´ ì—†ì–´ Pending ì·¨ì†Œë‚˜ ë¼ìš´ë“œ ì •ë¦¬ì—ì„œ ì œê±°í•  ìˆ˜ ì—†ìœ¼ë¯€ë¡œ ê±°ë¶€í•œë‹¤.
+	if (Effect->DurationPolicy == EGameplayEffectDurationType::Instant)
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Instant shop effect cannot be tracked for rollback: Effect=%s Item=%s"),
+			*GetNameSafe(EffectClass),
+			*Definition.ItemId.ToString());
+
+		return FActiveGameplayEffectHandle();
+	}
+
+	return ASC->ApplyGameplayEffectToSelf(Effect, 1.f, ASC->MakeEffectContext());
+}
+
+// --------------------------------------------------
+// ë¼ìš´ë“œ ì‹œì‘ í™•ì •
 
 bool UShopPurchaseComponent::CommitPendingPurchases()
 {
-	AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(GetOwner());
+	AShooterPlayerState* PlayerState = GetPlayerState();
+	UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
 
-	if (!PlayerState)
+	if (!IsValid(Shop))
 	{
 		return false;
 	}
 
-	UShopComponent* ShopComponent = PlayerState->GetShopComponent();
-
-	if (!ShopComponent)
+	// í•˜ë‚˜ë¼ë„ í™•ì •í•˜ì§€ ëª»í•˜ë©´ ë‚¨ì€ Pendingì„ ìœ ì§€í•˜ê³  ë¼ìš´ë“œ ì‹œì‘ì„ ë§‰ëŠ”ë‹¤.
+	if (!PendingWeaponTransactions.IsEmpty() && !CommitPendingWeapons(*Shop))
 	{
 		return false;
 	}
 
-	if (!PendingShieldTransaction.IsValid())
+	if (PendingShieldTransaction.IsValid() && !CommitPendingShield(*Shop))
 	{
-		return true;
+		return false;
 	}
 
-	if (!ShopComponent->HasActiveTransaction(PendingShieldTransaction.TransactionId))
+	RefreshPendingMirror();
+	return true;
+}
+
+bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
+{
+	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	if (!IsValid(Inventory))
 	{
-		UE_LOG(
-			LogShopPurchase,
-			Error,
-			TEXT("Pending shield transaction is missing from shop ledger: Player=%s Item=%s"),
-			*GetNameSafe(PlayerState),
+		return false;
+	}
+
+	struct FPendingWeaponCommit
+	{
+		FGameplayTag ItemId;
+		FShopTransactionHandle Transaction;
+		EWeaponType WeaponType = EWeaponType::None;
+	};
+
+	TArray<FPendingWeaponCommit> PendingCommits;
+	PendingCommits.Reserve(PendingWeaponTransactions.Num());
+
+	// ì—¬ëŸ¬ ê±°ë˜ë¥¼ ìˆœì°¨ í™•ì •í•˜ë¯€ë¡œ ë¨¼ì € ì „ì²´ Pendingì„ ê²€ì¦í•œë‹¤.
+	for (const TPair<FGameplayTag, FShopTransactionHandle>& Pair : PendingWeaponTransactions)
+	{
+		FShopItemDefinition Definition;
+		if (!Pair.Key.IsValid()
+			|| !Pair.Value.IsValid()
+			|| !Pair.Value.ItemId.MatchesTagExact(Pair.Key)
+			|| !Shop.HasActiveTransaction(Pair.Value.TransactionId)
+			|| !Shop.FindItemDefinition(Pair.Key, Definition)
+			|| !UWeaponInventoryComponent::IsPrimaryWeapon(Definition.GrantedWeaponType))
+		{
+			UE_LOG(LogShopPurchase, Error,
+				TEXT("Weapon commit prevalidation failed: Player=%s Item=%s"),
+				*GetNameSafe(GetOwner()),
+				*Pair.Key.ToString());
+			return false;
+		}
+
+		FPendingWeaponCommit& Pending = PendingCommits.AddDefaulted_GetRef();
+		Pending.ItemId = Pair.Key;
+		Pending.Transaction = Pair.Value;
+		Pending.WeaponType = Definition.GrantedWeaponType;
+	}
+
+	PendingCommits.Sort(
+		[](const FPendingWeaponCommit& Left, const FPendingWeaponCommit& Right)
+		{
+			return Left.ItemId.ToString() < Right.ItemId.ToString();
+		});
+
+	// Inventoryì˜ ê¸°ì¡´ í™•ì • APIê°€ ì†Œìœ ê¶Œê³¼ ì¥ì°©ì„ í•¨ê»˜ ê°±ì‹ í•˜ë¯€ë¡œ,
+	// ë§ˆì§€ë§‰ ì¥ì°© ì„ íƒì„ ë³´ì¡´í–ˆë‹¤ê°€ ëª¨ë“  ì†Œìœ ê¶Œ í™•ì • ë’¤ ë³µì›í•œë‹¤.
+	const EWeaponType DesiredEquippedPrimary =
+		PendingEquippedWeaponType != EWeaponType::None
+			? PendingEquippedWeaponType
+			: Inventory->GetEquippedPrimary();
+
+	if (DesiredEquippedPrimary != EWeaponType::None
+		&& !Inventory->IsPossessed(DesiredEquippedPrimary)
+		&& !PendingCommits.ContainsByPredicate(
+			[DesiredEquippedPrimary](const FPendingWeaponCommit& Pending)
+			{
+				return Pending.WeaponType == DesiredEquippedPrimary;
+			}))
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Weapon commit has an invalid desired primary: Player=%s Weapon=%s"),
+			*GetNameSafe(GetOwner()),
+			*UEnum::GetValueAsString(DesiredEquippedPrimary));
+		return false;
+	}
+
+	for (const FPendingWeaponCommit& Pending : PendingCommits)
+	{
+		if (Shop.CommitTransaction(Pending.Transaction) != EShopPurchaseResult::Success)
+		{
+			UE_LOG(LogShopPurchase, Error,
+				TEXT("Weapon transaction commit failed: Player=%s Item=%s"),
+				*GetNameSafe(GetOwner()),
+				*Pending.ItemId.ToString());
+			return false;
+		}
+
+		// ì‚¬ì „ ê²€ì¦ëœ Primary ì†Œìœ ê¶Œì„ Inventoryì— í™•ì •í•œë‹¤.
+		if (!Inventory->ServerConfirmPrimaryPurchase(Pending.WeaponType))
+		{
+			UE_LOG(LogShopPurchase, Error,
+				TEXT("Weapon ownership confirmation failed after transaction commit: Player=%s Weapon=%s"),
+				*GetNameSafe(GetOwner()),
+				*UEnum::GetValueAsString(Pending.WeaponType));
+			return false;
+		}
+
+		PendingWeaponTransactions.Remove(Pending.ItemId);
+
+		UE_LOG(LogShopPurchase, Log,
+			TEXT("Weapon ownership confirmed: Player=%s Weapon=%s"),
+			*GetNameSafe(GetOwner()),
+			*UEnum::GetValueAsString(Pending.WeaponType));
+	}
+
+	if (!Inventory->ServerSetEquippedPrimary(DesiredEquippedPrimary))
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Failed to restore selected primary after ownership commit: Player=%s Weapon=%s"),
+			*GetNameSafe(GetOwner()),
+			*UEnum::GetValueAsString(DesiredEquippedPrimary));
+		return false;
+	}
+
+	PendingEquippedWeaponType = EWeaponType::None;
+	PendingWeaponItemId = FGameplayTag();
+	return true;
+}
+
+// ë³´í˜¸ë§‰ GEëŠ” êµ¬ë§¤ ì‹œ ì´ë¯¸ ì ìš©ë˜ì–´ ìˆìœ¼ë¯€ë¡œ ê±°ë˜ë§Œ í™•ì •í•œë‹¤.
+bool UShopPurchaseComponent::CommitPendingShield(UShopComponent& Shop)
+{
+	if (Shop.CommitTransaction(PendingShieldTransaction) != EShopPurchaseResult::Success)
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Shield commit failed: Player=%s Item=%s"),
+			*GetNameSafe(GetOwner()),
 			*PendingShieldTransaction.ItemId.ToString());
 
 		return false;
 	}
 
-	const EShopPurchaseResult CommitResult = ShopComponent->CommitTransaction(PendingShieldTransaction);
+	// í™•ì • í›„ì—ëŠ” rollback ëŒ€ìƒì´ ì•„ë‹ˆë¯€ë¡œ Pending ê±°ë˜ì™€ GE í•¸ë“¤ì„ ë¹„ìš´ë‹¤.
+	PendingShieldTransaction = FShopTransactionHandle();
+	PendingShieldEffect = FActiveGameplayEffectHandle();
+	return true;
+}
 
-	if (CommitResult != EShopPurchaseResult::Success)
+// --------------------------------------------------
+// Pending êµ¬ë§¤ ì·¨ì†Œ
+
+bool UShopPurchaseComponent::CancelPendingPurchases()
+{
+	AShooterPlayerState* PlayerState = GetPlayerState();
+	UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+
+	if (!IsValid(Shop))
 	{
-		UE_LOG(
-			LogShopPurchase,
-			Error,
-			TEXT("Pending purchase commit failed: Player=%s Item=%s Result=%s"),
-			*GetNameSafe(PlayerState),
-			*PendingShieldTransaction.ItemId.ToString(),
-			*UEnum::GetValueAsString(CommitResult));
-
 		return false;
 	}
 
-	UE_LOG(
-		LogShopPurchase,
-		Log,
-		TEXT("Pending purchase committed: Player=%s Item=%s Price=%d"),
-		*GetNameSafe(PlayerState),
-		*PendingShieldTransaction.ItemId.ToString(),
-		PendingShieldTransaction.PaidCredits);
+	bool bCancelled = true;
 
-	PendingShieldTransaction = FShopTransactionHandle();
+	// ì£¼ë¬´ê¸° Pendingì„ ê°œë³„ í™˜ë¶ˆí•œë‹¤. ì‹¤íŒ¨í•œ ê±°ë˜ëŠ” ì¬ì‹œë„í•  ìˆ˜ ìˆë„ë¡ ê·¸ëŒ€ë¡œ ë‚¨ê¸´ë‹¤.
+	if (!PendingWeaponTransactions.IsEmpty())
+	{
+		TArray<FGameplayTag> PendingItemIds;
+		PendingWeaponTransactions.GetKeys(PendingItemIds);
 
-	return true;
+		for (const FGameplayTag& PendingItemId : PendingItemIds)
+		{
+			if (!RefundPendingWeapon(*Shop, PendingItemId))
+			{
+				bCancelled = false;
+			}
+		}
+
+		// ì†Œìœ  ìƒíƒœëŠ” ì•„ì§ í™•ì • ì „ì´ë¯€ë¡œ ëŸ°íƒ€ì„ ì¥ì°©ë§Œ ë§ˆì§€ë§‰ í™•ì • ìƒíƒœë¡œ ë³µì›í•œë‹¤.
+		PendingEquippedWeaponType = EWeaponType::None;
+		PendingWeaponItemId = FGameplayTag();
+		RogueWeaponLoadout::RestoreConfirmedPrimary(PlayerState, GetOwningPawn());
+	}
+
+	if (PendingShieldTransaction.IsValid() && !RefundPendingShield(*Shop))
+	{
+		bCancelled = false;
+	}
+
+	RefreshPendingMirror();
+	return bCancelled;
 }

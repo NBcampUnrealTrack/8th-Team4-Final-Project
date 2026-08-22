@@ -1,4 +1,4 @@
-#include "Shop/ShopComponent.h"
+﻿#include "Shop/ShopComponent.h"
 
 #include "Economy/CreditWalletComponent.h"
 #include "Engine/World.h"
@@ -24,6 +24,11 @@ void UShopComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME_CONDITION(UShopComponent, HealthUpgradePurchaseCount, COND_OwnerOnly);
 
 	DOREPLIFETIME_CONDITION(UShopComponent, DamageUpgradePurchaseCount, COND_OwnerOnly);
+}
+
+void UShopComponent::OnRep_ConfirmedPurchaseCounts()
+{
+	OnPurchaseStateChanged.Broadcast();
 }
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -124,11 +129,13 @@ bool UShopComponent::FindItemDefinition(
 
 EShopPurchaseResult UShopComponent::GetPurchaseEligibility(
 	const FGameplayTag ItemId,
-	int32& OutPrice) const
+	int32& OutPrice,
+	const int32 CreditOffset) const
 {
 	// UI 사전 조회와 실제 구매가 같은 검증 경로를 사용해 구매 조건의 불일치를 막는다.
+	// 같은 함수를 쓰더라도 CreditOffset이 다르면 결과가 갈리므로 호출자가 맞춰 넘겨야 한다.
 	const FShopPurchaseResolution Resolution =
-		ResolvePurchaseRequest(ItemId);
+		ResolvePurchaseRequest(ItemId, CreditOffset);
 
 	OutPrice = Resolution.Price;
 	return Resolution.Result;
@@ -718,6 +725,12 @@ int32 UShopComponent::ResolvePrice(const FShopItemDefinition& Definition) const
 	}
 
 	return Definition.TierPrices[PurchaseCount];
+}
+
+bool UShopComponent::IsPurchaseWindowOpen() const
+{
+	const URogueShopSettings* Settings = GetShopSettings();
+	return IsValid(Settings) && IsPurchaseWindowOpen(*Settings);
 }
 
 bool UShopComponent::IsPurchaseWindowOpen(const URogueShopSettings& Settings) const

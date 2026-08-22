@@ -43,14 +43,33 @@ void UShooterShopScreen::NativeOnActivated()
 		? PlayerState->GetShopComponent()
 		: nullptr;
 
+	UShopPurchaseComponent* PurchaseComponent = IsValid(PlayerState)
+		? PlayerState->GetShopPurchaseComponent()
+		: nullptr;
+
 	BoundCreditWallet = CreditWallet;
 	BoundShopComponent = ShopComponent;
+	BoundPurchaseComponent = PurchaseComponent;
 
 	if (IsValid(CreditWallet))
 	{
 		CreditWallet->OnCreditsChanged.AddUniqueDynamic(
 			this,
 			&ThisClass::HandleCreditsChanged);
+	}
+
+	if (IsValid(ShopComponent))
+	{
+		ShopComponent->OnPurchaseStateChanged.AddUObject(
+			this,
+			&ThisClass::RefreshItemRows);
+	}
+
+	if (IsValid(PurchaseComponent))
+	{
+		PurchaseComponent->OnPendingStateChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandlePendingStateChanged);
 	}
 
 	RefreshCredits();
@@ -64,6 +83,18 @@ void UShooterShopScreen::NativeOnDeactivated()
 		CreditWallet->OnCreditsChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleCreditsChanged);
+	}
+
+	if (UShopComponent* ShopComponent = BoundShopComponent.Get())
+	{
+		ShopComponent->OnPurchaseStateChanged.RemoveAll(this);
+	}
+
+	if (UShopPurchaseComponent* PurchaseComponent = BoundPurchaseComponent.Get())
+	{
+		PurchaseComponent->OnPendingStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandlePendingStateChanged);
 	}
 
 	for (UShooterShopItemRow* ItemRow : ItemRows)
@@ -83,6 +114,7 @@ void UShooterShopScreen::NativeOnDeactivated()
 
 	BoundCreditWallet.Reset();
 	BoundShopComponent.Reset();
+	BoundPurchaseComponent.Reset();
 
 	Super::NativeOnDeactivated();
 }
@@ -97,6 +129,11 @@ void UShooterShopScreen::HandleCreditsChanged(const int32 PreviousCredits, const
 	}
 
 	// 잔액 변화에 따라 구매 가능/불가 상태를 즉시 갱신한다.
+	RefreshItemRows();
+}
+
+void UShooterShopScreen::HandlePendingStateChanged()
+{
 	RefreshItemRows();
 }
 
@@ -196,10 +233,10 @@ void UShooterShopScreen::RebuildItemRows()
 
 void UShooterShopScreen::RefreshItemRows()
 {
-	UShopComponent* ShopComponent =
-		BoundShopComponent.Get();
+	UShopPurchaseComponent* PurchaseComponent =
+		BoundPurchaseComponent.Get();
 
-	if (!IsValid(ShopComponent))
+	if (!IsValid(PurchaseComponent))
 	{
 		return;
 	}
@@ -212,7 +249,8 @@ void UShooterShopScreen::RefreshItemRows()
 		}
 
 		int32 Price = 0;
-		const EShopPurchaseResult Result = ShopComponent->GetPurchaseEligibility(ItemRow->GetItemId(), Price);
+		const EShopPurchaseResult Result =
+			PurchaseComponent->GetPurchaseEligibility(ItemRow->GetItemId(), Price);
 
 		ItemRow->RefreshPurchaseState(Price, Result);
 	}

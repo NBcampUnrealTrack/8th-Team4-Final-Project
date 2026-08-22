@@ -1,7 +1,8 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "Weapon/WeaponTypes.h"
 
 #include "ShopTypes.generated.h"
 
@@ -50,11 +51,13 @@ struct FShopItemDefinition
 		const FGameplayTag InItemId,
 		const EShopItemType InItemType,
 		const int32 InBasePrice,
-		const FText& InDisplayName)
+		const FText& InDisplayName,
+		const EWeaponType InGrantedWeaponType = EWeaponType::None)
 		: ItemId(InItemId)
 		, ItemType(InItemType)
 		, BasePrice(InBasePrice)
 		, DisplayName(InDisplayName)
+		, GrantedWeaponType(InGrantedWeaponType)
 	{
 	}
 
@@ -66,7 +69,7 @@ struct FShopItemDefinition
 
 	// 동적 가격 규칙이 추가되기 전의 기준 가격이다. 서버가 최종 결제 가격을 결정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop", meta = (ClampMin = "1", UIMin = "1"))
-	int32 BasePrice = 0;
+	int32 BasePrice = 1;
 
 	// 반복 구매 상품의 단계별 가격이다.
 	// 비어 있으면 BasePrice를 고정 가격으로 사용한다.
@@ -79,6 +82,10 @@ struct FShopItemDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
 	FText DisplayName;
+
+	// 상점은 어떤 무기를 지급하는지만 정의한다. 실제 클래스 해석은 Weapon Registry가 담당한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
+	EWeaponType GrantedWeaponType = EWeaponType::None;
 };
 
 /** 결제 후 확정 또는 환불할 때 서버 C++ 코드에서만 사용하는 거래 핸들이다. */

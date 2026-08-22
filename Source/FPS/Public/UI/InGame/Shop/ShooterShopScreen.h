@@ -9,6 +9,7 @@
 class UCreditWalletComponent;
 class UPanelWidget;
 class UShopComponent;
+class UShopPurchaseComponent;
 class UShooterShopItemRow;
 class UTextBlock;
 
@@ -45,6 +46,9 @@ private:
 	UFUNCTION()
 	void HandleCreditsChanged(int32 PreviousCredits, int32 NewCredits);
 
+	UFUNCTION()
+	void HandlePendingStateChanged();
+
 	void HandleItemPurchaseRequested(FGameplayTag ItemId);
 
 	void RefreshCredits();
@@ -75,4 +79,5 @@ private:
 
 	TWeakObjectPtr<UCreditWalletComponent> BoundCreditWallet;
 	TWeakObjectPtr<UShopComponent> BoundShopComponent;
+	TWeakObjectPtr<UShopPurchaseComponent> BoundPurchaseComponent;
 };
