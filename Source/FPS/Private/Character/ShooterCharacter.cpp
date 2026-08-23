@@ -4,6 +4,8 @@
 #include "Character/ShooterCharacter.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
@@ -148,6 +150,40 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!IsValid(Movement))
+	{
+		return;
+	}
+
+	const bool bWasInAir = (PrevMovementMode == MOVE_Falling);
+	const bool bIsInAir  = (Movement->MovementMode == MOVE_Falling);
+	if (bWasInAir == bIsInAir)
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir, bIsInAir ? 1 : 0);
+	}
+}
+
+void AShooterCharacter::CheckJumpInput(float DeltaTime)
+{
+	if (bPressedJump)
+	{
+		const ACharacter* DefaultCharacter = GetClass()->GetDefaultObject<ACharacter>();
+		JumpMaxCount = DefaultCharacter->JumpMaxCount + URogueAugmentStatResolver::GetExtraJumpCount(this);
+	}
+
+	Super::CheckJumpInput(DeltaTime);
 }
 
 UAbilitySystemComponent* AShooterCharacter::GetAbilitySystemComponent() const
