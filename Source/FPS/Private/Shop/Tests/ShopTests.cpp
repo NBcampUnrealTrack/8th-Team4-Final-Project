@@ -1,4 +1,4 @@
-#if WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 
@@ -7,6 +7,7 @@
 #include "GameMode/RoundTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
+#include "Shop/ShopCatalogDataAsset.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopTags.h"
 #include "Shop/ShopTypes.h"
@@ -15,7 +16,7 @@
 
 namespace
 {
-	// 기본 카탈로그의 라이플 가격이다. 카탈로그가 바뀌면 FShopDefaultCatalogTest가 먼저 실패한다.
+	// 거래 테스트에서 사용하는 고정 가격이다. 실제 프로젝트 Catalog 값과는 독립적이다.
 	constexpr int32 RiflePrice = 1500;
 	constexpr int32 SmallShieldPrice = 150;
 	constexpr int32 ExactBalanceCredits = RiflePrice;
@@ -46,55 +47,80 @@ namespace
 			static_cast<int32>(ExpectedResult));
 	}
 
-	struct FExpectedShopItem
-	{
-		FGameplayTag ItemId;
-		EShopItemType ItemType = EShopItemType::None;
-		int32 BasePrice = 0;
-	};
 
-	void TestCatalogItem(
-		FAutomationTestBase& Test,
-		const URogueShopSettings& Settings,
-		const FExpectedShopItem& Expected)
+	struct FShopTestConfiguration
 	{
-		const FShopItemDefinition* Definition = Settings.FindItemDefinition(Expected.ItemId);
-		if (!Test.TestNotNull(
-			FString::Printf(TEXT("Catalog item exists: %s"), *Expected.ItemId.ToString()),
-			Definition))
+		FShopTestConfiguration()
+			: Catalog(NewObject<UShopCatalogDataAsset>(GetTransientPackage()))
+			, Settings(NewObject<URogueShopSettings>(GetTransientPackage()))
 		{
-			return;
-		}
-
-		Test.TestEqual(
-			FString::Printf(TEXT("Catalog item type: %s"), *Expected.ItemId.ToString()),
-			static_cast<int32>(Definition->ItemType),
-			static_cast<int32>(Expected.ItemType));
-		Test.TestEqual(
-			FString::Printf(TEXT("Catalog base price: %s"), *Expected.ItemId.ToString()),
-			Definition->BasePrice,
-			Expected.BasePrice);
-	}
-
-	// NewObject된 설정은 루트에 없으므로 테스트 도중 GC 대상이 될 수 있다.
-	TStrongObjectPtr<URogueShopSettings> MakeMinimalValidSettings()
-	{
-		TStrongObjectPtr<URogueShopSettings> Settings(
-			NewObject<URogueShopSettings>(GetTransientPackage()));
-		Settings->ItemDefinitions =
-		{
-			FShopItemDefinition(
+			FShopCatalogEntry Entry;
+			Entry.Definition = FShopItemDefinition(
 				RogueShopTags::Item_Weapon_Rifle,
 				EShopItemType::Weapon,
-				RiflePrice,
-				FText::FromString(TEXT("Rifle")))
-		};
-		Settings->AllowedPurchasePhases =
+				RiflePrice);
+			Entry.Presentation.DisplayName = FText::FromString(TEXT("Rifle"));
+			Catalog->Items = { Entry };
+
+			Settings->Catalog = Catalog.Get();
+			Settings->AllowedPurchasePhases =
+			{
+				EGameFlowPhase::AugmentSelecting
+			};
+		}
+
+		TStrongObjectPtr<UShopCatalogDataAsset> Catalog;
+		TStrongObjectPtr<URogueShopSettings> Settings;
+	};
+
+	// 거래 테스트는 Content Asset에 의존하지 않고 필요한 최소 Catalog를 직접 구성한다.
+	struct FScopedDefaultShopCatalog
+	{
+		FScopedDefaultShopCatalog()
+			: Catalog(NewObject<UShopCatalogDataAsset>(GetTransientPackage()))
 		{
-			EGameFlowPhase::AugmentSelecting
-		};
-		return Settings;
-	}
+			FShopCatalogEntry Rifle;
+			Rifle.Definition = FShopItemDefinition(
+				RogueShopTags::Item_Weapon_Rifle,
+				EShopItemType::Weapon,
+				RiflePrice);
+
+			FShopCatalogEntry SmallShield;
+			SmallShield.Definition = FShopItemDefinition(
+				RogueShopTags::Item_Shield_Small,
+				EShopItemType::Shield,
+				SmallShieldPrice);
+
+			Catalog->Items = { Rifle, SmallShield };
+
+			Settings = GetMutableDefault<URogueShopSettings>();
+			if (IsValid(Settings))
+			{
+				PreviousCatalog = Settings->Catalog;
+				PreviousPurchasePhases = Settings->AllowedPurchasePhases;
+
+				Settings->Catalog = Catalog.Get();
+				Settings->AllowedPurchasePhases =
+				{
+					EGameFlowPhase::AugmentSelecting
+				};
+			}
+		}
+
+		~FScopedDefaultShopCatalog()
+		{
+			if (IsValid(Settings))
+			{
+				Settings->Catalog = PreviousCatalog;
+				Settings->AllowedPurchasePhases = PreviousPurchasePhases;
+			}
+		}
+
+		TStrongObjectPtr<UShopCatalogDataAsset> Catalog;
+		TSoftObjectPtr<UShopCatalogDataAsset> PreviousCatalog;
+		TArray<EGameFlowPhase> PreviousPurchasePhases;
+		URogueShopSettings* Settings = nullptr;
+	};
 
 	void TestConfigurationRejected(
 		FAutomationTestBase& Test,
@@ -155,6 +181,7 @@ namespace
 			return Wallet->ResetCredits(Credits, ECreditChangeReason::InitialGrant);
 		}
 
+		FScopedDefaultShopCatalog CatalogOverride;
 		UWorld* World = nullptr;
 		AShooterPlayerState* PlayerState = nullptr;
 		UShopComponent* Shop = nullptr;
@@ -170,6 +197,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FShopDefaultCatalogTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+
 	const URogueShopSettings* Settings = GetDefault<URogueShopSettings>();
 	if (!TestNotNull(TEXT("Shop settings exist"), Settings))
 	{
@@ -180,28 +208,15 @@ bool FShopDefaultCatalogTest::RunTest(const FString& Parameters)
 	const bool bConfigurationValid = Settings->IsConfigurationValid(&FailureReason);
 	TestTrue(
 		FString::Printf(
-			TEXT("Default catalog is valid: %s"),
+			TEXT("Configured shop catalog is valid: %s"),
 			FailureReason.IsEmpty() ? TEXT("<none>") : *FailureReason),
 		bConfigurationValid);
 
-	const TArray<FExpectedShopItem> ExpectedItems =
+	const UShopCatalogDataAsset* Catalog = Settings->LoadCatalog();
+	TestNotNull(TEXT("Configured shop catalog loads"), Catalog);
+	if (IsValid(Catalog))
 	{
-		{ RogueShopTags::Item_Weapon_Rifle, EShopItemType::Weapon, RiflePrice },
-		{ RogueShopTags::Item_Weapon_Sniper, EShopItemType::Weapon, 1500 },
-		{ RogueShopTags::Item_Weapon_Shotgun, EShopItemType::Weapon, 1500 },
-		{ RogueShopTags::Item_WeaponUpgrade_Pistol, EShopItemType::WeaponUpgrade, 1000 },
-		{ RogueShopTags::Item_WeaponUpgrade_Knife, EShopItemType::WeaponUpgrade, 1000 },
-		{ RogueShopTags::Item_HealthUpgrade, EShopItemType::HealthUpgrade, 200 },
-		{ RogueShopTags::Item_Shield_Small, EShopItemType::Shield, SmallShieldPrice },
-		{ RogueShopTags::Item_Shield_Large, EShopItemType::Shield, 400 },
-		{ RogueShopTags::Item_DamageUpgrade, EShopItemType::DamageUpgrade, 300 },
-		{ RogueShopTags::Item_Augment, EShopItemType::Augment, 1000 }
-	};
-
-	TestEqual(TEXT("Default catalog item count"), Settings->ItemDefinitions.Num(), ExpectedItems.Num());
-	for (const FExpectedShopItem& ExpectedItem : ExpectedItems)
-	{
-		TestCatalogItem(*this, *Settings, ExpectedItem);
+		TestFalse(TEXT("Configured shop catalog is not empty"), Catalog->Items.IsEmpty());
 	}
 
 	TestTrue(
@@ -221,33 +236,43 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FShopCatalogFailureTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
-	const TStrongObjectPtr<URogueShopSettings> EmptyCatalog = MakeMinimalValidSettings();
-	EmptyCatalog->ItemDefinitions.Reset();
-	TestConfigurationRejected(*this, TEXT("Empty catalog is rejected"), *EmptyCatalog);
 
-	const TStrongObjectPtr<URogueShopSettings> DuplicateItem = MakeMinimalValidSettings();
-	DuplicateItem->ItemDefinitions.Add(DuplicateItem->ItemDefinitions[0]);
-	TestConfigurationRejected(*this, TEXT("Duplicate item id is rejected"), *DuplicateItem);
+	const TStrongObjectPtr<URogueShopSettings> MissingCatalog(
+		NewObject<URogueShopSettings>(GetTransientPackage()));
+	MissingCatalog->Catalog.Reset();
+	TestConfigurationRejected(*this, TEXT("Missing catalog asset is rejected"), *MissingCatalog);
 
-	const TStrongObjectPtr<URogueShopSettings> InvalidPrice = MakeMinimalValidSettings();
-	InvalidPrice->ItemDefinitions[0].BasePrice = 0;
-	TestConfigurationRejected(*this, TEXT("Non-positive price is rejected"), *InvalidPrice);
+	FShopTestConfiguration EmptyCatalog;
+	EmptyCatalog.Catalog->Items.Reset();
+	TestConfigurationRejected(*this, TEXT("Empty catalog is rejected"), *EmptyCatalog.Settings);
 
-	const TStrongObjectPtr<URogueShopSettings> InvalidItemType = MakeMinimalValidSettings();
-	InvalidItemType->ItemDefinitions[0].ItemType = static_cast<EShopItemType>(255);
-	TestConfigurationRejected(*this, TEXT("Unknown item type is rejected"), *InvalidItemType);
+	FShopTestConfiguration DuplicateItem;
+	DuplicateItem.Catalog->Items.Add(DuplicateItem.Catalog->Items[0]);
+	TestConfigurationRejected(*this, TEXT("Duplicate item id is rejected"), *DuplicateItem.Settings);
 
-	const TStrongObjectPtr<URogueShopSettings> MissingPhase = MakeMinimalValidSettings();
-	MissingPhase->AllowedPurchasePhases.Reset();
-	TestConfigurationRejected(*this, TEXT("Missing purchase phase is rejected"), *MissingPhase);
+	FShopTestConfiguration InvalidPrice;
+	InvalidPrice.Catalog->Items[0].Definition.BasePrice = 0;
+	TestConfigurationRejected(*this, TEXT("Non-positive price is rejected"), *InvalidPrice.Settings);
 
-	const TStrongObjectPtr<URogueShopSettings> DuplicatePhase = MakeMinimalValidSettings();
-	DuplicatePhase->AllowedPurchasePhases.Add(DuplicatePhase->AllowedPurchasePhases[0]);
-	TestConfigurationRejected(*this, TEXT("Duplicate purchase phase is rejected"), *DuplicatePhase);
+	FShopTestConfiguration InvalidTierPrice;
+	InvalidTierPrice.Catalog->Items[0].Definition.TierPrices = { 1500, 0 };
+	TestConfigurationRejected(*this, TEXT("Non-positive tier price is rejected"), *InvalidTierPrice.Settings);
 
-	const TStrongObjectPtr<URogueShopSettings> InvalidPhase = MakeMinimalValidSettings();
-	InvalidPhase->AllowedPurchasePhases[0] = static_cast<EGameFlowPhase>(255);
-	TestConfigurationRejected(*this, TEXT("Unknown purchase phase is rejected"), *InvalidPhase);
+	FShopTestConfiguration InvalidItemType;
+	InvalidItemType.Catalog->Items[0].Definition.ItemType = static_cast<EShopItemType>(255);
+	TestConfigurationRejected(*this, TEXT("Unknown item type is rejected"), *InvalidItemType.Settings);
+
+	FShopTestConfiguration MissingPhase;
+	MissingPhase.Settings->AllowedPurchasePhases.Reset();
+	TestConfigurationRejected(*this, TEXT("Missing purchase phase is rejected"), *MissingPhase.Settings);
+
+	FShopTestConfiguration DuplicatePhase;
+	DuplicatePhase.Settings->AllowedPurchasePhases.Add(DuplicatePhase.Settings->AllowedPurchasePhases[0]);
+	TestConfigurationRejected(*this, TEXT("Duplicate purchase phase is rejected"), *DuplicatePhase.Settings);
+
+	FShopTestConfiguration InvalidPhase;
+	InvalidPhase.Settings->AllowedPurchasePhases[0] = static_cast<EGameFlowPhase>(255);
+	TestConfigurationRejected(*this, TEXT("Unknown purchase phase is rejected"), *InvalidPhase.Settings);
 	return true;
 }
 

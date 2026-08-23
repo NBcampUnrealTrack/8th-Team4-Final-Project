@@ -1,11 +1,13 @@
 #include "UI/InGame/Shop/ShooterShopScreen.h"
 
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Economy/CreditWalletComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
+#include "Shop/ShopCatalogDataAsset.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
 #include "UI/InGame/Shop/ShooterShopItemRow.h"
@@ -15,15 +17,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogShooterShopScreen, Log, All);
 UShooterShopScreen::UShooterShopScreen()
 {
 	InputConfig = EShooterWidgetInputMode::GameAndMenu;
-
-	// 현재 화면은 스탯 강화 상점으로 사용한다.
-	// Blueprint Class Defaults에서 필요하면 표시 타입을 변경할 수 있다.
-	VisibleItemTypes =
-	{
-		EShopItemType::HealthUpgrade,
-		EShopItemType::Shield,
-		EShopItemType::DamageUpgrade
-	};
 }
 
 void UShooterShopScreen::NativeOnActivated()
@@ -106,11 +99,7 @@ void UShooterShopScreen::NativeOnDeactivated()
 	}
 
 	ItemRows.Reset();
-
-	if (IsValid(Panel_Items))
-	{
-		Panel_Items->ClearChildren();
-	}
+	ClearItemPanels();
 
 	BoundCreditWallet.Reset();
 	BoundShopComponent.Reset();
@@ -128,7 +117,6 @@ void UShooterShopScreen::HandleCreditsChanged(const int32 PreviousCredits, const
 		Text_Credits->SetText(FText::AsNumber(NewCredits));
 	}
 
-	// 잔액 변화에 따라 구매 가능/불가 상태를 즉시 갱신한다.
 	RefreshItemRows();
 }
 
@@ -150,28 +138,26 @@ void UShooterShopScreen::RefreshCredits()
 	}
 
 	const UCreditWalletComponent* CreditWallet = BoundCreditWallet.Get();
-
-	const int32 Credits =
-		IsValid(CreditWallet)
-		? CreditWallet->GetCredits()
-		: 0;
+	const int32 Credits = IsValid(CreditWallet) ? CreditWallet->GetCredits() : 0;
 
 	Text_Credits->SetText(FText::AsNumber(Credits));
 }
 
 void UShooterShopScreen::RebuildItemRows()
 {
-	if (!IsValid(Panel_Items))
+	if (!IsValid(Panel_PrimaryWeapons)
+		|| !IsValid(Panel_Shields)
+		|| !IsValid(Panel_Upgrades))
 	{
 		UE_LOG(
 			LogShooterShopScreen,
 			Error,
-			TEXT("Panel_Items is missing on %s."),
+			TEXT("Shop item panels are not configured on %s."),
 			*GetNameSafe(this));
 		return;
 	}
 
-	Panel_Items->ClearChildren();
+	ClearItemPanels();
 	ItemRows.Reset();
 
 	if (!ItemRowClass)
@@ -185,7 +171,6 @@ void UShooterShopScreen::RebuildItemRows()
 	}
 
 	const URogueShopSettings* Settings = GetDefault<URogueShopSettings>();
-
 	if (!IsValid(Settings) || !Settings->IsConfigurationValid())
 	{
 		UE_LOG(
@@ -195,21 +180,48 @@ void UShooterShopScreen::RebuildItemRows()
 		return;
 	}
 
+	const UShopCatalogDataAsset* Catalog = Settings->LoadCatalog();
+	if (!IsValid(Catalog))
+	{
+		return;
+	}
+
 	APlayerController* PlayerController = GetOwningPlayer();
 	if (!IsValid(PlayerController))
 	{
 		return;
 	}
 
-	for (const FShopItemDefinition& Definition : Settings->ItemDefinitions)
+	for (const FShopCatalogEntry& Entry : Catalog->Items)
 	{
-		if (!ShouldDisplayItem(Definition))
+		const FShopItemDefinition& Definition = Entry.Definition;
+		UPanelWidget* TargetPanel = GetTargetPanel(Definition);
+		if (!IsValid(TargetPanel))
 		{
 			continue;
 		}
 
+		const FShopItemPresentation& Presentation = Entry.Presentation;
+
+		TSubclassOf<UShooterShopItemRow> RowClass = ItemRowClass;
+		if (!Presentation.WidgetClassOverride.IsNull())
+		{
+			if (UClass* OverrideClass = Presentation.WidgetClassOverride.LoadSynchronous())
+			{
+				RowClass = OverrideClass;
+			}
+			else
+			{
+				UE_LOG(
+					LogShooterShopScreen,
+					Warning,
+					TEXT("Shop item %s could not load WidgetClassOverride. Falling back to the default row."),
+					*Definition.ItemId.ToString());
+			}
+		}
+
 		UShooterShopItemRow* ItemRow =
-			CreateWidget<UShooterShopItemRow>(PlayerController, ItemRowClass);
+			CreateWidget<UShooterShopItemRow>(PlayerController, RowClass);
 
 		if (!IsValid(ItemRow))
 		{
@@ -221,10 +233,21 @@ void UShooterShopScreen::RebuildItemRows()
 			continue;
 		}
 
-		ItemRow->SetItemDefinition(Definition);
+		ItemRow->SetItemData(Definition, Presentation);
 		ItemRow->OnPurchaseRequested.AddUObject(this, &ThisClass::HandleItemPurchaseRequested);
 
-		Panel_Items->AddChild(ItemRow);
+		UPanelSlot* AddedSlot = TargetPanel->AddChild(ItemRow);
+		if (UHorizontalBoxSlot* HorizontalSlot = Cast<UHorizontalBoxSlot>(AddedSlot))
+		{
+			FSlateChildSize FillSize;
+			FillSize.SizeRule = ESlateSizeRule::Fill;
+			FillSize.Value = 1.0f;
+
+			HorizontalSlot->SetSize(FillSize);
+			HorizontalSlot->SetHorizontalAlignment(HAlign_Fill);
+			HorizontalSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+
 		ItemRows.Add(ItemRow);
 	}
 
@@ -233,9 +256,7 @@ void UShooterShopScreen::RebuildItemRows()
 
 void UShooterShopScreen::RefreshItemRows()
 {
-	UShopPurchaseComponent* PurchaseComponent =
-		BoundPurchaseComponent.Get();
-
+	UShopPurchaseComponent* PurchaseComponent = BoundPurchaseComponent.Get();
 	if (!IsValid(PurchaseComponent))
 	{
 		return;
@@ -256,9 +277,42 @@ void UShooterShopScreen::RefreshItemRows()
 	}
 }
 
-bool UShooterShopScreen::ShouldDisplayItem(const FShopItemDefinition& Definition) const
+void UShooterShopScreen::ClearItemPanels()
 {
-	return VisibleItemTypes.IsEmpty() || VisibleItemTypes.Contains(Definition.ItemType);
+	if (IsValid(Panel_PrimaryWeapons))
+	{
+		Panel_PrimaryWeapons->ClearChildren();
+	}
+
+	if (IsValid(Panel_Shields))
+	{
+		Panel_Shields->ClearChildren();
+	}
+
+	if (IsValid(Panel_Upgrades))
+	{
+		Panel_Upgrades->ClearChildren();
+	}
+}
+
+UPanelWidget* UShooterShopScreen::GetTargetPanel(const FShopItemDefinition& Definition) const
+{
+	switch (Definition.ItemType)
+	{
+	case EShopItemType::Weapon:
+		return Panel_PrimaryWeapons;
+
+	case EShopItemType::Shield:
+		return Panel_Shields;
+
+	case EShopItemType::WeaponUpgrade:
+	case EShopItemType::HealthUpgrade:
+	case EShopItemType::DamageUpgrade:
+		return Panel_Upgrades;
+
+	default:
+		return nullptr;
+	}
 }
 
 void UShooterShopScreen::RequestClose()
@@ -281,14 +335,12 @@ void UShooterShopScreen::RequestPurchase(const FGameplayTag ItemId)
 	}
 
 	AShooterPlayerState* PlayerState = PlayerController->GetPlayerState<AShooterPlayerState>();
-
 	if (!IsValid(PlayerState))
 	{
 		return;
 	}
 
-	UShopPurchaseComponent* PurchaseComponent =	PlayerState->GetShopPurchaseComponent();
-
+	UShopPurchaseComponent* PurchaseComponent = PlayerState->GetShopPurchaseComponent();
 	if (!IsValid(PurchaseComponent))
 	{
 		return;
@@ -296,8 +348,7 @@ void UShooterShopScreen::RequestPurchase(const FGameplayTag ItemId)
 
 	PurchaseComponent->ServerPurchaseItem(ItemId);
 
-	// Listen Server에서는 RPC 처리가 즉시 끝날 수 있으므로
-	// 현재 상태를 한 번 더 반영한다.
+	// Listen Server에서는 RPC 처리가 즉시 끝날 수 있으므로 현재 상태를 한 번 더 반영한다.
 	RefreshItemRows();
 }
 

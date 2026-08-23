@@ -17,7 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnShopCloseRequestedSignature);
 
 /**
  * 준비 단계에서 표시되는 상점 화면이다.
- * Catalog를 읽어 상품 Row를 구성하고, 화면 표시 및 구매 요청 전달만 담당한다.
+ * Catalog 상품을 타입별 패널에 자동 배치하고, 표시 및 구매 요청 전달만 담당한다.
  * 가격 판정과 실제 거래는 ShopComponent / ShopPurchaseComponent에 위임한다.
  */
 UCLASS(Abstract)
@@ -54,25 +54,29 @@ private:
 	void RefreshCredits();
 	void RebuildItemRows();
 	void RefreshItemRows();
+	void ClearItemPanels();
 
-	bool ShouldDisplayItem(const FShopItemDefinition& Definition) const;
+	UPanelWidget* GetTargetPanel(const FShopItemDefinition& Definition) const;
 
 private:
-	// 상품 Row가 자동으로 추가될 컨테이너다.
+	// 주무기 상품이 자동으로 추가될 컨테이너다.
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UPanelWidget> Panel_Items;
+	TObjectPtr<UPanelWidget> Panel_PrimaryWeapons;
+
+	// 보호막 상품이 자동으로 추가될 컨테이너다.
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UPanelWidget> Panel_Shields;
+
+	// 무기/체력/공격력 업그레이드가 자동으로 추가될 컨테이너다.
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UPanelWidget> Panel_Upgrades;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Credits;
 
-	// WBP_ShopItemRow를 지정한다.
+	// 상품별 WidgetClassOverride가 없을 때 사용할 공통 카드 Widget이다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Shop")
 	TSubclassOf<UShooterShopItemRow> ItemRowClass;
-
-	// 비어 있으면 전체 Catalog를 표시한다.
-	// 기본값은 현재 스탯 상점 범위인 HP / Shield / Damage다.
-	UPROPERTY(EditDefaultsOnly, Category = "UI|Shop")
-	TArray<EShopItemType> VisibleItemTypes;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UShooterShopItemRow>> ItemRows;

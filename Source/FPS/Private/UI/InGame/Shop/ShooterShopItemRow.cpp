@@ -1,7 +1,9 @@
 #include "UI/InGame/Shop/ShooterShopItemRow.h"
 
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 
 void UShooterShopItemRow::NativeOnInitialized()
 {
@@ -15,14 +17,28 @@ void UShooterShopItemRow::NativeOnInitialized()
 	}
 }
 
-void UShooterShopItemRow::SetItemDefinition(
-	const FShopItemDefinition& Definition)
+void UShooterShopItemRow::SetItemData(
+	const FShopItemDefinition& Definition,
+	const FShopItemPresentation& Presentation)
 {
 	ItemId = Definition.ItemId;
 
 	if (IsValid(Text_Name))
 	{
-		Text_Name->SetText(Definition.DisplayName);
+		Text_Name->SetText(Presentation.DisplayName);
+	}
+
+	if (IsValid(Image_Icon))
+	{
+		if (UTexture2D* IconTexture = Presentation.Icon.LoadSynchronous())
+		{
+			Image_Icon->SetBrushFromTexture(IconTexture, true);
+			Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			Image_Icon->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 }
 
@@ -30,8 +46,7 @@ void UShooterShopItemRow::RefreshPurchaseState(
 	const int32 Price,
 	const EShopPurchaseResult PurchaseResult)
 {
-	const bool bCanPurchase =
-		PurchaseResult == EShopPurchaseResult::Success;
+	const bool bCanPurchase = PurchaseResult == EShopPurchaseResult::Success;
 
 	if (IsValid(Button_Purchase))
 	{
@@ -68,8 +83,7 @@ void UShooterShopItemRow::RefreshPurchaseState(
 		break;
 
 	default:
-		Text_State->SetText(
-			FText::FromString(TEXT("Unavailable")));
+		Text_State->SetText(FText::FromString(TEXT("Unavailable")));
 		break;
 	}
 }

@@ -8,6 +8,7 @@
 
 class UCreditWalletComponent;
 class URogueShopSettings;
+class UShopCatalogDataAsset;
 
 DECLARE_MULTICAST_DELEGATE(FOnShopPurchaseStateChanged);
 
@@ -116,11 +117,16 @@ private:
 		FGameplayTag ItemId,
 		int32 CreditOffset = 0) const;
 
+	bool EnsureConfigurationValidated() const;
 	const URogueShopSettings* GetShopSettings() const;
+	const UShopCatalogDataAsset* GetShopCatalog() const;
 	UCreditWalletComponent* GetCreditWallet() const;
 
+	int32 GetConfirmedPurchaseCountForType(EShopItemType ItemType) const;
+
 	int32 ResolvePrice(
-		const FShopItemDefinition& Definition) const;
+		const FShopItemDefinition& Definition,
+		int32 ConfirmedPurchaseCount) const;
 
 	bool IsPurchaseWindowOpen(
 		const URogueShopSettings& Settings) const;
@@ -132,6 +138,9 @@ private:
 		const FShopTransactionHandle*& OutActiveTransaction) const;
 
 private:
+	// 상점 설정은 런타임 중 바뀌지 않으므로 최초 검증 결과를 재사용한다.
+	mutable TOptional<bool> CachedConfigurationValidation;
+
 	// 결제됐지만 아직 확정 또는 환불되지 않은 서버 전용 거래 원장이다.
 	TMap<FGuid, FShopTransactionHandle> ActiveTransactions;
 

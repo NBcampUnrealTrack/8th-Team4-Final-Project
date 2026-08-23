@@ -6,6 +6,7 @@
 #include "GameMode/BaseRoundGameState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
+#include "Shop/ShopCatalogDataAsset.h"
 #include "Net/UnrealNetwork.h"
 #include "Templates/UnrealTemplate.h"
 
@@ -60,22 +61,10 @@ void UShopComponent::BeginPlay()
 
 	if (!IsValid(GetCreditWallet()))
 	{
-		UE_LOG(LogShop, Error,
-			TEXT("ShopComponent could not resolve CreditWallet for %s."),
-			*GetNameSafe(GetOwner()));
+		UE_LOG(LogShop, Error, TEXT("ShopComponent could not resolve CreditWallet for %s."), *GetNameSafe(GetOwner()));
 	}
 
-	const URogueShopSettings* Settings = GetShopSettings();
-	FString FailureReason;
-	const bool bConfigurationValid =
-		IsValid(Settings) && Settings->IsConfigurationValid(&FailureReason);
-	if (!bConfigurationValid)
-	{
-		UE_LOG(LogShop, Error,
-			TEXT("Shop configuration is invalid for %s: %s"),
-			*GetNameSafe(GetOwner()),
-			FailureReason.IsEmpty() ? TEXT("Settings unavailable") : *FailureReason);
-	}
+	EnsureConfigurationValidated();
 }
 
 void UShopComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -103,20 +92,19 @@ void UShopComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-bool UShopComponent::FindItemDefinition(
-	const FGameplayTag ItemId,
-	FShopItemDefinition& OutDefinition) const
+bool UShopComponent::FindItemDefinition(const FGameplayTag ItemId, FShopItemDefinition& OutDefinition) const
 {
 	OutDefinition = FShopItemDefinition();
 
-	const URogueShopSettings* Settings = GetShopSettings();
-	if (!IsValid(Settings) || !Settings->IsConfigurationValid())
+	if (!EnsureConfigurationValidated())
 	{
 		return false;
 	}
 
-	const FShopItemDefinition* Definition =
-		Settings->FindItemDefinition(ItemId);
+	const UShopCatalogDataAsset* Catalog = GetShopCatalog();
+	const FShopItemDefinition* Definition = IsValid(Catalog)
+		? Catalog->FindItemDefinition(ItemId)
+		: nullptr;
 
 	if (!Definition)
 	{
@@ -134,8 +122,7 @@ EShopPurchaseResult UShopComponent::GetPurchaseEligibility(
 {
 	// UI 사전 조회와 실제 구매가 같은 검증 경로를 사용해 구매 조건의 불일치를 막는다.
 	// 같은 함수를 쓰더라도 CreditOffset이 다르면 결과가 갈리므로 호출자가 맞춰 넘겨야 한다.
-	const FShopPurchaseResolution Resolution =
-		ResolvePurchaseRequest(ItemId, CreditOffset);
+	const FShopPurchaseResolution Resolution = ResolvePurchaseRequest(ItemId, CreditOffset);
 
 	OutPrice = Resolution.Price;
 	return Resolution.Result;
@@ -143,30 +130,13 @@ EShopPurchaseResult UShopComponent::GetPurchaseEligibility(
 
 int32 UShopComponent::GetConfirmedPurchaseCount(const FGameplayTag ItemId) const
 {
-	const URogueShopSettings* Settings = GetShopSettings();
-	if (!IsValid(Settings))
+	FShopItemDefinition Definition;
+	if (!FindItemDefinition(ItemId, Definition))
 	{
 		return 0;
 	}
 
-	const FShopItemDefinition* Definition = Settings->FindItemDefinition(ItemId);
-
-	if (!Definition)
-	{
-		return 0;
-	}
-
-	switch (Definition->ItemType)
-	{
-	case EShopItemType::HealthUpgrade:
-		return HealthUpgradePurchaseCount;
-
-	case EShopItemType::DamageUpgrade:
-		return DamageUpgradePurchaseCount;
-
-	default:
-		return 0;
-	}
+	return GetConfirmedPurchaseCountForType(Definition.ItemType);
 }
 
 FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag ItemId)
@@ -210,12 +180,13 @@ FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag It
 	do
 	{
 		Transaction.TransactionId = FGuid::NewGuid();
-	} while (!Transaction.TransactionId.IsValid()
-		|| ActiveTransactions.Contains(Transaction.TransactionId));
+	}
+	while (!Transaction.TransactionId.IsValid() || ActiveTransactions.Contains(Transaction.TransactionId));
 
 	Transaction.ItemId = Definition.ItemId;
 	Transaction.ItemType = Definition.ItemType;
 	Transaction.PaidCredits = Price;
+
 	if (!Transaction.IsValid())
 	{
 		TransactionResult.Result = EShopPurchaseResult::InvalidTransaction;
@@ -231,9 +202,7 @@ FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag It
 		ActiveTransactions.Remove(Transaction.TransactionId);
 
 		TransactionResult.CreditsAfter = Wallet->GetCredits();
-		TransactionResult.Result = Wallet->CanAfford(Price)
-			? EShopPurchaseResult::PaymentFailed
-			: EShopPurchaseResult::NotEnoughCredits;
+		TransactionResult.Result = Wallet->CanAfford(Price)	? EShopPurchaseResult::PaymentFailed: EShopPurchaseResult::NotEnoughCredits;
 
 		if (TransactionResult.Result == EShopPurchaseResult::PaymentFailed)
 		{
@@ -246,8 +215,7 @@ FShopTransactionResult UShopComponent::TryBeginTransaction(const FGameplayTag It
 		}
 		else
 		{
-			UE_LOG(LogShop, Verbose,
-				TEXT("Payment rejected for %s: Item=%s Price=%d Credits=%d Result=%s"),
+			UE_LOG(LogShop, Verbose, TEXT("Payment rejected for %s: Item=%s Price=%d Credits=%d Result=%s"),
 				*GetNameSafe(GetOwner()),
 				*ItemId.ToString(),
 				Price,
@@ -293,10 +261,7 @@ FShopTransactionResult UShopComponent::TryReplaceTransaction(
 	TGuardValue<bool> ProcessingGuard(bIsProcessingTransaction, true);
 
 	const FShopTransactionHandle* ActiveTransaction = nullptr;
-	const EShopPurchaseResult ValidationResult =
-		ValidateActiveTransaction(
-			CurrentTransaction,
-			ActiveTransaction);
+	const EShopPurchaseResult ValidationResult = ValidateActiveTransaction(CurrentTransaction, ActiveTransaction);
 
 	if (ValidationResult != EShopPurchaseResult::Success)
 	{
@@ -305,13 +270,9 @@ FShopTransactionResult UShopComponent::TryReplaceTransaction(
 	}
 
 	// Map 갱신 이후에도 안전하게 사용할 수 있도록 서버 원본을 복사한다.
-	const FShopTransactionHandle PreviousTransaction =
-		*ActiveTransaction;
+	const FShopTransactionHandle PreviousTransaction = *ActiveTransaction;
 
-	const FShopPurchaseResolution Resolution =
-		ResolvePurchaseRequest(
-			NewItemId,
-			PreviousTransaction.PaidCredits);
+	const FShopPurchaseResolution Resolution = ResolvePurchaseRequest(NewItemId, PreviousTransaction.PaidCredits);
 
 	if (Resolution.Result != EShopPurchaseResult::Success)
 	{
@@ -358,14 +319,11 @@ FShopTransactionResult UShopComponent::TryReplaceTransaction(
 		return TransactionResult;
 	}
 
-	const int64 PriceDelta =
-		static_cast<int64>(ReplacementTransaction.PaidCredits)
-		- static_cast<int64>(PreviousTransaction.PaidCredits);
+	const int64 PriceDelta = static_cast<int64>(ReplacementTransaction.PaidCredits) - static_cast<int64>(PreviousTransaction.PaidCredits);
 
 	// Wallet 변경 이벤트가 발생했을 때도 새 거래 상태가 보이도록
 	// 먼저 서버 원장을 교체한다.
-	ActiveTransactions.Add(
-		ReplacementTransaction.TransactionId, ReplacementTransaction);
+	ActiveTransactions.Add(ReplacementTransaction.TransactionId, ReplacementTransaction);
 
 	auto RestorePreviousTransaction = [this, &PreviousTransaction]()
 		{
@@ -389,8 +347,7 @@ FShopTransactionResult UShopComponent::TryReplaceTransaction(
 	}
 	else if (PriceDelta < 0)
 	{
-		const int32 RefundAmount =
-			static_cast<int32>(-PriceDelta);
+		const int32 RefundAmount = static_cast<int32>(-PriceDelta);
 
 		if (!Wallet->AddCredits(RefundAmount, ECreditChangeReason::PurchaseRefund))
 		{
@@ -471,8 +428,7 @@ EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHand
 	}
 
 	ActiveTransaction = nullptr;
-	ActiveTransactions.Remove(
-		CommittedTransaction.TransactionId);
+	ActiveTransactions.Remove(CommittedTransaction.TransactionId);
 
 	if (bPurchaseCountChanged)
 	{
@@ -509,8 +465,7 @@ EShopPurchaseResult UShopComponent::RefundTransaction(const FShopTransactionHand
 	const EShopPurchaseResult ValidationResult = ValidateActiveTransaction(Transaction, ActiveTransaction);
 	if (ValidationResult != EShopPurchaseResult::Success)
 	{
-		UE_LOG(LogShop, Warning,
-			TEXT("Transaction refund rejected for %s: Id=%s Result=%s"),
+		UE_LOG(LogShop, Warning, TEXT("Transaction refund rejected for %s: Id=%s Result=%s"),
 			*GetNameSafe(GetOwner()),
 			*Transaction.TransactionId.ToString(EGuidFormats::DigitsWithHyphensLower),
 			*UEnum::GetValueAsString(ValidationResult));
@@ -531,9 +486,7 @@ EShopPurchaseResult UShopComponent::RefundTransaction(const FShopTransactionHand
 	ActiveTransactions.Remove(RefundedTransaction.TransactionId);
 
 	const int32 CreditsBefore = Wallet->GetCredits();
-	if (!Wallet->AddCredits(
-		RefundedTransaction.PaidCredits,
-		ECreditChangeReason::PurchaseRefund))
+	if (!Wallet->AddCredits(RefundedTransaction.PaidCredits, ECreditChangeReason::PurchaseRefund))
 	{
 		// 환불이 실패하면 거래를 복구해 이후 다시 환불할 수 있는 상태로 남긴다.
 		ActiveTransactions.Add(RefundedTransaction.TransactionId, RefundedTransaction);
@@ -567,8 +520,7 @@ bool UShopComponent::RefundAllActiveTransactions()
 	// 개별 환불이 각자 재진입 가드를 사용하므로 여기서는 진입 시점만 확인한다.
 	if (bIsProcessingTransaction)
 	{
-		UE_LOG(LogShop, Warning,
-			TEXT("RefundAllActiveTransactions rejected during an active transaction. Owner=%s"),
+		UE_LOG(LogShop, Warning, TEXT("RefundAllActiveTransactions rejected during an active transaction. Owner=%s"),
 			*GetNameSafe(GetOwner()));
 		return false;
 	}
@@ -651,37 +603,31 @@ UShopComponent::ResolvePurchaseRequest(const FGameplayTag ItemId, const int32 Cr
 	FShopPurchaseResolution Resolution;
 
 	const URogueShopSettings* Settings = GetShopSettings();
-	const bool bCatalogValid =
-		IsValid(Settings) && Settings->IsConfigurationValid();
-	Resolution.Definition = bCatalogValid
-		? Settings->FindItemDefinition(ItemId)
-		: nullptr;
+	const bool bConfigurationValid = EnsureConfigurationValidated();
+	const UShopCatalogDataAsset* Catalog = bConfigurationValid ? GetShopCatalog() : nullptr;
+	Resolution.Definition = IsValid(Catalog) ? Catalog->FindItemDefinition(ItemId) : nullptr;
 	Resolution.Wallet = GetCreditWallet();
 
 	if (Resolution.Definition)
 	{
-		const FShopItemDefinition& Definition =	*Resolution.Definition;
+		const FShopItemDefinition& Definition = *Resolution.Definition;
+		const int32 PurchaseCount = GetConfirmedPurchaseCountForType(Definition.ItemType);
 
-		if (!Definition.TierPrices.IsEmpty())
+		if (!Definition.TierPrices.IsEmpty()
+			&& PurchaseCount >= Definition.TierPrices.Num())
 		{
-			const int32 PurchaseCount =	GetConfirmedPurchaseCount(Definition.ItemId);
-
-			if (PurchaseCount >= Definition.TierPrices.Num())
-			{
-				Resolution.Result =	EShopPurchaseResult::PurchaseLimitReached;
-
-				return Resolution;
-			}
+			Resolution.Result = EShopPurchaseResult::PurchaseLimitReached;
+			return Resolution;
 		}
 
-		Resolution.Price = ResolvePrice(Definition);
+		Resolution.Price = ResolvePrice(Definition, PurchaseCount);
 	}
 
 	FShopPurchaseContext Context;
-	Context.bCatalogValid = bCatalogValid;
+	Context.bCatalogValid = bConfigurationValid;
 	Context.bItemFound = Resolution.Definition != nullptr;
 	Context.Price = Resolution.Price;
-	Context.bShopOpen = bCatalogValid && IsPurchaseWindowOpen(*Settings);
+	Context.bShopOpen = bConfigurationValid && IsPurchaseWindowOpen(*Settings);
 	Context.bWalletAvailable = IsValid(Resolution.Wallet);
 	if (IsValid(Resolution.Wallet))
 	{
@@ -698,9 +644,38 @@ UShopComponent::ResolvePurchaseRequest(const FGameplayTag ItemId, const int32 Cr
 	return Resolution;
 }
 
+bool UShopComponent::EnsureConfigurationValidated() const
+{
+	if (CachedConfigurationValidation.IsSet())
+	{
+		return CachedConfigurationValidation.GetValue();
+	}
+
+	const URogueShopSettings* Settings = GetShopSettings();
+	FString FailureReason;
+	const bool bValid = IsValid(Settings) && Settings->IsConfigurationValid(&FailureReason);
+	CachedConfigurationValidation = bValid;
+
+	if (!bValid && HasServerAuthority())
+	{
+		UE_LOG(LogShop, Error,
+			TEXT("Shop configuration is invalid for %s: %s"),
+			*GetNameSafe(GetOwner()),
+			FailureReason.IsEmpty() ? TEXT("Settings unavailable") : *FailureReason);
+	}
+
+	return bValid;
+}
+
 const URogueShopSettings* UShopComponent::GetShopSettings() const
 {
 	return GetDefault<URogueShopSettings>();
+}
+
+const UShopCatalogDataAsset* UShopComponent::GetShopCatalog() const
+{
+	const URogueShopSettings* Settings = GetShopSettings();
+	return IsValid(Settings) ? Settings->LoadCatalog() : nullptr;
 }
 
 UCreditWalletComponent* UShopComponent::GetCreditWallet() const
@@ -709,22 +684,33 @@ UCreditWalletComponent* UShopComponent::GetCreditWallet() const
 	return IsValid(PlayerState) ? PlayerState->GetCreditWallet() : nullptr;
 }
 
-int32 UShopComponent::ResolvePrice(const FShopItemDefinition& Definition) const
+int32 UShopComponent::GetConfirmedPurchaseCountForType(const EShopItemType ItemType) const
 {
-	// 단계 가격이 없는 상품은 기존 고정 가격을 사용한다.
+	switch (ItemType)
+	{
+	case EShopItemType::HealthUpgrade:
+		return HealthUpgradePurchaseCount;
+
+	case EShopItemType::DamageUpgrade:
+		return DamageUpgradePurchaseCount;
+
+	default:
+		return 0;
+	}
+}
+
+int32 UShopComponent::ResolvePrice(
+	const FShopItemDefinition& Definition,
+	const int32 ConfirmedPurchaseCount) const
+{
 	if (Definition.TierPrices.IsEmpty())
 	{
 		return Definition.BasePrice;
 	}
 
-	const int32 PurchaseCount =	GetConfirmedPurchaseCount(Definition.ItemId);
-
-	if (!Definition.TierPrices.IsValidIndex(PurchaseCount))
-	{
-		return 0;
-	}
-
-	return Definition.TierPrices[PurchaseCount];
+	return Definition.TierPrices.IsValidIndex(ConfirmedPurchaseCount)
+		? Definition.TierPrices[ConfirmedPurchaseCount]
+		: 0;
 }
 
 bool UShopComponent::IsPurchaseWindowOpen() const
@@ -744,11 +730,8 @@ bool UShopComponent::IsPurchaseWindowOpen(const URogueShopSettings& Settings) co
 #endif
 
 	const UWorld* World = GetWorld();
-	const ABaseRoundGameState* RoundGameState = IsValid(World)
-		? World->GetGameState<ABaseRoundGameState>()
-		: nullptr;
-	return IsValid(RoundGameState)
-		&& Settings.IsPurchasePhaseAllowed(RoundGameState->GetGameFlowPhase());
+	const ABaseRoundGameState* RoundGameState = IsValid(World) ? World->GetGameState<ABaseRoundGameState>() : nullptr;
+	return IsValid(RoundGameState) && Settings.IsPurchasePhaseAllowed(RoundGameState->GetGameFlowPhase());
 }
 
 bool UShopComponent::HasServerAuthority() const

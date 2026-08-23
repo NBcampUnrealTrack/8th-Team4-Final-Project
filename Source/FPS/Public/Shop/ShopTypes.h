@@ -39,7 +39,7 @@ enum class EShopPurchaseResult : uint8
 	RefundFailed UMETA(DisplayName = "Refund Failed")
 };
 
-/** 서버 카탈로그가 소유하는 상품의 정적 정의다. 플레이어별 구매 상태는 포함하지 않는다. */
+/** 서버 거래가 사용하는 상품 정의다. 플레이어별 상태와 UI 표시 데이터는 포함하지 않는다. */
 USTRUCT(BlueprintType)
 struct FShopItemDefinition
 {
@@ -51,12 +51,10 @@ struct FShopItemDefinition
 		const FGameplayTag InItemId,
 		const EShopItemType InItemType,
 		const int32 InBasePrice,
-		const FText& InDisplayName,
 		const EWeaponType InGrantedWeaponType = EWeaponType::None)
 		: ItemId(InItemId)
 		, ItemType(InItemType)
 		, BasePrice(InBasePrice)
-		, DisplayName(InDisplayName)
 		, GrantedWeaponType(InGrantedWeaponType)
 	{
 	}
@@ -79,9 +77,6 @@ struct FShopItemDefinition
 	// 상품 적용에 사용할 GameplayEffect다. GE가 필요 없는 상품은 비워둔다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
 	TSoftClassPtr<UGameplayEffect> EffectClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
-	FText DisplayName;
 
 	// 상점은 어떤 무기를 지급하는지만 정의한다. 실제 클래스 해석은 Weapon Registry가 담당한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")

@@ -112,9 +112,6 @@ private:
 	// 주무기 소유권은 상품별 독립 Pending으로 보관한다. 장착 슬롯은 별도로 하나만 유지한다.
 	TMap<FGameplayTag, FShopTransactionHandle> PendingWeaponTransactions;
 
-	// 현재 장착 선택이 Pending 구매일 때만 해당 타입을 보관한다.
-	EWeaponType PendingEquippedWeaponType = EWeaponType::None;
-
 	FShopTransactionHandle PendingShieldTransaction;
 
 	// 확정 전 보호막 GE 핸들. Commit 시 버리고 Cancel/Replace 시 제거한다.

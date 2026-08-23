@@ -182,7 +182,17 @@ void UShooterUIInitComponent::HideShop()
 
 	ShopScreenInstance->OnCloseRequested.RemoveDynamic(this, &ThisClass::HandleShopCloseRequested);
 
-	ShopScreenInstance->DeactivateWidget();
+	// Shop은 Menu Layer의 Stack에 Push해서 열기 때문에 닫을 때도 Stack에서 Pop한다.
+	// Deactivate만 하면 입력은 풀려도 위젯이 Stack에 남아 화면이 계속 보일 수 있다.
+	if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
+	{
+		UIManager->PopWidgetFromLayer(UITags::UI_Layer_Menu);
+	}
+	else
+	{
+		ShopScreenInstance->DeactivateWidget();
+	}
+
 	ShopScreenInstance = nullptr;
 }
 
