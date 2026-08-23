@@ -7,8 +7,10 @@
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -194,6 +196,96 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Con
 	{
 		RoundGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
 	}
+}
+
+void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction)
+{
+	if (bDeathStateApplied)
+	{
+		return;
+	}
+	bDeathStateApplied = true;
+
+	// 관성 저장
+	const FVector DeathVelocity = GetVelocity();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->DisableMovement();
+	}
+
+	// 캡슐 콜리전 비활성화
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 충돌 설정
+	USkeletalMeshComponent* Mesh3P = GetMesh();
+	Mesh3P->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+	Mesh3P->SetCollisionObjectType(ECC_PhysicsBody);
+	Mesh3P->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+
+	// 피직스 에셋이 없는 경우
+	if (!Mesh3P->GetPhysicsAsset())
+	{
+		UE_LOG(
+			LogShooterCharacter,
+			Warning,
+			TEXT("[ShooterCharacter] %s: 3인칭 메시에 PhysicsAsset 이 없어 랙돌을 시작할 수 없습니다 (메시=%s)"),
+			*GetNameSafe(this),
+			*GetNameSafe(Mesh3P->GetSkinnedAsset()));
+	}
+
+	// 데디 서버는 랙돌 X
+	else if (GetNetMode() != NM_DedicatedServer)
+	{
+		Mesh3P->SetAllBodiesSimulatePhysics(true);
+		Mesh3P->SetAllPhysicsLinearVelocity(DeathVelocity);
+
+		ApplyDeathImpulse(*Mesh3P, Reaction);
+	}
+
+	// 본인의 1인칭 메시를 숨기고, 3인칭 메시를 보이게
+	if (IsLocallyControlled())
+	{
+		Mesh1P->SetHiddenInGame(true, true);
+		Mesh3P->SetOwnerNoSee(false);
+	}
+}
+
+void AShooterCharacter::ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const
+{
+	// 임펄스 방향이 없거나 속도가 0이면 적용하지 않는다
+	if (Reaction.Direction.IsNearlyZero() || DeathImpulseSpeed <= 0.f)
+	{
+		return;
+	}
+
+	// 임펄스를 적용할 본
+	const FName FallbackBone = Reaction.bHeadshot ? HeadshotDeathImpulseBoneName : DeathImpulseBoneName;
+
+	FName TargetBone = NAME_None;
+	for (const FName Candidate : { Reaction.HitBoneName, FallbackBone })
+	{
+		if (!Candidate.IsNone() && Mesh3P.GetBodyInstance(Candidate))
+		{
+			TargetBone = Candidate;
+			break;
+		}
+	}
+
+	FVector ImpulseDirection = Reaction.Direction;
+	ImpulseDirection.Z += DeathImpulseUpwardBias;
+	if (!ImpulseDirection.Normalize())
+	{
+		return;
+	}
+
+	const float ImpulseSpeed = DeathImpulseSpeed
+		* (Reaction.bHeadshot ? HeadshotDeathImpulseMultiplier : 1.f);
+
+	// 임펄스 적용
+	Mesh3P.AddImpulse(ImpulseDirection * ImpulseSpeed, TargetBone, true);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const

@@ -42,6 +42,7 @@ public:
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
+	virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
 	FRotator CalculateFixedAimRotation() const;
@@ -67,6 +68,28 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerSwitchWeaponSlot(EWeaponSlot WeaponSlot);
 
+	//--------------------------------------------------
+	// 사망 연출 관련 설정
+	// 임펄스 세기
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Death", meta = (ClampMin = "0.0"))
+	float DeathImpulseSpeed = 600.f;
+
+	// 헤드샷 임펄스 배율
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Death", meta = (ClampMin = "0.0"))
+	float HeadshotDeathImpulseMultiplier = 1.8f;
+
+	// 임펄스를 위로 기우는 각도 비율 (0~1, 0이면 수평, 1이면 수직)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Death", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DeathImpulseUpwardBias = 0.25f;
+
+	// 임펄스 적용 본 이름, 기본은 pelvis
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Death")
+	FName DeathImpulseBoneName = TEXT("pelvis");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Death")
+	FName HeadshotDeathImpulseBoneName = TEXT("head");
+	//--------------------------------------------------
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
 	TSubclassOf<AWeaponBase> DefaultPrimaryWeaponClass;
 
@@ -89,6 +112,12 @@ protected:
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
+	// 랙돌에 피격 임펄스 적용
+	void ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const;
+
+	// 사망 연출 중복 진입 방지
+	bool bDeathStateApplied = false;
+
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;
 
