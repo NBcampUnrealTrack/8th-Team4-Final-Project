@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 #include "Player/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
@@ -14,6 +15,9 @@ class URogueAbilitySystemComponent;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
 class URogueVitalAttributeSet;
+class UShopComponent;
+class UShopPurchaseComponent;
+class UWeaponInventoryComponent;
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -38,6 +42,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Economy")
 	UCreditWalletComponent* GetCreditWallet() const { return CreditWallet; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Shop")
+	UShopComponent* GetShopComponent() const { return ShopComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Shop")
+	UShopPurchaseComponent* GetShopPurchaseComponent() const { return ShopPurchaseComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Weapon")
+	UWeaponInventoryComponent* GetWeaponInventory() const { return WeaponInventory; }
+
+	// 서버의 런타임 장착 결과를 서버 ASC와 소유 클라이언트 ASC에 같은 태그로 반영한다.
+	void SyncEquippedWeaponState(FGameplayTag EquippedStateTag);
 
 	// 어트리뷰트는 StatResolver 와 ExecCalc 을 통해 읽는 것이 정상 경로
 	// 이 둘은 초기화/디버그용
@@ -66,6 +82,9 @@ public:
 protected:
 	virtual void PostInitializeComponents() override;
 
+	// 팀 복제가 로비 리비전보다 늦게 도착해도 플레이어 리스트가 갱신되도록 후처리를 추가
+	virtual void OnRep_Team(EGameTeam PreviousTeam) override;
+
 private:
 	UFUNCTION()
 	void HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn);
@@ -78,6 +97,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LoadedIntoMatch();
+
+	UFUNCTION(Client, Reliable)
+	void ClientSyncEquippedWeaponState(FGameplayTag EquippedStateTag);
 
 	void ServerResetVitals();
 
@@ -122,6 +144,15 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Economy")
 	TObjectPtr<UCreditWalletComponent> CreditWallet;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Shop")
+	TObjectPtr<UShopComponent> ShopComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Shop")
+	TObjectPtr<UShopPurchaseComponent> ShopPurchaseComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Weapon")
+	TObjectPtr<UWeaponInventoryComponent> WeaponInventory;
 
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
 	bool bIsLobbyReady = false;

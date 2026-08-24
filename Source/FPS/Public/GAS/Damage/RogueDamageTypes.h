@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/NetSerialization.h"
 #include "GameplayTagContainer.h"
 #include "RogueDamageTypes.generated.h"
 
@@ -71,6 +72,14 @@ struct FRogueHitContext
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     bool bBackstab = false;
 
+    // 탄 방향
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
+    FVector ShotDirection = FVector::ZeroVector;
+
+    // 대표 펠릿이 맞은 본
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
+    FName HitBoneName = NAME_None;
+
     // 부위별 트레이스 모음
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Damage")
     TArray<FRogueHitGroup> HitGroups;
@@ -95,6 +104,25 @@ struct FRogueDamageResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
     bool bHealthDepleted = false;
+};
+
+// 사망 연출 최소 정보
+USTRUCT(BlueprintType)
+struct FRogueDeathReaction
+{
+    GENERATED_BODY()
+
+    // 가해자-피격자 수평 벡터
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    FVector_NetQuantizeNormal Direction = FVector::ZeroVector;
+
+    // 실제 피격 본
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    FName HitBoneName = NAME_None;
+
+    // 헤드샷일 경우 배율 임펄스 배율 증가
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    bool bHeadshot = false;
 };
 
 USTRUCT(BlueprintType)

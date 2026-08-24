@@ -221,7 +221,18 @@ void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferInd
 		return;
 	}
 
-	StageOfferSelection(OfferIndex, SlotIndex, TEXT("클라이언트 선택"));
+	if (!StageOfferSelection(OfferIndex, SlotIndex, TEXT("클라이언트 선택")))
+	{
+		return;
+	}
+
+	// 준비 페이즈에서도 실제 GAS 상태를 보여주되 Finalize 전까지는 롤백 가능한 상태로 둔다.
+	if (!CommitStagedOffer())
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s: 선택한 증강의 즉시 적용에 실패했습니다. 확정 단계에서 다시 검증합니다"),
+			*GetNameSafe(GetOwner()));
+	}
 }
 
 // 0보다 크면 UI의 버튼 활성화
@@ -336,10 +347,18 @@ bool UAugmentInventoryComponent::AutoSelectOffer()
 bool UAugmentInventoryComponent::CanCommitStagedOffer() const
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner
-		|| !Owner->HasAuthority()
-		|| StagedOfferState != EAugmentOfferCommitState::Selected
-		|| !IsValid(AbilitySystemComponent))
+	if (!Owner || !Owner->HasAuthority() || !IsValid(AbilitySystemComponent))
+	{
+		return false;
+	}
+
+	// 직접 선택은 이미 적용됐을 수 있다. 최종 확정 전의 Applied도 커밋 배리어를 충족한 상태다.
+	if (StagedOfferState == EAugmentOfferCommitState::Applied)
+	{
+		return true;
+	}
+
+	if (StagedOfferState != EAugmentOfferCommitState::Selected)
 	{
 		return false;
 	}
@@ -357,6 +376,12 @@ bool UAugmentInventoryComponent::CommitStagedOffer()
 	if (!CanCommitStagedOffer())
 	{
 		return false;
+	}
+
+	// 이미 적용된 Pending 보상은 다시 적용하지 않고 성공으로 처리한다.
+	if (StagedOfferState == EAugmentOfferCommitState::Applied)
+	{
+		return true;
 	}
 
 	UAugmentDefinition* Definition = ResolveDefinition(StagedOffer.DefinitionId);

@@ -1,0 +1,18 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "NativeGameplayTags.h"
+
+namespace RogueShopTags
+{
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Weapon_Rifle);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Weapon_Sniper);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Weapon_Shotgun);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_WeaponUpgrade_Pistol);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_WeaponUpgrade_Knife);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_HealthUpgrade);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Shield_Small);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Shield_Large);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_DamageUpgrade);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Augment);
+}

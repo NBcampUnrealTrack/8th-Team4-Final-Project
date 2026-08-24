@@ -58,11 +58,27 @@ bool UCreditEconomyManager::InitializePlayerForMatch(AShooterPlayerState* Player
 	return true;
 }
 
-bool UCreditEconomyManager::ResetForNewMatch(const TArray<AShooterPlayerState*>& PlayerStates)
+bool UCreditEconomyManager::CanResetForNewMatch(
+	const TArray<AShooterPlayerState*>& PlayerStates,
+	FString* OutFailureReason) const
 {
-	if (bIsProcessingEconomyUpdate || !IsConfigurationValid())
+	auto Fail = [OutFailureReason](const FString& FailureReason)
 	{
+		if (OutFailureReason)
+		{
+			*OutFailureReason = FailureReason;
+		}
 		return false;
+	};
+
+	if (bIsProcessingEconomyUpdate)
+	{
+		return Fail(TEXT("an economy update is already in progress"));
+	}
+
+	if (!IsConfigurationValid())
+	{
+		return Fail(TEXT("the credit economy settings are invalid"));
 	}
 
 	TSet<TWeakObjectPtr<AShooterPlayerState>> UniquePlayers;
@@ -75,14 +91,31 @@ bool UCreditEconomyManager::ResetForNewMatch(const TArray<AShooterPlayerState*>&
 			|| !IsValid(PlayerState->GetCreditWallet())
 			|| UniquePlayers.Contains(PlayerKey))
 		{
-			UE_LOG(LogCreditEconomy, Error,
-				TEXT("Cannot reset credits for invalid or duplicate player %s."),
-				*GetNameSafe(PlayerState));
-
-			return false;
+			return Fail(FString::Printf(
+				TEXT("player %s is invalid, unauthoritative, walletless, or duplicated"),
+				*GetNameSafe(PlayerState)));
 		}
 
 		UniquePlayers.Add(PlayerKey);
+	}
+
+	if (OutFailureReason)
+	{
+		OutFailureReason->Reset();
+	}
+	return true;
+}
+
+bool UCreditEconomyManager::ResetForNewMatch(const TArray<AShooterPlayerState*>& PlayerStates)
+{
+	FString FailureReason;
+	if (!CanResetForNewMatch(PlayerStates, &FailureReason))
+	{
+		UE_LOG(LogCreditEconomy, Error,
+			TEXT("Cannot reset the match economy: %s."),
+			*FailureReason);
+
+		return false;
 	}
 
 	TGuardValue<bool> ProcessingGuard(bIsProcessingEconomyUpdate, true);
@@ -95,21 +128,25 @@ bool UCreditEconomyManager::ResetForNewMatch(const TArray<AShooterPlayerState*>&
 
 	const int32 StartingCredits = GetDefault<URogueEconomySettings>()->StartingCredits;
 
+	// 사전 검증을 통과했으므로 여기서 중단하면 일부만 초기화된 상태로 남는다.
+	// 실패는 버그로 보고 나머지 플레이어의 초기화는 끝까지 진행한다.
+	bool bAllPlayersReset = true;
+
 	for (AShooterPlayerState* PlayerState : PlayerStates)
 	{
-		if (!ResetPlayerCredits(PlayerState, StartingCredits, ECreditChangeReason::NewMatchReset))
+		if (!ensureMsgf(
+			ResetPlayerCredits(PlayerState, StartingCredits, ECreditChangeReason::NewMatchReset),
+			TEXT("New-match credit reset failed for %s after validation succeeded."),
+			*GetNameSafe(PlayerState)))
 		{
-			UE_LOG(LogCreditEconomy, Error,
-				TEXT("Failed to reset credits for %s."),
-				*GetNameSafe(PlayerState));
-
-			return false;
+			bAllPlayersReset = false;
+			continue;
 		}
 
 		InitializedPlayersThisMatch.Add(TWeakObjectPtr<AShooterPlayerState>(PlayerState));
 	}
 
-	return true;
+	return bAllPlayersReset;
 }
 
 bool UCreditEconomyManager::BeginRound(const int32 RoundNumber)

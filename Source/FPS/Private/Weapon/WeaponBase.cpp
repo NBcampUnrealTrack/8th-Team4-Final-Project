@@ -6,15 +6,12 @@
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Curves/CurveFloat.h"
-#include "Engine/DataTable.h"
 #include "Engine/World.h"
-#include "GameFramework/Pawn.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
-
-// ** 임시
-#include "Kismet/GameplayStatics.h"
+#include "Weapon/WeaponAimComponent.h"
+#include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
@@ -47,6 +44,9 @@ AWeaponBase::AWeaponBase()
 	Mesh3P->SetOwnerNoSee(true);
 	Mesh3P->bReceivesDecals = false;
 	Mesh3P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	Effects = CreateDefaultSubobject<UWeaponEffectsComponent>(TEXT("Effects"));
+	Aim = CreateDefaultSubobject<UWeaponAimComponent>(TEXT("Aim"));
 }
 
 
@@ -66,47 +66,23 @@ void AWeaponBase::BeginPlay()
 		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
 	}
 
-	ApplySpreadRecoilTuningTable();
-
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
-	CurrentAmmo = MagazineSize;
-}
-
-void AWeaponBase::ApplySpreadRecoilTuningTable()
-{
-	if (!SpreadRecoilTable || SpreadRecoilRowName.IsNone())
-	{
-		return;
-	}
-
-	const FWeaponSpreadRecoilRow* Row = SpreadRecoilTable->FindRow<FWeaponSpreadRecoilRow>(
-		SpreadRecoilRowName, TEXT("AWeaponBase::ApplySpreadRecoilTuningTable"));
-	if (!Row)
-	{
-		return;
-	}
-
-	BaseSpreadDegrees = Row->BaseSpreadDegrees;
-	BloomPerShotDegrees = Row->BloomPerShotDegrees;
-	MaxBloomDegrees = Row->MaxBloomDegrees;
-	SpreadDecayDelay = Row->SpreadDecayDelay;
-	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
-
-	RecoilCurve = Row->RecoilCurve;
-	RecoilYawFactor = Row->RecoilYawFactor;
-	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
-	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
+	EffectiveMagazineSize = MagazineSize;
+	EffectiveReloadDuration = ReloadDuration;
+	EffectivePelletCount = PelletCountPerShot;
+	EffectiveTraceRange = TraceRange;
+	CurrentAmmo = EffectiveMagazineSize;
 }
 
 void AWeaponBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	TimeSinceLastShot += DeltaTime;
-
-	TickSpreadDecay(DeltaTime);
-	TickRecoilRecovery(DeltaTime);
+	if (Aim)
+	{
+		Aim->TickAim(DeltaTime);
+	}
 }
 
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
@@ -130,6 +106,35 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
 }
 
+void AWeaponBase::TryPlayEmptyClipSound()
+{
+	if (!IsOutOfAmmo())
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 연사 입력을 누르고 있으면 CanActivateAbility가 매 프레임 재평가되므로, 실제 총이 쐈을 법한
+	// RPM 간격으로만 딸깍 소리가 나도록 LastFireTime을 그대로 재사용해 스스로 스팸을 막는다.
+	const float ClickInterval = EffectiveRPM > 0.f ? (60.f / EffectiveRPM) : 0.5f;
+	if ((World->GetTimeSeconds() - LastFireTime) < ClickInterval)
+	{
+		return;
+	}
+
+	LastFireTime = World->GetTimeSeconds();
+
+	if (Effects)
+	{
+		Effects->PlayEmptyClipSound();
+	}
+}
+
 void AWeaponBase::SetEffectiveRPM(float NewRPM)
 {
 	EffectiveRPM = NewRPM;
@@ -142,7 +147,46 @@ void AWeaponBase::SetEffectiveAltRPM(float NewRPM)
 
 void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 {
-	MovementSpreadMultiplier = NewMultiplier;
+	if (Aim)
+	{
+		Aim->SetMovementSpreadMultiplier(NewMultiplier);
+	}
+}
+
+void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
+{
+	EffectiveMagazineSize = NewMagazineSize;
+}
+
+void AWeaponBase::SetEffectiveReloadDuration(const float NewReloadDuration)
+{
+	EffectiveReloadDuration = NewReloadDuration;
+}
+
+void AWeaponBase::SetEffectivePelletCount(const int32 NewPelletCount)
+{
+	EffectivePelletCount = NewPelletCount;
+}
+
+void AWeaponBase::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
+{
+	if (Aim)
+	{
+		Aim->SetEffectiveSpreadDegrees(NewSpreadDegrees);
+	}
+}
+
+void AWeaponBase::SetEffectiveRecoilMultiplier(const float NewMultiplier)
+{
+	if (Aim)
+	{
+		Aim->SetEffectiveRecoilMultiplier(NewMultiplier);
+	}
+}
+
+void AWeaponBase::SetEffectiveTraceRange(const float NewTraceRangeCentimeters)
+{
+	EffectiveTraceRange = NewTraceRangeCentimeters;
 }
 
 FGameplayTag AWeaponBase::GetWeaponTag() const
@@ -152,7 +196,78 @@ FGameplayTag AWeaponBase::GetWeaponTag() const
 
 void AWeaponBase::SetADS(bool bNewIsADS)
 {
-	bIsADS = bCanADS && bNewIsADS;
+	if (Aim)
+	{
+		Aim->SetADS(bNewIsADS);
+	}
+}
+
+bool AWeaponBase::IsADS() const
+{
+	return Aim && Aim->IsADS();
+}
+
+bool AWeaponBase::CanADS() const
+{
+	return Aim && Aim->CanADS();
+}
+
+float AWeaponBase::GetADSFieldOfView() const
+{
+	return Aim ? Aim->GetADSFieldOfView() : 0.f;
+}
+
+float AWeaponBase::GetBaseSpreadDegrees() const
+{
+	return Aim ? Aim->GetBaseSpreadDegrees() : 0.f;
+}
+
+float AWeaponBase::GetCurrentSpreadDegrees() const
+{
+	return Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
+}
+
+void AWeaponBase::SetPresentationActive(const bool bActive)
+{
+	SetActorHiddenInGame(!bActive);
+
+	if (IsValid(Mesh1P))
+	{
+		Mesh1P->SetVisibility(bActive, true);
+	}
+	if (IsValid(Mesh3P))
+	{
+		Mesh3P->SetVisibility(bActive, true);
+	}
+
+	if (bActive)
+	{
+		AttachToOwnerMeshes();
+	}
+}
+
+void AWeaponBase::AttachToOwnerMeshes() const
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
+	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
+
+	if (IsValid(CharacterMesh1P) && IsValid(Mesh1P))
+	{
+		Mesh1P->AttachToComponent(
+			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName1P);
+	}
+
+	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
+	{
+		Mesh3P->AttachToComponent(
+			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+	}
 }
 
 bool AWeaponBase::Fire(bool bHeavyAttack)
@@ -174,14 +289,40 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		return false;
 	}
 
+	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
+	RegisterFireCooldown(*World, RPMUsed);
+
+	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
+	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
+	const TArray<FVector> PelletDirections = GeneratePelletDirections();
+
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
+	if (Effects)
+	{
+		Effects->PlayFireEffects(TraceStart, PelletDirections);
+		Effects->PlayFireCameraShake();
+	}
+	AdvanceFireCounters();
+
+	return true;
+}
+
+float AWeaponBase::ResolveRPMForShot(const bool bHeavyAttack) const
+{
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
-	const float RPMUsed = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+	return bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
+}
 
-	LastFireTime = World->GetTimeSeconds();
+void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
+{
+	LastFireTime = World.GetTimeSeconds();
 	LastFireInterval = 60.f / RPMUsed;
+}
 
+int32 AWeaponBase::ConsumeAmmoForShot()
+{
 	const int32 ShotIndexInMagazine = bUsesAmmo
-		? FMath::Max(0, MagazineSize - CurrentAmmo)
+		? FMath::Max(0, EffectiveMagazineSize - CurrentAmmo)
 		: 0;
 
 	if (bUsesAmmo)
@@ -189,14 +330,18 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		CurrentAmmo--;
 	}
 
-	if (ConsecutiveShotCount == 0)
-	{
-		BurstStartTime = World->GetTimeSeconds();
-	}
+	return ShotIndexInMagazine;
+}
 
-	const float ShotDamage = (bHeavyAttack && AltBaseDamage > 0.f) ? AltBaseDamage : BaseDamage;
+float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
+{
+	return (bHeavyAttack && AltBaseDamage > 0.f) ? AltBaseDamage : BaseDamage;
+}
+
+TArray<FVector> AWeaponBase::GeneratePelletDirections() const
+{
 	const FVector AimDirection = CachedOwnerCamera->GetForwardVector();
-	const int32 PelletCount = FMath::Max(PelletCountPerShot, 1);
+	const int32 PelletCount = FMath::Max(EffectivePelletCount, 1);
 
 	TArray<FVector> PelletDirections;
 	PelletDirections.Reserve(PelletCount);
@@ -205,150 +350,60 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 		PelletDirections.Add(CalculateTraceDirection(AimDirection));
 	}
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
-
-	// ** 임시 - 담당자 코드로 수정해주세요
-	if (HasAuthority() && FireSound)
-	{
-		Multicast_PlayFireSound(TraceStart);
-	}
-
-	// 3.3.1 개정 원칙: 지향 사격은 탄퍼짐만, ADS는 반동만 발생시킨다.
-	if (bIsADS)
-	{
-		ApplyProceduralRecoil();
-	}
-
-	ConsecutiveShotCount++;
-	TimeSinceLastShot = 0.f;
-
-	return true;
+	return PelletDirections;
 }
 
-// ** 임시 코드 - 담당자 코드로 수정해주세요
-void AWeaponBase::Multicast_PlayFireSound_Implementation(FVector Location)
+void AWeaponBase::AdvanceFireCounters()
 {
-	if (FireSound)
+	if (Aim)
 	{
-		UGameplayStatics::SpawnSoundAttached(
-			FireSound,
-			GetRootComponent(),
-			NAME_None,
-			Location,
-			FRotator::ZeroRotator,
-			EAttachLocation::KeepWorldPosition);
+		Aim->NotifyShotFired();
 	}
 }
 
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= MagazineSize)
+	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize)
 	{
 		return;
 	}
 
 	bIsReloading = true;
+	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
+	// 항상 무반동 상태로 시작한다.
+	if (Aim)
+	{
+		Aim->ResetRecoilState();
+	}
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
 	}
 
+	if (Effects)
+	{
+		Effects->NotifyReloadStarted(EffectiveReloadDuration);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, ReloadDuration, false);
+		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
 	}
 }
 
 void AWeaponBase::FinishReload()
 {
-	CurrentAmmo = MagazineSize;
+	CurrentAmmo = EffectiveMagazineSize;
 	bIsReloading = false;
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
 	}
-}
 
-float AWeaponBase::CalculateCurrentSpreadDegrees() const
-{
-	// 3.3.1 개정 원칙: ADS 중에는 탄퍼짐이 0으로 고정된다.
-	if (bIsADS)
+	if (Effects)
 	{
-		return 0.f;
+		Effects->PlayReloadFinishSound();
 	}
-
-	const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
-	return (BaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
-}
-
-void AWeaponBase::TickSpreadDecay(float DeltaTime)
-{
-	if (ConsecutiveShotCount <= 0 || TimeSinceLastShot < SpreadDecayDelay)
-	{
-		return;
-	}
-
-	ConsecutiveShotDecayAccumulator += ConsecutiveShotDecayPerSecond * DeltaTime;
-
-	while (ConsecutiveShotDecayAccumulator >= 1.f && ConsecutiveShotCount > 0)
-	{
-		ConsecutiveShotCount--;
-		ConsecutiveShotDecayAccumulator -= 1.f;
-	}
-}
-
-void AWeaponBase::ApplyProceduralRecoil()
-{
-	if (!RecoilCurve)
-	{
-		return;
-	}
-
-	const UWorld* World = GetWorld();
-	const float ElapsedTime = World ? (World->GetTimeSeconds() - BurstStartTime) : 0.f;
-	const float RecoilValue = RecoilCurve->GetFloatValue(ElapsedTime);
-
-	// 위로 튀어오르는 반동이므로 Pitch는 음수 방향으로 적용한다.
-	const float PitchDelta = -RecoilValue;
-	const float YawDelta = RecoilValue * RecoilYawFactor;
-
-	if (APawn* OwningPawn = Cast<APawn>(GetOwner()))
-	{
-		OwningPawn->AddControllerPitchInput(PitchDelta);
-		OwningPawn->AddControllerYawInput(YawDelta);
-	}
-
-	AccumulatedRecoilPitch += PitchDelta;
-	AccumulatedRecoilYaw += YawDelta;
-}
-
-void AWeaponBase::TickRecoilRecovery(float DeltaTime)
-{
-	if (TimeSinceLastShot < RecoilRecoveryDelay)
-	{
-		return;
-	}
-
-	if (FMath::IsNearlyZero(AccumulatedRecoilPitch) && FMath::IsNearlyZero(AccumulatedRecoilYaw))
-	{
-		return;
-	}
-
-	APawn* OwningPawn = Cast<APawn>(GetOwner());
-	if (!OwningPawn)
-	{
-		return;
-	}
-
-	const float NewPitch = FMath::FInterpTo(AccumulatedRecoilPitch, 0.f, DeltaTime, RecoilRecoverySpeed);
-	const float NewYaw = FMath::FInterpTo(AccumulatedRecoilYaw, 0.f, DeltaTime, RecoilRecoverySpeed);
-
-	// 누적된 반동을 되돌리는 방향(반대 부호)으로 입력을 넣어 원위치로 보간 복귀시킨다.
-	OwningPawn->AddControllerPitchInput(-(NewPitch - AccumulatedRecoilPitch));
-	OwningPawn->AddControllerYawInput(-(NewYaw - AccumulatedRecoilYaw));
-
-	AccumulatedRecoilPitch = NewPitch;
-	AccumulatedRecoilYaw = NewYaw;
 }
 
 bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
@@ -364,7 +419,7 @@ bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
 
 FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 {
-	if (bIsADS)
+	if (Aim && Aim->IsADS())
 	{
 		// ADS 중에는 탄퍼짐이 없으므로 조준선 정중앙으로 발사한다.
 		return AimDirection;
@@ -372,7 +427,7 @@ FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 
 	// 펠릿마다 독립적으로 호출되므로, 샷건처럼 PelletCountPerShot > 1인 무기는
 	// 매 펠릿이 콘 안에서 각각 다른 방향으로 무작위 샘플링된다.
-	const float SpreadDegrees = CalculateCurrentSpreadDegrees();
+	const float SpreadDegrees = Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
 	return UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
 }
 
@@ -415,7 +470,7 @@ void AWeaponBase::ResolveHitscanShot(
 	FHitscanShotRequest Request;
 	HitscanDefinition->ConfigureShotRequest(
 		Request,
-		TraceRange,
+		EffectiveTraceRange,
 		DefaultSurfaceThickness,
 		DefaultSurfaceHardness);
 
@@ -430,32 +485,10 @@ void AWeaponBase::ResolveHitscanShot(
 	{
 		Request.DamageDistanceOrigin = Mesh3P->GetSocketLocation(MuzzleSocketName);
 	}
-	else if (IsValid(Mesh1P.Get()) && Mesh1P->DoesSocketExist(MuzzleSocketName))
-	{
-		Request.DamageDistanceOrigin = Mesh1P->GetSocketLocation(MuzzleSocketName);
-	}
 	else
 	{
-		ensureMsgf(
-			false,
-			TEXT("Muzzle socket is missing. Weapon=%s Socket=%s"),
-			*GetNameSafe(this),
-			*MuzzleSocketName.ToString());
-
-		// Fire()가 이미 확정된 뒤의 브리지이므로 요청을 중단하지 않는다.
-		// 잘못된 에셋에서도 가장 가까운 무기 원점을 사용하고 설정 오류는 ensure로 노출한다.
-		if (IsValid(Mesh3P.Get()))
-		{
-			Request.DamageDistanceOrigin = Mesh3P->GetComponentLocation();
-		}
-		else if (IsValid(Mesh1P.Get()))
-		{
-			Request.DamageDistanceOrigin = Mesh1P->GetComponentLocation();
-		}
-		else
-		{
-			Request.DamageDistanceOrigin = GetActorLocation();
-		}
+		// Muzzle 소켓이 없는 레거시 무기는 카메라 Trace 시작점을 대신 사용한다.
+		Request.DamageDistanceOrigin = TraceStart;
 	}
 
 	Request.bHasDamageDistanceOrigin = true;
@@ -471,9 +504,10 @@ void AWeaponBase::ResolveHitscanShot(
 		UE_LOG(
 			LogWeaponHitscanBridge,
 			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.1f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
-			TraceRange);
+			EffectiveTraceRange,
+			ShotDamage);
 	}
 }

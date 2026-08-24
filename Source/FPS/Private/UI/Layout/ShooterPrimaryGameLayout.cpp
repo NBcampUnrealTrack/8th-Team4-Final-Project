@@ -1,5 +1,7 @@
-﻿// ShotterPrimaryGameLayout.cpp
+﻿// ShooterPrimaryGameLayout.cpp
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+
+#include "CommonActivatableWidget.h"
 #include "Tags/UITags.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
@@ -53,6 +55,19 @@ void UShooterPrimaryGameLayout::PopWidgetFromLayer(FGameplayTag LayerTag)
 		{
 			Container->RemoveWidget(*ActiveWidget);
 		}
+	}
+}
+
+void UShooterPrimaryGameLayout::RemoveWidgetFromLayer(const FGameplayTag LayerTag, UCommonActivatableWidget* Widget)
+{
+	if (!IsValid(Widget))
+	{
+		return;
+	}
+
+	if (UCommonActivatableWidgetContainerBase* Container = GetLayerContainer(LayerTag))
+	{
+		Container->RemoveWidget(*Widget);
 	}
 }
 

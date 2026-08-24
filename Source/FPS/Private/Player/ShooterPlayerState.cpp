@@ -3,6 +3,7 @@
 #include "Player/ShooterPlayerState.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Combat/CombatComponent.h"
 #include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
@@ -13,7 +14,10 @@
 #include "GameMode/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
-#include "Weapon/WeaponTypes.h"
+#include "Shop/ShopComponent.h"
+#include "Shop/ShopPurchaseComponent.h"
+#include "Weapon/WeaponBase.h"
+#include "Weapon/WeaponInventoryComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
 
@@ -27,14 +31,12 @@ AShooterPlayerState::AShooterPlayerState()
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
 	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
+	ShopComponent = CreateDefaultSubobject<UShopComponent>(TEXT("ShopComponent"));
+	ShopPurchaseComponent = CreateDefaultSubobject<UShopPurchaseComponent>(TEXT("ShopPurchaseComponent"));
+	WeaponInventory = CreateDefaultSubobject<UWeaponInventoryComponent>(TEXT("WeaponInventory"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
-}
-
-UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
 }
 
 void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -43,6 +45,22 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+}
+
+UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AShooterPlayerState::SyncEquippedWeaponState(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
+	ClientSyncEquippedWeaponState(EquippedStateTag);
+}
+
+void AShooterPlayerState::ClientSyncEquippedWeaponState_Implementation(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -93,9 +111,20 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
+	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
-	// TODO: 임시로 권총 장착 태그
-	AbilitySystemComponent->SetEquippedWeaponType(EWeaponType::Pistol);
+	// CombatComponent가 BeginPlay에서 이미 기본 로드아웃을 장착해 둔 상태(캐릭터 스폰 -> BeginPlay ->
+	// 이후 Possess 순서)라 가정하고, 실제 장착된 무기의 태그를 그대로 읽어온다. 아직 장착 전이라면
+	// (예: 로드아웃 순서가 바뀐 경우) 빈 태그로 초기화되며, 이후 무기 교체 시 GA_SwitchWeapon이 갱신한다.
+	FGameplayTag InitialWeaponTag;
+	if (const UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+	{
+		if (const AWeaponBase* EquippedWeapon = Combat->GetEquippedWeapon())
+		{
+			InitialWeaponTag = EquippedWeapon->GetEquippedStateTag();
+		}
+	}
+	AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
 
 	// 초기화는 한번만 수행
 	if (HasAuthority() && !bVitalsInitialized)
@@ -166,6 +195,18 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerState::OnRep_LobbyReady()
 {
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
+void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
+{
+	Super::OnRep_Team(PreviousTeam);
+
+	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
+	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신
 	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
 	{
 		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();

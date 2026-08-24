@@ -3,18 +3,18 @@
 
 #include "Character/ShooterCharacter.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
 #include "GameFramework/Controller.h"
-#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Player/ShooterPlayerState.h"
-#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
@@ -120,25 +120,27 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 		return true;
 	}
 
-	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
+	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass, DefaultMeleeWeaponClass))
 	{
 		UE_LOG(
 			LogShooterCharacter,
 			Error,
-			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
+			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s Melee=%s"),
 			*GetNameSafe(this),
 			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
-			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+			*GetNameSafe(DefaultSecondaryWeaponClass.Get()),
+			*GetNameSafe(DefaultMeleeWeaponClass.Get()));
 		return false;
 	}
 
 	UE_LOG(
 		LogShooterCharacter,
 		Log,
-		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
+		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s Melee=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)));
 
 	return true;
 }
@@ -146,6 +148,40 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!IsValid(Movement))
+	{
+		return;
+	}
+
+	const bool bWasInAir = (PrevMovementMode == MOVE_Falling);
+	const bool bIsInAir  = (Movement->MovementMode == MOVE_Falling);
+	if (bWasInAir == bIsInAir)
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir, bIsInAir ? 1 : 0);
+	}
+}
+
+void AShooterCharacter::CheckJumpInput(float DeltaTime)
+{
+	if (bPressedJump)
+	{
+		const ACharacter* DefaultCharacter = GetClass()->GetDefaultObject<ACharacter>();
+		JumpMaxCount = DefaultCharacter->JumpMaxCount + URogueAugmentStatResolver::GetExtraJumpCount(this);
+	}
+
+	Super::CheckJumpInput(DeltaTime);
 }
 
 UAbilitySystemComponent* AShooterCharacter::GetAbilitySystemComponent() const
@@ -194,6 +230,96 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Con
 	{
 		RoundGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
 	}
+}
+
+void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction)
+{
+	if (bDeathStateApplied)
+	{
+		return;
+	}
+	bDeathStateApplied = true;
+
+	// 관성 저장
+	const FVector DeathVelocity = GetVelocity();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->DisableMovement();
+	}
+
+	// 캡슐 콜리전 비활성화
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 충돌 설정
+	USkeletalMeshComponent* Mesh3P = GetMesh();
+	Mesh3P->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+	Mesh3P->SetCollisionObjectType(ECC_PhysicsBody);
+	Mesh3P->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+
+	// 피직스 에셋이 없는 경우
+	if (!Mesh3P->GetPhysicsAsset())
+	{
+		UE_LOG(
+			LogShooterCharacter,
+			Warning,
+			TEXT("[ShooterCharacter] %s: 3인칭 메시에 PhysicsAsset 이 없어 랙돌을 시작할 수 없습니다 (메시=%s)"),
+			*GetNameSafe(this),
+			*GetNameSafe(Mesh3P->GetSkinnedAsset()));
+	}
+
+	// 데디 서버는 랙돌 X
+	else if (GetNetMode() != NM_DedicatedServer)
+	{
+		Mesh3P->SetAllBodiesSimulatePhysics(true);
+		Mesh3P->SetAllPhysicsLinearVelocity(DeathVelocity);
+
+		ApplyDeathImpulse(*Mesh3P, Reaction);
+	}
+
+	// 본인의 1인칭 메시를 숨기고, 3인칭 메시를 보이게
+	if (IsLocallyControlled())
+	{
+		Mesh1P->SetHiddenInGame(true, true);
+		Mesh3P->SetOwnerNoSee(false);
+	}
+}
+
+void AShooterCharacter::ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const
+{
+	// 임펄스 방향이 없거나 속도가 0이면 적용하지 않는다
+	if (Reaction.Direction.IsNearlyZero() || DeathImpulseSpeed <= 0.f)
+	{
+		return;
+	}
+
+	// 임펄스를 적용할 본
+	const FName FallbackBone = Reaction.bHeadshot ? HeadshotDeathImpulseBoneName : DeathImpulseBoneName;
+
+	FName TargetBone = NAME_None;
+	for (const FName Candidate : { Reaction.HitBoneName, FallbackBone })
+	{
+		if (!Candidate.IsNone() && Mesh3P.GetBodyInstance(Candidate))
+		{
+			TargetBone = Candidate;
+			break;
+		}
+	}
+
+	FVector ImpulseDirection = Reaction.Direction;
+	ImpulseDirection.Z += DeathImpulseUpwardBias;
+	if (!ImpulseDirection.Normalize())
+	{
+		return;
+	}
+
+	const float ImpulseSpeed = DeathImpulseSpeed
+		* (Reaction.bHeadshot ? HeadshotDeathImpulseMultiplier : 1.f);
+
+	// 임펄스 적용
+	Mesh3P.AddImpulse(ImpulseDirection * ImpulseSpeed, TargetBone, true);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const
@@ -260,49 +386,5 @@ void AShooterCharacter::HandleSprintReleased()
 	}
 }
 
-void AShooterCharacter::HandleWeaponSlotPressed(const EWeaponSlot WeaponSlot)
-{
-	if (HasAuthority())
-	{
-		TrySwitchWeaponSlot(WeaponSlot);
-		return;
-	}
-
-	ServerSwitchWeaponSlot(WeaponSlot);
-}
-
-void AShooterCharacter::ServerSwitchWeaponSlot_Implementation(const EWeaponSlot WeaponSlot)
-{
-	TrySwitchWeaponSlot(WeaponSlot);
-}
-
-bool AShooterCharacter::TrySwitchWeaponSlot(const EWeaponSlot WeaponSlot)
-{
-	if (!HasAuthority() || !IsValid(Combat))
-	{
-		return false;
-	}
-
-	const ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(GetController());
-	if (IsValid(RoundPlayerController) && !RoundPlayerController->CanUseCombatInput())
-	{
-		return false;
-	}
-
-	const AWeaponBase* PreviousWeapon = Combat->GetCurrentWeapon();
-	if (!Combat->SwitchWeaponSlot(WeaponSlot))
-	{
-		return false;
-	}
-
-	if (Combat->GetCurrentWeapon() != PreviousWeapon)
-	{
-		FGameplayEventData Payload;
-		Payload.EventTag = RogueTags::Event_Weapon_Swap;
-		Payload.Instigator = this;
-		Payload.Target = this;
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, RogueTags::Event_Weapon_Swap, Payload);
-	}
-
-	return true;
-}
+// 무기 슬롯 전환은 UGA_SwitchWeapon(GAS 어빌리티)이 담당한다 - Fire/Reload와 동일하게
+// 입력 태그 -> 어빌리티 경로를 타며, Character는 더 이상 스왑을 직접 호출하지 않는다.

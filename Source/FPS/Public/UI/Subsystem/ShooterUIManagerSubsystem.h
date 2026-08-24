@@ -31,6 +31,9 @@ public:
 	void PopWidgetFromLayer(FGameplayTag LayerTag);
 	
 	UFUNCTION(BlueprintCallable, Category = "UI")
+	void RemoveWidgetFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Widget);
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ClearLayer(FGameplayTag LayerTag);
 	
 protected:

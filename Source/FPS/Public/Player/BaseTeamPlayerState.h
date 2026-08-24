@@ -29,8 +29,9 @@ public:
 	void SetAlive(bool bNewIsAlive);
 
 protected:
+	// 파생 클래스(로비 등)가 팀 복제 시점에 후처리를 붙일 수 있도록 virtual 로 변경
 	UFUNCTION()
-	void OnRep_Team(EGameTeam PreviousTeam);
+	virtual void OnRep_Team(EGameTeam PreviousTeam);
 
 	UFUNCTION()
 	void OnRep_IsAlive();
