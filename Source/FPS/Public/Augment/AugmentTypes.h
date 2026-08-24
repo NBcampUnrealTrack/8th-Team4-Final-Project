@@ -147,10 +147,9 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment")
     TSoftClassPtr<URogueGameplayAbility> AbilityClass;
 
-    // 이 어빌리티를 발동시키는 입력 슬롯 (InputTag.Ability.*).
-    // 이벤트로 발동하는 어빌리티는 입력 X
+	// 액티브 증강이면 입력 표시
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
-        meta = (Categories = "InputTag.Ability"))
+        meta = (Categories = "InputTag.Ability.AugmentSlot"))
     FGameplayTag InputTag;
 
     // 이벤트가 왔을 때 적용할 GE
@@ -262,5 +261,10 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
     int32 Level = 1;
 
-    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level);
+    // 배정된 입력 슬롯, 액티브 전용
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
+    FGameplayTag InputSlotTag;
+
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level,
+                                       FGameplayTag InputSlotTag = FGameplayTag());
 };

@@ -25,7 +25,6 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 		if (!bLoggedNoWeapon)
 		{
 			bLoggedNoWeapon = true;
-			UE_LOG(LogTemp, Warning,TEXT("[WeaponStatus] 장착 무기를 찾지 못했습니다. 폰에 AWeaponBase 가 Attach 되는지 확인하세요"));
 		}
 		return;
 	}
@@ -33,7 +32,7 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	bLoggedNoWeapon = false;
 
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
-	const int32 MaxAmmo = Weapon->GetMagazineSize();
+	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
 	
 	// 값이 달라질때만 갱신
 	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo)
@@ -104,7 +103,7 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 {
 	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
-	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetMagazineSize()));
+	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetEffectiveMagazineSize()));
 	
 	// Style 갱신
 	const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;

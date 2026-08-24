@@ -22,6 +22,8 @@ public:
 	UPROPERTY() int32 ShotIndexInMagazine = 0;
 	UPROPERTY() bool bHeadshot = false;
 	UPROPERTY() TArray<FRogueHitGroup> HitGroups;
+	UPROPERTY() FVector_NetQuantizeNormal HitShotDirection = FVector::ZeroVector;
+	UPROPERTY() FName HitBoneName = NAME_None;
 
 	UPROPERTY() int32 ReflectDepth = 0;
 

@@ -123,6 +123,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Shotgun_Owned);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Pistol_Upgraded);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Knife_Upgraded);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Unlock_Weapon_Firearm_Any);
 
 	// 증강 계열 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Line);
@@ -137,6 +138,13 @@ namespace RogueTags
 	// 어빌리티 입력 슬롯 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 
+	// 액티브 증강 슬롯. 컨트롤러 바인딩 전용
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability_Slot1);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability_Slot2);
+
+	// 증강 애셋이 다는 표식
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability_AugmentSlot);
+
 	// 액티브 증강 쿨타임
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
@@ -146,4 +154,10 @@ namespace RogueTags
 	{
 		return HitZoneTag.MatchesTag(Hit_Zone_Head);
 	}
+
+	// 액티브 증강 입력 슬롯 수
+	inline constexpr int32 ActiveInputSlotCount = 2;
+
+	// 슬롯 인덱스에 해당하는 액티브 증강 입력 슬롯 태그 반환
+	FPS_API FGameplayTag GetActiveInputSlot(int32 SlotIndex);
 }

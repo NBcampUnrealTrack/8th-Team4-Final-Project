@@ -6,6 +6,8 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Settings/ShooterGameUserSettings.h"
+#include "Weapon/WeaponBase.h"
 
 static void ConfigureCenteredCanvasSlot(UWidget* Widget)
 {
@@ -101,8 +103,15 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 float UShooterReticle::GetSpreadDegrees() const
 {
-	// TODO: WeaponBase::GetCurrentSpreadDegrees() 탄퍼짐을 받아온다.
-	return 0.f;
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (Settings && !Settings->IsDynamicCrosshairEnabled())
+	{
+		// 정적 크로스헤어 설정: 실제 탄퍼짐과 무관하게 항상 0(=MinSpreadRadius로 고정)으로 취급한다.
+		return 0.f;
+	}
+
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return Weapon ? Weapon->GetCurrentSpreadDegrees() : 0.f;
 }
 
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const

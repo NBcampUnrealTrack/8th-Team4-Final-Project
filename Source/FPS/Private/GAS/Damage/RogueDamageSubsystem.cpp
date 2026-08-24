@@ -200,7 +200,8 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 	if (Hit)
 	{
 		Ctx->HitDistanceMeters = FMath::Max(0.f, Hit->DistanceMeters);
-
+		Ctx->HitShotDirection  = Hit->ShotDirection.GetSafeNormal();
+		Ctx->HitBoneName       = Hit->HitBoneName;
 		Ctx->HitGroups.Reset(FMath::Min(Hit->HitGroups.Num(), RogueMaxHitGroups));
 
 		for (const FRogueHitGroup& Group : Hit->HitGroups)

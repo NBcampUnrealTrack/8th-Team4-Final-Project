@@ -61,6 +61,11 @@ float UBaseBombGameFlowWidget::GetRoundTimeRemaining() const
 
 FText UBaseBombGameFlowWidget::GetRoundTimeText() const
 {
+	if (GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting)
+	{
+		return GetPhaseTimeText();
+	}
+
 	return FormatTime(GetRoundTimeRemaining());
 }
 

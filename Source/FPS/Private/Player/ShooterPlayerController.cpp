@@ -5,14 +5,17 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameFramework/GameModeBase.h"
+#include "GameMode/LobbyGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
-#include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -96,15 +99,6 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
 	}
-	if (InputConfig->PrimaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->PrimaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_PrimaryWeaponPressed);
-	}
-	if (InputConfig->SecondaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->SecondaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_SecondaryWeaponPressed);
-	}
-
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
 		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
@@ -139,6 +133,31 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	ServerSetLobbyReady(bNewLobbyReady);
 }
 
+void AShooterPlayerController::ToggleDynamicCrosshair()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
+}
+
+void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
+		}
+		return;
+	}
+
+	ServerSetLobbyTeam(RequestedTeam);
+}
+
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 {
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
@@ -168,6 +187,30 @@ void AShooterPlayerController::HideLoadingScreen()
 	}
 }
 
+void AShooterPlayerController::RequestReturnToFrontend()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AGameModeBase* GameMode = GetWorld()->GetAuthGameMode())
+	{
+		GameMode->ReturnToMainMenuHost();
+		return;
+	}
+
+	GetGameInstance()->ReturnToMainMenu();
+}
+
+void AShooterPlayerController::RequestQuitGame()
+{
+	if (IsLocalController())
+	{
+		UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
+	}
+}
+
 void AShooterPlayerController::ClientShowLoadingScreen_Implementation(const float InitialProgress)
 {
 	ShowLoadingScreen(InitialProgress);
@@ -188,6 +231,15 @@ void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobby
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
 		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+	}
+}
+
+void AShooterPlayerController::ServerSetLobbyTeam_Implementation(const EGameTeam RequestedTeam)
+{
+	// 정원 검사와 실제 팀 반영은 서버 권한인 GameMode 가 담당
+	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+	{
+		LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
 	}
 }
 
@@ -280,32 +332,6 @@ void AShooterPlayerController::Input_SprintReleased()
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintReleased();
-	}
-}
-
-void AShooterPlayerController::Input_PrimaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
-	}
-}
-
-void AShooterPlayerController::Input_SecondaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
 	}
 }
 

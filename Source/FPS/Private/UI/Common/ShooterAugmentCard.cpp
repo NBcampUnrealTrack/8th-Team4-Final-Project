@@ -84,6 +84,14 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	}
 }
 
+void UShooterAugmentCard::PlayRerollFeedback()
+{
+	if (Anim_Reroll)
+	{
+		PlayAnimation(Anim_Reroll);
+	}
+}
+
 void UShooterAugmentCard::NativeOnClicked()
 {
 	Super::NativeOnClicked();

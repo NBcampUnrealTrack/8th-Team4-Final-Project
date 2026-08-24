@@ -34,6 +34,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static int32 GetFinalPelletCount(const AActor* Actor, int32 BasePelletCount);
 
+	// 유효 사거리 (m)
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
+	static float GetFinalEffectiveRange(const AActor* Actor, float BaseRangeMeters);
+
+	// 관통력
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
+	static float GetFinalPenetration(const AActor* Actor, float BasePenetration);
+
 	// 근접 공격 사거리 (m)
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static float GetFinalMeleeRange(const AActor* Actor, float BaseRangeMeters);

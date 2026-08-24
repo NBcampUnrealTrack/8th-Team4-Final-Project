@@ -39,6 +39,22 @@ bool FRogueGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Map, b
 	Ar << HitDistanceMeters;
 	Ar << ShotIndexInMagazine;
 
+	uint8 HitGeometryBit = (HitShotDirection.IsZero() && HitBoneName.IsNone()) ? 0 : 1;
+	Ar.SerializeBits(&HitGeometryBit, 1);
+	if (HitGeometryBit != 0)
+	{
+		bool bDirectionSuccess = true;
+		HitShotDirection.NetSerialize(Ar, Map, bDirectionSuccess);
+		bSuccess &= bDirectionSuccess;
+
+		Ar << HitBoneName;
+	}
+	else if (Ar.IsLoading())
+	{
+		HitShotDirection = FVector::ZeroVector;
+		HitBoneName = NAME_None;
+	}
+
 	uint8 HeadshotBit = bHeadshot ? 1 : 0;
 	Ar.SerializeBits(&HeadshotBit, 1);
 	if (Ar.IsLoading())

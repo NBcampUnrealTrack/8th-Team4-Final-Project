@@ -5,6 +5,7 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#include "Tags/GameplayTags.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "AugmentDefinition"
@@ -111,7 +112,7 @@ namespace
 
 		// GA 입력 슬롯 중복 체크
 		FGameplayTagContainer UsedInputTags;
-		bool bHasAnyInput = false;
+		int32 SlotInputCount = 0;
 
 		// 트리거 어빌리티는 자기 클래스로 GrantedAbilities 항목을 찾는다. 같은 클래스가 두 번이면 구분 불가
 		TSet<FSoftObjectPath> UsedAbilityClasses;
@@ -194,7 +195,7 @@ namespace
 				continue;
 			}
 
-			bHasAnyInput = true;
+			SlotInputCount += Granted.InputTag == RogueTags::InputTag_Ability_AugmentSlot ? 1 : 0;
 
 			if (UsedInputTags.HasTagExact(Granted.InputTag))
 			{
@@ -207,12 +208,14 @@ namespace
 			UsedInputTags.AddTag(Granted.InputTag);
 		}
 
-		// 액티브 스킬인데 발동 태그가 없으면 경고
-		if (Definition.AugmentCategory == EAugmentCategory::Active
-			&& !Definition.GrantedAbilities.IsEmpty() && !bHasAnyInput)
+		// Active 계열이면 슬롯 표식이 반드시 1개 있어야함
+		const int32 ExpectedSlotCount = Definition.AugmentCategory == EAugmentCategory::Active ? 1 : 0;
+		if (SlotInputCount != ExpectedSlotCount)
 		{
-			Context.AddWarning(
-				LOCTEXT("ActiveWithoutInput", "액티브 증강인데 입력 슬롯이 지정된 어빌리티가 없습니다. 이벤트로 발동하는 것이 아니라면 InputTag 를 지정하세요"));
+			Context.AddError(FText::Format(
+				LOCTEXT("SlotInputCount", "InputTag.Ability.AugmentSlot 을 가진 어빌리티가 {0}개여야 하는데 {1}개입니다"),
+				ExpectedSlotCount, SlotInputCount));
+			bValid = false;
 		}
 
 		return bValid;

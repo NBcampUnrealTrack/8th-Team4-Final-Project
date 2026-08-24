@@ -5,6 +5,11 @@
 #include "Animation/WidgetAnimation.h"
 #include "Components/RetainerBox.h"
 
+UShooterPlayerHUD::UShooterPlayerHUD()
+{
+	InputConfig = EShooterWidgetInputMode::Game;
+}
+
 void UShooterPlayerHUD::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
