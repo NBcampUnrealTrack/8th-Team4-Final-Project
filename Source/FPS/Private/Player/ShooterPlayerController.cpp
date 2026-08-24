@@ -9,7 +9,6 @@
 #include "GameMode/BaseRoundGameState.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameMode/LobbyGameMode.h"
-#include "GameMode/LobbyGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -85,10 +84,6 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	{
 		return;
 	}
-
-	// A controller may survive or be replaced during seamless travel. In either
-	// case, every destination reports readiness with its own PlayerState/GameState.
-	bNotifiedLoadedIntoMatch = false;
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
@@ -515,23 +510,6 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	if (bNotifiedLoadedIntoMatch)
 	{
 		StopMatchLoadReadyCheck();
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!IsValid(World) || !World->GetGameState())
-	{
-		return;
-	}
-	if (World->GetGameState<ALobbyGameState>())
-	{
-		// The lobby has no in-game readiness gate. Do not leave a polling timer
-		// running for the whole lobby lifetime.
-		StopMatchLoadReadyCheck();
-		return;
-	}
-	if (!World->GetGameState<ABaseRoundGameState>())
-	{
 		return;
 	}
 

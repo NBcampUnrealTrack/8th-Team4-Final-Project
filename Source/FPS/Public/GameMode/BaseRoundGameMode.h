@@ -53,7 +53,6 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void HandleSeamlessTravelPlayer(AController*& PlayerController) override;
 	virtual void InitGameState() override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual bool ReadyToStartMatch_Implementation() override;

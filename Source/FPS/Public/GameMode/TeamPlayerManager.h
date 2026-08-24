@@ -68,7 +68,6 @@ public:
 	ERoundPlayerPreparationResult PreparePlayersForRound();
 
 	bool AreRoundParticipantsReady() const;
-	bool AreAllEligiblePlayersRoundParticipants() const;
 	bool IsRoundParticipant(const ABaseTeamPlayerState* PlayerState) const;
 	void GetRoundParticipants(TArray<AShooterPlayerState*>& OutParticipants) const;
 	void GetRoundParticipantControllers(TArray<APlayerController*>& OutControllers) const;

@@ -184,9 +184,10 @@ bool UAugmentDraftManager::OpenDraft()
 		return true;
 	}
 
-	if (!SetGameplayInputBlocked(true))
+	// 증강 선택 중에도 이동과 액션 입력을 허용한다.
+	// 베이스 이탈은 맵의 AugmentPhaseBarrier가 제한한다.
+	if (!SetGameplayInputBlocked(false))
 	{
-		SetGameplayInputBlocked(false);
 		return false;
 	}
 

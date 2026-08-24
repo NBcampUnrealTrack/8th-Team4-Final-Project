@@ -201,9 +201,9 @@ void ABaseRoundGameMode::OpenNextRound()
 			return;
 		}
 
-		// 증강 선택/상점 준비 페이즈에서는 게임플레이 입력을 차단한다.
-		// B/ESC 같은 시스템 입력은 SystemMappingContext에서 별도로 유지된다.
-		SetRoundParticipantInputEnabled(false);
+		// 증강 선택 페이즈에도 참가자의 이동과 액션 입력을 허용한다.
+		// 베이스 이탈은 맵에 배치한 AugmentPhaseBarrier가 제한한다.
+		SetRoundParticipantInputEnabled(true);
 
 		GetWorldTimerManager().SetTimer(
 			PhaseTimerHandle,
@@ -232,9 +232,7 @@ void ABaseRoundGameMode::FinishAugmentDraft()
 	}
 
 	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
-	if (!IsValid(PlayerManager)
-		|| !PlayerManager->AreRoundParticipantsReady()
-		|| !PlayerManager->AreAllEligiblePlayersRoundParticipants())
+	if (!IsValid(PlayerManager) || !PlayerManager->AreRoundParticipantsReady())
 	{
 		EnterWaitingForPlayers();
 		TryBeginNextRound();
@@ -259,8 +257,7 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		|| !IsValid(PlayerManager)
 		|| !PendingRoundContext.IsSet()
 		|| !PendingRoundContext.GetValue().IsValid()
-		|| !PlayerManager->AreRoundParticipantsReady()
-		|| !PlayerManager->AreAllEligiblePlayersRoundParticipants())
+		|| !PlayerManager->AreRoundParticipantsReady())
 	{
 		return false;
 	}
