@@ -3,12 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class ULoadingScreenSubsystem;
+class ULoadingScreenWidget;
 class UShooterInputConfig;
 struct FInputActionValue;
 
@@ -31,15 +34,28 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest) override;
 	virtual void SetupInputComponent() override;
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
 
+	UFUNCTION(Server, Reliable)
+	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
+	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
+
 private:
+	bool HasDataJackInteractionInputBlock() const;
+	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
+
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
@@ -48,5 +64,4 @@ private:
 	void Input_SprintReleased();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
-	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 };

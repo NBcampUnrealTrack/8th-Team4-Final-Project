@@ -4,12 +4,14 @@
 
 #include "Augment/AugmentInventoryComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "GameMode/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponBase.h"
@@ -25,6 +27,7 @@ AShooterPlayerState::AShooterPlayerState()
 
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
+	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
@@ -40,6 +43,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -144,8 +148,9 @@ void AShooterPlayerState::ServerRespawnReset()
 		return;
 	}
 
-	ServerResetVitals();
+	// 사망 플래그를 먼저 지운 후 바이탈 초기화
 	HealthComponent->ServerResetDeathState();
+	ServerResetVitals();
 	SetAlive(!HealthComponent->IsDead());
 }
 
@@ -163,9 +168,46 @@ void AShooterPlayerState::SetLobbyReady(bool bNewLobbyReady)
 		bIsLobbyReady ? TEXT("true") : TEXT("false"));
 	OnRep_LobbyReady();
 	ForceNetUpdate();
+
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->NotifyLobbyPlayerListChanged();
+	}
 }
 
 void AShooterPlayerState::OnRep_LobbyReady()
+{
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
+void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
+{
+	Super::OnRep_Team(PreviousTeam);
+
+	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
+	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
+void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
+{
+	if (!HasAuthority() || bLoadedIntoMatch == bNewLoadedIntoMatch)
+	{
+		return;
+	}
+
+	bLoadedIntoMatch = bNewLoadedIntoMatch;
+	OnRep_LoadedIntoMatch();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_LoadedIntoMatch()
 {
 }
 
@@ -200,6 +242,12 @@ void AShooterPlayerState::ServerResetVitals()
 		return;
 	}
 
+	// 라운드 한정 GE 제거
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->RemoveRoundScopedEffects();
+	}
+
 	// 최대치의 베이스만 초기값으로 되돌린다. Infinite GE 증강의 modifier 는 ASC aggregator 에 남는다.
 	VitalSet->SetMaxHealth(InitialMaxHealth);
 	VitalSet->SetMaxShield(InitialMaxShield);
@@ -207,12 +255,12 @@ void AShooterPlayerState::ServerResetVitals()
 	// MaxHealth 증강이 유지된 라운드에서는 증가분만큼 현재 체력도 복구한다.
 	// InitialHealth < InitialMaxHealth 로 설정한 게임도 같은 시작 결손량을 유지한다.
 	const float EffectiveMaxHealth = VitalSet->GetMaxHealth();
-	const float EffectiveMaxShield = VitalSet->GetMaxShield();
 	const float HealthBonusFromPersistentEffects = EffectiveMaxHealth - InitialMaxHealth;
 
 	VitalSet->SetHealth(FMath::Clamp(InitialHealth + HealthBonusFromPersistentEffects, 0.f, EffectiveMaxHealth));
-	// 보호막은 기존 설계대로 라운드 시작값(기본 0)을 유지한다. 최대 보호막 증가는 용량만 늘린다.
-	VitalSet->SetShield(FMath::Clamp(InitialShield, 0.f, EffectiveMaxShield));
+
+	// 보호막은 증강이 부여한 기본 보호막으로 초기화
+	VitalSet->SetShield(VitalSet->GetMaxShield());
 
 	UE_LOG(LogShooterPlayerState, Log,
 		TEXT("[ShooterPlayerState] %s: 바이탈 초기화 체력 %.0f/%.0f 보호막 %.0f/%.0f"),

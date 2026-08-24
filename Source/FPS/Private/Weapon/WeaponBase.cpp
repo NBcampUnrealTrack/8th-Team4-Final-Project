@@ -453,8 +453,35 @@ void AWeaponBase::ResolveHitscanShot(
 		return;
 	}
 
+	if (!IsValid(HitscanDefinition.Get()))
+	{
+		UE_LOG(
+			LogWeaponHitscanBridge,
+			Error,
+			TEXT("HitscanDefinition is required by the GAS damage pipeline. Weapon=%s"),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// Fire()의 기존 호출 경계를 유지하기 위한 레거시 인자다.
+	// 신규 대미지는 WeaponDamageData와 ExecCalc_Damage에서 결정한다.
+	(void)ShotDamage;
+
 	FHitscanShotRequest Request;
-	if (IsValid(HitscanDefinition.Get()))
+	HitscanDefinition->ConfigureShotRequest(
+		Request,
+		TraceRange,
+		DefaultSurfaceThickness,
+		DefaultSurfaceHardness);
+
+	Request.InstigatorActor = GetOwner();
+	Request.CauserActor = this;
+	Request.TraceStart = TraceStart;
+
+	// 충돌 Trace는 카메라에서 시작하지만 거리 감쇠는 총구 원점을 사용한다.
+	// 발사 상태는 변경하지 않고 기존 요청 조립 경계에서 위치만 채운다.
+	static const FName MuzzleSocketName(TEXT("Muzzle"));
+	if (IsValid(Mesh3P.Get()) && Mesh3P->DoesSocketExist(MuzzleSocketName))
 	{
 		HitscanDefinition->ConfigureShotRequest(
 			Request,
@@ -473,9 +500,7 @@ void AWeaponBase::ResolveHitscanShot(
 		Request.TraceSettings.DefaultSurfaceRule.Hardness = FMath::Max(0.0f, DefaultSurfaceHardness);
 	}
 
-	Request.InstigatorActor = GetOwner();
-	Request.CauserActor = this;
-	Request.TraceStart = TraceStart;
+	Request.bHasDamageDistanceOrigin = true;
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
@@ -488,7 +513,7 @@ void AWeaponBase::ResolveHitscanShot(
 		UE_LOG(
 			LogWeaponHitscanBridge,
 			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.2f"),
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
 			EffectiveTraceRange,

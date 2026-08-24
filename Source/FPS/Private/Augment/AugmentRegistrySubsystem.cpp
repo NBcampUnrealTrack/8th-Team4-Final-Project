@@ -33,6 +33,8 @@ void UAugmentRegistrySubsystem::Deinitialize()
 	}
 
 	DefinitionsById.Reset();
+	AllDefinitions.Reset();
+	DefinitionsByTier.Reset();
 	bReady = false;
 
 	Super::Deinitialize();
@@ -44,17 +46,12 @@ UAugmentDefinition* UAugmentRegistrySubsystem::FindDefinition(const FPrimaryAsse
 	return Found ? *Found : nullptr;
 }
 
-TArray<UAugmentDefinition*> UAugmentRegistrySubsystem::GetAllDefinitions() const
+const TArray<UAugmentDefinition*>& UAugmentRegistrySubsystem::GetDefinitionsByTier(const EAugmentTier Tier) const
 {
-	TArray<UAugmentDefinition*> Result;
-	Result.Reserve(DefinitionsById.Num());
+	static const TArray<UAugmentDefinition*> Empty;
 
-	for (const TPair<FPrimaryAssetId, TObjectPtr<UAugmentDefinition>>& Pair : DefinitionsById)
-	{
-		Result.Add(Pair.Value);
-	}
-
-	return Result;
+	const TArray<UAugmentDefinition*>* Found = DefinitionsByTier.Find(Tier);
+	return Found ? *Found : Empty;
 }
 
 void UAugmentRegistrySubsystem::StartAsyncLoad()
@@ -87,6 +84,8 @@ void UAugmentRegistrySubsystem::OnCatalogLoaded()
 void UAugmentRegistrySubsystem::BuildIndex()
 {
 	DefinitionsById.Reset();
+	AllDefinitions.Reset();
+	DefinitionsByTier.Reset();
 
 	UAssetManager& Manager = UAssetManager::Get();
 
@@ -132,5 +131,7 @@ void UAugmentRegistrySubsystem::BuildIndex()
 
 		LineOwners.Add(Definition->LineTag, Id);
 		DefinitionsById.Add(Id, Definition);
+		AllDefinitions.Add(Definition);
+		DefinitionsByTier.FindOrAdd(Definition->Tier).Add(Definition);
 	}
 }

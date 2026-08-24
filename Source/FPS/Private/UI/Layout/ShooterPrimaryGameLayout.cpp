@@ -2,6 +2,7 @@
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "Tags/UITags.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
+#include "UI/Foundation/ShooterActivatableWidget.h"
 
 void UShooterPrimaryGameLayout::NativeOnInitialized()
 {
@@ -10,6 +11,7 @@ void UShooterPrimaryGameLayout::NativeOnInitialized()
 	RegisterLayer(UITags::UI_Layer_Game,  Stack_Game);
 	RegisterLayer(UITags::UI_Layer_Menu,  Stack_Menu);
 	RegisterLayer(UITags::UI_Layer_Modal, Stack_Modal);
+	
 }
 
 void UShooterPrimaryGameLayout::RegisterLayer(

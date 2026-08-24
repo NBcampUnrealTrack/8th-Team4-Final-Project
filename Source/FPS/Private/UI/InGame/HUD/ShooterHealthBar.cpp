@@ -4,7 +4,6 @@
 #include "CommonTextBlock.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
-#include "Player/ShooterPlayerState.h"
 #include "UI/Common/ShooterGauge.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterHealthBar, Log, All);
@@ -12,8 +11,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogShooterHealthBar, Log, All);
 void UShooterHealthBar::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	
-	TryBindToAbilitySystem();
 }
 
 void UShooterHealthBar::NativeDestruct()
@@ -21,30 +18,8 @@ void UShooterHealthBar::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-bool UShooterHealthBar::TryBindToAbilitySystem()
-{
-	AShooterPlayerState* PS = GetOwningPlayerState<AShooterPlayerState>();
-	if (IsValid(PS) == false)
-	{
-		return false;
-	}
-	
-	URogueAbilitySystemComponent* ASC = PS->GetRogueAbilitySystemComponent();
-	if (ASC == nullptr)
-	{
-		return false;
-	}
-	
-	BoundASC = ASC;
-	OnAbilitySystemReady(ASC);
-	
-	return true;
-}
-
 void UShooterHealthBar::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 {
-	BoundASC = ASC;
-	
 	ASC->GetGameplayAttributeValueChangeDelegate(
 		URogueVitalAttributeSet::GetHealthAttribute()).AddUObject(this, &ThisClass::HandleHealthChanged);
 	ASC->GetGameplayAttributeValueChangeDelegate(
@@ -62,9 +37,10 @@ void UShooterHealthBar::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 	// 초기에 0에서 1.0 까지 차오르는 걸 막기 위함
 	// 초기 세팅에는 꽉 채워져 있어야함
 	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
-	Gauge_Health->SetProgress(TargetHealthRatio);
 	const float TargetShieldRatio = (CachedMaxShield > 0.f) ? CachedShield / CachedMaxShield : 0.f;
-	Gauge_Shield->SetProgress(TargetShieldRatio);
+	
+	Gauge_Health->SetProgressImmediate(TargetHealthRatio);
+	Gauge_Shield->SetProgressImmediate(TargetShieldRatio);
 	
 	RefreshHealth();
 	RefreshShield();
@@ -132,12 +108,25 @@ void UShooterHealthBar::RefreshHealth()
 {
 	Text_Health->SetText(FText::AsNumber(CachedHealth));
 	
+	if (Text_MaxHealth)
+	{
+		Text_MaxHealth->SetText(FText::AsNumber(CachedMaxHealth));
+	}
+	if (Text_Health_Ghost)
+	{
+		Text_Health_Ghost->SetText(FText::AsNumber(CachedHealth));
+	}
+	if (Text_MaxHealth_Ghost)
+	{
+		Text_MaxHealth_Ghost->SetText(FText::AsNumber(CachedMaxHealth));
+	}
+	
 	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
 	
 	Gauge_Health->SetProgress(TargetHealthRatio);
 	
-	// 체력이 LowHealthThreshold 아래로 내려가거나 올라가면 Brodacast
-	const bool bNowLow = (HealthRatio <= LowHealthThreshold);
+	// 체력이 LowHealthThreshold 아래로 내려가거나 올라가면 Broadcast
+	const bool bNowLow = (TargetHealthRatio <= LowHealthThreshold);
 	if (bNowLow != bIsLowHealth)
 	{
 		bIsLowHealth = bNowLow;

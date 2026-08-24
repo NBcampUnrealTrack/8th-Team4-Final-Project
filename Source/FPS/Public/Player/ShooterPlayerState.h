@@ -4,11 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
-#include "GameFlow/Common/BaseTeamPlayerState.h"
+#include "Player/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
 
 class UAugmentInventoryComponent;
+class UCreditWalletComponent;
 class URogueAbilitySystemComponent;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
@@ -35,6 +36,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Shooter|Augment")
 	UAugmentInventoryComponent* GetAugmentInventory() const { return AugmentInventory; }
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Economy")
+	UCreditWalletComponent* GetCreditWallet() const { return CreditWallet; }
+
 	// 어트리뷰트는 StatResolver 와 ExecCalc 을 통해 읽는 것이 정상 경로
 	// 이 둘은 초기화/디버그용
 	URogueVitalAttributeSet* GetVitalSet() const { return VitalSet; }
@@ -54,8 +58,16 @@ public:
 
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Loading")
+	bool IsLoadedIntoMatch() const { return bLoadedIntoMatch; }
+
+	void SetLoadedIntoMatch(bool bNewLoadedIntoMatch);
+
 protected:
 	virtual void PostInitializeComponents() override;
+
+	// 팀 복제가 로비 리비전보다 늦게 도착해도 플레이어 리스트가 갱신되도록 후처리를 추가
+	virtual void OnRep_Team(EGameTeam PreviousTeam) override;
 
 private:
 	UFUNCTION()
@@ -67,23 +79,23 @@ private:
 	UFUNCTION()
 	void OnRep_LobbyReady();
 
+	UFUNCTION()
+	void OnRep_LoadedIntoMatch();
+
 	void ServerResetVitals();
 
 	void ServerGrantStartupAbilities();
 
 protected:
-	// 보호막은 0 에서 시작한다 — 라운드 중에 얻는 자원이다
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "1.0"))
 	float InitialMaxHealth = 100.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
 	float InitialHealth = 100.f;
 
+	// 최대 보호막은 해당 라운드의 최대 보호막을 의미함, 0부터 시작
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
-	float InitialMaxShield = 50.f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Vitals", meta = (ClampMin = "0.0"))
-	float InitialShield = 0.f;
+	float InitialMaxShield = 0.f;
 
 private:
 	// 체력/보호막 초기화는 최초 한 번만 수행
@@ -111,6 +123,12 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Augment")
 	TObjectPtr<UAugmentInventoryComponent> AugmentInventory;
 
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Economy")
+	TObjectPtr<UCreditWalletComponent> CreditWallet;
+
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyReady, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Lobby", meta = (AllowPrivateAccess = "true"))
 	bool bIsLobbyReady = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_LoadedIntoMatch, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Loading", meta = (AllowPrivateAccess = "true"))
+	bool bLoadedIntoMatch = false;
 };

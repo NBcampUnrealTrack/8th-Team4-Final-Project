@@ -10,8 +10,6 @@
 #include "GAS/RogueTargetFilter.h"
 #include "Tags/GameplayTags.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogRogueRecon, Log, All);
-
 URogueReconDroneAbility::URogueReconDroneAbility()
 {
 	// 어빌리티는 클라이언트에서 예측
@@ -22,6 +20,9 @@ URogueReconDroneAbility::URogueReconDroneAbility()
 	CooldownTag = RogueTags::Cooldown_Augment_ReconDrone;
 	BaseCooldown = 25.f;
 
+	// 동시 행동 정책은 공통 증강 부모가 아니라 각 증강에서 명시한다.
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
 }
 
@@ -123,8 +124,14 @@ void URogueReconDroneAbility::ApplyReveal(const FGameplayAbilitySpecHandle Handl
 		return;
 	}
 
+	UClass* StatusEffectClass = GetStatusEffectClass();
+	if (!StatusEffectClass)
+	{
+		return;
+	}
+
 	const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
-		Handle, ActorInfo, ActivationInfo, URogueTimedTagEffect::StaticClass(), Level);
+		Handle, ActorInfo, ActivationInfo, StatusEffectClass, Level);
 
 	if (!SpecHandle.IsValid())
 	{

@@ -21,6 +21,7 @@ void URogueHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(URogueHealthComponent, bIsDead);
+	DOREPLIFETIME(URogueHealthComponent, DeathReaction);
 }
 
 void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InASC)
@@ -59,10 +60,10 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 		OutOfHealthHandle = VitalSet->OnOutOfHealth.AddUObject(this, &URogueHealthComponent::HandleOutOfHealth);
 	}
 
-	// 이미 사망한 상태면 태그 추가
+	// 이미 사망 상태면 연출 재생
 	if (bIsDead)
 	{
-		ApplyDeathTag(true);
+		ApplyDeathStateLocally(true);
 	}
 }
 
@@ -100,7 +101,7 @@ void URogueHealthComponent::ServerResetDeathState()
 	bIsDead = false;
 
 	// 서버에서는 직접 반영
-	ApplyDeathTag(false);
+	ApplyDeathStateLocally(false);
 	OnDeathStateChanged.Broadcast(false);
 }
 
@@ -113,7 +114,7 @@ void URogueHealthComponent::OnUnregister()
 
 void URogueHealthComponent::OnRep_bIsDead()
 {
-	ApplyDeathTag(bIsDead);
+	ApplyDeathStateLocally(bIsDead);
 	OnDeathStateChanged.Broadcast(bIsDead);
 }
 
@@ -130,16 +131,19 @@ void URogueHealthComponent::HandleOutOfHealth(UAbilitySystemComponent* VictimASC
 		return;
 	}
 
+	// 사망 연출용 정보 구성
+	ServerBuildDeathReaction(ContextHandle);
+
 	bIsDead = true;
 
 	// 서버에서는 직접 반영
-	ApplyDeathTag(true);
+	ApplyDeathStateLocally(true);
 	OnDeathStateChanged.Broadcast(true);
 
 	NotifyDeath(ContextHandle);
 }
 
-void URogueHealthComponent::ApplyDeathTag(bool bDead)
+void URogueHealthComponent::ApplyDeathStateLocally(bool bDead)
 {
 	if (!AbilitySystemComponent)
 	{
@@ -148,6 +152,53 @@ void URogueHealthComponent::ApplyDeathTag(bool bDead)
 
 	// 사망 태그 추가
 	AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Combat_IsDead, bDead ? 1 : 0);
+
+	// 연출은 단방향. 원복은 폰 재스폰이 담당
+	if (!bDead)
+	{
+		return;
+	}
+
+	AActor* Avatar = AbilitySystemComponent->GetAvatarActor();
+	if (Avatar && Avatar->Implements<URogueDamageableTarget>())
+	{
+		IRogueDamageableTarget::Execute_PlayDeathReaction(Avatar, DeathReaction);
+	}
+}
+
+void URogueHealthComponent::ServerBuildDeathReaction(const FGameplayEffectContextHandle& ContextHandle)
+{
+	DeathReaction = FRogueDeathReaction();
+
+	const AActor* Victim = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
+	if (!Victim)
+	{
+		return;
+	}
+
+	// 히트스캔 사망 연출 정보 구성
+	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
+	{
+		DeathReaction.bHeadshot   = Ctx->bHeadshot;
+		DeathReaction.HitBoneName = Ctx->HitBoneName;
+
+		// 수평 방향만 사용
+		DeathReaction.Direction   = Ctx->HitShotDirection.GetSafeNormal2D();
+	}
+
+	// 히트스캔 종료
+	if (!DeathReaction.Direction.IsZero())
+	{
+		return;
+	}
+
+	// 히트스캔이 아닌경우 방향만 계산
+	const AActor* Instigator = ContextHandle.GetOriginalInstigator();
+	if (IsValid(Instigator) && Instigator != Victim)
+	{
+		DeathReaction.Direction =
+			(Victim->GetActorLocation() - Instigator->GetActorLocation()).GetSafeNormal2D();
+	}
 }
 
 void URogueHealthComponent::NotifyDeath(const FGameplayEffectContextHandle& ContextHandle) const
@@ -165,14 +216,8 @@ void URogueHealthComponent::NotifyDeath(const FGameplayEffectContextHandle& Cont
 
 	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
 	{
-		DeathContext.WeaponTag  = Ctx->WeaponTag;
-		DeathContext.HitZoneTag = Ctx->HitZoneTag;
-		DeathContext.bHeadshot = Ctx->HitZoneDamageParts.ContainsByPredicate(
-			[](const FRogueHitZoneDamagePart& Part)
-			{
-				return Part.bHeadshot && Part.BaseDamage > 0.0f;
-			})
-			|| Ctx->HeadshotDamage > 0.f;
+		DeathContext.WeaponTag = Ctx->WeaponTag;
+		DeathContext.bHeadshot = Ctx->bHeadshot;
 	}
 
 	IRogueDamageableTarget::Execute_HandleDeath(Victim, DeathContext);

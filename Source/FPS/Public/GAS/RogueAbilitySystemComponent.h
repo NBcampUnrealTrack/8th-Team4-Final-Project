@@ -9,6 +9,7 @@
 #include "RogueAbilitySystemComponent.generated.h"
 
 class URogueAbilitySet;
+enum class EWeaponType : uint8;
 
 UCLASS()
 class FPS_API URogueAbilitySystemComponent : public UAbilitySystemComponent
@@ -33,6 +34,9 @@ public:
 	// 무기 종류 판별은 호출부(WeaponBase/CombatComponent) 책임이며, 이 ASC는 태그만 받는다.
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
 	void SetEquippedWeaponType(FGameplayTag EquippedStateTag);
+
+	// 수명이 라운드에 한정된 GE 제거
+	int32 RemoveRoundScopedEffects();
 
 private:
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그

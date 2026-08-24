@@ -136,9 +136,38 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 		return;
 	}
 
-	// 나머지 계열은 0.01 ~ 10.0
+	// 배율 계열은 0.01 ~ 10.0
 	// 0이 되면 나누기 연산에서 오류가 생길 수 있음
-	NewValue = FMath::Clamp(NewValue, 0.01f, 10.f);
+	if (Attribute == GetDamageMultiplierAttribute()
+	 || Attribute == GetSkillDamageMultiplierAttribute()
+	 || Attribute == GetHeadshotDamageMultiplierAttribute()
+	 || Attribute == GetShieldDamageMultiplierAttribute()
+	 || Attribute == GetHealingReceivedMultiplierAttribute()
+	 || Attribute == GetFireRateMultiplierAttribute()
+	 || Attribute == GetReloadSpeedMultiplierAttribute()
+	 || Attribute == GetMagazineSizeMultiplierAttribute()
+	 || Attribute == GetPenetrationMultiplierAttribute()
+	 || Attribute == GetSpreadMultiplierAttribute()
+	 || Attribute == GetRecoilMultiplierAttribute()
+	 || Attribute == GetMoveSpeedMultiplierAttribute()
+	 || Attribute == GetSprintSpeedMultiplierAttribute()
+	 || Attribute == GetJumpHeightMultiplierAttribute()
+	 || Attribute == GetFootstepVolumeMultiplierAttribute()
+	 || Attribute == GetHearingRangeMultiplierAttribute()
+	 || Attribute == GetThrowRangeMultiplierAttribute()
+	 || Attribute == GetCreditGainMultiplierAttribute()
+	 || Attribute == GetShopCostMultiplierAttribute()
+	 || Attribute == GetRareOrAboveDrawMultiplierAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.01f, 10.f);
+		return;
+	}
+
+	// 위 네 버킷에 포함되지 않는 축
+	ensureMsgf(false,
+		TEXT("[RogueAugment] PreAttributeChange 에 등록되지 않은 어트리뷰트입니다: %s. "
+		     "정의역 버킷 네 개 중 하나에 추가하세요."),
+		*Attribute.GetName());
 }
 
 // RepNotify 는 매크로로 정의

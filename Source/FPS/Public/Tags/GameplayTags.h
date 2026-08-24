@@ -30,45 +30,42 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Shotgun);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Pistol);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife_Light);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Knife_Heavy);
 
 	// 히트 부위
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Head);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Torso);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Zone_Limb);
 
-	// 히트 거리
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Close);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Mid);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Range_Far);
-
 	// 히트 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Angle_Back);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Instigator_Airborne);
 
-	// 히트 탄환 상태 (탄창 초반/마지막 발) - 첫 탄환, 마지막 탄환 시 데미지 증폭 증강
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Shot_EarlyMagazine);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Shot_LastRound);
-
 	// 가해자, 대상 상태
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_LowHealth);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_FullHealth);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_HasShield);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Target_State_NoShield);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_LowHealth);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_FullHealth);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_HasShield);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Source_State_NoShield);
 
 	// SetByCaller 키
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_Base);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage_PelletsHit);
 
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Primary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Duration);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Radius);
 
-	// 전투 상태 - 일단 추가는 해뒀습니다.
+	// 게임플레이 입력 차단/행동 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked_AugmentDraft);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_ActionInProgress);
+
+	// Data Jack 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Interacting);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Dropping);
+
+	// 전투 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsAiming);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsReloading);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsFiring);
@@ -126,10 +123,23 @@ namespace RogueTags
 	// 증강 계열 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Line);
 
+	// 효과 수명
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Lifetime_Round);
+
+	// 상호 배타 효과 그룹 
+	// 같은 태그를 가진 GE 는 Remove Other Effects 동시에 적용 시 기존의 것을 삭제
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Shop_Shield);
+
 	// 어빌리티 입력 슬롯 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 
 	// 액티브 증강 쿨타임
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
+
+	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
+	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)
+	{
+		return HitZoneTag.MatchesTag(Hit_Zone_Head);
+	}
 }

@@ -70,28 +70,6 @@ int32 URogueAugmentStatResolver::GetFinalPelletCount(const AActor* Actor, int32 
 	return FMath::Max(1, BasePelletCount + FMath::RoundToInt(Set->GetPelletCountBonus()));
 }
 
-float URogueAugmentStatResolver::GetFinalEffectiveRange(const AActor* Actor, float BaseRangeMeters)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseRangeMeters;
-	}
-
-	return BaseRangeMeters + Set->GetEffectiveRangeBonus();
-}
-
-float URogueAugmentStatResolver::GetFinalPenetration(const AActor* Actor, float BasePenetration)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BasePenetration;
-	}
-
-	return BasePenetration * Set->GetPenetrationMultiplier();
-}
-
 float URogueAugmentStatResolver::GetFinalMeleeRange(const AActor* Actor, float BaseRangeMeters)
 {
 	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
@@ -231,4 +209,16 @@ float URogueAugmentStatResolver::GetFinalHealingReceived(const AActor* Actor, fl
 	}
 
 	return BaseHealAmount * Set->GetHealingReceivedMultiplier();
+}
+
+// 드래프트 관련
+int32 URogueAugmentStatResolver::GetBonusRerollCount(const AActor* Actor)
+{
+	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
+	if (!Set)
+	{
+		return 0;
+	}
+
+	return FMath::Max(0, FMath::FloorToInt(Set->GetBonusFreeRerolls()));
 }

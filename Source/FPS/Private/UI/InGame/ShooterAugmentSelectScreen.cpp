@@ -8,6 +8,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StreamableManager.h"
+#include "Animation/WidgetAnimation.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 

@@ -17,6 +17,7 @@ class FPS_API URogueAugmentStatResolver : public UBlueprintFunctionLibrary
 public:
 	// ------------------------------------
 	// 전투 관련
+
 	// 분당 발사 수. 쿨다운 GE 의 SetDuration 에 쓸 초는 60 / 이 값
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static float GetFinalRPM(const AActor* Actor, float BaseRPM);
@@ -32,14 +33,6 @@ public:
 	// 산탄 수
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
 	static int32 GetFinalPelletCount(const AActor* Actor, int32 BasePelletCount);
-
-	// 유효 사거리 (m)
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
-	static float GetFinalEffectiveRange(const AActor* Actor, float BaseRangeMeters);
-
-	// 관통력
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
-	static float GetFinalPenetration(const AActor* Actor, float BasePenetration);
 
 	// 근접 공격 사거리 (m)
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Weapon")
@@ -91,6 +84,13 @@ public:
 	// Actor 는 회복을 '받는' 쪽
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Defense")
 	static float GetFinalHealingReceived(const AActor* Actor, float BaseHealAmount);
+
+	// -----------------------------------
+	// 드래프트 관련
+
+	// 추가 리롤 횟수
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment|Draft")
+	static int32 GetBonusRerollCount(const AActor* Actor);
 
 private:
 	// Character / PlayerState / Controller 중 무엇을 넘겨도 해석
