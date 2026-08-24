@@ -167,14 +167,14 @@ void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedSt
 	// AddLoose/RemoveLoose 가 아니라 개수를 직접 세팅
 	if (CurrentEquippedWeaponTag.IsValid())
 	{
-		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0);
+		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0, EGameplayTagReplicationState::TagOnly);
 	}
 
 	CurrentEquippedWeaponTag = EquippedStateTag;
 
 	if (EquippedStateTag.IsValid())
 	{
-		SetLooseGameplayTagCount(EquippedStateTag, 1);
+		SetLooseGameplayTagCount(EquippedStateTag, 1, EGameplayTagReplicationState::TagOnly);
 	}
 
 	UE_LOG(LogRogueAbility, Log,
