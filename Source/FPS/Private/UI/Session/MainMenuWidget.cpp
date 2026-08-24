@@ -5,11 +5,20 @@
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/ScrollBox.h"
+#include "Components/Slider.h"
 #include "Components/SpinBox.h"
+#include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/SessionSubSystem.h"
 #include "UI/Session/RoomEntryWidget.h"
+
+namespace MainMenuWidgetLimits
+{
+	constexpr int32 MaxRoomNameLength = 24;
+	constexpr int32 MinRoomPlayers = 2;
+	constexpr int32 MaxRoomPlayers = 8;
+}
 
 void UMainMenuWidget::HostRoom()
 {
@@ -130,6 +139,13 @@ bool UMainMenuWidget::Initialize()
 		CancelCreateButton->OnClicked.AddDynamic(this, &ThisClass::CancelCreateButtonClicked);
 	}
 
+	if (MaxPlayersSlider)
+	{
+		MaxPlayersSlider->SetValue(static_cast<float>(MainMenuWidgetLimits::MaxRoomPlayers));
+		MaxPlayersSlider->OnValueChanged.AddDynamic(this, &ThisClass::HandleMaxPlayersSliderChanged);
+		HandleMaxPlayersSliderChanged(MaxPlayersSlider->GetValue());
+	}
+
 	HideCreateRoomPanel();
 
 	if (RoomListArea)
@@ -164,8 +180,20 @@ void UMainMenuWidget::LocalJoinButtonClicked()
 
 void UMainMenuWidget::CreateButtonClicked()
 {
-	const FString InputRoomName = RoomNameInput ? RoomNameInput->GetText().ToString() : FString();
-	const int32 InputMaxPlayers = MaxPlayersSpinBox ? FMath::RoundToInt(MaxPlayersSpinBox->GetValue()) : MaxPlayers;
+	FString InputRoomName = RoomNameInput ? RoomNameInput->GetText().ToString() : FString();
+	InputRoomName.TrimStartAndEndInline();
+	if (InputRoomName.Len() > MainMenuWidgetLimits::MaxRoomNameLength)
+	{
+		InputRoomName.LeftInline(MainMenuWidgetLimits::MaxRoomNameLength);
+	}
+
+	const int32 RawMaxPlayers = MaxPlayersSlider
+		? FMath::RoundToInt(MaxPlayersSlider->GetValue())
+		: (MaxPlayersSpinBox ? FMath::RoundToInt(MaxPlayersSpinBox->GetValue()) : MaxPlayers);
+	const int32 InputMaxPlayers = FMath::Clamp(
+		RawMaxPlayers,
+		MainMenuWidgetLimits::MinRoomPlayers,
+		MainMenuWidgetLimits::MaxRoomPlayers);
 
 	HideCreateRoomPanel();
 	HostRoomWithOptions(InputMaxPlayers, InputRoomName, MapName, MatchType);
@@ -175,6 +203,14 @@ void UMainMenuWidget::CancelCreateButtonClicked()
 {
 	HideCreateRoomPanel();
 	SetStatusMessage(FText::GetEmpty());
+}
+
+void UMainMenuWidget::HandleMaxPlayersSliderChanged(const float Value)
+{
+	if (MaxPlayersValueText)
+	{
+		MaxPlayersValueText->SetText(FText::AsNumber(FMath::RoundToInt(Value)));
+	}
 }
 
 void UMainMenuWidget::HandleCreateRoomComplete(bool bWasSuccessful)

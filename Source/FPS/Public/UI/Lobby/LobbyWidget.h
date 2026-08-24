@@ -3,13 +3,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/TeamTypes.h"
 #include "TimerManager.h"
 #include "UI/Session/SessionWidgetBase.h"
 #include "LobbyWidget.generated.h"
 
 class ALobbyGameState;
+class AShooterPlayerState;
 class UButton;
 class ULobbyPlayerEntryWidget;
+class UTextBlock;
 class UVerticalBox;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -20,6 +23,14 @@ class FPS_API ULobbyWidget : public USessionWidgetBase
 public:
 	UFUNCTION(BlueprintCallable)
 	void SetLobbyReady(bool bNewLobbyReady);
+
+	// 같은 버튼으로 레디를 걸고 풀 수 있도록 토글 진입점을 분리
+	UFUNCTION(BlueprintCallable)
+	void ToggleLobbyReady();
+
+	// 플레이어가 원하는 팀을 직접 고를 수 있도록 추가
+	UFUNCTION(BlueprintCallable)
+	void SelectTeam(EGameTeam RequestedTeam);
 
 	UFUNCTION(BlueprintCallable)
 	void StartRoomGame();
@@ -40,6 +51,12 @@ private:
 	void StartButtonClicked();
 
 	UFUNCTION()
+	void TeamAButtonClicked();
+
+	UFUNCTION()
+	void TeamBButtonClicked();
+
+	UFUNCTION()
 	void HandleStartRoomGameComplete(bool bWasSuccessful);
 
 	void BindSessionDelegates();
@@ -51,6 +68,7 @@ private:
 	void StopInitialLobbyRefreshRetry();
 	void UpdateLobbyButtons();
 	bool IsLocalPlayerHost() const;
+	AShooterPlayerState* GetLocalShooterPlayerState() const;
 	FString BuildLobbyListSignature() const;
 
 	UFUNCTION()
@@ -62,6 +80,17 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> StartButton;
+
+	// 팀 선택 버튼. BP 에서 바인딩하지 않으면 기존처럼 자동 배정만 동작
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> TeamAButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> TeamBButton;
+
+	// 레디 버튼 라벨을 C++ 에서 직접 토글하기 위한 선택 바인딩.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ReadyButtonText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UVerticalBox> PlayerListBox;
