@@ -47,10 +47,10 @@ FText ULobbyPlayerEntryWidget::GetTeamDisplayText(const EGameTeam InTeam)
 	switch (InTeam)
 	{
 	case EGameTeam::TeamA:
-		return FText::FromString(TEXT("Red"));
+		return FText::FromString(TEXT("[Red]"));
 	case EGameTeam::TeamB:
-		return FText::FromString(TEXT("Blue"));
+		return FText::FromString(TEXT("[Blue]"));
 	default:
-		return FText::FromString(TEXT("Random"));
+		return FText::FromString(TEXT("[Random]"));
 	}
 }

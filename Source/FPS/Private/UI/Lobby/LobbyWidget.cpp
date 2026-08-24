@@ -58,9 +58,11 @@ void ULobbyWidget::SelectTeam(const EGameTeam RequestedTeam)
 
 	// 정원 초과 여부는 서버가 판단, 거부되면 플레이어 리스트가 기존 팀 그대로 유지
 	PlayerController->SetLobbyTeam(RequestedTeam);
-	SetStatusMessage(RequestedTeam == EGameTeam::TeamA
-		? FText::FromString(TEXT("Requested Team A."))
-		: FText::FromString(TEXT("Requested Team B.")));
+
+	// 화면에 뜨는 문구 주석 처리
+	// SetStatusMessage(RequestedTeam == EGameTeam::TeamA
+	// 	? FText::FromString(TEXT("Requested Team A."))
+	// 	: FText::FromString(TEXT("Requested Team B.")));
 }
 
 void ULobbyWidget::StartRoomGame()
@@ -336,8 +338,8 @@ void ULobbyWidget::UpdateLobbyButtons()
 	{
 		TeamAButton->SetIsEnabled(LocalTeam != EGameTeam::TeamA);
 		TeamAButton->SetBackgroundColor(LocalTeam == EGameTeam::TeamA
-			? FLinearColor(1.0f, 0.15f, 0.15f)
-			: FLinearColor(0.25f, 0.05f, 0.05f));
+			? FLinearColor(1.0f, 0.15f, 0.15f )
+			: FLinearColor(0.5f, 0.15f, 0.15f));
 	}
 
 	if (TeamBButton)
@@ -345,7 +347,7 @@ void ULobbyWidget::UpdateLobbyButtons()
 		TeamBButton->SetIsEnabled(LocalTeam != EGameTeam::TeamB);
 		TeamBButton->SetBackgroundColor(LocalTeam == EGameTeam::TeamB
 			? FLinearColor(0.15f, 0.15f, 1.0f)
-			: FLinearColor(0.05f, 0.05f, 0.25f));
+			: FLinearColor(0.15f, 0.15f, 0.5f));
 	}
 
 	if (StartButton)
