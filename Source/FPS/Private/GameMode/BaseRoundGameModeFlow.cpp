@@ -232,7 +232,9 @@ void ABaseRoundGameMode::FinishAugmentDraft()
 	}
 
 	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
-	if (!IsValid(PlayerManager) || !PlayerManager->AreRoundParticipantsReady())
+	if (!IsValid(PlayerManager)
+		|| !PlayerManager->AreRoundParticipantsReady()
+		|| !PlayerManager->AreAllEligiblePlayersRoundParticipants())
 	{
 		EnterWaitingForPlayers();
 		TryBeginNextRound();
@@ -257,7 +259,8 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		|| !IsValid(PlayerManager)
 		|| !PendingRoundContext.IsSet()
 		|| !PendingRoundContext.GetValue().IsValid()
-		|| !PlayerManager->AreRoundParticipantsReady())
+		|| !PlayerManager->AreRoundParticipantsReady()
+		|| !PlayerManager->AreAllEligiblePlayersRoundParticipants())
 	{
 		return false;
 	}

@@ -333,6 +333,18 @@ void ABaseRoundGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void ABaseRoundGameMode::HandleSeamlessTravelPlayer(AController*& PlayerController)
+{
+	Super::HandleSeamlessTravelPlayer(PlayerController);
+
+	// AGameMode updates its travelling-player bookkeeping inside the Super call.
+	// Evaluate after that update so the final arriving client can release the gate.
+	UpdateInitialLoadingStatus();
+	HandlePlayerRosterChanged();
+	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::UpdateInitialLoadingStatus);
+	GetWorldTimerManager().SetTimerForNextTick(this, &ThisClass::HandlePlayerRosterChanged);
+}
+
 void ABaseRoundGameMode::InitGameState()
 {
 	Super::InitGameState();
@@ -838,8 +850,12 @@ void ABaseRoundGameMode::HandlePlayerRosterChanged()
 
 	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
 	if (Phase == EGameFlowPhase::AugmentSelecting
-		&& (!IsValid(PlayerManager) || !PlayerManager->AreRoundParticipantsReady()))
+		&& (!IsValid(PlayerManager)
+			|| !PlayerManager->AreRoundParticipantsReady()
+			|| !PlayerManager->AreAllEligiblePlayersRoundParticipants()))
 	{
+		// A client that finishes seamless travel after the initial participant
+		// snapshot must be included before the preparation phase can continue.
 		EnterWaitingForPlayers();
 		TryBeginNextRound();
 	}
