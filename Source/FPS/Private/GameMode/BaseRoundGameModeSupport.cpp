@@ -1,10 +1,12 @@
 #include "GameMode/BaseRoundGameMode.h"
 
+#include "Economy/CreditEconomyManager.h"
 #include "Engine/World.h"
 #include "GameFramework/DefaultPawn.h"
 #include "GameFramework/PlayerController.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/BaseRoundPlayerController.h"
 #include "Player/BaseTeamPlayerState.h"
@@ -79,6 +81,8 @@ bool ABaseRoundGameMode::IsBaseConfigurationValid() const
 	const bool bRolesAreValid = StartingTeamARole != ETeamRole::None
 		&& StartingTeamBRole != ETeamRole::None
 		&& StartingTeamARole != StartingTeamBRole;
+	const UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const USurrenderVoteManager* VoteManager = GetSurrenderVoteManager();
 
 	return DefaultPawnClass != nullptr
 		&& !DefaultPawnClass->IsChildOf(ADefaultPawn::StaticClass())
@@ -105,6 +109,11 @@ bool ABaseRoundGameMode::IsBaseConfigurationValid() const
 		&& SideSwitchRound >= 0
 		&& RoundsToWin >= 0
 		&& MaxRounds >= 0
+		&& SurrenderVoteDuration > 0.0f
+		&& SurrenderVoteCooldown >= 0.0f
+		&& IsValid(Economy)
+		&& Economy->IsConfigurationValid()
+		&& IsValid(VoteManager)
 		&& bRolesAreValid;
 }
 

@@ -26,4 +26,8 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Rogue|Damage")
 	UCombatHitZoneDefinition* GetCombatHitZoneDefinition() const;
+
+	// 모든 머신에서 호출, 사망 랙돌
+	UFUNCTION(BlueprintNativeEvent, Category = "Rogue|Damage")
+	void PlayDeathReaction(const FRogueDeathReaction& Reaction);
 };

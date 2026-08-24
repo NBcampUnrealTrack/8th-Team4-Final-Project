@@ -1,6 +1,8 @@
 ﻿// ShooterAugmentSelectScreen.cpp
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
+
 #include "UI/Common/ShooterAugmentCard.h"
+#include "UI/Common/ShooterRerollButton.h"
 #include "UI/ShooterUIBundles.h"
 #include "Augment/AugmentDefinition.h"
 #include "Augment/AugmentRegistrySubsystem.h"
@@ -11,7 +13,25 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
-void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers)
+void UShooterAugmentSelectScreen::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	
+	CachedCards = { Card_0, Card_1, Card_2 };
+	CachedRerollButtons = { RerollButton_0, RerollButton_1, RerollButton_2};
+	
+	for (UShooterAugmentCard* Card : CachedCards)
+	{
+		Card->OnAugmentCardClicked.AddUObject(this, &UShooterAugmentSelectScreen::HandleCardClicked);
+	}
+	for (UShooterRerollButton* Button : CachedRerollButtons)
+	{
+		Button->OnRerollButtonClicked.AddUObject(this, &ThisClass::HandleRerollButtonClicked);
+	}
+}
+
+void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers,
+										    const TArray<int32>& InRerollsRemaining)
 {
 	// 이전 아이콘 로드가 진행 중이면 취소
 	if (IconLoadHandle.IsValid())
@@ -21,6 +41,8 @@ void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>
 	}
 
 	Offers = InOffers;
+	RerollsRemaining = InRerollsRemaining;
+	
 	TryBuildCards();
 }
 
@@ -60,6 +82,83 @@ void UShooterAugmentSelectScreen::TryBuildCards()
 	}
 }
 
+void UShooterAugmentSelectScreen::RefreshOfferWidgets()
+{
+	UAugmentRegistrySubsystem* Registry = GetRegistry();
+	if (!IsValid(Registry))
+	{
+		return;
+	}
+	
+	const bool bWasEmpty = LastDisplayedOffers.IsEmpty();
+	const bool bIsEmpty = Offers.IsEmpty();
+	
+	TArray<int32> ChangedSlots;
+	
+	// Reroll 했을때 처리
+	if (!bWasEmpty && !bIsEmpty)
+	{
+		ensureMsgf(LastDisplayedOffers.Num() == Offers.Num(), 
+			TEXT("[ShooterAugmentSelectScreen]LastDisplayedOffers와 Offers의 슬롯 수가 다릅니다. Old = %d, New = %d"),
+			LastDisplayedOffers.Num(),
+			Offers.Num());
+		
+		const int32 CompareCount = FMath::Min(LastDisplayedOffers.Num(), Offers.Num());
+		
+		for (int32 i = 0; i < CompareCount; ++i)
+		{
+			if (LastDisplayedOffers[i].DefinitionId != Offers[i].DefinitionId || LastDisplayedOffers[i].Level != Offers[i].Level)
+			{
+				ChangedSlots.Add(i);
+			}
+		}
+	}
+	
+	for (int32 i = 0; i < Offers.Num(); ++i)
+	{
+		UAugmentDefinition* Def = Registry->FindDefinition(Offers[i].DefinitionId);
+		if (IsValid(Def) == false)
+		{
+			continue;
+		}
+		
+		if (CachedCards.IsValidIndex(i))
+		{
+			CachedCards[i]->SetData(Def, Offers[i].Level, i);
+		}
+		if (CachedRerollButtons.IsValidIndex(i))
+		{
+			CachedRerollButtons[i]->SetSlotData(i, 
+				RerollsRemaining.IsValidIndex(i) ? RerollsRemaining[i] : 0);
+		}
+	}
+	
+	if (!ensureMsgf(!Offers.IsEmpty(), TEXT("[ShooterAugmentSelectScreen] RefreshOfferWidgets가 빈 Offers로 호출되었습니다")))
+	{
+		return;
+	}
+	
+	if (bWasEmpty)
+	{
+		if (Anim_Intro)
+		{
+			PlayAnimation(Anim_Intro);
+		}
+	}
+	else
+	{
+		for (const int32 ChangedSlot : ChangedSlots)
+		{
+			if (CachedCards.IsValidIndex(ChangedSlot))
+			{
+				CachedCards[ChangedSlot]->PlayRerollFeedback();
+			}
+		}
+	}
+	
+	LastDisplayedOffers = Offers;
+}
+
 void UShooterAugmentSelectScreen::HandleRegistryReady()
 {
 	if (UAugmentRegistrySubsystem* Registry = GetRegistry())
@@ -72,45 +171,17 @@ void UShooterAugmentSelectScreen::HandleRegistryReady()
 
 void UShooterAugmentSelectScreen::HandleIconsLoaded()
 {
-	Box_Cards->ClearChildren();
-
-	UAugmentRegistrySubsystem* Registry = GetRegistry();
-	if (!IsValid(Registry))
-	{
-		return;
-	}
-
-	for (int32 i = 0; i < Offers.Num(); i++)
-	{
-		UAugmentDefinition* Def = Registry->FindDefinition(Offers[i].DefinitionId);
-		if (IsValid(Def) == false)
-		{
-			UE_LOG(LogShooterAugmentSelectScreen, Error, TEXT("HandleIconsLoaded | %s는 레지스트리에 없습니다."),
-			       *Offers[i].DefinitionId.ToString());
-			continue;
-		}
-
-		UShooterAugmentCard* CardInstance = CreateWidget<UShooterAugmentCard>(this, CardClass);
-		if (IsValid(CardInstance) == false)
-		{
-			UE_LOG(LogShooterAugmentSelectScreen, Error, TEXT("HandleIconsLoaded | AugmentCardClass가 지정되지 않았습니다."));
-			continue;
-		}
-
-		CardInstance->SetData(Def, Offers[i].Level, i);
-		CardInstance->OnAugmentCardClicked.AddUObject(this, &ThisClass::HandleCardClicked);
-		Box_Cards->AddChildToHorizontalBox(CardInstance);
-	}
-
-	if (Anim_Intro)
-	{
-		PlayAnimation(Anim_Intro);
-	}
+	RefreshOfferWidgets();
 }
 
 void UShooterAugmentSelectScreen::HandleCardClicked(int32 InOfferIndex)
 {
 	OnAugmentSelected.Broadcast(InOfferIndex);
+}
+
+void UShooterAugmentSelectScreen::HandleRerollButtonClicked(int32 InSlotIndex)
+{
+	OnAugmentRerollRequested.Broadcast(InSlotIndex);
 }
 
 UAugmentRegistrySubsystem* UShooterAugmentSelectScreen::GetRegistry() const
@@ -132,4 +203,17 @@ void UShooterAugmentSelectScreen::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+}
+
+void UShooterAugmentSelectScreen::NativeOnDeactivated()
+{
+	if (IconLoadHandle.IsValid())
+	{
+		IconLoadHandle->CancelHandle();
+		IconLoadHandle.Reset();
+	}
+	
+	LastDisplayedOffers.Reset();
+	
+	Super::NativeOnDeactivated();
 }

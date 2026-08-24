@@ -5,6 +5,7 @@
 #include "UObject/Object.h"
 #include "BombObjectiveManager.generated.h"
 
+class ABaseRoundGameState;
 class ABaseTeamPlayerState;
 class ABombGameMode;
 class ADataJack;
@@ -60,7 +61,9 @@ public:
 	void HandlePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState);
 
 	bool IsActiveDataJack(const ADataJack* DataJack) const;
+	// 설치/해체 완료 직전의 서버 재검증. 완료 통지가 라운드 밖으로 새는 것을 막는다.
 	bool CanCompletePlanting(const ADataJack* DataJack) const;
+	bool CanCompleteDefusing(const ADataJack* DataJack) const;
 	void NotifyDataJackPlanted(ADataJack* DataJack);
 	void NotifyDataJackDefused(ADataJack* DataJack);
 	void NotifyDataJackDetonated(ADataJack* DataJack);
@@ -68,6 +71,8 @@ public:
 
 private:
 	EDataJackState GetObjectiveState() const;
+	const ABaseRoundGameState* GetRoundGameState() const;
+	bool IsObjectiveRoundLive() const;
 	bool SpawnObjective(const FBombObjectiveConfig& Config);
 	void DestroyObjective();
 	bool EnsureMapConfiguration();

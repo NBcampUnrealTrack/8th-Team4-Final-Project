@@ -51,6 +51,17 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 			const float FinalRPM = URogueAugmentStatResolver::GetFinalRPM(Avatar, Weapon->GetBaseRPM());
 			Weapon->SetEffectiveRPM(FinalRPM);
 		}
+
+		const int32 FinalPelletCount = URogueAugmentStatResolver::GetFinalPelletCount(Avatar, Weapon->GetPelletCountPerShot());
+		Weapon->SetEffectivePelletCount(FinalPelletCount);
+
+		const float FinalSpreadDegrees = URogueAugmentStatResolver::GetFinalSpread(Avatar, Weapon->GetBaseSpreadDegrees());
+		Weapon->SetEffectiveSpreadDegrees(FinalSpreadDegrees);
+
+		// TraceRange(cm)를 m로 변환해 GetFinalMeleeRange에 넘기고, 결과를 다시 cm로 되돌려 배선한다.
+		// 원거리 무기의 사거리/관통은 데미지 파이프라인이 별도로 처리하므로 여기서는 근접무기만 다룬다.
+		const float FinalMeleeRangeMeters = URogueAugmentStatResolver::GetFinalMeleeRange(Avatar, Weapon->GetTraceRange() / 100.f);
+		Weapon->SetEffectiveTraceRange(FinalMeleeRangeMeters * 100.f);
 	}
 
 	if (AttackMontage && ActorInfo)

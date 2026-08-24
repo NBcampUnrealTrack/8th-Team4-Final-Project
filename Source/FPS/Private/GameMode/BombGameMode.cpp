@@ -35,10 +35,14 @@ ABombGameMode::ABombGameMode()
 void ABombGameMode::NotifyDataJackPlanted(ADataJack* DataJack)
 {
 	const UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager();
-	if (HasAuthority() && IsValid(ObjectiveManager) && ObjectiveManager->IsActiveDataJack(DataJack))
+	if (!HasAuthority() || !IsValid(ObjectiveManager) || !ObjectiveManager->IsActiveDataJack(DataJack))
 	{
-		FreezeRoundTimer();
+		return;
 	}
+
+	// 설치 보상은 라운드 결과와 무관하게 유지되며, 실패 사유는 래퍼가 로깅한다.
+	RecordRoleObjectiveReward(ETeamRole::Attackers);
+	FreezeRoundTimer();
 }
 
 void ABombGameMode::NotifyDataJackDetonated(ADataJack* DataJack)
@@ -49,6 +53,7 @@ void ABombGameMode::NotifyDataJackDetonated(ADataJack* DataJack)
 		return;
 	}
 
+	// 팀 목표 보상은 설치 완료 시 이미 기록되므로 폭발에서는 추가하지 않는다.
 	const EGameTeam Attackers = GetTeamForRole(ETeamRole::Attackers);
 	if (Attackers != EGameTeam::None)
 	{
@@ -65,10 +70,15 @@ void ABombGameMode::NotifyDataJackDefused(ADataJack* DataJack)
 	}
 
 	const EGameTeam Defenders = GetTeamForRole(ETeamRole::Defenders);
-	if (Defenders != EGameTeam::None)
+	if (Defenders == EGameTeam::None)
 	{
-		EndRound(Defenders, ERoundEndReason::ObjectiveCompleted);
+		UE_LOG(LogBombGameMode, Error, TEXT("Cannot resolve the defusing team."));
+		return;
 	}
+
+	// 보상은 라운드가 닫히기 전에 예약해야 정산에 포함된다.
+	RecordRoleObjectiveReward(ETeamRole::Defenders);
+	EndRound(Defenders, ERoundEndReason::ObjectiveCompleted);
 }
 
 void ABombGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)

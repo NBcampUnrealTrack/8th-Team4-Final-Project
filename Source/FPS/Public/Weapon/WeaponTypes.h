@@ -7,29 +7,17 @@
 #include "WeaponTypes.generated.h"
 
 class AActor;
-class UCurveFloat;
+class UCurveVector;
 
-// 무기 종류 식별용. GAS 쪽 TAG_WeaponType_*(GameplayTags.h)와는 별개 - AWeaponBase는 GAS 타입을
-// 모르므로, 순수 C++/블루프린트에서 무기 종류를 식별해야 할 때 이 enum을 쓴다.
-UENUM(BlueprintType)
-enum class EWeaponType : uint8
-{
-	None,
-	AR,
-	Pistol,
-	Shotgun,
-	Sniper,
-	Knife
-};
-
-// 런타임 무기 슬롯 식별용. EWeaponType(무기 종류)과 역할이 다르다.
-// 슬롯은 1번/2번 입력 및 Primary/Secondary 인스턴스 보관에만 사용한다.
+// 런타임 무기 슬롯 식별용.
+// 슬롯은 1/2/3번 입력 및 Primary/Secondary/Melee 인스턴스 보관에만 사용한다.
 UENUM(BlueprintType)
 enum class EWeaponSlot : uint8
 {
 	None UMETA(Hidden),
 	Primary UMETA(DisplayName = "Primary"),
-	Secondary UMETA(DisplayName = "Secondary")
+	Secondary UMETA(DisplayName = "Secondary"),
+	Melee UMETA(DisplayName = "Melee")
 };
 
 // AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
@@ -116,12 +104,18 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
-	// --- 반동 ---
+	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
+	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
-	TObjectPtr<UCurveFloat> RecoilCurve;
+	TObjectPtr<UCurveVector> RecoilCurve;
 
+	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
-	float RecoilYawFactor = 0.f;
+	float RecoilRandomness = 0.f;
+
+	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilMaxPitch = 10.f;
 
 	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")

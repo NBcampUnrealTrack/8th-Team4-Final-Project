@@ -11,7 +11,9 @@ class UButton;
 class UEditableTextBox;
 class URoomEntryWidget;
 class UScrollBox;
+class USlider;
 class USpinBox;
+class UTextBlock;
 class UWidget;
 
 UCLASS(BlueprintType, Blueprintable)
@@ -68,6 +70,9 @@ private:
 	void CancelCreateButtonClicked();
 
 	UFUNCTION()
+	void HandleMaxPlayersSliderChanged(float Value);
+
+	UFUNCTION()
 	void HandleCreateRoomComplete(bool bWasSuccessful);
 
 	UFUNCTION()
@@ -106,6 +111,12 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USpinBox> MaxPlayersSpinBox;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> MaxPlayersSlider;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> MaxPlayersValueText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> CreateRoomPanel;

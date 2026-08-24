@@ -5,6 +5,7 @@
 #include "GameMode/BombRoundRules.h"
 #include "GameMode/InitialPlayerReadinessTracker.h"
 #include "GameMode/RoundTypes.h"
+#include "GameMode/SurrenderVoteTypes.h"
 
 namespace
 {
@@ -177,6 +178,56 @@ bool FInitialPlayerReadinessRuleTest::RunTest(const FString& Parameters)
 	TestTrue(
 		TEXT("Two assigned and ready players satisfy the gate"),
 		Snapshot.AreAllAssignedPlayersReady(2));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSurrenderMajorityRuleTest,
+	"FPS.GameFlow.Surrender.Rules.StrictMajority",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSurrenderMajorityRuleTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("One voter requires one approval"), SurrenderVoteRules::CalculateRequiredApprovals(1), 1);
+	TestEqual(TEXT("Two voters require two approvals"), SurrenderVoteRules::CalculateRequiredApprovals(2), 2);
+	TestEqual(TEXT("Three voters require two approvals"), SurrenderVoteRules::CalculateRequiredApprovals(3), 2);
+	TestEqual(TEXT("Four voters require three approvals"), SurrenderVoteRules::CalculateRequiredApprovals(4), 3);
+	TestEqual(TEXT("Five voters require three approvals"), SurrenderVoteRules::CalculateRequiredApprovals(5), 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSurrenderWinnerRuleTest,
+	"FPS.GameFlow.Surrender.Rules.OpposingTeamWins",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSurrenderWinnerRuleTest::RunTest(const FString& Parameters)
+{
+	TestEqual(
+		TEXT("Team A surrender awards Team B"),
+		static_cast<int32>(SurrenderVoteRules::GetOpposingTeam(EGameTeam::TeamA)),
+		static_cast<int32>(EGameTeam::TeamB));
+	TestEqual(
+		TEXT("Team B surrender awards Team A"),
+		static_cast<int32>(SurrenderVoteRules::GetOpposingTeam(EGameTeam::TeamB)),
+		static_cast<int32>(EGameTeam::TeamA));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSurrenderVotingPhaseRuleTest,
+	"FPS.GameFlow.Surrender.Rules.EligiblePhases",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FSurrenderVotingPhaseRuleTest::RunTest(const FString& Parameters)
+{
+	// GameMode also requires HasMatchStarted before accepting a request.
+	TestTrue(TEXT("Round starting is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundStarting));
+	TestTrue(TEXT("Augment selection is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::AugmentSelecting));
+	TestTrue(TEXT("Combat is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundInProgress));
+	TestFalse(TEXT("Waiting is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::WaitingForPlayers));
+	TestFalse(TEXT("Round ending is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundEnding));
+	TestFalse(TEXT("Match end is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::MatchEnded));
 	return true;
 }
 

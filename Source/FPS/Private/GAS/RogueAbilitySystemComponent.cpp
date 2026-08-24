@@ -4,7 +4,6 @@
 
 #include "GAS/RogueAbilitySet.h"
 #include "Tags/GameplayTags.h"
-#include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
@@ -12,30 +11,11 @@ namespace
 {
 	FPredictionKey GetInstanceActivationPredictionKey(const FGameplayAbilitySpec& Spec)
 	{
-		const UGameplayAbility* Instance =
-			!Spec.NonReplicatedInstances.IsEmpty() ? Spec.NonReplicatedInstances.Last()
-			: !Spec.ReplicatedInstances.IsEmpty()  ? Spec.ReplicatedInstances.Last()
-			: nullptr;
+		const TArray<UGameplayAbility*> Instances = Spec.GetAbilityInstances();
 
-		return Instance
-			? Instance->GetCurrentActivationInfo().GetActivationPredictionKey()
-			: FPredictionKey();
-	}
-
-	// 무기 종류를 장착 상태 태그로
-	FGameplayTag WeaponTypeToEquippedStateTag(EWeaponType WeaponType)
-	{
-		switch (WeaponType)
-		{
-		case EWeaponType::None:    return FGameplayTag();
-		case EWeaponType::AR:      return RogueTags::State_Weapon_Equipped_Firearm_Rifle;
-		case EWeaponType::Pistol:  return RogueTags::State_Weapon_Equipped_Firearm_Pistol;
-		case EWeaponType::Shotgun: return RogueTags::State_Weapon_Equipped_Firearm_Shotgun;
-		case EWeaponType::Sniper:  return RogueTags::State_Weapon_Equipped_Firearm_Sniper;
-		case EWeaponType::Knife:   return RogueTags::State_Weapon_Equipped_Melee_Knife;
-		}
-
-		return FGameplayTag();
+		return Instances.IsEmpty()
+			? FPredictionKey()
+			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
 	}
 }
 
@@ -177,11 +157,9 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 	}
 }
 
-void URogueAbilitySystemComponent::SetEquippedWeaponType(EWeaponType WeaponType)
+void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedStateTag)
 {
-	const FGameplayTag NewTag = WeaponTypeToEquippedStateTag(WeaponType);
-
-	if (NewTag == CurrentEquippedWeaponTag)
+	if (EquippedStateTag == CurrentEquippedWeaponTag)
 	{
 		return;
 	}
@@ -192,16 +170,16 @@ void URogueAbilitySystemComponent::SetEquippedWeaponType(EWeaponType WeaponType)
 		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0);
 	}
 
-	CurrentEquippedWeaponTag = NewTag;
+	CurrentEquippedWeaponTag = EquippedStateTag;
 
-	if (NewTag.IsValid())
+	if (EquippedStateTag.IsValid())
 	{
-		SetLooseGameplayTagCount(NewTag, 1);
+		SetLooseGameplayTagCount(EquippedStateTag, 1);
 	}
 
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] 장착 태그 -> %s"),
-		NewTag.IsValid() ? *NewTag.ToString() : TEXT("(없음 - 맨몸)"));
+		EquippedStateTag.IsValid() ? *EquippedStateTag.ToString() : TEXT("(없음 - 맨몸)"));
 }
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)
@@ -243,4 +221,29 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s 어빌리티 %d개 부여"), *AbilitySet->GetName(), AbilitySet->Abilities.Num());
+}
+
+int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
+{
+	if (!IsOwnerActorAuthoritative())
+	{
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
+			     "서버에서 제거하면 클라이언트로 복제됩니다"));
+		return 0;
+	}
+
+	// 라운드 한정 효과 태그를 가진 모든 GE 제거
+	const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
+		FGameplayTagContainer(RogueTags::Effect_Lifetime_Round));
+
+	const int32 RemovedCount = RemoveActiveEffects(Query);
+	if (RemovedCount > 0)
+	{
+		UE_LOG(LogRogueAbility, Log,
+			TEXT("[RogueAbility] %s: 라운드 한정 효과 %d 개 제거"),
+			*GetNameSafe(GetOwnerActor()), RemovedCount);
+	}
+
+	return RemovedCount;
 }

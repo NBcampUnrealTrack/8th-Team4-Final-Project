@@ -31,7 +31,7 @@ public class FPS : ModuleRules
 			"OnlineSubsystemUtils",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara" });
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "Steamworks");
 

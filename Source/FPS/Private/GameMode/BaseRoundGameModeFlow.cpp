@@ -1,8 +1,10 @@
-#include "GameMode/BaseRoundGameMode.h"
+﻿#include "GameMode/BaseRoundGameMode.h"
 
+#include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
@@ -157,6 +159,12 @@ void ABaseRoundGameMode::OpenNextRound()
 	}
 	SpawnPreparationRetryCount = 0;
 
+	if (!InitializeRoundParticipantCredits())
+	{
+		SuspendRoundOpening(TEXT("A round participant could not be initialized for the credit economy."));
+		return;
+	}
+
 	if (!PrepareModeRound(RoundContext))
 	{
 		SuspendRoundOpening(TEXT("Mode-specific round preparation failed."));
@@ -226,7 +234,7 @@ void ABaseRoundGameMode::FinishAugmentDraft()
 
 	if (!TryStartRoundCombat())
 	{
-		SuspendRoundOpening(TEXT("Draft completion or mode activation failed."));
+		SuspendRoundOpening(TEXT("Round combat transition failed."));
 	}
 }
 
@@ -247,10 +255,29 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		return false;
 	}
 
+	// 라운드에 참여하는 모든 플레이어의 Pending 거래를 먼저 확인한다.
+	// 이 검사 자체는 상태를 바꾸지 않으며, 실패 정리는 기존 SuspendRoundOpening 흐름이 담당한다.
+	if (!CanCommitPendingShopPurchases())
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot start round combat because shop purchases are not ready to commit."));
+		return false;
+	}
+
 	// Draft 태그가 먼저 복제돼도 전투 페이즈 공개 전에는 입력이 열리지 않게 한다.
 	SetRoundParticipantInputEnabled(false);
 
-	// 입력 차단 해제 뒤 실패 가능한 작업이 남지 않도록 모드를 먼저 활성화한다.
+	UCreditEconomyManager* Economy = GetCreditEconomyManager();
+	const int32 RoundNumber = RoundGameState->GetCurrentRoundNumber();
+	if (!IsValid(Economy) || !Economy->BeginRound(RoundNumber))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error, TEXT("Credit economy could not begin round %d."), RoundNumber);
+		return false;
+	}
+
+	// Economy가 열린 뒤 모드와 드래프트의 되돌리기 어려운 작업을 확정한다.
 	if (!ActivateModeRound())
 	{
 		return false;
@@ -263,6 +290,16 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		{
 			return false;
 		}
+	}
+
+	if (!CommitPendingShopPurchases())
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot start round combat because shop purchases could not be committed."));
+
+		return false;
 	}
 
 	if (!HasMatchStarted())
@@ -305,14 +342,44 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	PendingRoundContext.Reset();
 	bRoundOpeningSuspended = false;
 
+	// 다음 매치의 ResetEconomyForNewMatch가 어차피 파기하지만, 결과 화면에서
+	// 잔액이 차감된 채로 보이지 않도록 매치 종료 시점에 원장을 비운다.
+	RefundPendingShopPurchases(TEXT("match end"));
+
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
 		DraftManager->CancelDraft();
+	}
+	if (UCreditEconomyManager* Economy = GetCreditEconomyManager())
+	{
+		Economy->CancelActiveRound();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
 	}
 
 	RoundGameState->SetMatchWinner(WinningTeam);
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::MatchEnded);
 	EndMatch();
+
+	if (RoundEndDelay <= 0.0f)
+	{
+		ReturnToFrontendAfterMatch();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTimerHandle,
+		this,
+		&ThisClass::ReturnToFrontendAfterMatch,
+		RoundEndDelay,
+		false);
+}
+
+void ABaseRoundGameMode::ReturnToFrontendAfterMatch()
+{
+	ReturnToMainMenuHost();
 }
 
 void ABaseRoundGameMode::EnterWaitingForPlayers()
@@ -321,9 +388,22 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 	SetAllPlayersRoundInputEnabled(false);
 	SpawnPreparationRetryCount = 0;
 
+	// 상점 창은 AugmentSelecting에서 열린다. 라운드가 되감기면 같은 매치이므로
+	// Wallet 초기화가 없다. 미확정 결제를 여기서 되돌려 원장을 비운다.
+	RefundPendingShopPurchases(TEXT("round rollback"));
+
+	if (UCreditEconomyManager* Economy = GetCreditEconomyManager())
+	{
+		Economy->CancelActiveRound();
+	}
+
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
 		DraftManager->CancelDraft();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
 	}
 
 	ResetModeState();

@@ -1,7 +1,10 @@
-﻿// ShotterPrimaryGameLayout.cpp
+﻿// ShooterPrimaryGameLayout.cpp
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+
+#include "CommonActivatableWidget.h"
 #include "Tags/UITags.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
+#include "UI/Foundation/ShooterActivatableWidget.h"
 
 void UShooterPrimaryGameLayout::NativeOnInitialized()
 {
@@ -10,6 +13,7 @@ void UShooterPrimaryGameLayout::NativeOnInitialized()
 	RegisterLayer(UITags::UI_Layer_Game,  Stack_Game);
 	RegisterLayer(UITags::UI_Layer_Menu,  Stack_Menu);
 	RegisterLayer(UITags::UI_Layer_Modal, Stack_Modal);
+	
 }
 
 void UShooterPrimaryGameLayout::RegisterLayer(
@@ -51,6 +55,19 @@ void UShooterPrimaryGameLayout::PopWidgetFromLayer(FGameplayTag LayerTag)
 		{
 			Container->RemoveWidget(*ActiveWidget);
 		}
+	}
+}
+
+void UShooterPrimaryGameLayout::RemoveWidgetFromLayer(const FGameplayTag LayerTag, UCommonActivatableWidget* Widget)
+{
+	if (!IsValid(Widget))
+	{
+		return;
+	}
+
+	if (UCommonActivatableWidgetContainerBase* Container = GetLayerContainer(LayerTag))
+	{
+		Container->RemoveWidget(*Widget);
 	}
 }
 

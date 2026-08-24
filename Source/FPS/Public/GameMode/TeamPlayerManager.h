@@ -68,13 +68,13 @@ public:
 	ERoundPlayerPreparationResult PreparePlayersForRound();
 
 	bool AreRoundParticipantsReady() const;
+	bool IsRoundParticipant(const ABaseTeamPlayerState* PlayerState) const;
 	void GetRoundParticipants(TArray<AShooterPlayerState*>& OutParticipants) const;
 	void GetRoundParticipantControllers(TArray<APlayerController*>& OutControllers) const;
 
 	bool TryMarkPlayerEliminated(AController* EliminatedController, ABaseTeamPlayerState*& OutPlayerState);
 
 private:
-	bool IsRoundParticipant(const ABaseTeamPlayerState* PlayerState) const;
 	void ResetRoundTracking();
 	bool GatherEligiblePlayers(TArray<APlayerController*>& OutPlayers) const;
 	void CleanupFailedPreparation(const TArray<APlayerController*>& AttemptedPlayers);

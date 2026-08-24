@@ -1,4 +1,4 @@
-#include "GameMode/TeamPlayerManager.h"
+﻿#include "GameMode/TeamPlayerManager.h"
 
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -10,6 +10,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Weapon/WeaponLoadoutService.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTeamPlayerManager, Log, All);
 
@@ -374,6 +375,16 @@ ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 		{
 			UE_LOG(LogTeamPlayerManager, Error,
 				TEXT("%s remained dead after ServerRespawnReset()."),
+				*GetNameSafe(PlayerState));
+			CleanupFailedPreparation(Players);
+			return ERoundPlayerPreparationResult::InvalidState;
+		}
+
+		// Pawn is recreated every round, so project the confirmed PlayerState loadout onto the new runtime pawn.
+		if (!RogueWeaponLoadout::RestoreConfirmedPrimary(PlayerState, SpawnedPawn))
+		{
+			UE_LOG(LogTeamPlayerManager, Error,
+				TEXT("Failed to restore confirmed primary weapon for %s."),
 				*GetNameSafe(PlayerState));
 			CleanupFailedPreparation(Players);
 			return ERoundPlayerPreparationResult::InvalidState;

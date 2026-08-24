@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
@@ -41,6 +42,16 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Shooter|Voice")
 	void ReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 
+	// 클라이언트는 GameMode 에 직접 접근할 수 없으므로 서버 RPC 로 팀 선택을 요청
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void SetLobbyTeam(EGameTeam RequestedTeam);
+
+	// 콘솔(~)에서 바로 테스트할 수 있는 임시 진입점. 정식 설정 메뉴가 생기면 그 UI가
+	// UShooterGameUserSettings::SetDynamicCrosshairEnabled를 직접 불러도 된다 - 이 함수는
+	// 그 위에 얹은 토글 편의 기능일 뿐이다.
+	UFUNCTION(Exec)
+	void ToggleDynamicCrosshair();
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
 
@@ -49,6 +60,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void HideLoadingScreen();
+
+	// 프로젝트 설정의 Game Default Map으로 돌아간다.
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestReturnToFrontend();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestQuitGame();
 
 	UFUNCTION(Client, Reliable)
 	void ClientShowLoadingScreen(float InitialProgress);
@@ -97,6 +115,9 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();
 
+	UFUNCTION(Server, Reliable)
+	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
@@ -118,8 +139,6 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
-	void Input_PrimaryWeaponPressed();
-	void Input_SecondaryWeaponPressed();
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
