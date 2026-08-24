@@ -26,11 +26,44 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	// 클라이언트는 GameMode 에 직접 접근할 수 없으므로 서버 RPC 로 팀 선택을 요청
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void SetLobbyTeam(EGameTeam RequestedTeam);
+
 	// 콘솔(~)에서 바로 테스트할 수 있는 임시 진입점. 정식 설정 메뉴가 생기면 그 UI가
 	// UShooterGameUserSettings::SetDynamicCrosshairEnabled를 직접 불러도 된다 - 이 함수는
 	// 그 위에 얹은 토글 편의 기능일 뿐이다.
 	UFUNCTION(Exec)
 	void ToggleDynamicCrosshair();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void ShowLoadingScreen(float InitialProgress = 0.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void SetLoadingProgress(float Progress);
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
+	void HideLoadingScreen();
+
+	UFUNCTION(Client, Reliable)
+	void ClientShowLoadingScreen(float InitialProgress);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetLoadingProgress(float Progress);
+
+	UFUNCTION(Client, Reliable)
+	void ClientHideLoadingScreen();
+
+	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessGameplayInput() const;
+
+	// Data Jack 설치·해체 중에는 이동과 행동만 막고 Look은 공통 게이트만 사용한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessMovementInput() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Input")
+	virtual bool CanProcessActionInput() const;
 
 protected:
 	virtual void BeginPlay() override;

@@ -483,21 +483,12 @@ void AWeaponBase::ResolveHitscanShot(
 	static const FName MuzzleSocketName(TEXT("Muzzle"));
 	if (IsValid(Mesh3P.Get()) && Mesh3P->DoesSocketExist(MuzzleSocketName))
 	{
-		HitscanDefinition->ConfigureShotRequest(
-			Request,
-			ShotDamage,
-			EffectiveTraceRange,
-			DefaultSurfaceThickness,
-			DefaultSurfaceHardness);
+		Request.DamageDistanceOrigin = Mesh3P->GetSocketLocation(MuzzleSocketName);
 	}
 	else
 	{
-		// Definition이 없는 레거시 무기도 기본 사격은 동작하되, 정적 정책은 기본값을 사용한다.
-		Request.DamageSettings.BaseDamagePerPellet = FMath::Max(0.0f, ShotDamage);
-		Request.DamageSettings.DistanceFalloff.MaximumRangeMeters = FMath::Max(0.0f, EffectiveTraceRange / 100.0f);
-		Request.TraceSettings.MaximumRangeCentimeters = FMath::Max(0.0f, EffectiveTraceRange);
-		Request.TraceSettings.FallbackSurfaceThicknessCentimeters = FMath::Max(0.1f, DefaultSurfaceThickness);
-		Request.TraceSettings.DefaultSurfaceRule.Hardness = FMath::Max(0.0f, DefaultSurfaceHardness);
+		// Muzzle 소켓이 없는 레거시 무기는 카메라 Trace 시작점을 대신 사용한다.
+		Request.DamageDistanceOrigin = TraceStart;
 	}
 
 	Request.bHasDamageDistanceOrigin = true;
@@ -513,7 +504,7 @@ void AWeaponBase::ResolveHitscanShot(
 		UE_LOG(
 			LogWeaponHitscanBridge,
 			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.1f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
 			EffectiveTraceRange,

@@ -3,15 +3,18 @@
 
 #include "Character/ShooterCharacter.h"
 
+#include "AbilitySystemComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameFlow/Round/BaseRoundGameMode.h"
+#include "GameMode/BaseRoundGameMode.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);

@@ -143,6 +143,64 @@ void AShooterPlayerController::ToggleDynamicCrosshair()
 	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
+void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
+		}
+		return;
+	}
+
+	ServerSetLobbyTeam(RequestedTeam);
+}
+
+void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
+{
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->BindToRoundGameState(
+			GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
+	}
+}
+
+void AShooterPlayerController::SetLoadingProgress(const float Progress)
+{
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		// Seamless travel 직후 GameState 복제가 늦은 경우 UI 준비 시점에 다시 바인딩한다.
+		LoadingScreenSubsystem->BindToRoundGameState(
+			GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
+		LoadingScreenSubsystem->SetLoadingProgress(Progress);
+	}
+}
+
+void AShooterPlayerController::HideLoadingScreen()
+{
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->HideLoadingScreen();
+	}
+}
+
+void AShooterPlayerController::ClientShowLoadingScreen_Implementation(const float InitialProgress)
+{
+	ShowLoadingScreen(InitialProgress);
+}
+
+void AShooterPlayerController::ClientSetLoadingProgress_Implementation(const float Progress)
+{
+	SetLoadingProgress(Progress);
+}
+
+void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
+{
+	HideLoadingScreen();
+}
+
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
