@@ -48,6 +48,8 @@ protected:
 
 	void PlayReloadChargeSound();
 
+	bool IsLocalShooterListening() const;
+
 	// MuzzleFlashEffect가 지정된 경우 Mesh1P/Mesh3P 각 Muzzle 소켓에 부착해 재생한다(둘 다 시도 -
 	// bOnlyOwnerSee/bOwnerNoSee가 이미 보는 사람을 갈라주므로 중복 재생처럼 보이지 않는다).
 	void SpawnMuzzleFlash() const;
@@ -90,6 +92,14 @@ protected:
 	// 탄약 없이 발사를 시도했을 때 재생할 사운드(딸깍 소리). 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
 	TObjectPtr<USoundBase> EmptyClipSound;
+
+	// 본인에게 들리는 발사/재장전 사운드 볼륨 배율
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
+	float LocalListenerVolumeMultiplier = 1.0f;
+
+	// 다른 플레이어에게 들리는 발사/재장전 사운드 볼륨 배율.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
+	float RemoteListenerVolumeMultiplier = 0.2f;
 
 	// --- VFX 슬롯 ---
 	// 총구화염. 비어 있으면 재생하지 않는다.

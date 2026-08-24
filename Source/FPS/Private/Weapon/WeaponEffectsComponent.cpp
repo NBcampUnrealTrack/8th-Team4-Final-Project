@@ -111,13 +111,20 @@ void UWeaponEffectsComponent::Multicast_PlayFireSound_Implementation(FVector Loc
 {
 	if (FireSound && GetOwner())
 	{
+		// 시전자/비시전자 볼륨 설정
+		const float VolumeMultiplier = IsLocalShooterListening()
+			? LocalListenerVolumeMultiplier
+			: RemoteListenerVolumeMultiplier;
+
 		UGameplayStatics::SpawnSoundAttached(
 			FireSound,
 			GetOwner()->GetRootComponent(),
 			NAME_None,
 			Location,
 			FRotator::ZeroRotator,
-			EAttachLocation::KeepWorldPosition);
+			EAttachLocation::KeepWorldPosition,
+			false,
+			VolumeMultiplier);
 	}
 }
 
@@ -125,8 +132,28 @@ void UWeaponEffectsComponent::Multicast_PlayWeaponSound_Implementation(USoundBas
 {
 	if (Sound && GetOwner())
 	{
-		UGameplayStatics::SpawnSoundAttached(Sound, GetOwner()->GetRootComponent());
+		// 본인/타인 볼륨을 차등 적용
+		const float VolumeMultiplier = IsLocalShooterListening()
+			? LocalListenerVolumeMultiplier
+			: RemoteListenerVolumeMultiplier;
+
+		UGameplayStatics::SpawnSoundAttached(
+			Sound,
+			GetOwner()->GetRootComponent(),
+			NAME_None,
+			FVector(ForceInit),
+			FRotator::ZeroRotator,
+			EAttachLocation::KeepRelativeOffset,
+			false,
+			VolumeMultiplier);
 	}
+}
+
+bool UWeaponEffectsComponent::IsLocalShooterListening() const
+{
+	const AActor* WeaponOwner = GetOwner();
+	const APawn* OwningPawn = WeaponOwner ? Cast<APawn>(WeaponOwner->GetOwner()) : nullptr;
+	return OwningPawn && OwningPawn->IsLocallyControlled();
 }
 
 void UWeaponEffectsComponent::Multicast_PlayMuzzleEffects_Implementation(const TArray<FVector>& PelletDirections)
