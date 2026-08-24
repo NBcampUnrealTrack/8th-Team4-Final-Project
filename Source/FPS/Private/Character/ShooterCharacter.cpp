@@ -3,22 +3,15 @@
 
 #include "Character/ShooterCharacter.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
-#include "AbilitySystemComponent.h"
-#include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameMode/BaseRoundGameMode.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/Controller.h"
-#include "Player/BaseRoundPlayerController.h"
+#include "GameFlow/Round/BaseRoundGameMode.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Player/ShooterPlayerState.h"
-#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
@@ -124,25 +117,27 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 		return true;
 	}
 
-	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
+	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass, DefaultMeleeWeaponClass))
 	{
 		UE_LOG(
 			LogShooterCharacter,
 			Error,
-			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
+			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s Melee=%s"),
 			*GetNameSafe(this),
 			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
-			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+			*GetNameSafe(DefaultSecondaryWeaponClass.Get()),
+			*GetNameSafe(DefaultMeleeWeaponClass.Get()));
 		return false;
 	}
 
 	UE_LOG(
 		LogShooterCharacter,
 		Log,
-		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
+		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s Melee=%s"),
 		*GetNameSafe(this),
 		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
+		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)));
 
 	return true;
 }
@@ -388,49 +383,5 @@ void AShooterCharacter::HandleSprintReleased()
 	}
 }
 
-void AShooterCharacter::HandleWeaponSlotPressed(const EWeaponSlot WeaponSlot)
-{
-	if (HasAuthority())
-	{
-		TrySwitchWeaponSlot(WeaponSlot);
-		return;
-	}
-
-	ServerSwitchWeaponSlot(WeaponSlot);
-}
-
-void AShooterCharacter::ServerSwitchWeaponSlot_Implementation(const EWeaponSlot WeaponSlot)
-{
-	TrySwitchWeaponSlot(WeaponSlot);
-}
-
-bool AShooterCharacter::TrySwitchWeaponSlot(const EWeaponSlot WeaponSlot)
-{
-	if (!HasAuthority() || !IsValid(Combat))
-	{
-		return false;
-	}
-
-	const ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(GetController());
-	if (IsValid(RoundPlayerController) && !RoundPlayerController->CanUseCombatInput())
-	{
-		return false;
-	}
-
-	const AWeaponBase* PreviousWeapon = Combat->GetCurrentWeapon();
-	if (!Combat->SwitchWeaponSlot(WeaponSlot))
-	{
-		return false;
-	}
-
-	if (Combat->GetCurrentWeapon() != PreviousWeapon)
-	{
-		FGameplayEventData Payload;
-		Payload.EventTag = RogueTags::Event_Weapon_Swap;
-		Payload.Instigator = this;
-		Payload.Target = this;
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, RogueTags::Event_Weapon_Swap, Payload);
-	}
-
-	return true;
-}
+// 무기 슬롯 전환은 UGA_SwitchWeapon(GAS 어빌리티)이 담당한다 - Fire/Reload와 동일하게
+// 입력 태그 -> 어빌리티 경로를 타며, Character는 더 이상 스왑을 직접 호출하지 않는다.

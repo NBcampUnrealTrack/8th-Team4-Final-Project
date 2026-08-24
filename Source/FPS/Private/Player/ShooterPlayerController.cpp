@@ -11,6 +11,7 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "Weapon/WeaponTypes.h"
@@ -97,15 +98,6 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
 	}
-	if (InputConfig->PrimaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->PrimaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_PrimaryWeaponPressed);
-	}
-	if (InputConfig->SecondaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->SecondaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_SecondaryWeaponPressed);
-	}
-
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
 		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
@@ -140,62 +132,15 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	ServerSetLobbyReady(bNewLobbyReady);
 }
 
-void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
+void AShooterPlayerController::ToggleDynamicCrosshair()
 {
-	if (HasAuthority())
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
 	{
-		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
-		{
-			LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
-		}
 		return;
 	}
 
-	ServerSetLobbyTeam(RequestedTeam);
-}
-
-void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
-{
-	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
-	{
-		LoadingScreenSubsystem->BindToRoundGameState(
-			GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
-		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
-	}
-}
-
-void AShooterPlayerController::SetLoadingProgress(const float Progress)
-{
-	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
-	{
-		// Seamless travel 직후 GameState 복제가 늦은 경우 UI 준비 시점에 다시 바인딩한다.
-		LoadingScreenSubsystem->BindToRoundGameState(
-			GetWorld() ? GetWorld()->GetGameState<ABaseRoundGameState>() : nullptr);
-		LoadingScreenSubsystem->SetLoadingProgress(Progress);
-	}
-}
-
-void AShooterPlayerController::HideLoadingScreen()
-{
-	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
-	{
-		LoadingScreenSubsystem->HideLoadingScreen();
-	}
-}
-
-void AShooterPlayerController::ClientShowLoadingScreen_Implementation(const float InitialProgress)
-{
-	ShowLoadingScreen(InitialProgress);
-}
-
-void AShooterPlayerController::ClientSetLoadingProgress_Implementation(const float Progress)
-{
-	SetLoadingProgress(Progress);
-}
-
-void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
-{
-	HideLoadingScreen();
+	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
@@ -304,32 +249,6 @@ void AShooterPlayerController::Input_SprintReleased()
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintReleased();
-	}
-}
-
-void AShooterPlayerController::Input_PrimaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
-	}
-}
-
-void AShooterPlayerController::Input_SecondaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
 	}
 }
 
