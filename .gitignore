@@ -6,6 +6,7 @@ IDE
 *.user
 *.userosscache
 *.sln.docstates
+*.sln
 
 Unreal generated folders
 
