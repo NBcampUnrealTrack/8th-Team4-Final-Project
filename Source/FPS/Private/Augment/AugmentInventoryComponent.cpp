@@ -11,6 +11,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
 
@@ -177,17 +178,7 @@ bool UAugmentInventoryComponent::SetOffers(
 void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& OutState) const
 {
 	OutState.Owned = Entries;
-
-	// 액티브 계열 보유 수
-	OutState.OwnedActiveCount = 0;
-	for (const FAugmentInventoryEntry& Entry : Entries)
-	{
-		const UAugmentDefinition* Definition = ResolveDefinition(Entry.DefinitionId);
-		if (Definition && Definition->AugmentCategory == EAugmentCategory::Active)
-		{
-			++OutState.OwnedActiveCount;
-		}
-	}
+	OutState.bHasFreeInputSlot = FindFreeInputSlot().IsValid();
 
 	// 무기 보유 조건 태그
 	OutState.UnlockTags.Reset();
@@ -220,7 +211,7 @@ void UAugmentInventoryComponent::MarkOffersSeen(const TArray<FAugmentInventoryEn
 	}
 }
 
-void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferIndex)
+void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferIndex, int32 SlotIndex)
 {
 	if (!bOfferSelectionEnabled)
 	{
@@ -230,7 +221,7 @@ void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferInd
 		return;
 	}
 
-	StageOfferSelection(OfferIndex, TEXT("클라이언트 선택"));
+	StageOfferSelection(OfferIndex, SlotIndex, TEXT("클라이언트 선택"));
 }
 
 // 0보다 크면 UI의 버튼 활성화
@@ -339,7 +330,7 @@ bool UAugmentInventoryComponent::AutoSelectOffer()
 		TEXT("[AugmentInventory] %s: 자동 선택 %d번 (후보 %d장, 시드 %d)"),
 		*GetNameSafe(Owner), PickedIndex, Offers.Num(), static_cast<int32>(AutoSelectSeed));
 
-	return StageOfferSelection(PickedIndex, TEXT("자동 선택"));
+	return StageOfferSelection(PickedIndex, INDEX_NONE, TEXT("자동 선택"));
 }
 
 bool UAugmentInventoryComponent::CanCommitStagedOffer() const
@@ -369,13 +360,56 @@ bool UAugmentInventoryComponent::CommitStagedOffer()
 	}
 
 	UAugmentDefinition* Definition = ResolveDefinition(StagedOffer.DefinitionId);
+	if (!IsValid(Definition))
+	{
+		return false;
+	}
+
+	const FGameplayTag TargetSlot = ResolveTargetInputSlot(*Definition, StagedOffer.InputSlotTag);
+	if (Definition->AugmentCategory == EAugmentCategory::Active && !TargetSlot.IsValid())
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s: 빈 입력 슬롯이 없어 %s 를 부여하지 않습니다. "
+			     "액티브 정원과 슬롯 수가 어긋났습니다"),
+			*GetNameSafe(GetOwner()), *Definition->LineTag.ToString());
+		return false;
+	}
+	
+	// 배정된 칸을 다른 계열이 쓰고 있는지 확인
+	const int32 DisplacedIndex = FindEntryIndexInSlot(TargetSlot);
+	const bool bNeedsDisplace = DisplacedIndex != INDEX_NONE
+		&& !Entries[DisplacedIndex].LineTag.MatchesTagExact(Definition->LineTag);
+
+	const FGameplayTag DisplacedLine = bNeedsDisplace ? Entries[DisplacedIndex].LineTag : FGameplayTag();
+	const FGameplayTag FreeSlot      = bNeedsDisplace ? FindFreeInputSlot() : FGameplayTag();
+
+	if (bNeedsDisplace && !FreeSlot.IsValid())
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s: %s 를 밀어낼 빈 칸이 없습니다"),
+			*GetNameSafe(GetOwner()), *DisplacedLine.ToString());
+		return false;
+	}
+
 	StagedPreviousLine = CaptureLineSnapshot(StagedOffer.LineTag);
 	StagedOfferState = EAugmentOfferCommitState::RecoveryPending;
 
-	if (!IsValid(Definition)
-		|| !ApplyLineAugment(*Definition, StagedOffer.Level, StagedPreviousLine.EntryIndex))
+	// 선택한 증강 부여
+	bool bApplied = ApplyLineAugment(*Definition, StagedOffer.Level, StagedPreviousLine.EntryIndex, TargetSlot);
+
+	// 부여 후 기존 증강을 옮김
+	if (bApplied && bNeedsDisplace)
+	{
+		bApplied = MoveEntryToInputSlot(FindEntryIndexInLine(DisplacedLine), FreeSlot);
+
+		StagedDisplacedLine = bApplied ? DisplacedLine : FGameplayTag();
+		StagedDisplacedSlot = bApplied ? TargetSlot : FGameplayTag();
+	}
+
+	if (!bApplied)
 	{
 		const bool bRestored = RestoreLineSnapshot(StagedPreviousLine);
+
 		RebuildConditionalRuleCache();
 		OnInventoryChanged.Broadcast();
 
@@ -414,7 +448,12 @@ bool UAugmentInventoryComponent::RollbackStagedOfferCommit()
 		return true;
 	}
 
-	const bool bRestored = RestoreLineSnapshot(StagedPreviousLine);
+	// 증강을 이전 상태로 되돌림
+	const bool bLineRestored = RestoreLineSnapshot(StagedPreviousLine);
+	const bool bSlotRestored = !StagedDisplacedLine.IsValid()
+		|| MoveEntryToInputSlot(FindEntryIndexInLine(StagedDisplacedLine), StagedDisplacedSlot);
+	const bool bRestored     = bLineRestored && bSlotRestored;
+
 	RebuildConditionalRuleCache();
 	OnInventoryChanged.Broadcast();
 	if (bRestored)
@@ -428,7 +467,7 @@ bool UAugmentInventoryComponent::RollbackStagedOfferCommit()
 	return bRestored;
 }
 
-bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCHAR* Reason)
+bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, int32 SlotIndex, const TCHAR* Reason)
 {
 	const AActor* Owner = GetOwner();
 	if (StagedOfferState != EAugmentOfferCommitState::Empty)
@@ -448,6 +487,10 @@ bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCH
 	}
 
 	StagedOffer = Offers[OfferIndex];
+
+	// 범위 밖이면 슬롯 자동 배정
+	StagedOffer.InputSlotTag = RogueTags::GetActiveInputSlot(SlotIndex);
+
 	StagedOfferState = EAugmentOfferCommitState::Selected;
 	if (!CanCommitStagedOffer())
 	{
@@ -468,6 +511,8 @@ void UAugmentInventoryComponent::ClearStagedOffer()
 	StagedOffer = FAugmentInventoryEntry();
 	StagedPreviousLine.Reset();
 	StagedOfferState = EAugmentOfferCommitState::Empty;
+	StagedDisplacedLine = FGameplayTag();
+	StagedDisplacedSlot = FGameplayTag();
 }
 
 void UAugmentInventoryComponent::ClearRoundDraftState()
@@ -621,6 +666,91 @@ int32 UAugmentInventoryComponent::FindEntryIndexInLine(const FGameplayTag& LineT
 		[&LineTag](const FAugmentInventoryEntry& Entry) { return Entry.LineTag.MatchesTagExact(LineTag); });
 }
 
+int32 UAugmentInventoryComponent::FindEntryIndexInSlot(const FGameplayTag& SlotTag) const
+{
+	return Entries.IndexOfByPredicate(
+		[&SlotTag](const FAugmentInventoryEntry& Entry) { return Entry.InputSlotTag.MatchesTagExact(SlotTag); });
+}
+
+bool UAugmentInventoryComponent::DoesOfferNeedInputSlot(const int32 OfferIndex) const
+{
+	const UAugmentDefinition* Definition = Offers.IsValidIndex(OfferIndex)
+		? ResolveDefinition(Offers[OfferIndex].DefinitionId) : nullptr;
+
+	// 액티브 증강이 아니거나, 레벨업이면 슬롯 선택이 필요하지 않음
+	return IsValid(Definition)
+		&& Definition->AugmentCategory == EAugmentCategory::Active
+		&& FindEntryIndexInLine(Definition->LineTag) == INDEX_NONE;
+}
+
+FGameplayTag UAugmentInventoryComponent::ResolveTargetInputSlot(
+	const UAugmentDefinition& Definition, const FGameplayTag Requested) const
+{
+	if (Definition.AugmentCategory != EAugmentCategory::Active)
+	{
+		return FGameplayTag();
+	}
+
+	// 레벨업은 쓰던 칸 유지
+	const int32 OwnedIndex = FindEntryIndexInLine(Definition.LineTag);
+	if (OwnedIndex != INDEX_NONE)
+	{
+		return Entries[OwnedIndex].InputSlotTag;
+	}
+
+	return Requested.IsValid() ? Requested : FindFreeInputSlot();
+}
+
+// 슬롯 태그 교체
+bool UAugmentInventoryComponent::MoveEntryToInputSlot(const int32 EntryIndex, const FGameplayTag NewSlot)
+{
+	const FAugmentGrantHandles* Handles = Entries.IsValidIndex(EntryIndex)
+		? GrantHandlesByLine.Find(Entries[EntryIndex].LineTag) : nullptr;
+
+	if (!Handles || !IsValid(AbilitySystemComponent) || !NewSlot.IsValid())
+	{
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s: 엔트리 %d 를 %s 로 옮기지 못했습니다"),
+			*GetNameSafe(GetOwner()), EntryIndex, *NewSlot.ToString());
+		return false;
+	}
+
+	const FGameplayTag OldSlot = Entries[EntryIndex].InputSlotTag;
+
+	// 새로운 슬롯으로 교체
+	for (const FGameplayAbilitySpecHandle& Handle : Handles->AbilityHandles)
+	{
+		FGameplayAbilitySpec* Spec = AbilitySystemComponent->FindAbilitySpecFromHandle(Handle);
+		if (!Spec || !Spec->GetDynamicSpecSourceTags().HasTagExact(OldSlot))
+		{
+			continue;
+		}
+
+		Spec->GetDynamicSpecSourceTags().RemoveTag(OldSlot);
+		Spec->GetDynamicSpecSourceTags().AddTag(NewSlot);
+		Spec->InputPressed = false;
+
+		AbilitySystemComponent->MarkAbilitySpecDirty(*Spec);
+	}
+
+	Entries[EntryIndex].InputSlotTag = NewSlot;
+	return true;
+}
+
+FGameplayTag UAugmentInventoryComponent::FindFreeInputSlot() const
+{
+	for (int32 Index = 0; Index < RogueTags::ActiveInputSlotCount; ++Index)
+	{
+		const FGameplayTag Slot = RogueTags::GetActiveInputSlot(Index);
+		if (FindEntryIndexInSlot(Slot) == INDEX_NONE)
+		{
+			return Slot;
+		}
+	}
+
+	return FGameplayTag();
+}
+
 FAugmentLineSnapshot UAugmentInventoryComponent::CaptureLineSnapshot(const FGameplayTag& LineTag) const
 {
 	FAugmentLineSnapshot Snapshot;
@@ -656,7 +786,8 @@ void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 bool UAugmentInventoryComponent::ApplyLineAugment(
 	UAugmentDefinition& Definition,
 	const int32 Level,
-	const int32 EntryIndex)
+	const int32 EntryIndex,
+	const FGameplayTag InputSlotTag)
 {
 	if (!IsValid(AbilitySystemComponent) || !Definition.LineTag.IsValid() || !Definition.HasLevel(Level))
 	{
@@ -667,7 +798,7 @@ bool UAugmentInventoryComponent::ApplyLineAugment(
 
 	FAugmentResolvedGrant Resolved;
 	FAugmentGrantHandles NewHandles;
-	if (RogueAugmentAssembler::ResolveAugment(Definition, Level, Resolved))
+	if (RogueAugmentAssembler::ResolveAugment(Definition, Level, Resolved, InputSlotTag))
 	{
 		NewHandles = RogueAugmentAssembler::ApplyResolved(*AbilitySystemComponent, Resolved);
 	}
@@ -680,7 +811,7 @@ bool UAugmentInventoryComponent::ApplyLineAugment(
 	}
 
 	GrantHandlesByLine.Add(Definition.LineTag, MoveTemp(NewHandles));
-	const FAugmentInventoryEntry NewEntry = FAugmentInventoryEntry::Make(Definition, Level);
+	const FAugmentInventoryEntry NewEntry = FAugmentInventoryEntry::Make(Definition, Level, InputSlotTag);
 	if (EntryIndex == INDEX_NONE)
 	{
 		Entries.Add(NewEntry);
@@ -716,7 +847,9 @@ bool UAugmentInventoryComponent::RestoreLineSnapshot(const FAugmentLineSnapshot&
 		return false;
 	}
 
-	return ApplyLineAugment(*PreviousDefinition, PreviousEntry.Level, Snapshot.EntryIndex);
+	// 슬롯도 스냅샷에서 되돌린다. 빠뜨리면 복원이 배치를 초기화한다
+	return ApplyLineAugment(*PreviousDefinition, PreviousEntry.Level, Snapshot.EntryIndex,
+		PreviousEntry.InputSlotTag);
 }
 
 void UAugmentInventoryComponent::RebuildConditionalRuleCache()

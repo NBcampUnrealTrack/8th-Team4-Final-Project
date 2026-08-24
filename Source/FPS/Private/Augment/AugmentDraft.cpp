@@ -218,10 +218,10 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	// 액티브 증강이 보유 상한에 걸린 경우, 레벨업은 예외
+	// 액티브 증강이 쓸 빈 칸이 없는 경우, 레벨업은 예외
 	if (!bIsLevelUp
 		&& Definition.AugmentCategory == EAugmentCategory::Active
-		&& State.OwnedActiveCount >= Rules.MaxActiveLines)
+		&& !State.bHasFreeInputSlot)
 	{
 		return false;
 	}

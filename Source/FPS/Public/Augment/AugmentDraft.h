@@ -24,9 +24,6 @@ struct FAugmentDraftRules
 
 	// 보유 증강 상한
 	int32 MaxOwnedLines = 5;
-
-	// 보유 액티브 증강 상한
-	int32 MaxActiveLines = 2;
 };
 
 // 후보 판정에 쓰는 플레이어 상태
@@ -38,8 +35,8 @@ struct FAugmentDraftEligibility
 	// 보유 목록. 인벤토리의 Entries
 	TArray<FAugmentInventoryEntry> Owned;
 
-	// 보유 중인 액티브 증강 수
-	int32 OwnedActiveCount = 0;
+	// 액티브 증강이 들어갈 빈 입력 슬롯이 남았는지
+	bool bHasFreeInputSlot = false;
 
 	// ASC 가 보유한 해금 태그
 	FGameplayTagContainer UnlockTags;

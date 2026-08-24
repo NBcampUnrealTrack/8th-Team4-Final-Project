@@ -164,7 +164,11 @@ void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 {
 	if (BoundInventory.IsValid())
 	{
-		BoundInventory->ServerSelectOffer(OfferIndex);
+		// TODO: 액티브 증강 키 선택 UI가 없으므로, INDEX_NONE 을 임시로 넣었습니다.
+		// 나중에 키 선택 UI가 생기면, 고른 슬롯 번호(0-based)를 INDEX_NONE 대신 넣어주면 됩니다.
+		// Slot1(Q) = 0, Slot2(E) = 1 으로 정해두었습니다.
+		// 액티브 증강이 아닌 경우, INDEX_NONE 을 넣어주면 됩니다.
+		BoundInventory->ServerSelectOffer(OfferIndex, INDEX_NONE);
 	}
 
 	HideAugmentSelect();

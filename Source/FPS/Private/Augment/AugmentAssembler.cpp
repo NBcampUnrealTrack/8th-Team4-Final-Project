@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/AugmentDefinition.h"
 #include "Augment/RogueGameplayAbility.h"
+#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAssembler, Log, All);
 
@@ -115,7 +116,8 @@ namespace
 bool RogueAugmentAssembler::ResolveAugment(
 	const UAugmentDefinition& Definition,
 	int32 Level,
-	FAugmentResolvedGrant& OutResolved)
+	FAugmentResolvedGrant& OutResolved,
+	FGameplayTag SlotOverride)
 {
 	OutResolved = FAugmentResolvedGrant();
 
@@ -165,7 +167,10 @@ bool RogueAugmentAssembler::ResolveAugment(
 			continue;
 		}
 
-		OutResolved.Abilities.Add({ AbilityClass, Granted.InputTag });
+		// 인풋 태그가 RogueTags::InputTag_Ability_AugmentSlot 이면 SlotOverride 로 교체
+		const bool bTakesSlot = Granted.InputTag == RogueTags::InputTag_Ability_AugmentSlot;
+
+		OutResolved.Abilities.Add({ AbilityClass, bTakesSlot ? SlotOverride : Granted.InputTag });
 	}
 
 	// 하나라도 실패하면 해석 자체를 실패
