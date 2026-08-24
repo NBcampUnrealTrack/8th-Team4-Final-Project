@@ -118,7 +118,7 @@ void UShooterUIInitComponent::TryStartInGameUI()
 void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers)
 {
 	// 이미 증강이 떠있으면 return
-	if (AugmentSelectInstance && AugmentSelectInstance->IsInViewport())
+	if (IsValid(AugmentSelectInstance) && AugmentSelectInstance->IsActivated())
 	{
 		AugmentSelectInstance->SetOffers(InOffers);
 

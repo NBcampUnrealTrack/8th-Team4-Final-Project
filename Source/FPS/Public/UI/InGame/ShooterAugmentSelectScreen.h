@@ -31,11 +31,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "UI")
 	FOnAugmentSelected OnAugmentSelected;
 
-	/** 테스트 후 삭제 */
-#if !UE_BUILD_SHIPPING
-	void DebugFillWithFirstOffers(int32 Count);
-#endif
-	
 protected:
 	virtual void NativeDestruct() override;
 	
