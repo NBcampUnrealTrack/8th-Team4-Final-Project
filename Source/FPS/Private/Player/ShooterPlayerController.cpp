@@ -14,12 +14,14 @@
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
+#include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
 #include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
+	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
 }
 
 void AShooterPlayerController::BeginPlay()
@@ -186,6 +188,11 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerController::StartVoiceTalking()
 {
+	if (IsLocalController() && SteamVoiceComponent)
+	{
+		SteamVoiceComponent->StartCapture();
+	}
+
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -200,6 +207,11 @@ void AShooterPlayerController::StartVoiceTalking()
 
 void AShooterPlayerController::StopVoiceTalking()
 {
+	if (IsLocalController() && SteamVoiceComponent)
+	{
+		SteamVoiceComponent->StopCapture();
+	}
+
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -385,6 +397,17 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState))
 	{
 		return;
+	}
+
+	if (SteamVoiceComponent)
+	{
+		TArray<uint8> PcmVoiceData;
+		int32 SampleRate = 0;
+		SteamVoiceComponent->DecompressVoicePacket(
+			SpeakerPlayerState,
+			CompressedVoiceData,
+			PcmVoiceData,
+			SampleRate);
 	}
 
 	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);

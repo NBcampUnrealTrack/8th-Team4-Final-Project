@@ -14,6 +14,7 @@ class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
 class UShooterInputConfig;
+class USteamVoiceComponent;
 class APlayerState;
 struct FInputActionValue;
 
@@ -60,6 +61,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
+
+	USteamVoiceComponent* GetSteamVoiceComponent() const { return SteamVoiceComponent; }
 
 	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Input")
@@ -124,6 +127,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Network", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNetworkTimeSyncComponent> NetworkTimeSyncComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
+	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
 
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
