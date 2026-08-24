@@ -191,20 +191,27 @@ void ABaseRoundGameMode::OpenNextRound()
 	if (bEnableAugmentDraft)
 	{
 		// 서버 페이즈를 먼저 전환한 뒤 선택 RPC 게이트를 연다.
-		RoundGameState->SetGameFlowPhase(EGameFlowPhase::AugmentSelecting, AugmentSelectionDuration);
+		RoundGameState->SetGameFlowPhase(
+			EGameFlowPhase::AugmentSelecting,
+			AugmentSelectionDuration);
+
 		if (!DraftManager->OpenDraft())
 		{
 			SuspendRoundOpening(TEXT("Augment draft activation failed."));
 			return;
 		}
 
-		SetRoundParticipantInputEnabled(true);
+		// 증강 선택/상점 준비 페이즈에서는 게임플레이 입력을 차단한다.
+		// B/ESC 같은 시스템 입력은 SystemMappingContext에서 별도로 유지된다.
+		SetRoundParticipantInputEnabled(false);
+
 		GetWorldTimerManager().SetTimer(
 			PhaseTimerHandle,
 			this,
 			&ABaseRoundGameMode::FinishAugmentDraft,
 			AugmentSelectionDuration,
 			false);
+
 		return;
 	}
 
