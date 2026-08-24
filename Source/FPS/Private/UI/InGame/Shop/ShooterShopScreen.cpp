@@ -1,4 +1,4 @@
-#include "UI/InGame/Shop/ShooterShopScreen.h"
+ï»¿#include "UI/InGame/Shop/ShooterShopScreen.h"
 
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelWidget.h"
@@ -95,6 +95,7 @@ void UShooterShopScreen::NativeOnDeactivated()
 		if (IsValid(ItemRow))
 		{
 			ItemRow->OnPurchaseRequested.RemoveAll(this);
+			ItemRow->OnRefundRequested.RemoveAll(this);
 		}
 	}
 
@@ -128,6 +129,18 @@ void UShooterShopScreen::HandlePendingStateChanged()
 void UShooterShopScreen::HandleItemPurchaseRequested(const FGameplayTag ItemId)
 {
 	RequestPurchase(ItemId);
+}
+
+void UShooterShopScreen::HandleItemRefundRequested(const FGameplayTag ItemId)
+{
+	UShopPurchaseComponent* PurchaseComponent = BoundPurchaseComponent.Get();
+	if (!IsValid(PurchaseComponent))
+	{
+		return;
+	}
+
+	PurchaseComponent->ServerRefundPendingItem(ItemId);
+	RefreshItemRows();
 }
 
 void UShooterShopScreen::RefreshCredits()
@@ -235,6 +248,7 @@ void UShooterShopScreen::RebuildItemRows()
 
 		ItemRow->SetItemData(Definition, Presentation);
 		ItemRow->OnPurchaseRequested.AddUObject(this, &ThisClass::HandleItemPurchaseRequested);
+		ItemRow->OnRefundRequested.AddUObject(this, &ThisClass::HandleItemRefundRequested);
 
 		UPanelSlot* AddedSlot = TargetPanel->AddChild(ItemRow);
 		if (UHorizontalBoxSlot* HorizontalSlot = Cast<UHorizontalBoxSlot>(AddedSlot))
@@ -272,8 +286,13 @@ void UShooterShopScreen::RefreshItemRows()
 		int32 Price = 0;
 		const EShopPurchaseResult Result =
 			PurchaseComponent->GetPurchaseEligibility(ItemRow->GetItemId(), Price);
+		const FGameplayTag ItemId = ItemRow->GetItemId();
+		const bool bIsPending = PurchaseComponent->IsPendingWeaponPurchase(ItemId)
+			|| PurchaseComponent->GetPendingShieldItemId().MatchesTagExact(ItemId);
+		const bool bIsEquippedPending =
+			PurchaseComponent->GetPendingWeaponItemId().MatchesTagExact(ItemId);
 
-		ItemRow->RefreshPurchaseState(Price, Result);
+		ItemRow->RefreshPurchaseState(Price, Result, bIsPending, bIsEquippedPending);
 	}
 }
 
@@ -348,7 +367,7 @@ void UShooterShopScreen::RequestPurchase(const FGameplayTag ItemId)
 
 	PurchaseComponent->ServerPurchaseItem(ItemId);
 
-	// Listen Server¿¡¼­´Â RPC Ã³¸®°¡ Áï½Ã ³¡³¯ ¼ö ÀÖÀ¸¹Ç·Î ÇöÀç »óÅÂ¸¦ ÇÑ ¹ø ´õ ¹İ¿µÇÑ´Ù.
+	// Listen Serverì—ì„œëŠ” RPC ì²˜ë¦¬ê°€ ì¦‰ì‹œ ëë‚  ìˆ˜ ìˆìœ¼ë¯€ë¡œ í˜„ì¬ ìƒíƒœë¥¼ í•œ ë²ˆ ë” ë°˜ì˜í•œë‹¤.
 	RefreshItemRows();
 }
 

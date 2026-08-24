@@ -147,8 +147,11 @@ void ABaseRoundGameMode::NotifyPlayerEliminatedBy(
 	HandleModePlayerEliminated(EliminatedPlayerState);
 }
 
-bool ABaseRoundGameMode::CommitPendingShopPurchases()
+bool ABaseRoundGameMode::GatherRoundParticipantPurchaseComponents(
+	TArray<UShopPurchaseComponent*>& OutPurchaseComponents) const
 {
+	OutPurchaseComponents.Reset();
+
 	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
 	if (!IsValid(PlayerManager))
 	{
@@ -157,6 +160,7 @@ bool ABaseRoundGameMode::CommitPendingShopPurchases()
 
 	TArray<AShooterPlayerState*> Participants;
 	PlayerManager->GetRoundParticipants(Participants);
+	OutPurchaseComponents.Reserve(Participants.Num());
 
 	for (AShooterPlayerState* PlayerState : Participants)
 	{
@@ -178,13 +182,54 @@ bool ABaseRoundGameMode::CommitPendingShopPurchases()
 			return false;
 		}
 
+		OutPurchaseComponents.Add(PurchaseComponent);
+	}
+
+	return true;
+}
+
+bool ABaseRoundGameMode::CanCommitPendingShopPurchases() const
+{
+	TArray<UShopPurchaseComponent*> PurchaseComponents;
+	if (!GatherRoundParticipantPurchaseComponents(PurchaseComponents))
+	{
+		return false;
+	}
+
+	for (const UShopPurchaseComponent* PurchaseComponent : PurchaseComponents)
+	{
+		if (!PurchaseComponent->CanCommitPendingPurchases())
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Cannot commit pending shop purchases for %s."),
+				*GetNameSafe(PurchaseComponent->GetOwner()));
+
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool ABaseRoundGameMode::CommitPendingShopPurchases()
+{
+	TArray<UShopPurchaseComponent*> PurchaseComponents;
+	if (!GatherRoundParticipantPurchaseComponents(PurchaseComponents))
+	{
+		return false;
+	}
+
+	for (UShopPurchaseComponent* PurchaseComponent : PurchaseComponents)
+	{
 		if (!PurchaseComponent->CommitPendingPurchases())
 		{
 			UE_LOG(
 				LogBaseRoundGameMode,
 				Error,
-				TEXT("Failed to commit pending shop purchases for %s."),
-				*GetNameSafe(PlayerState));
+				TEXT("Failed to commit prevalidated shop purchases for %s."),
+				*GetNameSafe(PurchaseComponent->GetOwner()));
 
 			return false;
 		}

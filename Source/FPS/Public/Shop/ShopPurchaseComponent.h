@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -34,6 +34,10 @@ public:
 		FGameplayTag ItemId,
 		int32& OutPrice) const;
 
+	// 모든 Pending 거래와 적용 대상을 변경 없이 확인한다.
+	// GameMode는 전 참가자가 통과한 뒤에만 라운드 확정을 시작한다.
+	bool CanCommitPendingPurchases() const;
+
 	// 라운드 시작 시 Pending 거래를 확정한다. false면 해소되지 않은 Pending이 남아 있다.
 	bool CommitPendingPurchases();
 
@@ -65,9 +69,16 @@ public:
 	FOnShopPendingStateChanged OnPendingStateChanged;
 
 private:
+	struct FPendingWeaponCommit
+	{
+		FGameplayTag ItemId;
+		FShopTransactionHandle Transaction;
+		FGameplayTag WeaponTag;
+	};
+
 	// 주무기: 미소지 상품은 정가로 Pending 구매하고, 소지 상품은 무료 장착한다.
 	bool TryPurchasePrimaryWeapon(UShopComponent& Shop, const FShopItemDefinition& Definition);
-	bool TryEquipOwnedWeapon(EWeaponType WeaponType);
+	bool TryEquipOwnedWeapon(FGameplayTag WeaponTag);
 
 	// 권총/칼 업그레이드: 구매 즉시 확정한다.
 	bool TryPurchaseWeaponUpgrade(UShopComponent& Shop, const FShopItemDefinition& Definition);
@@ -82,7 +93,15 @@ private:
 	void RemovePendingShieldEffect();
 
 	// 라운드 시작 시 상품군별 Pending을 확정한다.
-	bool CommitPendingWeapons(UShopComponent& Shop);
+	bool BuildPendingWeaponCommitPlan(
+		const UShopComponent& Shop,
+		TArray<FPendingWeaponCommit>& OutPendingCommits,
+		FGameplayTag& OutDesiredEquippedPrimary) const;
+	bool CanCommitPendingShield(const UShopComponent& Shop) const;
+	bool CommitPendingWeapons(
+		UShopComponent& Shop,
+		const TArray<FPendingWeaponCommit>& PendingCommits,
+		FGameplayTag DesiredEquippedPrimary);
 	bool CommitPendingShield(UShopComponent& Shop);
 
 	// GE를 적용하고 Active 핸들을 반환한다. 적용 실패 시 무효 핸들이다.

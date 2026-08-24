@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
-#include "Weapon/WeaponTypes.h"
 
 #include "ShopTypes.generated.h"
 
@@ -51,11 +50,11 @@ struct FShopItemDefinition
 		const FGameplayTag InItemId,
 		const EShopItemType InItemType,
 		const int32 InBasePrice,
-		const EWeaponType InGrantedWeaponType = EWeaponType::None)
+		const FGameplayTag InGrantedWeaponTag = FGameplayTag())
 		: ItemId(InItemId)
 		, ItemType(InItemType)
 		, BasePrice(InBasePrice)
-		, GrantedWeaponType(InGrantedWeaponType)
+		, GrantedWeaponTag(InGrantedWeaponTag)
 	{
 	}
 
@@ -69,7 +68,7 @@ struct FShopItemDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop", meta = (ClampMin = "1", UIMin = "1"))
 	int32 BasePrice = 1;
 
-	// 반복 구매 상품의 단계별 가격이다.
+	// 반복 구매 상품의 단계별 가격이다. GE 레벨을 뜻하지 않으며,
 	// 비어 있으면 BasePrice를 고정 가격으로 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
 	TArray<int32> TierPrices;
@@ -78,9 +77,9 @@ struct FShopItemDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
 	TSoftClassPtr<UGameplayEffect> EffectClass;
 
-	// 상점은 어떤 무기를 지급하는지만 정의한다. 실제 클래스 해석은 Weapon Registry가 담당한다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop")
-	EWeaponType GrantedWeaponType = EWeaponType::None;
+	// 상점이 지급할 무기의 영속 식별자(Weapon.Type.*). 실제 클래스 해석은 Weapon Registry가 담당한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shop", meta = (Categories = "Weapon.Type"))
+	FGameplayTag GrantedWeaponTag;
 };
 
 /** 결제 후 확정 또는 환불할 때 서버 C++ 코드에서만 사용하는 거래 핸들이다. */

@@ -25,6 +25,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
 
+	// 콘솔(~)에서 바로 테스트할 수 있는 임시 진입점. 정식 설정 메뉴가 생기면 그 UI가
+	// UShooterGameUserSettings::SetDynamicCrosshairEnabled를 직접 불러도 된다 - 이 함수는
+	// 그 위에 얹은 토글 편의 기능일 뿐이다.
+	UFUNCTION(Exec)
+	void ToggleDynamicCrosshair();
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
 
@@ -88,8 +94,6 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
-	void Input_PrimaryWeaponPressed();
-	void Input_SecondaryWeaponPressed();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 };

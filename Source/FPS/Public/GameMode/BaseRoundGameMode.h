@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -14,6 +14,7 @@ class APlayerController;
 class AShooterPlayerState;
 class UAugmentDraftManager;
 class UCreditEconomyManager;
+class UShopPurchaseComponent;
 class USurrenderVoteManager;
 enum class EPlayerStartReservationResult : uint8;
 
@@ -90,6 +91,9 @@ private:
 	bool InitializeRoundParticipantCredits();
 	bool ResetEconomyForNewMatch();
 	void SettleCompletedRoundCredits(int32 RoundNumber, EGameTeam WinningTeam);
+	bool GatherRoundParticipantPurchaseComponents(
+		TArray<UShopPurchaseComponent*>& OutPurchaseComponents) const;
+	bool CanCommitPendingShopPurchases() const;
 	bool CommitPendingShopPurchases();
 
 	// 개별 플레이어의 미확정 거래를 같은 정책과 로그 형식으로 정리한다.

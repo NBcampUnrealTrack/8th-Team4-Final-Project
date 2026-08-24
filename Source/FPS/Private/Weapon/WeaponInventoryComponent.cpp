@@ -4,18 +4,6 @@
 #include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
 
-namespace
-{
-	constexpr EWeaponType TrackedWeapons[] =
-	{
-		EWeaponType::AR,
-		EWeaponType::Sniper,
-		EWeaponType::Shotgun,
-		EWeaponType::Pistol,
-		EWeaponType::Knife
-	};
-}
-
 UWeaponInventoryComponent::UWeaponInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -28,7 +16,7 @@ void UWeaponInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 
 	// 상대 팀에게 로드아웃을 알릴 이유가 없다.
 	DOREPLIFETIME_CONDITION(UWeaponInventoryComponent, WeaponStates, COND_OwnerOnly);
-	DOREPLIFETIME_CONDITION(UWeaponInventoryComponent, EquippedPrimary, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(UWeaponInventoryComponent, EquippedPrimaryTag, COND_OwnerOnly);
 }
 
 void UWeaponInventoryComponent::BeginPlay()
@@ -51,11 +39,11 @@ void UWeaponInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemCompon
 	}
 }
 
-bool UWeaponInventoryComponent::IsPrimaryWeapon(const EWeaponType WeaponType)
+bool UWeaponInventoryComponent::IsPrimaryWeaponTag(const FGameplayTag WeaponTag)
 {
-	return WeaponType == EWeaponType::AR
-		|| WeaponType == EWeaponType::Sniper
-		|| WeaponType == EWeaponType::Shotgun;
+	return WeaponTag == RogueTags::Weapon_Type_Rifle
+		|| WeaponTag == RogueTags::Weapon_Type_Sniper
+		|| WeaponTag == RogueTags::Weapon_Type_Shotgun;
 }
 
 bool UWeaponInventoryComponent::HasServerAuthority() const
@@ -64,47 +52,61 @@ bool UWeaponInventoryComponent::HasServerAuthority() const
 	return IsValid(Owner) && Owner->HasAuthority();
 }
 
-FWeaponOwnershipState* UWeaponInventoryComponent::FindState(const EWeaponType WeaponType)
+FWeaponOwnershipState* UWeaponInventoryComponent::FindState(const FGameplayTag WeaponTag)
 {
 	return WeaponStates.FindByPredicate(
-		[WeaponType](const FWeaponOwnershipState& State)
+		[WeaponTag](const FWeaponOwnershipState& State)
 		{
-			return State.WeaponType == WeaponType;
+			return State.WeaponTag == WeaponTag;
 		});
 }
 
-const FWeaponOwnershipState* UWeaponInventoryComponent::FindState(const EWeaponType WeaponType) const
+const FWeaponOwnershipState* UWeaponInventoryComponent::FindState(const FGameplayTag WeaponTag) const
 {
-	return const_cast<UWeaponInventoryComponent*>(this)->FindState(WeaponType);
+	return WeaponStates.FindByPredicate(
+		[WeaponTag](const FWeaponOwnershipState& State)
+		{
+			return State.WeaponTag == WeaponTag;
+		});
 }
 
-bool UWeaponInventoryComponent::IsPossessed(const EWeaponType WeaponType) const
+bool UWeaponInventoryComponent::IsPossessed(const FGameplayTag WeaponTag) const
 {
-	const FWeaponOwnershipState* State = FindState(WeaponType);
+	const FWeaponOwnershipState* State = FindState(WeaponTag);
 	return State && State->bPossessed;
 }
 
-bool UWeaponInventoryComponent::IsUnlocked(const EWeaponType WeaponType) const
+bool UWeaponInventoryComponent::IsUnlocked(const FGameplayTag WeaponTag) const
 {
-	const FWeaponOwnershipState* State = FindState(WeaponType);
+	const FWeaponOwnershipState* State = FindState(WeaponTag);
 	return State && State->bUnlocked;
 }
 
 void UWeaponInventoryComponent::ResetToDefaults()
 {
-	WeaponStates.Reset(UE_ARRAY_COUNT(TrackedWeapons));
+	const FGameplayTag TrackedWeaponTags[] =
+	{
+		RogueTags::Weapon_Type_Rifle,
+		RogueTags::Weapon_Type_Sniper,
+		RogueTags::Weapon_Type_Shotgun,
+		RogueTags::Weapon_Type_Pistol,
+		RogueTags::Weapon_Type_Knife
+	};
 
-	for (const EWeaponType WeaponType : TrackedWeapons)
+	WeaponStates.Reset(UE_ARRAY_COUNT(TrackedWeaponTags));
+
+	for (const FGameplayTag WeaponTag : TrackedWeaponTags)
 	{
 		FWeaponOwnershipState& State = WeaponStates.AddDefaulted_GetRef();
-		State.WeaponType = WeaponType;
+		State.WeaponTag = WeaponTag;
 
 		// 권총/칼은 시작부터 소지하지만 해금은 업그레이드 전까지 닫혀 있다.
-		State.bPossessed = (WeaponType == EWeaponType::Pistol || WeaponType == EWeaponType::Knife);
+		State.bPossessed = (WeaponTag == RogueTags::Weapon_Type_Pistol
+			|| WeaponTag == RogueTags::Weapon_Type_Knife);
 		State.bUnlocked = false;
 	}
 
-	EquippedPrimary = EWeaponType::None;
+	EquippedPrimaryTag = FGameplayTag();
 }
 
 void UWeaponInventoryComponent::ServerInitializeForNewMatch()
@@ -118,14 +120,14 @@ void UWeaponInventoryComponent::ServerInitializeForNewMatch()
 	NotifyInventoryChanged();
 }
 
-bool UWeaponInventoryComponent::ServerConfirmPrimaryPurchase(const EWeaponType WeaponType)
+bool UWeaponInventoryComponent::ServerConfirmPrimaryPurchase(const FGameplayTag WeaponTag)
 {
-	if (!HasServerAuthority() || !IsPrimaryWeapon(WeaponType))
+	if (!HasServerAuthority() || !IsPrimaryWeaponTag(WeaponTag))
 	{
 		return false;
 	}
 
-	FWeaponOwnershipState* State = FindState(WeaponType);
+	FWeaponOwnershipState* State = FindState(WeaponTag);
 	if (!State)
 	{
 		return false;
@@ -133,38 +135,38 @@ bool UWeaponInventoryComponent::ServerConfirmPrimaryPurchase(const EWeaponType W
 
 	State->bPossessed = true;
 	State->bUnlocked = true;
-	EquippedPrimary = WeaponType;
+	EquippedPrimaryTag = WeaponTag;
 
 	NotifyInventoryChanged();
 	return true;
 }
 
-bool UWeaponInventoryComponent::ServerSetEquippedPrimary(const EWeaponType WeaponType)
+bool UWeaponInventoryComponent::ServerSetEquippedPrimary(const FGameplayTag WeaponTag)
 {
 	if (!HasServerAuthority())
 	{
 		return false;
 	}
 
-	// None은 주무기 미장착을 뜻하므로 허용한다.
-	if (WeaponType != EWeaponType::None && !IsPossessed(WeaponType))
+	// 빈 태그는 주무기 미장착을 뜻하므로 허용한다.
+	if (WeaponTag.IsValid() && !IsPossessed(WeaponTag))
 	{
 		return false;
 	}
 
-	EquippedPrimary = WeaponType;
+	EquippedPrimaryTag = WeaponTag;
 	NotifyInventoryChanged();
 	return true;
 }
 
-bool UWeaponInventoryComponent::ServerConfirmWeaponUpgrade(const EWeaponType WeaponType)
+bool UWeaponInventoryComponent::ServerConfirmWeaponUpgrade(const FGameplayTag WeaponTag)
 {
 	if (!HasServerAuthority())
 	{
 		return false;
 	}
 
-	FWeaponOwnershipState* State = FindState(WeaponType);
+	FWeaponOwnershipState* State = FindState(WeaponTag);
 	if (!State || !State->bPossessed)
 	{
 		return false;
@@ -188,19 +190,19 @@ void UWeaponInventoryComponent::SyncUnlockTags()
 			AbilitySystemComponent->SetLooseGameplayTagCount(Tag, bOn ? 1 : 0);
 		};
 
-	SetTag(RogueTags::Unlock_Weapon_Rifle_Owned,      IsUnlocked(EWeaponType::AR));
-	SetTag(RogueTags::Unlock_Weapon_Sniper_Owned,     IsUnlocked(EWeaponType::Sniper));
-	SetTag(RogueTags::Unlock_Weapon_Shotgun_Owned,    IsUnlocked(EWeaponType::Shotgun));
-	SetTag(RogueTags::Unlock_Weapon_Pistol_Upgraded,  IsUnlocked(EWeaponType::Pistol));
-	SetTag(RogueTags::Unlock_Weapon_Knife_Upgraded,   IsUnlocked(EWeaponType::Knife));
+	SetTag(RogueTags::Unlock_Weapon_Rifle_Owned,      IsUnlocked(RogueTags::Weapon_Type_Rifle));
+	SetTag(RogueTags::Unlock_Weapon_Sniper_Owned,     IsUnlocked(RogueTags::Weapon_Type_Sniper));
+	SetTag(RogueTags::Unlock_Weapon_Shotgun_Owned,    IsUnlocked(RogueTags::Weapon_Type_Shotgun));
+	SetTag(RogueTags::Unlock_Weapon_Pistol_Upgraded,  IsUnlocked(RogueTags::Weapon_Type_Pistol));
+	SetTag(RogueTags::Unlock_Weapon_Knife_Upgraded,   IsUnlocked(RogueTags::Weapon_Type_Knife));
 
 	// RequiredUnlockTags는 HasAll(AND) 판정이라 "총기 중 아무거나 하나"를 표현할 수 없다.
 	// 총기_공통 풀 전용 파생 태그를 따로 세운다. 전술 칼은 총기 그룹이 아니다.
 	const bool bAnyFirearm =
-		IsUnlocked(EWeaponType::AR)
-		|| IsUnlocked(EWeaponType::Sniper)
-		|| IsUnlocked(EWeaponType::Shotgun)
-		|| IsUnlocked(EWeaponType::Pistol);
+		IsUnlocked(RogueTags::Weapon_Type_Rifle)
+		|| IsUnlocked(RogueTags::Weapon_Type_Sniper)
+		|| IsUnlocked(RogueTags::Weapon_Type_Shotgun)
+		|| IsUnlocked(RogueTags::Weapon_Type_Pistol);
 
 	SetTag(RogueTags::Unlock_Weapon_Firearm_Any, bAnyFirearm);
 }

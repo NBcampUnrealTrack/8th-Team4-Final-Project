@@ -1,4 +1,4 @@
-#include "Shop/ShopPurchaseComponent.h"
+﻿#include "Shop/ShopPurchaseComponent.h"
 
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameFramework/Pawn.h"
@@ -127,14 +127,18 @@ EShopPurchaseResult UShopPurchaseComponent::GetPurchaseEligibility(
 
 	// 소유했거나 이미 결제한 주무기는 추가 구매 없이 장착만 가능하다.
 	if (Definition.ItemType == EShopItemType::Weapon
-		&& ((IsValid(Inventory) && Inventory->IsPossessed(Definition.GrantedWeaponType))
+		&& ((IsValid(Inventory) && Inventory->IsPossessed(Definition.GrantedWeaponTag))
 			|| PendingWeaponItemIds.Contains(Definition.ItemId)))
 	{
-		return Shop->IsPurchaseWindowOpen()	? EShopPurchaseResult::Success : EShopPurchaseResult::ShopClosed;
+		return Shop->IsPurchaseWindowOpen()
+			? EShopPurchaseResult::Success
+			: EShopPurchaseResult::ShopClosed;
 	}
 
 	// 이미 해금한 권총/칼 업그레이드는 재구매할 수 없다.
-	if (Definition.ItemType == EShopItemType::WeaponUpgrade	&& IsValid(Inventory) && Inventory->IsUnlocked(Definition.GrantedWeaponType))
+	if (Definition.ItemType == EShopItemType::WeaponUpgrade
+		&& IsValid(Inventory)
+		&& Inventory->IsUnlocked(Definition.GrantedWeaponTag))
 	{
 		return EShopPurchaseResult::PurchaseLimitReached;
 	}
@@ -161,17 +165,21 @@ void UShopPurchaseComponent::ServerPurchaseItem_Implementation(const FGameplayTa
 
 	switch (Definition.ItemType)
 	{
-	case EShopItemType::Weapon:TryPurchasePrimaryWeapon(*Shop, Definition);
+	case EShopItemType::Weapon:
+		TryPurchasePrimaryWeapon(*Shop, Definition);
 		break;
 
-	case EShopItemType::WeaponUpgrade:TryPurchaseWeaponUpgrade(*Shop, Definition);
+	case EShopItemType::WeaponUpgrade:
+		TryPurchaseWeaponUpgrade(*Shop, Definition);
 		break;
 
 	case EShopItemType::HealthUpgrade:
-	case EShopItemType::DamageUpgrade:TryPurchaseStatUpgrade(*Shop, Definition);
+	case EShopItemType::DamageUpgrade:
+		TryPurchaseStatUpgrade(*Shop, Definition);
 		break;
 
-	case EShopItemType::Shield:TryPurchaseShield(*Shop, Definition);
+	case EShopItemType::Shield:
+		TryPurchaseShield(*Shop, Definition);
 		break;
 
 	default:
@@ -187,17 +195,17 @@ bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
 	const FShopItemDefinition& Definition)
 {
 	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
-	const EWeaponType WeaponType = Definition.GrantedWeaponType;
+	const FGameplayTag WeaponTag = Definition.GrantedWeaponTag;
 
-	if (!IsValid(Inventory) || !UWeaponInventoryComponent::IsPrimaryWeapon(WeaponType))
+	if (!IsValid(Inventory) || !UWeaponInventoryComponent::IsPrimaryWeaponTag(WeaponTag))
 	{
 		return false;
 	}
 
 	// 확정 소유한 무기는 무료 장착한다.
-	if (Inventory->IsPossessed(WeaponType))
+	if (Inventory->IsPossessed(WeaponTag))
 	{
-		return TryEquipOwnedWeapon(WeaponType);
+		return TryEquipOwnedWeapon(WeaponTag);
 	}
 
 	// 같은 준비 페이즈에서 이미 결제한 무기는 재결제 없이 다시 장착한다.
@@ -208,7 +216,7 @@ bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
 			return false;
 		}
 
-		if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
+		if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponTag))
 		{
 			return false;
 		}
@@ -228,7 +236,7 @@ bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
 	PendingWeaponTransactions.Add(Definition.ItemId, Result.Transaction);
 
 	// 장착 실패 시 방금 생성한 거래만 되돌린다.
-	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
+	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponTag))
 	{
 		if (Shop.RefundTransaction(Result.Transaction) == EShopPurchaseResult::Success)
 		{
@@ -245,7 +253,7 @@ bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
 	UE_LOG(LogShopPurchase, Log,
 		TEXT("Weapon purchase pending: Player=%s Weapon=%s Price=%d Credits=%d->%d"),
 		*GetNameSafe(GetOwner()),
-		*UEnum::GetValueAsString(WeaponType),
+		*WeaponTag.ToString(),
 		Result.Transaction.PaidCredits,
 		Result.CreditsBefore,
 		Result.CreditsAfter);
@@ -256,7 +264,7 @@ bool UShopPurchaseComponent::TryPurchasePrimaryWeapon(
 // --------------------------------------------------
 // 소유 주무기 장착
 
-bool UShopPurchaseComponent::TryEquipOwnedWeapon(const EWeaponType WeaponType)
+bool UShopPurchaseComponent::TryEquipOwnedWeapon(const FGameplayTag WeaponTag)
 {
 	// 무료 장착은 거래를 만들지 않으므로 페이즈를 직접 확인한다.
 	if (!IsShopPhaseOpen())
@@ -265,20 +273,20 @@ bool UShopPurchaseComponent::TryEquipOwnedWeapon(const EWeaponType WeaponType)
 	}
 
 	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
-	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponType))
+	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponTag))
 	{
 		return false;
 	}
 
-	const EWeaponType PreviousConfirmedPrimary = Inventory->GetEquippedPrimary();
+	const FGameplayTag PreviousConfirmedPrimary = Inventory->GetEquippedPrimaryTag();
 
-	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponType))
+	if (!RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), WeaponTag))
 	{
 		return false;
 	}
 
 	// 확정 소유 무기의 장착 선택은 즉시 Inventory에 반영한다.
-	if (!Inventory->ServerSetEquippedPrimary(WeaponType))
+	if (!Inventory->ServerSetEquippedPrimary(WeaponTag))
 	{
 		RogueWeaponLoadout::ApplyPrimaryWeapon(GetOwningPawn(), PreviousConfirmedPrimary);
 		return false;
@@ -297,15 +305,15 @@ bool UShopPurchaseComponent::TryPurchaseWeaponUpgrade(
 	const FShopItemDefinition& Definition)
 {
 	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
-	const EWeaponType WeaponType = Definition.GrantedWeaponType;
+	const FGameplayTag WeaponTag = Definition.GrantedWeaponTag;
 
-	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponType))
+	if (!IsValid(Inventory) || !Inventory->IsPossessed(WeaponTag))
 	{
 		return false;
 	}
 
 	// 이미 해금된 업그레이드는 결제 전에 차단한다.
-	if (Inventory->IsUnlocked(WeaponType))
+	if (Inventory->IsUnlocked(WeaponTag))
 	{
 		return false;
 	}
@@ -348,11 +356,18 @@ bool UShopPurchaseComponent::TryPurchaseWeaponUpgrade(
 		return false;
 	}
 
-	Inventory->ServerConfirmWeaponUpgrade(WeaponType);
+	if (!Inventory->ServerConfirmWeaponUpgrade(WeaponTag))
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Weapon upgrade confirmation failed after transaction commit: Player=%s Weapon=%s"),
+			*GetNameSafe(GetOwner()),
+			*WeaponTag.ToString());
+		return false;
+	}
 
 	UE_LOG(LogShopPurchase, Log, TEXT("Weapon upgraded: Player=%s Weapon=%s"),
 		*GetNameSafe(GetOwner()),
-		*UEnum::GetValueAsString(WeaponType));
+		*WeaponTag.ToString());
 
 	return true;
 }
@@ -580,11 +595,35 @@ FActiveGameplayEffectHandle UShopPurchaseComponent::ApplyEffect(const FShopItemD
 		return FActiveGameplayEffectHandle();
 	}
 
+	// TierPrices는 가격 단계이며 GE 레벨과는 별개다. 스탯 상품은 같은 레벨의 GE를
+	// 구매 횟수만큼 누적하고, 실제 누적 규칙은 해당 GE가 소유한다.
 	return ASC->ApplyGameplayEffectToSelf(Effect, 1.f, ASC->MakeEffectContext());
 }
 
 // --------------------------------------------------
 // 라운드 시작 확정
+
+bool UShopPurchaseComponent::CanCommitPendingPurchases() const
+{
+	const AShooterPlayerState* PlayerState = GetPlayerState();
+	const UShopComponent* Shop = IsValid(PlayerState) ? PlayerState->GetShopComponent() : nullptr;
+	if (!IsValid(Shop))
+	{
+		return false;
+	}
+
+	if (!PendingWeaponTransactions.IsEmpty())
+	{
+		TArray<FPendingWeaponCommit> PendingCommits;
+		FGameplayTag DesiredEquippedPrimary;
+		if (!BuildPendingWeaponCommitPlan(*Shop, PendingCommits, DesiredEquippedPrimary))
+		{
+			return false;
+		}
+	}
+
+	return CanCommitPendingShield(*Shop);
+}
 
 bool UShopPurchaseComponent::CommitPendingPurchases()
 {
@@ -596,53 +635,62 @@ bool UShopPurchaseComponent::CommitPendingPurchases()
 		return false;
 	}
 
-	// 하나라도 확정하지 못하면 남은 Pending을 유지하고 라운드 시작을 막는다.
-	if (!PendingWeaponTransactions.IsEmpty() && !CommitPendingWeapons(*Shop))
+	TArray<FPendingWeaponCommit> PendingCommits;
+	FGameplayTag DesiredEquippedPrimary;
+	if (!PendingWeaponTransactions.IsEmpty()
+		&& !BuildPendingWeaponCommitPlan(*Shop, PendingCommits, DesiredEquippedPrimary))
 	{
+		RefreshPendingMirror();
 		return false;
 	}
 
-	if (PendingShieldTransaction.IsValid() && !CommitPendingShield(*Shop))
+	if (!CanCommitPendingShield(*Shop))
 	{
+		RefreshPendingMirror();
 		return false;
+	}
+
+	bool bCommitted = true;
+	if (!PendingCommits.IsEmpty())
+	{
+		bCommitted = CommitPendingWeapons(*Shop, PendingCommits, DesiredEquippedPrimary);
+	}
+
+	if (bCommitted && PendingShieldTransaction.IsValid())
+	{
+		bCommitted = CommitPendingShield(*Shop);
 	}
 
 	RefreshPendingMirror();
-	return true;
+	return bCommitted;
 }
 
-bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
+bool UShopPurchaseComponent::BuildPendingWeaponCommitPlan(
+	const UShopComponent& Shop,
+	TArray<FPendingWeaponCommit>& OutPendingCommits,
+	FGameplayTag& OutDesiredEquippedPrimary) const
 {
-	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	const UWeaponInventoryComponent* Inventory = GetWeaponInventory();
 	if (!IsValid(Inventory))
 	{
 		return false;
 	}
 
-	struct FPendingWeaponCommit
-	{
-		FGameplayTag ItemId;
-		FShopTransactionHandle Transaction;
-		EWeaponType WeaponType = EWeaponType::None;
-	};
-
-	TArray<FPendingWeaponCommit> PendingCommits;
-	PendingCommits.Reserve(PendingWeaponTransactions.Num());
+	OutPendingCommits.Reset(PendingWeaponTransactions.Num());
 
 	// Inventory의 기존 확정 API가 소유권과 장착을 함께 갱신하므로,
 	// 확정 소유 무기는 Inventory 상태를, Pending 무기는 ItemId를 기준으로 최종 장착을 보존한다.
-	EWeaponType DesiredEquippedPrimary = Inventory->GetEquippedPrimary();
+	OutDesiredEquippedPrimary = Inventory->GetEquippedPrimaryTag();
 
-	// 여러 거래를 순차 확정하므로 먼저 전체 Pending을 검증한다.
 	for (const TPair<FGameplayTag, FShopTransactionHandle>& Pair : PendingWeaponTransactions)
 	{
 		FShopItemDefinition Definition;
 		if (!Pair.Key.IsValid()
 			|| !Pair.Value.IsValid()
 			|| !Pair.Value.ItemId.MatchesTagExact(Pair.Key)
-			|| !Shop.HasActiveTransaction(Pair.Value.TransactionId)
+			|| Shop.CanCommitTransaction(Pair.Value) != EShopPurchaseResult::Success
 			|| !Shop.FindItemDefinition(Pair.Key, Definition)
-			|| !UWeaponInventoryComponent::IsPrimaryWeapon(Definition.GrantedWeaponType))
+			|| !UWeaponInventoryComponent::IsPrimaryWeaponTag(Definition.GrantedWeaponTag))
 		{
 			UE_LOG(LogShopPurchase, Error,
 				TEXT("Weapon commit prevalidation failed: Player=%s Item=%s"),
@@ -651,35 +699,57 @@ bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
 			return false;
 		}
 
-		FPendingWeaponCommit& Pending = PendingCommits.AddDefaulted_GetRef();
+		FPendingWeaponCommit& Pending = OutPendingCommits.AddDefaulted_GetRef();
 		Pending.ItemId = Pair.Key;
 		Pending.Transaction = Pair.Value;
-		Pending.WeaponType = Definition.GrantedWeaponType;
+		Pending.WeaponTag = Definition.GrantedWeaponTag;
 
 		if (PendingWeaponItemId.MatchesTagExact(Pair.Key))
 		{
-			DesiredEquippedPrimary = Definition.GrantedWeaponType;
+			OutDesiredEquippedPrimary = Definition.GrantedWeaponTag;
 		}
 	}
 
-	PendingCommits.Sort(
+	// TMap 순회 순서와 무관하게 서버 확정과 로그 순서를 고정한다.
+	OutPendingCommits.Sort(
 		[](const FPendingWeaponCommit& Left, const FPendingWeaponCommit& Right)
 		{
 			return Left.ItemId.ToString() < Right.ItemId.ToString();
 		});
 
-	if (DesiredEquippedPrimary != EWeaponType::None
-		&& !Inventory->IsPossessed(DesiredEquippedPrimary)
-		&& !PendingCommits.ContainsByPredicate(
-			[DesiredEquippedPrimary](const FPendingWeaponCommit& Pending)
+	if (OutDesiredEquippedPrimary.IsValid()
+		&& !Inventory->IsPossessed(OutDesiredEquippedPrimary)
+		&& !OutPendingCommits.ContainsByPredicate(
+			[OutDesiredEquippedPrimary](const FPendingWeaponCommit& Pending)
 			{
-				return Pending.WeaponType == DesiredEquippedPrimary;
+				return Pending.WeaponTag == OutDesiredEquippedPrimary;
 			}))
 	{
 		UE_LOG(LogShopPurchase, Error,
 			TEXT("Weapon commit has an invalid desired primary: Player=%s Weapon=%s"),
 			*GetNameSafe(GetOwner()),
-			*UEnum::GetValueAsString(DesiredEquippedPrimary));
+			*OutDesiredEquippedPrimary.ToString());
+		return false;
+	}
+
+	return true;
+}
+
+bool UShopPurchaseComponent::CanCommitPendingShield(const UShopComponent& Shop) const
+{
+	return !PendingShieldTransaction.IsValid()
+		|| (PendingShieldEffect.IsValid()
+			&& Shop.CanCommitTransaction(PendingShieldTransaction) == EShopPurchaseResult::Success);
+}
+
+bool UShopPurchaseComponent::CommitPendingWeapons(
+	UShopComponent& Shop,
+	const TArray<FPendingWeaponCommit>& PendingCommits,
+	const FGameplayTag DesiredEquippedPrimary)
+{
+	UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	if (!IsValid(Inventory))
+	{
 		return false;
 	}
 
@@ -695,12 +765,12 @@ bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
 		}
 
 		// 사전 검증된 Primary 소유권을 Inventory에 확정한다.
-		if (!Inventory->ServerConfirmPrimaryPurchase(Pending.WeaponType))
+		if (!Inventory->ServerConfirmPrimaryPurchase(Pending.WeaponTag))
 		{
 			UE_LOG(LogShopPurchase, Error,
 				TEXT("Weapon ownership confirmation failed after transaction commit: Player=%s Weapon=%s"),
 				*GetNameSafe(GetOwner()),
-				*UEnum::GetValueAsString(Pending.WeaponType));
+				*Pending.WeaponTag.ToString());
 			return false;
 		}
 
@@ -709,7 +779,7 @@ bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
 		UE_LOG(LogShopPurchase, Log,
 			TEXT("Weapon ownership confirmed: Player=%s Weapon=%s"),
 			*GetNameSafe(GetOwner()),
-			*UEnum::GetValueAsString(Pending.WeaponType));
+			*Pending.WeaponTag.ToString());
 	}
 
 	if (!Inventory->ServerSetEquippedPrimary(DesiredEquippedPrimary))
@@ -717,7 +787,7 @@ bool UShopPurchaseComponent::CommitPendingWeapons(UShopComponent& Shop)
 		UE_LOG(LogShopPurchase, Error,
 			TEXT("Failed to restore selected primary after ownership commit: Player=%s Weapon=%s"),
 			*GetNameSafe(GetOwner()),
-			*UEnum::GetValueAsString(DesiredEquippedPrimary));
+			*DesiredEquippedPrimary.ToString());
 		return false;
 	}
 

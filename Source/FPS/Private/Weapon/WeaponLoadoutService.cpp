@@ -9,32 +9,57 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogWeaponLoadout, Log, All);
 
-bool RogueWeaponLoadout::ApplyPrimaryWeapon(APawn* Pawn, const EWeaponType WeaponType)
+namespace
+{
+	void SyncEquippedWeaponState(
+		AShooterPlayerState& PlayerState,
+		const UCombatComponent& Combat)
+	{
+		const AWeaponBase* EquippedWeapon = Combat.GetCurrentWeapon();
+
+		PlayerState.SyncEquippedWeaponState(
+			IsValid(EquippedWeapon) ? EquippedWeapon->GetEquippedStateTag() : FGameplayTag());
+	}
+}
+
+bool RogueWeaponLoadout::ApplyPrimaryWeapon(APawn* Pawn, const FGameplayTag WeaponTag)
 {
 	UCombatComponent* Combat = IsValid(Pawn) ? Pawn->FindComponentByClass<UCombatComponent>() : nullptr;
-	if (!IsValid(Combat))
+	AShooterPlayerState* PlayerState = IsValid(Pawn) ? Pawn->GetPlayerState<AShooterPlayerState>() : nullptr;
+	if (!IsValid(Combat) || !IsValid(PlayerState))
 	{
 		return false;
 	}
 
-	if (WeaponType == EWeaponType::None)
+	bool bApplied = false;
+	if (!WeaponTag.IsValid())
 	{
-		return Combat->ReplacePrimaryWeapon(nullptr);
+		bApplied = Combat->ReplacePrimaryWeapon(nullptr);
+	}
+	else
+	{
+		const TSubclassOf<AWeaponBase> WeaponClass =
+			GetDefault<URogueWeaponSettings>()->ResolveWeaponClass(WeaponTag);
+
+		if (!WeaponClass)
+		{
+			UE_LOG(LogWeaponLoadout, Error,
+				TEXT("Weapon %s has no class in the weapon registry. Check Project Settings > Weapon Registry."),
+				*WeaponTag.ToString());
+
+			return false;
+		}
+
+		bApplied = Combat->ReplacePrimaryWeapon(WeaponClass);
 	}
 
-	const TSubclassOf<AWeaponBase> WeaponClass =
-		GetDefault<URogueWeaponSettings>()->ResolveWeaponClass(WeaponType);
-
-	if (!WeaponClass)
+	if (!bApplied)
 	{
-		UE_LOG(LogWeaponLoadout, Error,
-			TEXT("Weapon %s has no class in the weapon registry. Check Project Settings > Weapon Registry."),
-			*UEnum::GetValueAsString(WeaponType));
-
 		return false;
 	}
 
-	return Combat->ReplacePrimaryWeapon(WeaponClass);
+	SyncEquippedWeaponState(*PlayerState, *Combat);
+	return true;
 }
 
 bool RogueWeaponLoadout::RestoreConfirmedPrimary(AShooterPlayerState* PlayerState, APawn* Pawn)
@@ -47,5 +72,5 @@ bool RogueWeaponLoadout::RestoreConfirmedPrimary(AShooterPlayerState* PlayerStat
 		return false;
 	}
 
-	return ApplyPrimaryWeapon(Pawn, Inventory->GetEquippedPrimary());
+	return ApplyPrimaryWeapon(Pawn, Inventory->GetEquippedPrimaryTag());
 }

@@ -2,9 +2,11 @@
 
 #include "Combat/CombatComponent.h"
 
-#include "Components/SkeletalMeshComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Character/ShooterMovementComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
@@ -15,7 +17,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogCombatComponent, Log, All);
 
 UCombatComponent::UCombatComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// UpdateMovementSpreadMultiplier/UpdateCameraZoom이 매 프레임 갱신되어야 해서 켜둔다.
+	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
 }
 
@@ -34,6 +37,15 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 void UCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		if (const UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor))
+		{
+			DefaultFieldOfView = Camera->FieldOfView;
+		}
+	}
 }
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -51,6 +63,73 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                      FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UpdateMovementSpreadMultiplier();
+	UpdateCameraZoom(DeltaTime);
+}
+
+void UCombatComponent::UpdateMovementSpreadMultiplier() const
+{
+	AWeaponBase* Weapon = CurrentWeapon.Get();
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+	const UShooterMovementComponent* Movement = OwnerCharacter
+		? Cast<UShooterMovementComponent>(OwnerCharacter->GetCharacterMovement())
+		: nullptr;
+	if (!Movement)
+	{
+		return;
+	}
+
+	float Multiplier;
+	if (Movement->IsFalling() || Movement->IsSprinting())
+	{
+		Multiplier = SpreadMultiplierAirOrSprint;
+	}
+	else if (Movement->Velocity.Size2D() <= StationarySpeedThreshold)
+	{
+		// 완전 정지든 방금 브레이킹(감속)으로 멈춘 것이든 동일하게 취급한다.
+		Multiplier = SpreadMultiplierStationary;
+	}
+	else
+	{
+		Multiplier = SpreadMultiplierWalking;
+	}
+
+	Weapon->SetMovementSpreadMultiplier(Multiplier);
+}
+
+void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor);
+	if (!IsValid(Camera))
+	{
+		return;
+	}
+
+	const AWeaponBase* Weapon = CurrentWeapon.Get();
+	// 조준 중이고, 장착 무기가 ADS를 지원할 때만 줌 목표 FOV를 쓴다 - 그 외(무기 없음/ADS 불가/
+	// 조준 해제)에는 평상시 FOV로 되돌아간다.
+	const float TargetFieldOfView = (bAiming && IsValid(Weapon) && Weapon->CanADS())
+		? Weapon->GetADSFieldOfView()
+		: DefaultFieldOfView;
+
+	if (FMath::IsNearlyEqual(Camera->FieldOfView, TargetFieldOfView, 0.01f))
+	{
+		return;
+	}
+
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
 }
 
 AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)
@@ -115,12 +194,10 @@ void UCombatComponent::UnequipWeapon()
 	{
 		PrimaryWeapon = nullptr;
 	}
-
 	if (SecondaryWeapon.Get() == WeaponToDestroy)
 	{
 		SecondaryWeapon = nullptr;
 	}
-
 	if (MeleeWeapon.Get() == WeaponToDestroy)
 	{
 		MeleeWeapon = nullptr;
@@ -132,50 +209,27 @@ void UCombatComponent::UnequipWeapon()
 
 bool UCombatComponent::InitializeWeaponLoadout(
 	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
-	TSubclassOf<AWeaponBase> SecondaryWeaponClass)
-{
-	// ���� 2���� ȣ���ڴ� �״�� �����Ѵ�.
-	if (!PrimaryWeaponClass)
-	{
-		return false;
-	}
-
-	return InitializeWeaponLoadoutWithMelee(PrimaryWeaponClass, SecondaryWeaponClass, nullptr);
-}
-
-bool UCombatComponent::InitializeWeaponLoadoutWithMelee(
-	TSubclassOf<AWeaponBase> PrimaryWeaponClass,
 	TSubclassOf<AWeaponBase> SecondaryWeaponClass,
 	TSubclassOf<AWeaponBase> MeleeWeaponClass)
 {
 	AActor* OwnerActor = GetOwner();
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
-	{
-		return false;
-	}
-
-	if (!PrimaryWeaponClass	&& !SecondaryWeaponClass && !MeleeWeaponClass)
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !PrimaryWeaponClass)
 	{
 		return false;
 	}
 
 	ClearWeaponLoadout();
 
-	if (PrimaryWeaponClass)
+	PrimaryWeapon = SpawnWeaponInstance(PrimaryWeaponClass);
+	if (!IsValid(PrimaryWeapon.Get()))
 	{
-		PrimaryWeapon = SpawnWeaponInstance(PrimaryWeaponClass);
-
-		if (!IsValid(PrimaryWeapon.Get()))
-		{
-			ClearWeaponLoadout();
-			return false;
-		}
+		ClearWeaponLoadout();
+		return false;
 	}
 
 	if (SecondaryWeaponClass)
 	{
 		SecondaryWeapon = SpawnWeaponInstance(SecondaryWeaponClass);
-
 		if (!IsValid(SecondaryWeapon.Get()))
 		{
 			ClearWeaponLoadout();
@@ -186,7 +240,6 @@ bool UCombatComponent::InitializeWeaponLoadoutWithMelee(
 	if (MeleeWeaponClass)
 	{
 		MeleeWeapon = SpawnWeaponInstance(MeleeWeaponClass);
-
 		if (!IsValid(MeleeWeapon.Get()))
 		{
 			ClearWeaponLoadout();
@@ -194,35 +247,20 @@ bool UCombatComponent::InitializeWeaponLoadoutWithMelee(
 		}
 	}
 
-	// Primary�� ������ �⺻ ������ ���� ���.
-	AWeaponBase* InitialWeapon = PrimaryWeapon.Get();
-
-	if (!IsValid(InitialWeapon))
-	{
-		InitialWeapon = SecondaryWeapon.Get();
-	}
-
-	if (!IsValid(InitialWeapon))
-	{
-		InitialWeapon = MeleeWeapon.Get();
-	}
-
-	ApplyCurrentWeapon(InitialWeapon);
-
-	if (IsValid(CurrentWeapon.Get()))
-	{
-		BeginEquipCycle(CurrentWeapon.Get());
-	}
+	ApplyCurrentWeapon(PrimaryWeapon.Get());
+	BeginEquipCycle(CurrentWeapon.Get());
 
 	UE_LOG(
 		LogCombatComponent,
 		Log,
-		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Secondary=%s Melee=%s Initial=%s"),
+		TEXT("[CombatComponent] %s loadout initialized. Primary=%s Tag=%s Secondary=%s Tag=%s Melee=%s Tag=%s"),
 		*GetNameSafe(OwnerActor),
 		*GetNameSafe(PrimaryWeapon.Get()),
+		*PrimaryWeapon->GetWeaponTag().ToString(),
 		*GetNameSafe(SecondaryWeapon.Get()),
+		IsValid(SecondaryWeapon.Get()) ? *SecondaryWeapon->GetWeaponTag().ToString() : TEXT("None"),
 		*GetNameSafe(MeleeWeapon.Get()),
-		*GetNameSafe(CurrentWeapon.Get()));
+		IsValid(MeleeWeapon.Get()) ? *MeleeWeapon->GetWeaponTag().ToString() : TEXT("None"));
 
 	return true;
 }
@@ -256,6 +294,10 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 	{
 		PreviousWeapon->SetADS(false);
 	}
+	// GA_ADS가 이 스왑을 못 보고(예: 다른 입력으로 트리거된 스왑) 여전히 조준 애니메이션을 유지한 채로
+	// 남지 않도록, 스왑 시점에 조준 상태를 즉시 해제한다. GA_ADS가 나중에 입력 해제로 정상 종료돼도
+	// 자신이 캐싱해둔 이전 무기에 SetADS(false)를 한 번 더 호출할 뿐이라 문제 없다.
+	SetAiming(false);
 
 	ApplyCurrentWeapon(TargetWeapon);
 	BeginEquipCycle(CurrentWeapon.Get());
@@ -265,7 +307,7 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 		Log,
 		TEXT("[CombatComponent] %s weapon swap. Slot=%s Previous=%s Current=%s WeaponTag=%s PrimaryAmmo=%d SecondaryAmmo=%d"),
 		*GetNameSafe(OwnerActor),
-		WeaponSlot == EWeaponSlot::Primary ? TEXT("Primary") : TEXT("Secondary"),
+		*UEnum::GetDisplayValueAsText(WeaponSlot).ToString(),
 		*GetNameSafe(PreviousWeapon),
 		*GetNameSafe(CurrentWeapon.Get()),
 		*GetCurrentWeaponTag().ToString(),
@@ -274,7 +316,6 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 
 	return true;
 }
-
 
 bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> PrimaryWeaponClass)
 {
@@ -286,17 +327,23 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 
 	AWeaponBase* PreviousPrimary = PrimaryWeapon.Get();
 
-	// Nothing to remove. This is the normal restore path for a player with no primary weapon.
+	// 제거할 주무기가 없는 정상 복구 경로다.
 	if (!PrimaryWeaponClass && !IsValid(PreviousPrimary))
 	{
 		return true;
 	}
 
-	// Re-selecting the same class must preserve ammo/runtime state instead of respawning it.
+	// 같은 클래스 재선택은 재생성하지 않고 탄약과 런타임 상태를 유지한다.
 	if (IsValid(PreviousPrimary) && PreviousPrimary->GetClass() == PrimaryWeaponClass)
 	{
 		if (CurrentWeapon.Get() != PreviousPrimary)
 		{
+			if (IsValid(CurrentWeapon.Get()))
+			{
+				CurrentWeapon->SetADS(false);
+			}
+			SetAiming(false);
+
 			ApplyCurrentWeapon(PreviousPrimary);
 			BeginEquipCycle(PreviousPrimary);
 		}
@@ -304,7 +351,7 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 		return true;
 	}
 
-	// Spawn first. If spawning fails, leave the previous primary and current weapon untouched.
+	// 새 무기를 먼저 생성해 실패 시 기존 주무기와 현재 장착 상태를 유지한다.
 	AWeaponBase* NewPrimary = nullptr;
 	if (PrimaryWeaponClass)
 	{
@@ -317,7 +364,7 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 
 	PrimaryWeapon = NewPrimary;
 
-	// A purchased primary becomes current immediately. If it is cleared, fall back to pistol then melee.
+	// 구매한 주무기는 즉시 장착하고, 주무기를 비우면 권총과 근접무기 순서로 전환한다.
 	AWeaponBase* NextCurrent = NewPrimary;
 	if (!IsValid(NextCurrent))
 	{
@@ -331,6 +378,7 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != NextCurrent)
 	{
 		CurrentWeapon->SetADS(false);
+		SetAiming(false);
 	}
 
 	ApplyCurrentWeapon(NextCurrent);
@@ -348,20 +396,16 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 	return true;
 }
 
-AWeaponBase* UCombatComponent::GetWeaponInSlot(
-	const EWeaponSlot WeaponSlot) const
+AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) const
 {
 	switch (WeaponSlot)
 	{
 	case EWeaponSlot::Primary:
 		return PrimaryWeapon.Get();
-
 	case EWeaponSlot::Secondary:
 		return SecondaryWeapon.Get();
-
 	case EWeaponSlot::Melee:
 		return MeleeWeapon.Get();
-
 	default:
 		return nullptr;
 	}
@@ -369,26 +413,18 @@ AWeaponBase* UCombatComponent::GetWeaponInSlot(
 
 EWeaponSlot UCombatComponent::GetCurrentWeaponSlot() const
 {
-	if (!IsValid(CurrentWeapon.Get()))
-	{
-		return EWeaponSlot::None;
-	}
-
 	if (CurrentWeapon.Get() == PrimaryWeapon.Get())
 	{
 		return EWeaponSlot::Primary;
 	}
-
 	if (CurrentWeapon.Get() == SecondaryWeapon.Get())
 	{
 		return EWeaponSlot::Secondary;
 	}
-
 	if (CurrentWeapon.Get() == MeleeWeapon.Get())
 	{
 		return EWeaponSlot::Melee;
 	}
-
 	return EWeaponSlot::None;
 }
 
@@ -400,6 +436,11 @@ FGameplayTag UCombatComponent::GetCurrentWeaponTag() const
 bool UCombatComponent::IsWeaponReady() const
 {
 	return IsValid(CurrentWeapon.Get()) && !bIsCycling;
+}
+
+void UCombatComponent::SetAiming(const bool bNewAiming)
+{
+	bAiming = bNewAiming;
 }
 
 void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
@@ -448,20 +489,14 @@ void UCombatComponent::ClearWeaponLoadout()
 	{
 		PrimaryToDestroy->Destroy();
 	}
-
-	if (IsValid(SecondaryToDestroy)
-		&& SecondaryToDestroy != PrimaryToDestroy)
+	if (IsValid(SecondaryToDestroy) && SecondaryToDestroy != PrimaryToDestroy)
 	{
 		SecondaryToDestroy->Destroy();
 	}
-
-	if (IsValid(MeleeToDestroy)
-		&& MeleeToDestroy != PrimaryToDestroy
-		&& MeleeToDestroy != SecondaryToDestroy)
+	if (IsValid(MeleeToDestroy) && MeleeToDestroy != PrimaryToDestroy && MeleeToDestroy != SecondaryToDestroy)
 	{
 		MeleeToDestroy->Destroy();
 	}
-
 	if (IsValid(CurrentToDestroy)
 		&& CurrentToDestroy != PrimaryToDestroy
 		&& CurrentToDestroy != SecondaryToDestroy
@@ -569,7 +604,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 {
 	if (IsValid(LastWeapon) && LastWeapon != CurrentWeapon.Get())
 	{
-		SetWeaponPresentationActive(LastWeapon, false);
+		LastWeapon->SetPresentationActive(false);
 	}
 
 	RefreshWeaponPresentation();
@@ -587,65 +622,24 @@ void UCombatComponent::OnRep_IsCycling()
 
 void UCombatComponent::RefreshWeaponPresentation()
 {
-	SetWeaponPresentationActive(PrimaryWeapon.Get(), PrimaryWeapon.Get() == CurrentWeapon.Get());
-
-	SetWeaponPresentationActive(SecondaryWeapon.Get(), SecondaryWeapon.Get() == CurrentWeapon.Get());
-
-	SetWeaponPresentationActive(MeleeWeapon.Get(), MeleeWeapon.Get() == CurrentWeapon.Get());
+	if (IsValid(PrimaryWeapon.Get()))
+	{
+		PrimaryWeapon->SetPresentationActive(PrimaryWeapon.Get() == CurrentWeapon.Get());
+	}
+	if (IsValid(SecondaryWeapon.Get()))
+	{
+		SecondaryWeapon->SetPresentationActive(SecondaryWeapon.Get() == CurrentWeapon.Get());
+	}
+	if (IsValid(MeleeWeapon.Get()))
+	{
+		MeleeWeapon->SetPresentationActive(MeleeWeapon.Get() == CurrentWeapon.Get());
+	}
 
 	if (IsValid(CurrentWeapon.Get())
 		&& CurrentWeapon.Get() != PrimaryWeapon.Get()
 		&& CurrentWeapon.Get() != SecondaryWeapon.Get()
 		&& CurrentWeapon.Get() != MeleeWeapon.Get())
 	{
-		SetWeaponPresentationActive(CurrentWeapon.Get(), true);
-	}
-}
-
-void UCombatComponent::SetWeaponPresentationActive(AWeaponBase* Weapon, const bool bActive) const
-{
-	if (!IsValid(Weapon))
-	{
-		return;
-	}
-
-	Weapon->SetActorHiddenInGame(!bActive);
-
-	if (USkeletalMeshComponent* WeaponMesh1P = Weapon->GetMesh1P())
-	{
-		WeaponMesh1P->SetVisibility(bActive, true);
-	}
-	if (USkeletalMeshComponent* WeaponMesh3P = Weapon->GetMesh3P())
-	{
-		WeaponMesh3P->SetVisibility(bActive, true);
-	}
-
-	if (bActive)
-	{
-		AttachWeaponMeshesToOwner(Weapon);
-	}
-}
-
-void UCombatComponent::AttachWeaponMeshesToOwner(AWeaponBase* Weapon) const
-{
-	AActor* OwnerActor = GetOwner();
-	if (!IsValid(Weapon) || !IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
-	{
-		return;
-	}
-
-	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
-	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
-
-	if (IsValid(CharacterMesh1P) && IsValid(Weapon->GetMesh1P()))
-	{
-		Weapon->GetMesh1P()->AttachToComponent(
-			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName1P());
-	}
-
-	if (IsValid(CharacterMesh3P) && IsValid(Weapon->GetMesh3P()))
-	{
-		Weapon->GetMesh3P()->AttachToComponent(
-			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, Weapon->GetGripSocketName3P());
+		CurrentWeapon->SetPresentationActive(true);
 	}
 }

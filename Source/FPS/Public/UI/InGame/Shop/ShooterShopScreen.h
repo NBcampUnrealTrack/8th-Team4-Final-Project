@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Shop/ShopTypes.h"
@@ -50,6 +50,7 @@ private:
 	void HandlePendingStateChanged();
 
 	void HandleItemPurchaseRequested(FGameplayTag ItemId);
+	void HandleItemRefundRequested(FGameplayTag ItemId);
 
 	void RefreshCredits();
 	void RebuildItemRows();

@@ -3,6 +3,7 @@
 #include "Player/ShooterPlayerState.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Combat/CombatComponent.h"
 #include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
@@ -15,8 +16,8 @@
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
+#include "Weapon/WeaponBase.h"
 #include "Weapon/WeaponInventoryComponent.h"
-#include "Weapon/WeaponTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
 
@@ -38,17 +39,28 @@ AShooterPlayerState::AShooterPlayerState()
 	SetNetUpdateFrequency(100.f);
 }
 
-UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
-}
-
 void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+}
+
+UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AShooterPlayerState::SyncEquippedWeaponState(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
+	ClientSyncEquippedWeaponState(EquippedStateTag);
+}
+
+void AShooterPlayerState::ClientSyncEquippedWeaponState_Implementation(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -101,8 +113,18 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
-	// TODO: 임시로 권총 장착 태그
-	AbilitySystemComponent->SetEquippedWeaponType(EWeaponType::Pistol);
+	// CombatComponent가 BeginPlay에서 이미 기본 로드아웃을 장착해 둔 상태(캐릭터 스폰 -> BeginPlay ->
+	// 이후 Possess 순서)라 가정하고, 실제 장착된 무기의 태그를 그대로 읽어온다. 아직 장착 전이라면
+	// (예: 로드아웃 순서가 바뀐 경우) 빈 태그로 초기화되며, 이후 무기 교체 시 GA_SwitchWeapon이 갱신한다.
+	FGameplayTag InitialWeaponTag;
+	if (const UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+	{
+		if (const AWeaponBase* EquippedWeapon = Combat->GetEquippedWeapon())
+		{
+			InitialWeaponTag = EquippedWeapon->GetEquippedStateTag();
+		}
+	}
+	AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
 
 	// 초기화는 한번만 수행
 	if (HasAuthority() && !bVitalsInitialized)

@@ -4,6 +4,7 @@
 
 #include "Economy/CreditWalletComponent.h"
 #include "Engine/World.h"
+#include "GameplayEffect.h"
 #include "GameMode/RoundTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
@@ -11,6 +12,7 @@
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopTags.h"
 #include "Shop/ShopTypes.h"
+#include "Tags/GameplayTags.h"
 #include "UObject/StrongObjectPtr.h"
 #include "UObject/UObjectGlobals.h"
 
@@ -58,7 +60,8 @@ namespace
 			Entry.Definition = FShopItemDefinition(
 				RogueShopTags::Item_Weapon_Rifle,
 				EShopItemType::Weapon,
-				RiflePrice);
+				RiflePrice,
+				RogueTags::Weapon_Type_Rifle);
 			Entry.Presentation.DisplayName = FText::FromString(TEXT("Rifle"));
 			Catalog->Items = { Entry };
 
@@ -83,13 +86,15 @@ namespace
 			Rifle.Definition = FShopItemDefinition(
 				RogueShopTags::Item_Weapon_Rifle,
 				EShopItemType::Weapon,
-				RiflePrice);
+				RiflePrice,
+				RogueTags::Weapon_Type_Rifle);
 
 			FShopCatalogEntry SmallShield;
 			SmallShield.Definition = FShopItemDefinition(
 				RogueShopTags::Item_Shield_Small,
 				EShopItemType::Shield,
 				SmallShieldPrice);
+			SmallShield.Definition.EffectClass = UGameplayEffect::StaticClass();
 
 			Catalog->Items = { Rifle, SmallShield };
 
@@ -254,6 +259,23 @@ bool FShopCatalogFailureTest::RunTest(const FString& Parameters)
 	InvalidPrice.Catalog->Items[0].Definition.BasePrice = 0;
 	TestConfigurationRejected(*this, TEXT("Non-positive price is rejected"), *InvalidPrice.Settings);
 
+	FShopTestConfiguration MissingWeaponTag;
+	MissingWeaponTag.Catalog->Items[0].Definition.GrantedWeaponTag = FGameplayTag();
+	TestConfigurationRejected(*this, TEXT("Weapon without a granted tag is rejected"), *MissingWeaponTag.Settings);
+
+	FShopTestConfiguration InvalidPrimaryWeaponTag;
+	InvalidPrimaryWeaponTag.Catalog->Items[0].Definition.GrantedWeaponTag = RogueTags::Weapon_Type_Pistol;
+	TestConfigurationRejected(*this, TEXT("Primary weapon with a sidearm tag is rejected"), *InvalidPrimaryWeaponTag.Settings);
+
+	FShopTestConfiguration InvalidWeaponUpgradeTag;
+	InvalidWeaponUpgradeTag.Catalog->Items[0].Definition.ItemType = EShopItemType::WeaponUpgrade;
+	TestConfigurationRejected(*this, TEXT("Weapon upgrade with a primary tag is rejected"), *InvalidWeaponUpgradeTag.Settings);
+
+	FShopTestConfiguration MissingEffect;
+	MissingEffect.Catalog->Items[0].Definition.ItemType = EShopItemType::Shield;
+	MissingEffect.Catalog->Items[0].Definition.GrantedWeaponTag = FGameplayTag();
+	TestConfigurationRejected(*this, TEXT("Effect-driven item without an effect is rejected"), *MissingEffect.Settings);
+
 	FShopTestConfiguration InvalidTierPrice;
 	InvalidTierPrice.Catalog->Items[0].Definition.TierPrices = { 1500, 0 };
 	TestConfigurationRejected(*this, TEXT("Non-positive tier price is rejected"), *InvalidTierPrice.Settings);
@@ -384,6 +406,20 @@ bool FShopTransactionLifecycleTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Exact balance is debited exactly once"), Wallet->GetCredits(), 0);
 	TestEqual(TEXT("Transaction is tracked"), Shop->GetActiveTransactionCount(), 1);
 	TestTrue(TEXT("Transaction is queryable by id"), Shop->HasActiveTransaction(Purchase.Transaction.TransactionId));
+	TestPurchaseResult(
+		*this,
+		TEXT("Commit preflight accepts the exact transaction"),
+		Shop->CanCommitTransaction(Purchase.Transaction),
+		EShopPurchaseResult::Success);
+	FShopTransactionHandle MismatchedPreflight = Purchase.Transaction;
+	MismatchedPreflight.PaidCredits = 1;
+	TestPurchaseResult(
+		*this,
+		TEXT("Commit preflight rejects a modified transaction"),
+		Shop->CanCommitTransaction(MismatchedPreflight),
+		EShopPurchaseResult::TransactionMismatch);
+	TestEqual(TEXT("Commit preflight does not close the transaction"), Shop->GetActiveTransactionCount(), 1);
+	TestEqual(TEXT("Commit preflight does not move credits"), Wallet->GetCredits(), 0);
 
 	TestPurchaseResult(*this, TEXT("Commit succeeds"), Shop->CommitTransaction(Purchase.Transaction), EShopPurchaseResult::Success);
 	TestEqual(TEXT("Commit closes the transaction"), Shop->GetActiveTransactionCount(), 0);

@@ -1,4 +1,4 @@
-#include "UI/InGame/Shop/ShooterShopItemRow.h"
+﻿#include "UI/InGame/Shop/ShooterShopItemRow.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -14,6 +14,13 @@ void UShooterShopItemRow::NativeOnInitialized()
 		Button_Purchase->OnClicked.AddUniqueDynamic(
 			this,
 			&ThisClass::HandlePurchaseClicked);
+	}
+
+	if (IsValid(Button_Refund))
+	{
+		Button_Refund->OnClicked.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleRefundClicked);
 	}
 }
 
@@ -44,13 +51,22 @@ void UShooterShopItemRow::SetItemData(
 
 void UShooterShopItemRow::RefreshPurchaseState(
 	const int32 Price,
-	const EShopPurchaseResult PurchaseResult)
+	const EShopPurchaseResult PurchaseResult,
+	const bool bIsPending,
+	const bool bIsEquippedPending)
 {
 	const bool bCanPurchase = PurchaseResult == EShopPurchaseResult::Success;
 
 	if (IsValid(Button_Purchase))
 	{
 		Button_Purchase->SetIsEnabled(bCanPurchase);
+	}
+
+	if (IsValid(Button_Refund))
+	{
+		Button_Refund->SetVisibility(
+			bIsPending ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_Refund->SetIsEnabled(bIsPending);
 	}
 
 	if (IsValid(Text_Price))
@@ -71,6 +87,18 @@ void UShooterShopItemRow::RefreshPurchaseState(
 
 	if (!IsValid(Text_State))
 	{
+		return;
+	}
+
+	if (bIsEquippedPending)
+	{
+		Text_State->SetText(NSLOCTEXT("ShooterShop", "EquippedPending", "EQUIPPED"));
+		return;
+	}
+
+	if (bIsPending)
+	{
+		Text_State->SetText(NSLOCTEXT("ShooterShop", "Pending", "PENDING"));
 		return;
 	}
 
@@ -96,4 +124,12 @@ void UShooterShopItemRow::HandlePurchaseClicked()
 	}
 
 	OnPurchaseRequested.Broadcast(ItemId);
+}
+
+void UShooterShopItemRow::HandleRefundClicked()
+{
+	if (ItemId.IsValid())
+	{
+		OnRefundRequested.Broadcast(ItemId);
+	}
 }

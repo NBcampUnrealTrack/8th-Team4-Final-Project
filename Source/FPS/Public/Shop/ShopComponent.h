@@ -64,6 +64,11 @@ public:
 		const FShopTransactionHandle& CurrentTransaction,
 		FGameplayTag NewItemId);
 
+	// 거래 원장의 현재 값과 요청 핸들이 정확히 일치하는지 변경 없이 확인한다.
+	// 라운드 경계에서는 모든 플레이어의 거래를 먼저 사전검증한 뒤 확정한다.
+	EShopPurchaseResult CanCommitTransaction(
+		const FShopTransactionHandle& Transaction) const;
+
 	// 외부 시스템의 상품 적용이 성공한 거래를 최종 확정한다.
 	EShopPurchaseResult CommitTransaction(
 		const FShopTransactionHandle& Transaction);

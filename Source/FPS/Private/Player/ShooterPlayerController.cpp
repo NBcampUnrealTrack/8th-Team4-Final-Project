@@ -12,9 +12,9 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
-#include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -98,15 +98,6 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
 	}
-	if (InputConfig->PrimaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->PrimaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_PrimaryWeaponPressed);
-	}
-	if (InputConfig->SecondaryWeaponAction)
-	{
-		EnhancedInputComponent->BindAction(InputConfig->SecondaryWeaponAction, ETriggerEvent::Started, this, &ThisClass::Input_SecondaryWeaponPressed);
-	}
-
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
 		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
@@ -139,6 +130,17 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 	}
 
 	ServerSetLobbyReady(bNewLobbyReady);
+}
+
+void AShooterPlayerController::ToggleDynamicCrosshair()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
@@ -306,32 +308,6 @@ void AShooterPlayerController::Input_SprintReleased()
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintReleased();
-	}
-}
-
-void AShooterPlayerController::Input_PrimaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Primary);
-	}
-}
-
-void AShooterPlayerController::Input_SecondaryWeaponPressed()
-{
-	if (!CanProcessActionInput())
-	{
-		return;
-	}
-
-	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
-	{
-		ShooterCharacter->HandleWeaponSlotPressed(EWeaponSlot::Secondary);
 	}
 }
 

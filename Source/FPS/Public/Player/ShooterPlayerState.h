@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 #include "Player/BaseTeamPlayerState.h"
 
 #include "ShooterPlayerState.generated.h"
@@ -51,6 +52,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Shooter|Weapon")
 	UWeaponInventoryComponent* GetWeaponInventory() const { return WeaponInventory; }
 
+	// 서버의 런타임 장착 결과를 서버 ASC와 소유 클라이언트 ASC에 같은 태그로 반영한다.
+	void SyncEquippedWeaponState(FGameplayTag EquippedStateTag);
+
 	// 어트리뷰트는 StatResolver 와 ExecCalc 을 통해 읽는 것이 정상 경로
 	// 이 둘은 초기화/디버그용
 	URogueVitalAttributeSet* GetVitalSet() const { return VitalSet; }
@@ -90,6 +94,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LoadedIntoMatch();
+
+	UFUNCTION(Client, Reliable)
+	void ClientSyncEquippedWeaponState(FGameplayTag EquippedStateTag);
 
 	void ServerResetVitals();
 

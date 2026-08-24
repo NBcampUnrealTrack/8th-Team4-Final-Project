@@ -1,5 +1,8 @@
 ﻿#include "Shop/ShopCatalogDataAsset.h"
 
+#include "Tags/GameplayTags.h"
+#include "Weapon/WeaponInventoryComponent.h"
+
 const FShopCatalogEntry* UShopCatalogDataAsset::FindItem(const FGameplayTag ItemId) const
 {
 	if (!ItemId.IsValid())
@@ -64,6 +67,42 @@ bool UShopCatalogDataAsset::IsConfigurationValid(FString* OutFailureReason) cons
 		{
 			return Fail(FString::Printf(
 				TEXT("Shop item %s has a non-positive base price."),
+				*Definition.ItemId.ToString()));
+		}
+
+		if ((Definition.ItemType == EShopItemType::Weapon
+				|| Definition.ItemType == EShopItemType::WeaponUpgrade)
+			&& !Definition.GrantedWeaponTag.IsValid())
+		{
+			return Fail(FString::Printf(
+				TEXT("Shop item %s has no granted weapon tag."),
+				*Definition.ItemId.ToString()));
+		}
+
+		if (Definition.ItemType == EShopItemType::Weapon
+			&& !UWeaponInventoryComponent::IsPrimaryWeaponTag(Definition.GrantedWeaponTag))
+		{
+			return Fail(FString::Printf(
+				TEXT("Shop weapon %s must grant a primary weapon tag."),
+				*Definition.ItemId.ToString()));
+		}
+
+		if (Definition.ItemType == EShopItemType::WeaponUpgrade
+			&& Definition.GrantedWeaponTag != RogueTags::Weapon_Type_Pistol
+			&& Definition.GrantedWeaponTag != RogueTags::Weapon_Type_Knife)
+		{
+			return Fail(FString::Printf(
+				TEXT("Shop weapon upgrade %s must target pistol or knife."),
+				*Definition.ItemId.ToString()));
+		}
+
+		const bool bRequiresEffect = Definition.ItemType == EShopItemType::HealthUpgrade
+			|| Definition.ItemType == EShopItemType::Shield
+			|| Definition.ItemType == EShopItemType::DamageUpgrade;
+		if (bRequiresEffect && Definition.EffectClass.IsNull())
+		{
+			return Fail(FString::Printf(
+				TEXT("Shop item %s requires a gameplay effect."),
 				*Definition.ItemId.ToString()));
 		}
 

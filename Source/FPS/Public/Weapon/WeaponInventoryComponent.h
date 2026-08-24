@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Weapon/WeaponTypes.h"
+#include "GameplayTagContainer.h"
 
 #include "WeaponInventoryComponent.generated.h"
 
@@ -15,8 +15,9 @@ struct FWeaponOwnershipState
 {
 	GENERATED_BODY()
 
+	// 구매·보유 상태의 영속 키다. 현재 장착 상태인 State.Weapon.Equipped.*와는 별개다.
 	UPROPERTY()
-	EWeaponType WeaponType = EWeaponType::None;
+	FGameplayTag WeaponTag;
 
 	// 인벤토리에 보유해 전투에서 쓸 수 있는가.
 	UPROPERTY()
@@ -51,13 +52,13 @@ public:
 	// --- 조회 ---
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Inventory")
-	bool IsPossessed(EWeaponType WeaponType) const;
+	bool IsPossessed(FGameplayTag WeaponTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Inventory")
-	bool IsUnlocked(EWeaponType WeaponType) const;
+	bool IsUnlocked(FGameplayTag WeaponTag) const;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Inventory")
-	EWeaponType GetEquippedPrimary() const { return EquippedPrimary; }
+	FGameplayTag GetEquippedPrimaryTag() const { return EquippedPrimaryTag; }
 
 	// --- 서버 변경. 게임 흐름 순서대로 ---
 
@@ -66,16 +67,16 @@ public:
 
 	// 4. 라운드 시작 Commit. 소지 + 해금 + 장착을 한 번에 확정한다.
 	//    셋을 쪼개면 중간 실패 시 결제만 닫히고 상태가 어긋난다.
-	bool ServerConfirmPrimaryPurchase(EWeaponType WeaponType);
+	bool ServerConfirmPrimaryPurchase(FGameplayTag WeaponTag);
 
 	// 6. 이미 소지한 주무기 사이의 무료 장착 전환.
-	bool ServerSetEquippedPrimary(EWeaponType WeaponType);
+	bool ServerSetEquippedPrimary(FGameplayTag WeaponTag);
 
 	// 권총/칼 업그레이드 확정. 소지는 이미 true이므로 해금만 연다.
-	bool ServerConfirmWeaponUpgrade(EWeaponType WeaponType);
+	bool ServerConfirmWeaponUpgrade(FGameplayTag WeaponTag);
 
 	// 상점에서 하나의 슬롯을 두고 경쟁하는 무기인가.
-	static bool IsPrimaryWeapon(EWeaponType WeaponType);
+	static bool IsPrimaryWeaponTag(FGameplayTag WeaponTag);
 
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon|Inventory")
 	FOnWeaponInventoryChanged OnWeaponInventoryChanged;
@@ -86,8 +87,8 @@ protected:
 private:
 	bool HasServerAuthority() const;
 
-	FWeaponOwnershipState* FindState(EWeaponType WeaponType);
-	const FWeaponOwnershipState* FindState(EWeaponType WeaponType) const;
+	FWeaponOwnershipState* FindState(FGameplayTag WeaponTag);
+	const FWeaponOwnershipState* FindState(FGameplayTag WeaponTag) const;
 
 	void ResetToDefaults();
 	void NotifyInventoryChanged();
@@ -103,7 +104,7 @@ private:
 	TArray<FWeaponOwnershipState> WeaponStates;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Inventory)
-	EWeaponType EquippedPrimary = EWeaponType::None;
+	FGameplayTag EquippedPrimaryTag;
 
 	UPROPERTY()
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;

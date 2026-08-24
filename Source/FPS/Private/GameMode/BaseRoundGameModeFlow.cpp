@@ -1,4 +1,4 @@
-#include "GameMode/BaseRoundGameMode.h"
+﻿#include "GameMode/BaseRoundGameMode.h"
 
 #include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
@@ -234,7 +234,7 @@ void ABaseRoundGameMode::FinishAugmentDraft()
 
 	if (!TryStartRoundCombat())
 	{
-		SuspendRoundOpening(TEXT("Draft completion or mode activation failed."));
+		SuspendRoundOpening(TEXT("Round combat transition failed."));
 	}
 }
 
@@ -252,6 +252,17 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 		|| !PendingRoundContext.GetValue().IsValid()
 		|| !PlayerManager->AreRoundParticipantsReady())
 	{
+		return false;
+	}
+
+	// 라운드에 참여하는 모든 플레이어의 Pending 거래를 먼저 확인한다.
+	// 이 검사 자체는 상태를 바꾸지 않으며, 실패 정리는 기존 SuspendRoundOpening 흐름이 담당한다.
+	if (!CanCommitPendingShopPurchases())
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot start round combat because shop purchases are not ready to commit."));
 		return false;
 	}
 

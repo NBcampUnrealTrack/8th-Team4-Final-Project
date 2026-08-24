@@ -380,7 +380,8 @@ FShopTransactionResult UShopComponent::TryReplaceTransaction(
 	return TransactionResult;
 }
 
-EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHandle& Transaction)
+EShopPurchaseResult UShopComponent::CanCommitTransaction(
+	const FShopTransactionHandle& Transaction) const
 {
 	if (!HasServerAuthority())
 	{
@@ -392,10 +393,13 @@ EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHand
 		return EShopPurchaseResult::TransactionInProgress;
 	}
 
-	TGuardValue<bool> ProcessingGuard(bIsProcessingTransaction, true);
-
 	const FShopTransactionHandle* ActiveTransaction = nullptr;
-	const EShopPurchaseResult ValidationResult = ValidateActiveTransaction(Transaction, ActiveTransaction);
+	return ValidateActiveTransaction(Transaction, ActiveTransaction);
+}
+
+EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHandle& Transaction)
+{
+	const EShopPurchaseResult ValidationResult = CanCommitTransaction(Transaction);
 	if (ValidationResult != EShopPurchaseResult::Success)
 	{
 		UE_LOG(LogShop, Warning,
@@ -406,8 +410,11 @@ EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHand
 		return ValidationResult;
 	}
 
+	TGuardValue<bool> ProcessingGuard(bIsProcessingTransaction, true);
+
 	// 실제 상품 적용은 호출자가 완료하고 Commit은 미확정 거래를 원장에서 닫는 역할만 한다.
-	const FShopTransactionHandle CommittedTransaction =	*ActiveTransaction;
+	// 사전검증에서 서버 원장과 전체 필드가 일치했으므로 검증된 요청 값을 그대로 사용한다.
+	const FShopTransactionHandle CommittedTransaction = Transaction;
 
 	bool bPurchaseCountChanged = false;
 
@@ -427,7 +434,6 @@ EShopPurchaseResult UShopComponent::CommitTransaction(const FShopTransactionHand
 		break;
 	}
 
-	ActiveTransaction = nullptr;
 	ActiveTransactions.Remove(CommittedTransaction.TransactionId);
 
 	if (bPurchaseCountChanged)

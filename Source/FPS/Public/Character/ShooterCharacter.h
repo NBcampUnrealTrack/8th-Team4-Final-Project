@@ -7,7 +7,6 @@
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Interfaces/RogueDamageableTarget.h"
-#include "Weapon/WeaponTypes.h"
 #include "ShooterCharacter.generated.h"
 
 class UAbilitySystemComponent;
@@ -58,14 +57,9 @@ public:
 	void HandleJumpReleased();
 	void HandleSprintPressed();
 	void HandleSprintReleased();
-	void HandleWeaponSlotPressed(EWeaponSlot WeaponSlot);
 
 protected:
 	bool InitializeDefaultWeaponLoadout();
-	bool TrySwitchWeaponSlot(EWeaponSlot WeaponSlot);
-
-	UFUNCTION(Server, Reliable)
-	void ServerSwitchWeaponSlot(EWeaponSlot WeaponSlot);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Loadout")
 	TSubclassOf<AWeaponBase> DefaultPrimaryWeaponClass;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -12,6 +12,10 @@ class UTextBlock;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(
 	FOnShopItemPurchaseRequested,
+	FGameplayTag);
+
+DECLARE_MULTICAST_DELEGATE_OneParam(
+	FOnShopItemRefundRequested,
 	FGameplayTag);
 
 /**
@@ -31,7 +35,9 @@ public:
 
 	void RefreshPurchaseState(
 		int32 Price,
-		EShopPurchaseResult PurchaseResult);
+		EShopPurchaseResult PurchaseResult,
+		bool bIsPending,
+		bool bIsEquippedPending);
 
 	FGameplayTag GetItemId() const
 	{
@@ -39,6 +45,7 @@ public:
 	}
 
 	FOnShopItemPurchaseRequested OnPurchaseRequested;
+	FOnShopItemRefundRequested OnRefundRequested;
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -46,6 +53,9 @@ protected:
 private:
 	UFUNCTION()
 	void HandlePurchaseClicked();
+
+	UFUNCTION()
+	void HandleRefundClicked();
 
 private:
 	FGameplayTag ItemId;
@@ -65,4 +75,8 @@ private:
 	// 카드 전체를 클릭 영역으로 사용한다.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> Button_Purchase;
+
+	// 확정 전 상품을 취소하는 별도 버튼이다. 기존 WBP와의 호환을 위해 선택 바인딩으로 둔다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Refund;
 };
