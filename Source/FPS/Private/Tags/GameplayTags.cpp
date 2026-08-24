@@ -125,9 +125,23 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
 
 	// 어빌리티 입력 슬롯
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Slot1, "InputTag.Ability.Slot1", "증강 액티브 1. 증강 애셋에 직접 넣지 말 것");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_Slot2, "InputTag.Ability.Slot2", "증강 액티브 2. 증강 애셋에 직접 넣지 말 것");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability_AugmentSlot, "InputTag.Ability.AugmentSlot", "액티브 증강 슬롯 표식. 실제 칸은 런타임 배정");
 
 	// 액티브 증강 쿨타임
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
+
+	// 슬롯을 늘리면 ActiveInputSlotCount, 해당 함수 수정
+	FGameplayTag GetActiveInputSlot(const int32 SlotIndex)
+	{
+		switch (SlotIndex)
+		{
+		case 0:  return InputTag_Ability_Slot1;
+		case 1:  return InputTag_Ability_Slot2;
+		default: return FGameplayTag();
+		}
+	}
 }
