@@ -120,7 +120,7 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 	// 이미 증강이 떠있으면 return
 	if (IsValid(AugmentSelectInstance) && AugmentSelectInstance->IsActivated())
 	{
-		AugmentSelectInstance->SetOffers(InOffers);
+		AugmentSelectInstance->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 
 		return;
 	}
@@ -145,7 +145,9 @@ void UShooterUIInitComponent::ShowAugmentSelect(const TArray<FAugmentInventoryEn
 
 	AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(this, &ThisClass::HandleAugmentSelected);
 	AugmentSelectInstance->OnAugmentSelected.AddUniqueDynamic(this, &ThisClass::HandleAugmentSelected);
-	AugmentSelectInstance->SetOffers(InOffers);
+	AugmentSelectInstance->OnAugmentRerollRequested.RemoveDynamic(this, &ThisClass::HandleAugmentRerollRequested);
+	AugmentSelectInstance->OnAugmentRerollRequested.AddUniqueDynamic(this, &ThisClass::HandleAugmentRerollRequested);
+	AugmentSelectInstance->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 
 }
 
@@ -173,6 +175,14 @@ void UShooterUIInitComponent::HandleAugmentSelected(int32 OfferIndex)
 void UShooterUIInitComponent::HandleAugmentSelectionStateChanged()
 {
 	RefreshAugmentSelection();
+}
+
+void UShooterUIInitComponent::HandleAugmentRerollRequested(int32 SlotIndex)
+{
+	if (BoundInventory.IsValid())
+	{
+		BoundInventory->ServerRerollOffer(SlotIndex);
+	}
 }
 
 void UShooterUIInitComponent::RefreshAugmentSelection()
@@ -231,4 +241,19 @@ UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const
 	UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
 
 	return GI ? GI->GetSubsystem<UShooterUIManagerSubsystem>() : nullptr;
+}
+
+TArray<int32> UShooterUIInitComponent::BuildRerollsRemaining(int32 OfferCount) const
+{
+	TArray<int32> Result;
+	Result.Reserve(OfferCount);
+	
+	for (int32 i = 0; i < OfferCount; ++i)
+	{
+		const int32 Remaining = BoundInventory.IsValid() ? BoundInventory->GetSlotRerollsRemaining(i) : 0;
+		
+		Result.Add(Remaining);
+	}
+	
+	return Result;
 }
