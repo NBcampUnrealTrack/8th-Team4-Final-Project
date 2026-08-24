@@ -335,11 +335,17 @@ void ULobbyWidget::UpdateLobbyButtons()
 	if (TeamAButton)
 	{
 		TeamAButton->SetIsEnabled(LocalTeam != EGameTeam::TeamA);
+		TeamAButton->SetBackgroundColor(LocalTeam == EGameTeam::TeamA
+			? FLinearColor(1.0f, 0.15f, 0.15f)
+			: FLinearColor(0.25f, 0.05f, 0.05f));
 	}
 
 	if (TeamBButton)
 	{
 		TeamBButton->SetIsEnabled(LocalTeam != EGameTeam::TeamB);
+		TeamBButton->SetBackgroundColor(LocalTeam == EGameTeam::TeamB
+			? FLinearColor(0.15f, 0.15f, 1.0f)
+			: FLinearColor(0.05f, 0.05f, 0.25f));
 	}
 
 	if (StartButton)
