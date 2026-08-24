@@ -200,6 +200,7 @@ void AShooterPlayerState::SetVoiceTalking(bool bNewVoiceTalking)
 
 void AShooterPlayerState::OnRep_VoiceTalking()
 {
+	OnVoiceTalkingChanged.Broadcast(this, bIsVoiceTalking);
 }
 
 void AShooterPlayerState::ServerGrantStartupAbilities()

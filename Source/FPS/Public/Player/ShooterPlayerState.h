@@ -9,10 +9,13 @@
 #include "ShooterPlayerState.generated.h"
 
 class UAugmentInventoryComponent;
+class AShooterPlayerState;
 class URogueAbilitySystemComponent;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
 class URogueVitalAttributeSet;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterVoiceTalkingChangedSignature, AShooterPlayerState*, PlayerState, bool, bIsTalking);
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -63,6 +66,9 @@ public:
 	bool IsVoiceTalking() const { return bIsVoiceTalking; }
 
 	void SetVoiceTalking(bool bNewVoiceTalking);
+
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Voice")
+	FShooterVoiceTalkingChangedSignature OnVoiceTalkingChanged;
 
 protected:
 	virtual void PostInitializeComponents() override;

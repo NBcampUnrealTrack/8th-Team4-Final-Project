@@ -14,9 +14,16 @@ void UVoiceChatSubsystem::SetPlayerMuted(APlayerState* PlayerState, const bool b
 		return;
 	}
 
+	const bool bWasMuted = IsPlayerMuted(PlayerState);
+	if (bWasMuted == bMuted)
+	{
+		return;
+	}
+
 	if (bMuted)
 	{
 		MutedPlayers.Add(PlayerState);
+		OnVoiceMuteChanged.Broadcast(PlayerState, true);
 		return;
 	}
 
@@ -28,6 +35,8 @@ void UVoiceChatSubsystem::SetPlayerMuted(APlayerState* PlayerState, const bool b
 			It.RemoveCurrent();
 		}
 	}
+
+	OnVoiceMuteChanged.Broadcast(PlayerState, false);
 }
 
 void UVoiceChatSubsystem::TogglePlayerMuted(APlayerState* PlayerState)

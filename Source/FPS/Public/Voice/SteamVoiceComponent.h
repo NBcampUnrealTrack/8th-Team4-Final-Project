@@ -7,6 +7,25 @@
 
 class APlayerState;
 class AShooterPlayerController;
+class UAudioComponent;
+class USoundWaveProcedural;
+
+USTRUCT()
+struct FSteamVoicePlaybackSlot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TObjectPtr<APlayerState> SpeakerPlayerState;
+
+	UPROPERTY()
+	TObjectPtr<USoundWaveProcedural> SoundWave;
+
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> AudioComponent;
+
+	int32 SampleRate = 0;
+};
 
 UCLASS(ClassGroup = (Custom))
 class FPS_API USteamVoiceComponent : public UActorComponent
@@ -20,18 +39,19 @@ public:
 	void StopCapture();
 	bool IsCapturingVoice() const { return bCapturingVoice; }
 
+	void PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
+
+private:
 	bool DecompressVoicePacket(
 		APlayerState* SpeakerPlayerState,
 		const TArray<uint8>& CompressedVoiceData,
-		TArray<uint8>& OutPcmVoiceData,
-		int32& OutSampleRate) const;
+		TArray<uint8>& OutPcmVoiceData);
 
-protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-private:
 	void PollVoiceCapture();
+	FSteamVoicePlaybackSlot* FindOrCreatePlaybackSlot(APlayerState* SpeakerPlayerState);
 	AShooterPlayerController* GetOwnerShooterPlayerController() const;
+	int32 GetVoiceSampleRate();
 
 	UPROPERTY(EditDefaultsOnly, Category = "Shooter|Voice")
 	float CapturePollInterval = 0.05f;
@@ -42,6 +62,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Shooter|Voice")
 	int32 InitialPcmBufferBytes = 20480;
 
+	UPROPERTY()
+	TArray<FSteamVoicePlaybackSlot> PlaybackSlots;
+
 	FTimerHandle VoiceCaptureTimerHandle;
 	bool bCapturingVoice = false;
+	int32 CachedVoiceSampleRate = 0;
 };

@@ -363,6 +363,7 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		return;
 	}
 
+	int32 RoutedTargetCount = 0;
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		AShooterPlayerController* ListenerController = Cast<AShooterPlayerController>(It->Get());
@@ -374,9 +375,15 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
 		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState))
 		{
+			++RoutedTargetCount;
 			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData);
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Targets=%d"),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num(),
+		RoutedTargetCount);
 }
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
@@ -399,15 +406,14 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Listener=%s Speaker=%s CompressedBytes=%d"),
+		*GetNameSafe(PlayerState),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num());
+
 	if (SteamVoiceComponent)
 	{
-		TArray<uint8> PcmVoiceData;
-		int32 SampleRate = 0;
-		SteamVoiceComponent->DecompressVoicePacket(
-			SpeakerPlayerState,
-			CompressedVoiceData,
-			PcmVoiceData,
-			SampleRate);
+		SteamVoiceComponent->PlayCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
 	}
 
 	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);

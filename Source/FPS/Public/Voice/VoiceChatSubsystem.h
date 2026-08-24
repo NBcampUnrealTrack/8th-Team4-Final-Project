@@ -7,6 +7,8 @@
 class APlayerState;
 class UWorld;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FVoiceMuteChangedSignature, APlayerState*, PlayerState, bool, bMuted);
+
 UCLASS()
 class FPS_API UVoiceChatSubsystem : public UGameInstanceSubsystem
 {
@@ -27,6 +29,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Voice")
 	bool CanHearVoice(const APlayerState* Listener, const APlayerState* Speaker) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Voice")
+	FVoiceMuteChangedSignature OnVoiceMuteChanged;
 
 private:
 	bool IsTeamVoiceOnly(const UWorld* World) const;
