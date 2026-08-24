@@ -6,6 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "ShooterSkillSlot.generated.h"
 
+class UGameplayAbility;
 class UShooterGauge;
 class UImage;
 class UHorizontalBox;
@@ -129,6 +130,9 @@ private:
 	
 	// CachedCooldownTag를 아직 못 찾았으면 SlotInputTag로 탐색 시도
 	void TryBindCooldownTag(URogueAbilitySystemComponent* ASC);
+	
+	// 충전 완료시 연출
+	void PlayReadyGlow();
 	
 	// DELEGATE 맞추기용
 	UFUNCTION()

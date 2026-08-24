@@ -6,6 +6,7 @@
 #include "Engine/GameInstance.h"
 #include "GameMode/BaseRoundGameState.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameMode/LobbyGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -143,6 +144,20 @@ void AShooterPlayerController::ToggleDynamicCrosshair()
 	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
+void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
+		}
+		return;
+	}
+
+	ServerSetLobbyTeam(RequestedTeam);
+}
+
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 {
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
@@ -216,6 +231,15 @@ void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobby
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
 		ShooterPlayerState->SetLobbyReady(bNewLobbyReady);
+	}
+}
+
+void AShooterPlayerController::ServerSetLobbyTeam_Implementation(const EGameTeam RequestedTeam)
+{
+	// 정원 검사와 실제 팀 반영은 서버 권한인 GameMode 가 담당
+	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+	{
+		LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
 	}
 }
 

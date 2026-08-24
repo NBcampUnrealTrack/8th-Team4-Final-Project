@@ -26,6 +26,10 @@ public:
 	// OfferIndex는 서버가 준 배열에서의 위치로 클릭했을때 전달함
 	void SetData(const UAugmentDefinition* InDefinition, int32 InLevel, int32 InOfferIndex);
 	
+	// TODO: 리롤을 실제 교체 연출로 확장 시
+	// FadeOut -> SetData -> FadeIn 구조로 변경한다.
+	void PlayRerollFeedback();
+	
 	FOnAugmentCardClicked OnAugmentCardClicked;
 	
 protected:
@@ -45,6 +49,8 @@ protected:
 	TObjectPtr<UImage> Image_AlertBadge;
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_Highlight;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Reroll;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TObjectPtr<UShooterAugmentTierStyleSet> TierStyles;

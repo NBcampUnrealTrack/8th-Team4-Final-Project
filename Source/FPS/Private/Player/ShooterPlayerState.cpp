@@ -201,6 +201,18 @@ void AShooterPlayerState::OnRep_LobbyReady()
 	}
 }
 
+void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
+{
+	Super::OnRep_Team(PreviousTeam);
+
+	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
+	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신
+	if (ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr)
+	{
+		LobbyGameState->OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
 void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
 {
 	if (!HasAuthority() || bLoadedIntoMatch == bNewLoadedIntoMatch)

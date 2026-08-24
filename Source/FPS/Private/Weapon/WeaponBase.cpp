@@ -485,32 +485,10 @@ void AWeaponBase::ResolveHitscanShot(
 	{
 		Request.DamageDistanceOrigin = Mesh3P->GetSocketLocation(MuzzleSocketName);
 	}
-	else if (IsValid(Mesh1P.Get()) && Mesh1P->DoesSocketExist(MuzzleSocketName))
-	{
-		Request.DamageDistanceOrigin = Mesh1P->GetSocketLocation(MuzzleSocketName);
-	}
 	else
 	{
-		ensureMsgf(
-			false,
-			TEXT("Muzzle socket is missing. Weapon=%s Socket=%s"),
-			*GetNameSafe(this),
-			*MuzzleSocketName.ToString());
-
-		// Fire()가 이미 확정된 뒤의 브리지이므로 요청을 중단하지 않는다.
-		// 잘못된 에셋에서도 가장 가까운 무기 원점을 사용하고 설정 오류는 ensure로 노출한다.
-		if (IsValid(Mesh3P.Get()))
-		{
-			Request.DamageDistanceOrigin = Mesh3P->GetComponentLocation();
-		}
-		else if (IsValid(Mesh1P.Get()))
-		{
-			Request.DamageDistanceOrigin = Mesh1P->GetComponentLocation();
-		}
-		else
-		{
-			Request.DamageDistanceOrigin = GetActorLocation();
-		}
+		// Muzzle 소켓이 없는 레거시 무기는 카메라 Trace 시작점을 대신 사용한다.
+		Request.DamageDistanceOrigin = TraceStart;
 	}
 
 	Request.bHasDamageDistanceOrigin = true;
@@ -526,9 +504,10 @@ void AWeaponBase::ResolveHitscanShot(
 		UE_LOG(
 			LogWeaponHitscanBridge,
 			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f"),
+			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.1f"),
 			*GetNameSafe(this),
 			PelletDirections.Num(),
-			EffectiveTraceRange);
+			EffectiveTraceRange,
+			ShotDamage);
 	}
 }

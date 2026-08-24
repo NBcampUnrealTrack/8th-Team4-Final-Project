@@ -77,18 +77,20 @@ private:
 	void HandleSurrenderMenuRequested();
 	void HandleSurrenderVoteStateChanged();
 	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
+  UFUNCTION()
+  void HandleAugmentSelected(int32 OfferIndex);
 
-	UFUNCTION()
-	void HandleAugmentSelected(int32 OfferIndex);
+  UFUNCTION()
+  void HandleAugmentOffersChanged();
 
-	UFUNCTION()
-	void HandleAugmentOffersChanged();
+  UFUNCTION()
+  void HandleRoundStateChanged();
 
-	UFUNCTION()
-	void HandleRoundStateChanged();
+  UFUNCTION()
+  void HandleAugmentRerollRequested(int32 SlotIndex);
 
-	UFUNCTION()
-	void HandleShopCloseRequested();
+  UFUNCTION()
+  void HandleShopCloseRequested();
 
 	void ScheduleModalRefresh();
 	void RefreshModalPresentation();
@@ -135,15 +137,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
 
-	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
-	TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
-	TWeakObjectPtr<ABaseRoundPlayerController> BoundRoundPlayerController;
+  TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
+  TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
+  TWeakObjectPtr<ABaseRoundPlayerController> BoundRoundPlayerController;
 
-	FTimerHandle PlayerStateWaitTimerHandle;
-	FTimerHandle ModalRefreshTimerHandle;
-	bool bInGameUIReady = false;
-	bool bInGameMenuRequested = false;
-	bool bLastObservedVoteActive = false;
-	bool bModalRefreshPending = false;
-	bool bLoggedInitialWidgetPushFailure = false;
+  FTimerHandle PlayerStateWaitTimerHandle;
+  FTimerHandle ModalRefreshTimerHandle;
+
+  bool bInGameUIReady = false;
+  bool bInGameMenuRequested = false;
+  bool bLastObservedVoteActive = false;
+  bool bModalRefreshPending = false;
+  bool bLoggedInitialWidgetPushFailure = false;
+
+  TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 };

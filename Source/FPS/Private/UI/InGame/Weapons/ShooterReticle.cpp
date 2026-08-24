@@ -106,6 +106,7 @@ float UShooterReticle::GetSpreadDegrees() const
 	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 	if (Settings && !Settings->IsDynamicCrosshairEnabled())
 	{
+		// 정적 크로스헤어 설정: 실제 탄퍼짐과 무관하게 항상 0(=MinSpreadRadius로 고정)으로 취급한다.
 		return 0.f;
 	}
 
