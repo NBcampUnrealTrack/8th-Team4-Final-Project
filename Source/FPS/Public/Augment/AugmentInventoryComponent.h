@@ -69,10 +69,10 @@ public:
 	// 제시된 후보를 매치 등장 이력에 남긴다. 레벨업 후보는 재등장이 정상이라 제외, 서버 전용
 	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
-	// 카드 선택. 소유 클라이언트가 호출
-	// 정의가 아니라 인덱스를 받음 - 후보 외의 증강은 선택할 수 없음
+	// 카드 선택과 입력 슬롯을 받음. 소유 클라이언트가 호출
+	// SlotIndex 는 0-based, 범위 밖(INDEX_NONE 포함)이면 슬롯 자동 배정
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rogue|Augment")
-	void ServerSelectOffer(int32 OfferIndex);
+	void ServerSelectOffer(int32 OfferIndex, int32 SlotIndex);
 
 	// 슬롯 하나만 다시 뽑음. 소유 클라이언트가 호출
 	// 비용 없음. 추첨은 라운드 준비 때 완료된 상태
@@ -116,6 +116,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	int32 GetLevelInLine(FGameplayTag LineTag) const;
 
+	// 이 후보가 슬롯 선택 버튼을 띄워야 하는지
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	bool DoesOfferNeedInputSlot(int32 OfferIndex) const;
+
 	// ExecCalc(서버전용)이 히트마다 읽음 정의를 매번 훑지 않도록 캐싱
 	const TArray<FAugmentConditionalDamageRule>& GetConditionalDamageRules() const { return CachedConditionalRules; }
 
@@ -139,14 +143,24 @@ private:
 	bool HasServerAuthority(const TCHAR* Context) const;
 
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
+	int32 FindEntryIndexInSlot(const FGameplayTag& SlotTag) const;
 	FAugmentLineSnapshot CaptureLineSnapshot(const FGameplayTag& LineTag) const;
 	void RemoveLineAugment(const FGameplayTag& LineTag);
-	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 Level, int32 EntryIndex);
+	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 Level, int32 EntryIndex, FGameplayTag InputSlotTag);
 	bool RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot);
 	void RebuildConditionalRuleCache();
 
+	// 신규 증강이 들어갈 슬롯. 요청이 없으면 빈 칸, 레벨업은 쓰던 칸
+	FGameplayTag ResolveTargetInputSlot(const UAugmentDefinition& Definition, FGameplayTag Requested) const;
+
+	// 부여된 계열의 슬롯 태그 교체
+	bool MoveEntryToInputSlot(int32 EntryIndex, FGameplayTag NewSlot);
+
+	// 아무 계열도 쓰지 않는 첫 슬롯. 전부 찼으면 무효 태그
+	FGameplayTag FindFreeInputSlot() const;
+
 	// 선택한 후보를 이번 드래프트의 확정 대기 상태로 옮긴다. 서버 전용
-	bool StageOfferSelection(int32 OfferIndex, const TCHAR* Reason);
+	bool StageOfferSelection(int32 OfferIndex, int32 SlotIndex, const TCHAR* Reason);
 	void ClearStagedOffer();
 
 	// 이번 라운드 드래프트 상태 초기화
@@ -198,6 +212,10 @@ private:
 	FAugmentInventoryEntry StagedOffer;
 	FAugmentLineSnapshot StagedPreviousLine;
 	EAugmentOfferCommitState StagedOfferState = EAugmentOfferCommitState::Empty;
+
+	// 이번 커밋에서 비켜난 계열과 그 계열이 쓰던 칸. 밀어내기가 없었으면 무효 태그
+	FGameplayTag StagedDisplacedLine;
+	FGameplayTag StagedDisplacedSlot;
 
 public:
 	// 보유 목록이 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
