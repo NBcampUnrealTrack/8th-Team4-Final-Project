@@ -21,6 +21,7 @@ namespace
 	constexpr float MinPenetrationMul = 1.f;     // 관통력 감소 증강은 없음
 	constexpr float TorsoMultiplier   = 1.f;     // 미등록 부위의 기준값이자 헤드 초과분의 기준선
 	constexpr float MaxShopDamageAmplification = 0.25f; // 상점 기본 대미지 증폭 상한. +5% x 5회 = +25%
+	constexpr float MaxLifestealRate = 1.f;      // 준 피해보다 많이 회복하는 것은 허용하지 않음
 
 	// ------------------------------------------------------------
 	// GAS 연동
@@ -51,11 +52,13 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition SourceMaxHealthPercentDamageDef;
 		FGameplayEffectAttributeCaptureDefinition SourceEffectiveRangeBonusDef;
 		FGameplayEffectAttributeCaptureDefinition SourcePenetrationMultiplierDef;
+		FGameplayEffectAttributeCaptureDefinition SourceLifestealRateDef;
 
 		// Augment / 방어 측
 		FGameplayEffectAttributeCaptureDefinition TargetHeadshotDamageTakenRateDef;
 		FGameplayEffectAttributeCaptureDefinition TargetDamageReductionRateDef;
 		FGameplayEffectAttributeCaptureDefinition TargetFlatDamageReductionDef;
+		FGameplayEffectAttributeCaptureDefinition TargetEffectiveRangeBonusDef;
 
 		FRogueDamageCapture()
 		{
@@ -84,13 +87,19 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetEffectiveRangeBonusAttribute(),    ECaptureSource::Source);
 			SourcePenetrationMultiplierDef =
 				MakeDef(URogueAugmentAttributeSet::GetPenetrationMultiplierAttribute(),  ECaptureSource::Source);
-				
+			SourceLifestealRateDef =
+				MakeDef(URogueAugmentAttributeSet::GetLifestealRateAttribute(),          ECaptureSource::Source);
+
 			TargetHeadshotDamageTakenRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageTakenRateAttribute(), ECaptureSource::Target);
 			TargetDamageReductionRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetDamageReductionRateAttribute(),    ECaptureSource::Target);
 			TargetFlatDamageReductionDef =
 				MakeDef(URogueAugmentAttributeSet::GetFlatDamageReductionAttribute(),    ECaptureSource::Target);
+
+			// 받는 피해 규칙의 거리 조건은 피해자 자신의 사거리 증강을 봐야 한다
+			TargetEffectiveRangeBonusDef =
+				MakeDef(URogueAugmentAttributeSet::GetEffectiveRangeBonusAttribute(),    ECaptureSource::Target);
 		}
 	};
 
@@ -134,10 +143,11 @@ namespace
 	// 조건부 증강 누산
 	struct FRogueRuleTotals
 	{
-		float Multiplier     = 1.f;
-		float Flat           = 0.f;
-		float HeadMultiplier = 1.f;
-		float HeadFlat       = 0.f;
+		float BonusRateSum     = 0.f;
+		float Flat             = 0.f;
+		float HeadBonusRateSum = 0.f;
+		float HeadFlat         = 0.f;
+		float LifestealRate	   = 0.f; // 공격 측만 적용. 방어 측은 흡혈 없음
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -156,6 +166,10 @@ namespace
 		float SourceHealthPct = 100.f;
 		bool  bTargetHealthKnown = false;
 		bool  bSourceHealthKnown = false;
+
+		// 사거리 증강. 규칙 Side 로 골라 쓴다
+		float SourceRangeBonusMeters = 0.f;
+		float TargetRangeBonusMeters = 0.f;
 	};
 
 	// 보호막, 체력 피해량
@@ -216,11 +230,26 @@ namespace
 			return false;
 		}
 
-		// 교전 거리가 규정 범위 밖인 경우
-		if (Rule.bUseDistanceRange
-			&& !IsInRange(RC.Ctx->HitDistanceMeters, Rule.MinDistanceMeters, Rule.MaxDistanceMeters))
+		// 사거리 증강을 적용한 교전 거리가 규정 범위 밖인 경우
+		if (Rule.bUseDistanceRange)
 		{
-			return false;
+			// 히트스캔이 아닌 공격은 거리 조건 적용 X
+			if (RC.Ctx->HitGroups.IsEmpty())
+			{
+				return false;
+			}
+
+			const float RangeBonus = Rule.bDistanceScalesWithRangeBonus
+				? ((Rule.Side == EAugmentDamageRuleSide::Dealt)
+					? RC.SourceRangeBonusMeters
+					: RC.TargetRangeBonusMeters)
+				: 0.f;
+
+			if (!IsInRange(RC.Ctx->HitDistanceMeters,
+				Rule.MinDistanceMeters, Rule.MaxDistanceMeters + RangeBonus))
+			{
+				return false;
+			}
 		}
 
 		// 피해자의 체력 구간이 밖인 경우, 체력을 읽을 수 없는 경우
@@ -276,16 +305,20 @@ namespace
 			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
 			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
 
+			// 규칙끼리 합산. 하한은 배율로 환산할 때
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Bucket.HeadMultiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Bucket.HeadFlat       += Rule.FlatDamageBonus;
+				Bucket.HeadBonusRateSum += Rule.DamageBonusRate;
+				Bucket.HeadFlat         += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Bucket.Multiplier *= FMath::Max(0.f, Rule.DamageMultiplier);
-				Bucket.Flat       += Rule.FlatDamageBonus;
+				Bucket.BonusRateSum += Rule.DamageBonusRate;
+				Bucket.Flat         += Rule.FlatDamageBonus;
 			}
+
+			// 흡혈은 공격 측만 적용
+			Bucket.LifestealRate += FMath::Max(0.f, Rule.LifestealRate);
 		}
 	}
 
@@ -307,6 +340,9 @@ namespace
 			RC.SourceHealthPct    = E.Read(E.Capture.SourceHealthDef, 0.f) / SourceMaxHealth * 100.f;
 			RC.bSourceHealthKnown = true;
 		}
+
+		RC.SourceRangeBonusMeters = FMath::Max(0.f, E.Read(E.Capture.SourceEffectiveRangeBonusDef, 0.f));
+		RC.TargetRangeBonusMeters = FMath::Max(0.f, E.Read(E.Capture.TargetEffectiveRangeBonusDef, 0.f));
 
 		return RC;
 	}
@@ -530,20 +566,27 @@ namespace
 		}
 	}
 
-	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
-	void ApplyRuleTotals(const FRogueRuleTotals& Totals, FRogueDamageAccumulator& Acc)
+	// 증감률 합을 배율로 환산
+	float ResolveRuleScale(const float BonusRateSum, const float MinScale)
 	{
-		Acc.Scale(Totals.Multiplier);
+		return FMath::Max(MinScale, 1.f + BonusRateSum);
+	}
+
+	// 한쪽 조건부 규칙 누산 결과를 몸통 몫과 헤드 몫에 각각 반영
+	void ApplyRuleTotals(const FRogueRuleTotals& Totals, const float MinScale, FRogueDamageAccumulator& Acc)
+	{
+		Acc.Scale(ResolveRuleScale(Totals.BonusRateSum, MinScale));
 		Acc.AddFlat(Totals.Flat);
 
-		Acc.ScaleHeadshot(Totals.HeadMultiplier);
+		Acc.ScaleHeadshot(ResolveRuleScale(Totals.HeadBonusRateSum, MinScale));
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
 	}
 
 	// 5. 공격 측 조건부 증강
 	void ApplyDealtRules(const FRogueConditionalTotals& Totals, FRogueDamageAccumulator& Acc)
 	{
-		ApplyRuleTotals(Totals.Dealt, Acc);
+		// 공격 측 하한 0.f
+		ApplyRuleTotals(Totals.Dealt, 0.f, Acc);
 	}
 
 	// 6. 방어 측 상시 증강
@@ -578,7 +621,8 @@ namespace
 			return;
 		}
 
-		ApplyRuleTotals(Totals.Taken, Acc);
+		// 방어 측 하한 1.f - MaxReductionRate
+		ApplyRuleTotals(Totals.Taken, 1.f - MaxReductionRate, Acc);
 	}
 
 	// 8. 최종 대미지를 보호막 대미지와 체력 대미지로 분리
@@ -623,6 +667,24 @@ namespace
 
 		return Split;
 	}
+
+	// 9. 최종 흡혈 계수 계산
+	float ResolveLifestealRate(const FRogueDamageEval&        E,
+	                           const FRogueDamageSource&      Source,
+	                           const FRogueConditionalTotals& Totals)
+	{
+		// 자가 피해나 환경 피해는 흡혈 X
+		if (!Source.bIsOffensive)
+		{
+			return 0.f;
+		}
+
+		// 상시, 패시브 흡혈
+		const float Global = FMath::Max(0.f, E.Read(E.Capture.SourceLifestealRateDef, 0.f));
+
+		// 조건부 흡혈
+		return FMath::Clamp(Global + Totals.Dealt.LifestealRate, 0.f, MaxLifestealRate);
+	}
 }
 
 UExecCalc_Damage::UExecCalc_Damage()
@@ -644,10 +706,12 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.SourceMaxHealthPercentDamageDef);
 	RelevantAttributesToCapture.Add(C.SourceEffectiveRangeBonusDef);
 	RelevantAttributesToCapture.Add(C.SourcePenetrationMultiplierDef);
+	RelevantAttributesToCapture.Add(C.SourceLifestealRateDef);
 
 	RelevantAttributesToCapture.Add(C.TargetHeadshotDamageTakenRateDef);
 	RelevantAttributesToCapture.Add(C.TargetDamageReductionRateDef);
 	RelevantAttributesToCapture.Add(C.TargetFlatDamageReductionDef);
+	RelevantAttributesToCapture.Add(C.TargetEffectiveRangeBonusDef);
 }
 
 void UExecCalc_Damage::Execute_Implementation(
@@ -706,5 +770,13 @@ void UExecCalc_Damage::Execute_Implementation(
 		OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
 			URogueVitalAttributeSet::GetIncomingDamageAttribute(),
 			EGameplayModOp::Additive, Split.HealthDamage));
+	}
+
+	// 흡혈 계수를 컨텍스트에 실어 보냄
+	FGameplayEffectContextHandle MutableHandle = Spec.GetContext();
+	if (FRogueGameplayEffectContext* MutableCtx =
+			FRogueGameplayEffectContext::ExtractMutableFrom(MutableHandle))
+	{
+		MutableCtx->LifestealRate = ResolveLifestealRate(E, Source, Totals);
 	}
 }

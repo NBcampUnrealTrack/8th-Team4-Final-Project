@@ -5,7 +5,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Augment/AugmentDefinition.h"
-#include "Augment/RogueGameplayAbility.h"
+#include "Augment/Abilities/RogueGameplayAbility.h"
 #include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAssembler, Log, All);

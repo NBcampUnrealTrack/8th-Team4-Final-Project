@@ -1,0 +1,60 @@
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Abilities/GameplayAbility.h"
+#include "ScalableFloat.h"
+#include "RogueGameplayAbility.generated.h"
+
+UCLASS(Abstract)
+class FPS_API URogueGameplayAbility : public UGameplayAbility
+{
+	GENERATED_BODY()
+
+public:
+	virtual const FGameplayTagContainer* GetCooldownTags() const override;
+
+	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle,
+	                           const FGameplayAbilityActorInfo* ActorInfo,
+	                           const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
+	// 충전이 남았으면 통과
+	virtual bool CheckCooldown(const FGameplayAbilitySpecHandle Handle,
+	                           const FGameplayAbilityActorInfo* ActorInfo,
+	                           OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+	// Event.Skill.Used 발신
+	virtual void CommitExecute(const FGameplayAbilitySpecHandle Handle,
+	                           const FGameplayAbilityActorInfo* ActorInfo,
+	                           const FGameplayAbilityActivationInfo ActivationInfo) override;
+
+protected:
+	// true이면 시전 확정 시 Event.Skill.Used 를 발신
+	// 액티브 증강만 활성화, 이벤트로 발동하는 증강은 액티브 스킬이 아님
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
+	bool bBroadcastSkillUsed = false;
+
+	// 어빌리티 레벨에 해당하는 최대 충전 수
+	int32 GetMaxCharges(int32 Level) const;
+
+	// 설정(RogueGASSettings)에 등록된 GE 클래스. 미등록이면 nullptr + Error 로그
+	static UClass* GetCooldownEffectClass();
+	static UClass* GetStatusEffectClass();
+
+	// 쿨타임 중임을 나타내는 태그
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown",
+		meta = (Categories = "Cooldown"))
+	FGameplayTag CooldownTag;
+
+	// 쿨감 적용 전 기준 초
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown")
+	FScalableFloat BaseCooldown = FScalableFloat(0.f);
+
+	// 최대 충전 수. 커브를 안 걸면 전 레벨 1충전
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown")
+	FScalableFloat MaxCharges = FScalableFloat(1.f);
+
+private:
+	mutable FGameplayTagContainer CooldownTagContainer;
+};

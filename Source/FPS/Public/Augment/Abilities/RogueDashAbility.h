@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Augment/RogueGameplayAbility.h"
+#include "Augment/Abilities/RogueGameplayAbility.h"
 #include "RogueDashAbility.generated.h"
 
 class ACharacter;

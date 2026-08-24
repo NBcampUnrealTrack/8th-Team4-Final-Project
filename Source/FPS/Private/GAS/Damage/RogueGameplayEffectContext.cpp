@@ -106,3 +106,19 @@ const FRogueGameplayEffectContext* FRogueGameplayEffectContext::ExtractFrom(
 
 	return static_cast<const FRogueGameplayEffectContext*>(Raw);
 }
+
+FRogueGameplayEffectContext* FRogueGameplayEffectContext::ExtractMutableFrom(FGameplayEffectContextHandle& Handle)
+{
+	FGameplayEffectContext* Raw = Handle.Get();
+	if (!Raw)
+	{
+		return nullptr;
+	}
+
+	if (Raw->GetScriptStruct() != FRogueGameplayEffectContext::StaticStruct())
+	{
+		return nullptr;
+	}
+
+	return static_cast<FRogueGameplayEffectContext*>(Raw);
+}

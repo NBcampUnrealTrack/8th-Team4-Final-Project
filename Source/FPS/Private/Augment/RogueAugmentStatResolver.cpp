@@ -173,28 +173,6 @@ int32 URogueAugmentStatResolver::GetExtraJumpCount(const AActor* Actor)
 	return FMath::Max(0, FMath::RoundToInt(Set->GetExtraJumpCount()));
 }
 
-float URogueAugmentStatResolver::GetFinalFootstepVolume(const AActor* Actor, float BaseVolume)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseVolume;
-	}
-
-	return BaseVolume * Set->GetFootstepVolumeMultiplier();
-}
-
-float URogueAugmentStatResolver::GetFinalHearingRange(const AActor* Actor, float BaseRange)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseRange;
-	}
-
-	return BaseRange * Set->GetHearingRangeMultiplier();
-}
-
 
 // 증강 관련
 float URogueAugmentStatResolver::GetFinalCooldown(const AActor* Actor, float BaseCooldownSeconds)
@@ -209,28 +187,6 @@ float URogueAugmentStatResolver::GetFinalCooldown(const AActor* Actor, float Bas
 
 	// 쿨타임 음수 방지
 	return FMath::Max(0.f, Final);
-}
-
-float URogueAugmentStatResolver::GetFinalThrowRange(const AActor* Actor, float BaseRangeMeters)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseRangeMeters;
-	}
-
-	return BaseRangeMeters * Set->GetThrowRangeMultiplier();
-}
-
-float URogueAugmentStatResolver::GetFinalHealingReceived(const AActor* Actor, float BaseHealAmount)
-{
-	const URogueAugmentAttributeSet* Set = FindAugmentSet(Actor);
-	if (!Set)
-	{
-		return BaseHealAmount;
-	}
-
-	return BaseHealAmount * Set->GetHealingReceivedMultiplier();
 }
 
 // 드래프트 관련

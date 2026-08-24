@@ -32,14 +32,15 @@ void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attri
 {
 	Super::PreAttributeChange(Attribute, NewValue);
 
+	// 최대치는 정수로 유지
 	if (Attribute == GetMaxHealthAttribute())
 	{
 		// 최대 체력은 반드시 1 이상
-		NewValue = FMath::Max(1.f, NewValue);
+		NewValue = FMath::Max(1.f, FMath::RoundToFloat(NewValue));
 	}
 	else if (Attribute == GetMaxShieldAttribute())
 	{
-		NewValue = FMath::Max(0.f, NewValue);
+		NewValue = FMath::Max(0.f, FMath::RoundToFloat(NewValue));
 	}
 	else if (Attribute == GetHealthAttribute())
 	{
@@ -114,6 +115,20 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 		if (Delta > 0.f && !bDeathDeclared)
 		{
 			SetHealth(FMath::Clamp(GetHealth() + Delta, 0.f, GetMaxHealth()));
+		}
+		return;
+	}
+
+	// 보호막 회복
+	if (Attribute == GetIncomingShieldHealingAttribute())
+	{
+		const float Delta = GetIncomingShieldHealing();
+		SetIncomingShieldHealing(0.f);
+
+		// 체력 회복과 같은 기준. 사망한 상태면 보호막도 채우지 않음
+		if (Delta > 0.f && !bDeathDeclared)
+		{
+			SetShield(FMath::Clamp(GetShield() + Delta, 0.f, GetMaxShield()));
 		}
 		return;
 	}

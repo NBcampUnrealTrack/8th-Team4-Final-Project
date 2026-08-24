@@ -27,6 +27,14 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Damage")
 	TSoftObjectPtr<UWeaponDamageData> WeaponDamageData;
 
+	// 흡혈 체력 회복 캐리어
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	TSoftClassPtr<UGameplayEffect> HealEffectClass;
+
+	// 흡혈 보호막 회복 캐리어
+	UPROPERTY(Config, EditAnywhere, Category = "Damage")
+	TSoftClassPtr<UGameplayEffect> ShieldHealEffectClass;
+
 	// 매치 시작에 한 번 부여할 어빌리티 목록.
 	// AShooterPlayerState 가 최초 아바타 연결 시 한 번만 부여
 	UPROPERTY(Config, EditAnywhere, Category = "Ability")

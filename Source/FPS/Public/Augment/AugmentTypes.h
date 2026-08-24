@@ -6,6 +6,7 @@
 #include "AugmentTypes.generated.h"
 
 class UAugmentDefinition;
+class UGameplayEffect;
 class URogueGameplayAbility;
 
 
@@ -24,16 +25,16 @@ enum class EAugmentTier : uint8
 UENUM(BlueprintType)
 enum class EAugmentCategory : uint8
 {
-    Stat            UMETA(DisplayName = "신체강화"),
-    Passive         UMETA(DisplayName = "지속효과"),
-    Active          UMETA(DisplayName = "액티브스킬"),
-    Util            UMETA(DisplayName = "전술유틸리티"),
-    Weapon_General  UMETA(DisplayName = "총기공통"),
-    Weapon_Rifle    UMETA(DisplayName = "돌격소총"),
-    Weapon_Sniper   UMETA(DisplayName = "저격소총"),
-    Weapon_Shotgun  UMETA(DisplayName = "산탄총"),
-    Weapon_Pistol   UMETA(DisplayName = "권총"),
-    Weapon_Knife    UMETA(DisplayName = "전술칼")
+    None            = 0 UMETA(Hidden),
+    Passive         = 1 UMETA(DisplayName = "지속효과"),
+    Active          = 2 UMETA(DisplayName = "액티브스킬"),
+    Util            = 3 UMETA(DisplayName = "전술유틸리티"),
+    Weapon_General  = 4 UMETA(DisplayName = "총기공통"),
+    Weapon_Rifle    = 5 UMETA(DisplayName = "돌격소총"),
+    Weapon_Sniper   = 6 UMETA(DisplayName = "저격소총"),
+    Weapon_Shotgun  = 7 UMETA(DisplayName = "산탄총"),
+    Weapon_Pistol   = 8 UMETA(DisplayName = "권총"),
+    Weapon_Knife    = 9 UMETA(DisplayName = "전술칼")
 };
 
 // 조건부 대미지 규칙이 걸리는 방향
@@ -77,6 +78,11 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
     float MaxDistanceMeters = 0.f;
 
+	// 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseDistanceRange"))
+    bool bDistanceScalesWithRangeBonus = false;
+
     // 피해자 체력 조건 (%)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
     bool bUseTargetHealthRange = false;
@@ -113,13 +119,20 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
 
-    // 조건을 만족했을 때 곱하는 배율. 1.0 이면 변화 없음
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect", meta = (ClampMin = "0.0"))
-    float DamageMultiplier = 1.f;
+    // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
+    // 상시 증강 GE 의 SetByCaller 와 같은 표기
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    float DamageBonusRate = 0.f;
 
     // 배율 이후에 더하는 고정값. 경감 규칙은 음수
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
+
+    // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LifestealRate = 0.f;
+
     // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     bool bAppliesToHeadshotBonusOnly = false;
@@ -138,6 +151,42 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
         meta = (Categories = "InputTag.Ability.AugmentSlot"))
     FGameplayTag InputTag;
+
+    // 이벤트가 왔을 때 적용할 GE
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    TArray<TSoftClassPtr<UGameplayEffect>> EffectsToApply;
+
+    // 켜면 이벤트가 실어 온 대상에게, 끄면 자신에게 적용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bApplyToEventTarget = false;
+
+    // 대상에게 걸 때 적만 허용. 아군 오폭 방지
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bApplyToEventTarget"))
+    bool bHostileTargetOnly = true;
+
+    // 이 무기로 발생한 이벤트만 발동. 비어 있으면 무기 조건 없음.
+    // 대미지 이벤트는 컨텍스트의 무기 태그 사용, 그 외에는 현재 장착 무기 태그 사용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (Categories = "Weapon.Type"))
+    FGameplayTagContainer RequiredWeaponTags;
+
+    // 교전 거리 조건
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bUseDistanceRange = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+    float MinDistanceMeters = 0.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+    float MaxDistanceMeters = 0.f;
+
+    // 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange"))
+    bool bDistanceScalesWithRangeBonus = false;
 };
 
 // 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1

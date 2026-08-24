@@ -66,6 +66,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsSwapping);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsDead);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Revealed);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Invulnerable);
 
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
@@ -91,6 +92,9 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_EnemyShieldBroken);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_LethalSurvived);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Team_AllyDeath);
+
+	// 스킬 관련 이벤트
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Skill_Used);
 
 	// 무기 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Fired);

@@ -16,6 +16,7 @@
 #include "InputActionValue.h"
 #include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);

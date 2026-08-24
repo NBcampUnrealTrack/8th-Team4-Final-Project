@@ -62,7 +62,7 @@ public:
 	TSoftObjectPtr<UTexture2D> Icon;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
-	EAugmentCategory AugmentCategory = EAugmentCategory::Stat;
+	EAugmentCategory AugmentCategory = EAugmentCategory::Passive;
 
 	// 티어는 각 증강의 레벨 공통
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")

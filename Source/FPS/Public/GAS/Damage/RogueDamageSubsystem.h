@@ -10,6 +10,7 @@
 #include "RogueDamageSubsystem.generated.h"
 
 class UAbilitySystemComponent;
+class UGameplayEffect;
 class URogueVitalAttributeSet;
 
 struct FRogueDamageTarget
@@ -64,6 +65,16 @@ private:
 	                             const FRogueHitContext* Hit,
 	                             const URogueVitalAttributeSet* TargetVital,
 	                             FGameplayTagContainer& OutTags);
+
+	// 준 피해에 비례해 가해자를 회복
+	void ApplyLifesteal(UAbilitySystemComponent* SourceASC,
+	                    const FRogueDamageTarget& DamageTarget,
+	                    const FRogueDamageResult& Result) const;
+
+	// SetByCaller Data.Magnitude.Primary 만 넣는 Instant GE 를 자신에게 적용
+	static void ApplyInstantMagnitude(UAbilitySystemComponent& ASC,
+	                                  const TSoftClassPtr<UGameplayEffect>& EffectClass,
+	                                  float Magnitude);
 
 	// 최종 결과 이벤트 발신
 	void BroadcastCombatEvents(const FRogueDamageParams& Params,

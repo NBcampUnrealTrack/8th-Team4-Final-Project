@@ -61,6 +61,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsSwapping,  "State.Combat.IsSwapping",  "무기 교체 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Revealed,    "State.Combat.Revealed",    "발각됨");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Invulnerable, "State.Combat.Invulnerable", "무적. 외부에서 오는 피해를 전부 무시");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -86,6 +87,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_EnemyShieldBroken, "Event.Combat.EnemyShieldBroken", "적 보호막 파괴 -> 가해자");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_LethalSurvived,    "Event.Combat.LethalSurvived",    "생존 개입 발동 -> 피격자");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Team_AllyDeath,           "Event.Team.AllyDeath",           "팀원 사망 -> 같은 팀 전원");
+
+	// 스킬 관련 이벤트
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Skill_Used, "Event.Skill.Used", "액티브 스킬 시전 확정 -> 시전자");
 
 	// 무기 관련 이벤트
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Fired,          "Event.Weapon.Fired",          "매 발사");

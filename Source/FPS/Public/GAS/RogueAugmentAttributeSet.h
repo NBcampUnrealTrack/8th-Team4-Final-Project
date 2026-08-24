@@ -31,14 +31,12 @@ protected:
 	UFUNCTION() void OnRep_ShieldDamageMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_MaxHealthPercentDamage(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_LifestealRate(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_ShieldLeechRate(const FGameplayAttributeData& OldValue);
 
 	// 방어 관련
 	UFUNCTION() void OnRep_DamageReductionRate(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_FlatDamageReduction(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_HeadshotDamageTakenRate(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DamageReflectRate(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_HealingReceivedMultiplier(const FGameplayAttributeData& OldValue);
 
 	// 무기 관련
 	UFUNCTION() void OnRep_FireRateMultiplier(const FGameplayAttributeData& OldValue);
@@ -58,12 +56,9 @@ protected:
 	UFUNCTION() void OnRep_SprintSpeedMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_JumpHeightMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ExtraJumpCount(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_FootstepVolumeMultiplier(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_HearingRangeMultiplier(const FGameplayAttributeData& OldValue);
 
 	// 스킬 관련
 	UFUNCTION() void OnRep_CooldownReductionRate(const FGameplayAttributeData& OldValue);
-	UFUNCTION() void OnRep_ThrowRangeMultiplier(const FGameplayAttributeData& OldValue);
 
 	// 상점 관련
 	UFUNCTION() void OnRep_CreditGainMultiplier(const FGameplayAttributeData& OldValue);
@@ -108,11 +103,6 @@ public:
 	FGameplayAttributeData LifestealRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,LifestealRate)
 
-	// 준 피해의 이 비율만큼 보호막으로 전환. 체력 흡수와 별개로 적용
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShieldLeechRate, Category = "Rogue|Augment|Offense")
-	FGameplayAttributeData ShieldLeechRate;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ShieldLeechRate)
-
 	// 방어 관련 --------------------------------------------------
 	// 받는 피해 감소 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReductionRate, Category = "Rogue|Augment|Defense")
@@ -134,11 +124,6 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReflectRate, Category = "Rogue|Augment|Defense")
 	FGameplayAttributeData DamageReflectRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,DamageReflectRate)
-
-	// 받는 회복량 배율
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HealingReceivedMultiplier, Category = "Rogue|Augment|Defense")
-	FGameplayAttributeData HealingReceivedMultiplier;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HealingReceivedMultiplier)
 
 	// 무기 관련 --------------------------------------------------
 	// 연사 속도 배율
@@ -207,26 +192,11 @@ public:
 	FGameplayAttributeData ExtraJumpCount;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ExtraJumpCount)
 
-	// 내가 내는 발소리 크기 배율. 1 미만이면 은신
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FootstepVolumeMultiplier, Category = "Rogue|Augment|Movement")
-	FGameplayAttributeData FootstepVolumeMultiplier;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,FootstepVolumeMultiplier)
-
-	// 내가 남의 소리를 듣는 범위 배율
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HearingRangeMultiplier, Category = "Rogue|Augment|Movement")
-	FGameplayAttributeData HearingRangeMultiplier;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HearingRangeMultiplier)
-
 	// 스킬 관련 --------------------------------------------------
 	// 액티브 증강 쿨타임 감소 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CooldownReductionRate, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData CooldownReductionRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownReductionRate)
-
-	// 투척물 투척 거리 배율
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ThrowRangeMultiplier, Category = "Rogue|Augment|Skill")
-	FGameplayAttributeData ThrowRangeMultiplier;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ThrowRangeMultiplier)
 
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율
