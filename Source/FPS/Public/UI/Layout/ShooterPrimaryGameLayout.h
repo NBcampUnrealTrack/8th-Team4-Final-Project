@@ -25,6 +25,8 @@ public:
 	
 	void PopWidgetFromLayer(FGameplayTag LayerTag);
 	
+	void RemoveWidgetFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Widget);
+
 	// 레이어 태그 전체 비우기. HUD 화면 정리 등에 필요
 	void ClearLayer(FGameplayTag LayerTag);
 	

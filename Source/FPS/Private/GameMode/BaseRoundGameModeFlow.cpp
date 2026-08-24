@@ -4,6 +4,7 @@
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/ShooterPlayerState.h"
 #include "TimerManager.h"
@@ -338,10 +339,36 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	{
 		DraftManager->CancelDraft();
 	}
+	if (UCreditEconomyManager* Economy = GetCreditEconomyManager())
+	{
+		Economy->CancelActiveRound();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
+	}
 
 	RoundGameState->SetMatchWinner(WinningTeam);
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::MatchEnded);
 	EndMatch();
+
+	if (RoundEndDelay <= 0.0f)
+	{
+		ReturnToFrontendAfterMatch();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTimerHandle,
+		this,
+		&ThisClass::ReturnToFrontendAfterMatch,
+		RoundEndDelay,
+		false);
+}
+
+void ABaseRoundGameMode::ReturnToFrontendAfterMatch()
+{
+	ReturnToMainMenuHost();
 }
 
 void ABaseRoundGameMode::EnterWaitingForPlayers()
@@ -362,6 +389,10 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
 		DraftManager->CancelDraft();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
 	}
 
 	ResetModeState();

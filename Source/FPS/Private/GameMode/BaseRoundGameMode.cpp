@@ -4,10 +4,12 @@
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
@@ -31,11 +33,18 @@ ABaseRoundGameMode::ABaseRoundGameMode()
 	bDelayedStart = true;
 	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
 	CreditEconomyManager = CreateDefaultSubobject<UCreditEconomyManager>(TEXT("CreditEconomyManager"));
+	SurrenderVoteManager = CreateDefaultSubobject<USurrenderVoteManager>(TEXT("SurrenderVoteManager"));
 }
 
 void ABaseRoundGameMode::Logout(AController* Exiting)
 {
 	InitialPlayerReadinessTracker.RemovePlayer(Cast<APlayerController>(Exiting));
+
+	ABaseRoundPlayerController* ExitingPlayerController = Cast<ABaseRoundPlayerController>(Exiting);
+	if (IsValid(ExitingPlayerController))
+	{
+		GetSurrenderVoteManager()->HandleVoterLeaving(ExitingPlayerController);
+	}
 
 	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
 	const EGameFlowPhase Phase = IsValid(RoundGameState)
@@ -216,6 +225,10 @@ void ABaseRoundGameMode::RestartGameFlow()
 	{
 		DraftManager->ResetForNewMatch();
 	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->ResetForNewMatch();
+	}
 
 	ResetModeState();
 	if (UTeamPlayerManager* PlayerManager = GetTeamPlayerManager())
@@ -266,6 +279,10 @@ void ABaseRoundGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		DraftManager->OnDependenciesReady.RemoveAll(this);
 		DraftManager->Shutdown();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->Shutdown();
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -415,6 +432,11 @@ void ABaseRoundGameMode::EndRound(const EGameTeam WinningTeam, const ERoundEndRe
 	{
 		FinishMatch(MatchWinner);
 		return;
+	}
+
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
 	}
 
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::RoundEnding, RoundEndDelay);
@@ -676,6 +698,11 @@ UCreditEconomyManager* ABaseRoundGameMode::GetCreditEconomyManager() const
 	return CreditEconomyManager.Get();
 }
 
+USurrenderVoteManager* ABaseRoundGameMode::GetSurrenderVoteManager() const
+{
+	return SurrenderVoteManager.Get();
+}
+
 ETeamRole ABaseRoundGameMode::GetRoleForTeam(const EGameTeam Team) const
 {
 	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
@@ -697,6 +724,11 @@ ETeamRole ABaseRoundGameMode::GetSpawnRoleForTeam(const EGameTeam Team) const
 
 void ABaseRoundGameMode::InitializeGameFlow()
 {
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->Initialize(this, SurrenderVoteDuration, SurrenderVoteCooldown);
+	}
+
 	UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
 	if (IsValid(DraftManager))
 	{

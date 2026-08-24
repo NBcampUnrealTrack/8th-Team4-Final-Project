@@ -5,8 +5,10 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameFramework/GameModeBase.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
@@ -165,6 +167,30 @@ void AShooterPlayerController::HideLoadingScreen()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		LoadingScreenSubsystem->HideLoadingScreen();
+	}
+}
+
+void AShooterPlayerController::RequestReturnToFrontend()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AGameModeBase* GameMode = GetWorld()->GetAuthGameMode())
+	{
+		GameMode->ReturnToMainMenuHost();
+		return;
+	}
+
+	GetGameInstance()->ReturnToMainMenu();
+}
+
+void AShooterPlayerController::RequestQuitGame()
+{
+	if (IsLocalController())
+	{
+		UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
 	}
 }
 

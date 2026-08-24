@@ -34,6 +34,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void HideLoadingScreen();
 
+	// 프로젝트 설정의 Game Default Map으로 돌아간다.
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestReturnToFrontend();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestQuitGame();
+
 	UFUNCTION(Client, Reliable)
 	void ClientShowLoadingScreen(float InitialProgress);
 
