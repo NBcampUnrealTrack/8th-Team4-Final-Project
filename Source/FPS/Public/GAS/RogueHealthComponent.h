@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayEffectTypes.h"
+#include "GAS/Damage/RogueDamageTypes.h"
 
 #include "RogueHealthComponent.generated.h"
 
@@ -49,8 +50,11 @@ private:
 	// AttributeSet 의 사망 감지 구독, 서버에서만 호출
 	void HandleOutOfHealth(UAbilitySystemComponent* VictimASC, const FGameplayEffectContextHandle& ContextHandle);
 
-	// 각 머신이 자기 로컬 ASC 에 사망 태그 추가
-	void ApplyDeathTag(bool bDead);
+	// 사망 태그 부여와 아바타 통보를 묶은 서버/클라이언트 공통 경로
+	void ApplyDeathStateLocally(bool bDead);
+
+	// 사망 원인에서 연출용 정보를 뽑아 DeathReaction에 채움
+	void ServerBuildDeathReaction(const FGameplayEffectContextHandle& ContextHandle);
 
 	// 랙돌/입력 차단은 캐릭터 역할
 	// 인터페이스로만 통보, 서버 전용 호출
@@ -68,6 +72,10 @@ private:
 	// 사망 여부, 서버에서만 변경
 	UPROPERTY(ReplicatedUsing = OnRep_bIsDead)
 	bool bIsDead = false;
+
+	// 사망 연출용 정보
+	UPROPERTY(Replicated)
+	FRogueDeathReaction DeathReaction;
 
 public:
 	// 모든 머신에서 발신, 킬로그/관전 전환/HUD 가 구독

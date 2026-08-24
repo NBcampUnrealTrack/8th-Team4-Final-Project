@@ -20,6 +20,8 @@ public:
 
 	virtual float GetMaxSpeed() const override;
 
+	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float WalkSpeed = 600.f;

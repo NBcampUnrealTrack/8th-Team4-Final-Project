@@ -1,4 +1,4 @@
-#include "Character/ShooterMovementComponent.h"
+﻿#include "Character/ShooterMovementComponent.h"
 
 #include "Augment/RogueAugmentStatResolver.h"
 
@@ -32,4 +32,19 @@ float UShooterMovementComponent::GetMaxSpeed() const
 	return bWantsToSprint
 		? URogueAugmentStatResolver::GetFinalSprintSpeed(OwnerActor, BaseMaxSpeed)
 		: URogueAugmentStatResolver::GetFinalMoveSpeed(OwnerActor, BaseMaxSpeed);
+}
+
+bool UShooterMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
+{
+	const AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor))
+	{
+		return Super::DoJump(bReplayingMoves, DeltaTime);
+	}
+
+	TGuardValue<float> JumpVelocityGuard(
+		JumpZVelocity,
+		URogueAugmentStatResolver::GetFinalJumpVelocity(OwnerActor, JumpZVelocity));
+
+	return Super::DoJump(bReplayingMoves, DeltaTime);
 }

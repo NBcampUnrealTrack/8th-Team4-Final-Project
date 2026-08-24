@@ -1,4 +1,4 @@
-#include "Combat/Hitscan/HitscanResolverSubsystem.h"
+﻿#include "Combat/Hitscan/HitscanResolverSubsystem.h"
 
 #include "Combat/Hitscan/HitZoneDefinition.h"
 #include "Combat/Hitscan/HitscanBallistics.h"
@@ -291,6 +291,9 @@ namespace
 				Accumulator.HitContext.DistanceMeters = FMath::Max(
 					0.0f,
 					FVector::Distance(Request.DamageDistanceOrigin, Impact.ImpactPoint) / 100.0f);
+
+				Accumulator.HitContext.ShotDirection = Impact.ShotDirection;
+				Accumulator.HitContext.HitBoneName = Impact.BoneName;
 			}
 
 			const FGameplayTag HitZoneTag = ResolveHitZoneTag(Request, Impact.BoneName);
