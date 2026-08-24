@@ -5,16 +5,17 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameFramework/GameModeBase.h"
 #include "GameMode/LobbyGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerState.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
-#include "Weapon/WeaponTypes.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -183,6 +184,30 @@ void AShooterPlayerController::HideLoadingScreen()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		LoadingScreenSubsystem->HideLoadingScreen();
+	}
+}
+
+void AShooterPlayerController::RequestReturnToFrontend()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AGameModeBase* GameMode = GetWorld()->GetAuthGameMode())
+	{
+		GameMode->ReturnToMainMenuHost();
+		return;
+	}
+
+	GetGameInstance()->ReturnToMainMenu();
+}
+
+void AShooterPlayerController::RequestQuitGame()
+{
+	if (IsLocalController())
+	{
+		UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
 	}
 }
 

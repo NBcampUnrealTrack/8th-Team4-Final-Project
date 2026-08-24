@@ -1,14 +1,19 @@
-#include "GameMode/BaseRoundGameMode.h"
+﻿#include "GameMode/BaseRoundGameMode.h"
 
 #include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
+#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "Shop/ShopComponent.h"
+#include "Shop/ShopPurchaseComponent.h"
+#include "Weapon/WeaponInventoryComponent.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY(LogBaseRoundGameMode);
@@ -28,11 +33,18 @@ ABaseRoundGameMode::ABaseRoundGameMode()
 	bDelayedStart = true;
 	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
 	CreditEconomyManager = CreateDefaultSubobject<UCreditEconomyManager>(TEXT("CreditEconomyManager"));
+	SurrenderVoteManager = CreateDefaultSubobject<USurrenderVoteManager>(TEXT("SurrenderVoteManager"));
 }
 
 void ABaseRoundGameMode::Logout(AController* Exiting)
 {
 	InitialPlayerReadinessTracker.RemovePlayer(Cast<APlayerController>(Exiting));
+
+	ABaseRoundPlayerController* ExitingPlayerController = Cast<ABaseRoundPlayerController>(Exiting);
+	if (IsValid(ExitingPlayerController))
+	{
+		GetSurrenderVoteManager()->HandleVoterLeaving(ExitingPlayerController);
+	}
 
 	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
 	const EGameFlowPhase Phase = IsValid(RoundGameState)
@@ -41,6 +53,12 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
+
+	// Super::Logout 이전에는 PlayerState와 Wallet이 유효하므로 미확정 거래를 정상 환불할 수 있다.
+	if (IsValid(ExitingPlayerState))
+	{
+		RefundPendingShopPurchasesForPlayer(ExitingPlayerState, TEXT("logout"));
+	}
 
 	if (Phase == EGameFlowPhase::RoundInProgress)
 	{
@@ -129,6 +147,97 @@ void ABaseRoundGameMode::NotifyPlayerEliminatedBy(
 	HandleModePlayerEliminated(EliminatedPlayerState);
 }
 
+bool ABaseRoundGameMode::GatherRoundParticipantPurchaseComponents(
+	TArray<UShopPurchaseComponent*>& OutPurchaseComponents) const
+{
+	OutPurchaseComponents.Reset();
+
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	if (!IsValid(PlayerManager))
+	{
+		return false;
+	}
+
+	TArray<AShooterPlayerState*> Participants;
+	PlayerManager->GetRoundParticipants(Participants);
+	OutPurchaseComponents.Reserve(Participants.Num());
+
+	for (AShooterPlayerState* PlayerState : Participants)
+	{
+		if (!IsValid(PlayerState))
+		{
+			return false;
+		}
+
+		UShopPurchaseComponent* PurchaseComponent = PlayerState->GetShopPurchaseComponent();
+
+		if (!IsValid(PurchaseComponent))
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Cannot commit shop purchases for %s: ShopPurchaseComponent is missing."),
+				*GetNameSafe(PlayerState));
+
+			return false;
+		}
+
+		OutPurchaseComponents.Add(PurchaseComponent);
+	}
+
+	return true;
+}
+
+bool ABaseRoundGameMode::CanCommitPendingShopPurchases() const
+{
+	TArray<UShopPurchaseComponent*> PurchaseComponents;
+	if (!GatherRoundParticipantPurchaseComponents(PurchaseComponents))
+	{
+		return false;
+	}
+
+	for (const UShopPurchaseComponent* PurchaseComponent : PurchaseComponents)
+	{
+		if (!PurchaseComponent->CanCommitPendingPurchases())
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Cannot commit pending shop purchases for %s."),
+				*GetNameSafe(PurchaseComponent->GetOwner()));
+
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool ABaseRoundGameMode::CommitPendingShopPurchases()
+{
+	TArray<UShopPurchaseComponent*> PurchaseComponents;
+	if (!GatherRoundParticipantPurchaseComponents(PurchaseComponents))
+	{
+		return false;
+	}
+
+	for (UShopPurchaseComponent* PurchaseComponent : PurchaseComponents)
+	{
+		if (!PurchaseComponent->CommitPendingPurchases())
+		{
+			UE_LOG(
+				LogBaseRoundGameMode,
+				Error,
+				TEXT("Failed to commit prevalidated shop purchases for %s."),
+				*GetNameSafe(PurchaseComponent->GetOwner()));
+
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void ABaseRoundGameMode::RestartGameFlow()
 {
 	if (!HasAuthority())
@@ -160,6 +269,10 @@ void ABaseRoundGameMode::RestartGameFlow()
 	if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 	{
 		DraftManager->ResetForNewMatch();
+	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->ResetForNewMatch();
 	}
 
 	ResetModeState();
@@ -212,6 +325,10 @@ void ABaseRoundGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		DraftManager->OnDependenciesReady.RemoveAll(this);
 		DraftManager->Shutdown();
 	}
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->Shutdown();
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -234,7 +351,8 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		return;
 	}
 
-	// 라운드 모드는 다음 라운드를 열 때 참가자를 한 번에 스폰한다.
+	// 의도적으로 Super를 호출하지 않는다. 라운드 모드는 입장 시 즉시 스폰하지 않고,
+	// 팀 초기화 후 다음 라운드 준비 단계에서 참가자를 한 번에 스폰한다.
 	AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>();
 	if (IsValid(PlayerState))
 	{
@@ -361,6 +479,11 @@ void ABaseRoundGameMode::EndRound(const EGameTeam WinningTeam, const ERoundEndRe
 		return;
 	}
 
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->CancelAllActiveVotes();
+	}
+
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::RoundEnding, RoundEndDelay);
 	if (RoundEndDelay <= 0.0f)
 	{
@@ -455,16 +578,138 @@ bool ABaseRoundGameMode::ResetEconomyForNewMatch()
 	}
 
 	TArray<AShooterPlayerState*> MatchPlayers;
+	TArray<UShopComponent*> MatchShops;
 	MatchPlayers.Reserve(RoundGameState->PlayerArray.Num());
+	MatchShops.Reserve(RoundGameState->PlayerArray.Num());
+
+	// 1단계: 아무것도 바꾸지 않고 상점과 경제를 모두 검증한다.
+	// 거래 파기는 되돌릴 수 없으므로 실패 가능성이 남아 있는 동안에는 실행하지 않는다.
 	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
 	{
-		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState))
 		{
-			MatchPlayers.Add(ShooterPlayerState);
+			continue;
+		}
+
+		UShopComponent* Shop = ShooterPlayerState->GetShopComponent();
+		FString ShopFailureReason;
+		if (!IsValid(Shop) || !Shop->CanDiscardAllActiveTransactionsForNewMatch(&ShopFailureReason))
+		{
+			UE_LOG(LogBaseRoundGameMode, Error,
+				TEXT("Cannot reset economy because shop transactions could not be closed for %s: %s."),
+				*GetNameSafe(ShooterPlayerState),
+				IsValid(Shop) ? *ShopFailureReason : TEXT("the shop component is missing"));
+			return false;
+		}
+
+		MatchPlayers.Add(ShooterPlayerState);
+		MatchShops.Add(Shop);
+	}
+
+	FString EconomyFailureReason;
+	if (!Economy->CanResetForNewMatch(MatchPlayers, &EconomyFailureReason))
+	{
+		UE_LOG(LogBaseRoundGameMode, Error,
+			TEXT("Cannot reset economy for a new match: %s."),
+			*EconomyFailureReason);
+		return false;
+	}
+
+	// 2단계: 검증이 끝났으므로 거래를 닫고 Wallet을 초기화한다.
+	// 사전 검증을 통과했으므로 여기서 중단하면 일부만 파기된 채 Wallet 초기화를 놓친다.
+	// 실패는 버그로 보고, 나머지 상점의 파기와 Wallet 초기화는 끝까지 진행한다.
+	bool bAllTransactionsDiscarded = true;
+
+	for (UShopComponent* Shop : MatchShops)
+	{
+		const bool bTransactionsDiscarded =
+			IsValid(Shop) && Shop->DiscardAllActiveTransactionsForNewMatch();
+
+		if (!ensureMsgf(
+			bTransactionsDiscarded,
+			TEXT("Shop transaction discard failed for %s after validation succeeded."),
+			IsValid(Shop) ? *GetNameSafe(Shop->GetOwner()) : TEXT("None")))
+		{
+			bAllTransactionsDiscarded = false;
+			continue;
 		}
 	}
 
-	return Economy->ResetForNewMatch(MatchPlayers);
+	for (AShooterPlayerState* MatchPlayer : MatchPlayers)
+	{
+		if (UWeaponInventoryComponent* Inventory = MatchPlayer->GetWeaponInventory())
+		{
+			Inventory->ServerInitializeForNewMatch();
+		}
+	}
+
+	const bool bEconomyReset = Economy->ResetForNewMatch(MatchPlayers);
+	return bEconomyReset && bAllTransactionsDiscarded;
+}
+
+void ABaseRoundGameMode::RefundPendingShopPurchasesForPlayer(
+	AShooterPlayerState* PlayerState,
+	const TCHAR* Context)
+{
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	const TCHAR* CleanupContext = Context ? Context : TEXT("unspecified cleanup");
+
+	UShopPurchaseComponent* PurchaseComponent =	PlayerState->GetShopPurchaseComponent();
+
+	if (!IsValid(PurchaseComponent))
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Cannot refund pending shop purchases for %s during %s: ShopPurchaseComponent is missing."),
+			*GetNameSafe(PlayerState),
+			CleanupContext);
+
+		return;
+	}
+
+	if (!PurchaseComponent->CancelPendingPurchases())
+	{
+		UE_LOG(
+			LogBaseRoundGameMode,
+			Error,
+			TEXT("Failed to cancel pending shop purchases for %s during %s."),
+			*GetNameSafe(PlayerState),
+			CleanupContext);
+
+		return;
+	}
+
+	UE_LOG(
+		LogBaseRoundGameMode,
+		Verbose,
+		TEXT("Pending shop purchases cleaned up for %s during %s."),
+		*GetNameSafe(PlayerState),
+		CleanupContext);
+}
+
+void ABaseRoundGameMode::RefundPendingShopPurchases(const TCHAR* Context)
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
+	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	{
+		AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+
+		if (IsValid(ShooterPlayerState))
+		{
+			RefundPendingShopPurchasesForPlayer(ShooterPlayerState,	Context);
+		}
+	}
 }
 
 void ABaseRoundGameMode::SettleCompletedRoundCredits(const int32 RoundNumber, const EGameTeam WinningTeam)
@@ -501,6 +746,11 @@ UCreditEconomyManager* ABaseRoundGameMode::GetCreditEconomyManager() const
 	return CreditEconomyManager.Get();
 }
 
+USurrenderVoteManager* ABaseRoundGameMode::GetSurrenderVoteManager() const
+{
+	return SurrenderVoteManager.Get();
+}
+
 ETeamRole ABaseRoundGameMode::GetRoleForTeam(const EGameTeam Team) const
 {
 	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
@@ -522,6 +772,11 @@ ETeamRole ABaseRoundGameMode::GetSpawnRoleForTeam(const EGameTeam Team) const
 
 void ABaseRoundGameMode::InitializeGameFlow()
 {
+	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
+	{
+		VoteManager->Initialize(this, SurrenderVoteDuration, SurrenderVoteCooldown);
+	}
+
 	UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
 	if (IsValid(DraftManager))
 	{

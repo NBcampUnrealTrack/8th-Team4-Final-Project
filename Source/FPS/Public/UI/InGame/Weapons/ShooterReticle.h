@@ -10,7 +10,7 @@ class UImage;
 
 /**
  * 크로스헤어 탄퍼짐(Spread)만 표현한다.
- * GetSpreadDegrees()가 장착 무기의 AWeaponBase::GetCurrentSpreadDegrees()를 그대로 읽어온다.
+ * GetSpreadDegrees()가 장착 무기의 AWeaponBase::GetCurrentSpreadDegrees()를 읽는다.
  */
 UCLASS(Abstract)
 class FPS_API UShooterReticle : public UUserWidget
@@ -30,7 +30,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	
-	// 장착 무기가 없으면 0.
+	// 장착 무기가 없거나 동적 크로스헤어가 꺼져 있으면 0.
 	float GetSpreadDegrees() const;
 	
 	AWeaponBase* FindEquippedWeapon() const;

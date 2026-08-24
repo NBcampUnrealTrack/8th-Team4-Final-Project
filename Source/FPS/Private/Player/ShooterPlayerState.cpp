@@ -14,7 +14,10 @@
 #include "GameMode/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
+#include "Shop/ShopComponent.h"
+#include "Shop/ShopPurchaseComponent.h"
 #include "Weapon/WeaponBase.h"
+#include "Weapon/WeaponInventoryComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterPlayerState, Log, All);
 
@@ -28,14 +31,12 @@ AShooterPlayerState::AShooterPlayerState()
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
 	CreditWallet = CreateDefaultSubobject<UCreditWalletComponent>(TEXT("CreditWallet"));
+	ShopComponent = CreateDefaultSubobject<UShopComponent>(TEXT("ShopComponent"));
+	ShopPurchaseComponent = CreateDefaultSubobject<UShopPurchaseComponent>(TEXT("ShopPurchaseComponent"));
+	WeaponInventory = CreateDefaultSubobject<UWeaponInventoryComponent>(TEXT("WeaponInventory"));
 
 	// ASC, AttributeSet이 PlayerState 에 있어 업데이트 주기 수정
 	SetNetUpdateFrequency(100.f);
-}
-
-UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
-{
-	return AbilitySystemComponent;
 }
 
 void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -44,6 +45,22 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+}
+
+UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AShooterPlayerState::SyncEquippedWeaponState(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
+	ClientSyncEquippedWeaponState(EquippedStateTag);
+}
+
+void AShooterPlayerState::ClientSyncEquippedWeaponState_Implementation(const FGameplayTag EquippedStateTag)
+{
+	AbilitySystemComponent->SetEquippedWeaponType(EquippedStateTag);
 }
 
 void AShooterPlayerState::PostInitializeComponents()
@@ -94,6 +111,7 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
+	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
 	// CombatComponent가 BeginPlay에서 이미 기본 로드아웃을 장착해 둔 상태(캐릭터 스폰 -> BeginPlay ->
 	// 이후 Possess 순서)라 가정하고, 실제 장착된 무기의 태그를 그대로 읽어온다. 아직 장착 전이라면

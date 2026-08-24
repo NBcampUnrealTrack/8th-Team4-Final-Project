@@ -3,6 +3,7 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 
 #include "GAS/RogueAbilitySet.h"
+#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
@@ -10,14 +11,11 @@ namespace
 {
 	FPredictionKey GetInstanceActivationPredictionKey(const FGameplayAbilitySpec& Spec)
 	{
-		const UGameplayAbility* Instance =
-			!Spec.NonReplicatedInstances.IsEmpty() ? Spec.NonReplicatedInstances.Last()
-			: !Spec.ReplicatedInstances.IsEmpty()  ? Spec.ReplicatedInstances.Last()
-			: nullptr;
+		const TArray<UGameplayAbility*> Instances = Spec.GetAbilityInstances();
 
-		return Instance
-			? Instance->GetCurrentActivationInfo().GetActivationPredictionKey()
-			: FPredictionKey();
+		return Instances.IsEmpty()
+			? FPredictionKey()
+			: Instances.Last()->GetCurrentActivationInfo().GetActivationPredictionKey();
 	}
 }
 

@@ -37,7 +37,8 @@ enum class ERoundEndReason : uint8
 	TeamEliminated UMETA(DisplayName = "Team Eliminated"),
 	MutualElimination UMETA(DisplayName = "Mutual Elimination"),
 	ObjectiveCompleted UMETA(DisplayName = "Objective Completed"),
-	Forced UMETA(DisplayName = "Forced")
+	Forced UMETA(DisplayName = "Forced"),
+	Surrender UMETA(DisplayName = "Surrender")
 };
 
 /** 서버 준비 단계에서만 사용하는 다음 라운드 정보. 준비가 끝나면 GameState에 공개한다. */

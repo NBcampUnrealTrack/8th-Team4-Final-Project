@@ -1,17 +1,21 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/InitialPlayerReadinessTracker.h"
 #include "GameMode/RoundTypes.h"
+#include "GameMode/SurrenderVoteTypes.h"
 #include "BaseRoundGameMode.generated.h"
 
 class ABaseRoundGameState;
+class ABaseRoundPlayerController;
 class ABaseTeamPlayerState;
 class APlayerController;
 class AShooterPlayerState;
 class UAugmentDraftManager;
 class UCreditEconomyManager;
+class UShopPurchaseComponent;
+class USurrenderVoteManager;
 enum class EPlayerStartReservationResult : uint8;
 
 /**
@@ -41,6 +45,10 @@ public:
 
 	// 각 로컬 플레이어의 인게임 UI가 준비되면 첫 라운드 시작 조건을 다시 평가한다.
 	void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController);
+
+	// PlayerController RPC의 서버 진입점이다. 팀과 유권자는 서버 상태로 다시 결정한다.
+	ESurrenderVoteStartResult RequestStartSurrenderVote(ABaseRoundPlayerController* Requester);
+	void SubmitSurrenderVote(ABaseRoundPlayerController* Voter, int32 VoteId, bool bApprove);
 
 protected:
 	virtual void BeginPlay() override;
@@ -83,6 +91,19 @@ private:
 	bool InitializeRoundParticipantCredits();
 	bool ResetEconomyForNewMatch();
 	void SettleCompletedRoundCredits(int32 RoundNumber, EGameTeam WinningTeam);
+	bool GatherRoundParticipantPurchaseComponents(
+		TArray<UShopPurchaseComponent*>& OutPurchaseComponents) const;
+	bool CanCommitPendingShopPurchases() const;
+	bool CommitPendingShopPurchases();
+
+	// 개별 플레이어의 미확정 거래를 같은 정책과 로그 형식으로 정리한다.
+	void RefundPendingShopPurchasesForPlayer(
+		AShooterPlayerState* PlayerState,
+		const TCHAR* Context);
+
+	// 흐름이 되감기거나 끝날 때 모든 플레이어의 미확정 상점 결제를 되돌린다.
+	// 거래가 자기가 열린 페이즈를 넘기지 않도록 라운드/매치 경계에서 호출한다.
+	void RefundPendingShopPurchases(const TCHAR* Context);
 
 	// 상위 흐름은 아래 전이만 따라가면 된다.
 	void TryBeginNextRound();       // Waiting/Ready -> RoundStarting
@@ -91,6 +112,12 @@ private:
 	bool TryStartRoundCombat();     // 준비 완료 -> RoundInProgress
 	void AdvanceToNextRound();      // RoundEnding -> Waiting
 	void FinishMatch(EGameTeam WinningTeam);
+	void ReturnToFrontendAfterMatch();
+	bool BuildSurrenderVoteRequest(
+		ABaseRoundPlayerController* Requester,
+		EGameTeam& OutTeam,
+		TArray<ABaseRoundPlayerController*>& OutVoters) const;
+	void FinishMatchBySurrender(EGameTeam SurrenderingTeam);
 
 	void EnterWaitingForPlayers();
 	void EnterWaitingForPlayersReady();
@@ -118,6 +145,7 @@ private:
 	void SetPlayerRoundInputEnabled(APlayerController* PlayerController, bool bEnabled) const;
 	UAugmentDraftManager* GetAugmentDraftManager() const;
 	UCreditEconomyManager* GetCreditEconomyManager() const;
+	USurrenderVoteManager* GetSurrenderVoteManager() const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Players", meta = (ClampMin = "1"))
@@ -149,8 +177,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment")
 	bool bEnableAugmentDraft = true;
 
+	// AugmentSelecting은 상점 구매와 증강 선택이 함께 열리는 30초 준비 구간이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment", meta = (EditCondition = "bEnableAugmentDraft", ClampMin = "0.1"))
-	float AugmentSelectionDuration = 10.0f;
+	float AugmentSelectionDuration = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Augment", meta = (EditCondition = "bEnableAugmentDraft", ClampMin = "1", ClampMax = "8"))
 	int32 AugmentOfferCount = 3;
@@ -171,12 +200,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Rules")
 	ETeamRole StartingTeamBRole = ETeamRole::Defenders;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Surrender", meta = (ClampMin = "1.0"))
+	float SurrenderVoteDuration = 20.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Surrender", meta = (ClampMin = "0.0"))
+	float SurrenderVoteCooldown = 30.0f;
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCreditEconomyManager> CreditEconomyManager;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USurrenderVoteManager> SurrenderVoteManager;
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle RoundTimerHandle;

@@ -20,6 +20,12 @@ class FPS_API UCreditEconomyManager : public UObject
 
 public:
 	bool InitializePlayerForMatch(AShooterPlayerState* PlayerState);
+
+	// 초기화가 지금 가능한지만 확인한다. 상태는 바꾸지 않는다.
+	bool CanResetForNewMatch(
+		const TArray<AShooterPlayerState*>& PlayerStates,
+		FString* OutFailureReason = nullptr) const;
+
 	bool ResetForNewMatch(const TArray<AShooterPlayerState*>& PlayerStates);
 
 	bool BeginRound(int32 RoundNumber);

@@ -317,6 +317,85 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 	return true;
 }
 
+bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> PrimaryWeaponClass)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return false;
+	}
+
+	AWeaponBase* PreviousPrimary = PrimaryWeapon.Get();
+
+	// 제거할 주무기가 없는 정상 복구 경로다.
+	if (!PrimaryWeaponClass && !IsValid(PreviousPrimary))
+	{
+		return true;
+	}
+
+	// 같은 클래스 재선택은 재생성하지 않고 탄약과 런타임 상태를 유지한다.
+	if (IsValid(PreviousPrimary) && PreviousPrimary->GetClass() == PrimaryWeaponClass)
+	{
+		if (CurrentWeapon.Get() != PreviousPrimary)
+		{
+			if (IsValid(CurrentWeapon.Get()))
+			{
+				CurrentWeapon->SetADS(false);
+			}
+			SetAiming(false);
+
+			ApplyCurrentWeapon(PreviousPrimary);
+			BeginEquipCycle(PreviousPrimary);
+		}
+
+		return true;
+	}
+
+	// 새 무기를 먼저 생성해 실패 시 기존 주무기와 현재 장착 상태를 유지한다.
+	AWeaponBase* NewPrimary = nullptr;
+	if (PrimaryWeaponClass)
+	{
+		NewPrimary = SpawnWeaponInstance(PrimaryWeaponClass);
+		if (!IsValid(NewPrimary))
+		{
+			return false;
+		}
+	}
+
+	PrimaryWeapon = NewPrimary;
+
+	// 구매한 주무기는 즉시 장착하고, 주무기를 비우면 권총과 근접무기 순서로 전환한다.
+	AWeaponBase* NextCurrent = NewPrimary;
+	if (!IsValid(NextCurrent))
+	{
+		NextCurrent = SecondaryWeapon.Get();
+	}
+	if (!IsValid(NextCurrent))
+	{
+		NextCurrent = MeleeWeapon.Get();
+	}
+
+	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != NextCurrent)
+	{
+		CurrentWeapon->SetADS(false);
+		SetAiming(false);
+	}
+
+	ApplyCurrentWeapon(NextCurrent);
+
+	if (IsValid(NextCurrent))
+	{
+		BeginEquipCycle(NextCurrent);
+	}
+
+	if (IsValid(PreviousPrimary))
+	{
+		PreviousPrimary->Destroy();
+	}
+
+	return true;
+}
+
 AWeaponBase* UCombatComponent::GetWeaponInSlot(const EWeaponSlot WeaponSlot) const
 {
 	switch (WeaponSlot)

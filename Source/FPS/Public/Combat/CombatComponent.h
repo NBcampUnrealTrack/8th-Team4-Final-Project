@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -42,6 +42,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool SwitchWeaponSlot(EWeaponSlot WeaponSlot);
+
+	/**
+	 * 주무기 슬롯 한 칸만 교체하고 손에 든다. Secondary(권총)와 Melee(칼)는 건드리지 않는다.
+	 * nullptr을 넘기면 주무기를 비우고 권총으로 내려간다.
+	 * ClearWeaponLoadout()을 호출하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	bool ReplacePrimaryWeapon(TSubclassOf<AWeaponBase> PrimaryWeaponClass);
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Loadout")
 	AWeaponBase* GetWeaponInSlot(EWeaponSlot WeaponSlot) const;

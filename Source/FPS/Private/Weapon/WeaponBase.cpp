@@ -470,7 +470,7 @@ void AWeaponBase::ResolveHitscanShot(
 	FHitscanShotRequest Request;
 	HitscanDefinition->ConfigureShotRequest(
 		Request,
-		TraceRange,
+		EffectiveTraceRange,
 		DefaultSurfaceThickness,
 		DefaultSurfaceHardness);
 

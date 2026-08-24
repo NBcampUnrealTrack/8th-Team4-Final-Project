@@ -23,6 +23,9 @@ UCLASS()
 class FPS_API UShooterPlayerHUD : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
+
+public:
+	UShooterPlayerHUD();
 	
 protected:
 	virtual void NativeOnInitialized() override;
