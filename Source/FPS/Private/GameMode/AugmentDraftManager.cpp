@@ -398,14 +398,6 @@ void UAugmentDraftManager::BuildDraftRules()
 	{
 		DraftRules.TierWeights = Settings->TierDraftWeights;
 	}
-
-	// TODO 임시
-	// 현재 등급별 증강 후보가 충분하지 않아 희귀, 영웅, 전설 증강 등장 시 게임이 진행되지 않습니다.
-	// 테스트를 위해 일반 등급만 등장하도록 고정했습니다.
-	// 이후, 증강 후보가 충분히 확보되면 해당 주석과 아래 코드를 지우면 됩니다.
-	DraftRules.TierWeights.Reset();
-	DraftRules.TierWeights.Add(EAugmentTier::Common, { 1.f, 0.f });
-	DraftRules.ForcedTierRound = 0;
 }
 
 int32 UAugmentDraftManager::MakeDraftSeed(
