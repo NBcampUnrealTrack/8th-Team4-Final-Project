@@ -25,7 +25,6 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 		if (!bLoggedNoWeapon)
 		{
 			bLoggedNoWeapon = true;
-			UE_LOG(LogTemp, Warning,TEXT("[WeaponStatus] 장착 무기를 찾지 못했습니다. 폰에 AWeaponBase 가 Attach 되는지 확인하세요"));
 		}
 		return;
 	}

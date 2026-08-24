@@ -47,6 +47,9 @@ protected:
 
 	UFUNCTION()
 	void HandleAugmentSelectionStateChanged();
+	
+	UFUNCTION()
+	void HandleAugmentRerollRequested(int32 SlotIndex);
 
 	void RefreshAugmentSelection();
 	void ScheduleInGameUIRetry();
@@ -75,4 +78,7 @@ protected:
 	// 화면에 띄워져 있는동안만 유효 없으면 비운다
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
+	
+private:
+	TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 };
