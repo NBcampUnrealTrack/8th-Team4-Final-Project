@@ -623,8 +623,11 @@ bool ABaseRoundGameMode::ResetEconomyForNewMatch()
 
 	for (UShopComponent* Shop : MatchShops)
 	{
+		const bool bTransactionsDiscarded =
+			IsValid(Shop) && Shop->DiscardAllActiveTransactionsForNewMatch();
+
 		if (!ensureMsgf(
-			IsValid(Shop) && Shop->DiscardAllActiveTransactionsForNewMatch(),
+			bTransactionsDiscarded,
 			TEXT("Shop transaction discard failed for %s after validation succeeded."),
 			IsValid(Shop) ? *GetNameSafe(Shop->GetOwner()) : TEXT("None")))
 		{

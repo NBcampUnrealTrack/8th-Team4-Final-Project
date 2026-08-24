@@ -436,22 +436,21 @@ bool UShopPurchaseComponent::TryPurchaseShield(
 		return false;
 	}
 
+	// 결제가 성공한 시점부터 서버 원장과 같은 거래 핸들을 보관한다.
+	// 이후 GE 적용이나 환불이 실패해도 다음 취소 요청에서 해당 거래를 다시 찾을 수 있다.
+	PendingShieldTransaction = Result.Transaction;
+
 	// 교체 시 이전 Pending GE를 제거한 뒤 새 GE를 적용한다.
 	RemovePendingShieldEffect();
 
 	const FActiveGameplayEffectHandle EffectHandle = ApplyEffect(Definition);
 	if (!EffectHandle.WasSuccessfullyApplied())
 	{
-		if (Shop.RefundTransaction(Result.Transaction) == EShopPurchaseResult::Success)
-		{
-			PendingShieldTransaction = FShopTransactionHandle();
-			RefreshPendingMirror();
-		}
-
+		RefundPendingShield(Shop);
+		RefreshPendingMirror();
 		return false;
 	}
 
-	PendingShieldTransaction = Result.Transaction;
 	PendingShieldEffect = EffectHandle;
 	RefreshPendingMirror();
 	return true;
@@ -472,6 +471,39 @@ bool UShopPurchaseComponent::RefundPendingWeapon(UShopComponent& Shop, const FGa
 	}
 
 	PendingWeaponTransactions.Remove(ItemId);
+	return true;
+}
+
+bool UShopPurchaseComponent::RestorePrimaryAfterPendingRefund(UShopComponent& Shop)
+{
+	PendingWeaponItemId = FGameplayTag();
+
+	const UWeaponInventoryComponent* Inventory = GetWeaponInventory();
+	if (!IsValid(Inventory)
+		|| Inventory->GetEquippedPrimaryTag().IsValid()
+		|| PendingWeaponTransactions.IsEmpty())
+	{
+		return RogueWeaponLoadout::RestoreConfirmedPrimary(GetPlayerState(), GetOwningPawn());
+	}
+
+	TArray<FGameplayTag> RemainingItemIds;
+	PendingWeaponTransactions.GetKeys(RemainingItemIds);
+	RemainingItemIds.Sort(
+		[](const FGameplayTag& Left, const FGameplayTag& Right)
+		{
+			return Left.ToString() < Right.ToString();
+		});
+
+	FShopItemDefinition FallbackDefinition;
+	if (!Shop.FindItemDefinition(RemainingItemIds[0], FallbackDefinition)
+		|| !RogueWeaponLoadout::ApplyPrimaryWeapon(
+			GetOwningPawn(),
+			FallbackDefinition.GrantedWeaponTag))
+	{
+		return RogueWeaponLoadout::RestoreConfirmedPrimary(GetPlayerState(), GetOwningPawn());
+	}
+
+	PendingWeaponItemId = RemainingItemIds[0];
 	return true;
 }
 
@@ -520,9 +552,12 @@ void UShopPurchaseComponent::ServerRefundPendingItem_Implementation(const FGamep
 
 		if (RefundPendingWeapon(*Shop, ItemId))
 		{
-			if (bWasEquipped)
+			if (bWasEquipped && !RestorePrimaryAfterPendingRefund(*Shop))
 			{
-				RogueWeaponLoadout::RestoreConfirmedPrimary(PlayerState, GetOwningPawn());
+				UE_LOG(LogShopPurchase, Error,
+					TEXT("Failed to restore primary after pending refund: Player=%s Item=%s"),
+					*GetNameSafe(PlayerState),
+					*ItemId.ToString());
 			}
 
 			RefreshPendingMirror();
@@ -716,6 +751,14 @@ bool UShopPurchaseComponent::BuildPendingWeaponCommitPlan(
 		{
 			return Left.ItemId.ToString() < Right.ItemId.ToString();
 		});
+
+	if (!OutPendingCommits.IsEmpty() && !OutDesiredEquippedPrimary.IsValid())
+	{
+		UE_LOG(LogShopPurchase, Error,
+			TEXT("Weapon commit has pending purchases without a selected primary: Player=%s"),
+			*GetNameSafe(GetOwner()));
+		return false;
+	}
 
 	if (OutDesiredEquippedPrimary.IsValid()
 		&& !Inventory->IsPossessed(OutDesiredEquippedPrimary)

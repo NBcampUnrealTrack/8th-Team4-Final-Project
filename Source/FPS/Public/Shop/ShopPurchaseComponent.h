@@ -112,8 +112,9 @@ private:
 	// 교체 상품만 기존 Pending 결제액을 구매 가능 크레딧에 반영한다. 현재는 보호막만 해당한다.
 	int32 GetPendingCreditOffset(const FShopItemDefinition& Definition) const;
 
-	// 개별 Pending 환불. 주무기 런타임 장착 복원은 호출자가 처리하고, 보호막은 GE까지 제거한다.
+	// 개별 Pending 환불과 후속 복원. 주무기는 다음 장착 대상을 정하고, 보호막은 GE까지 제거한다.
 	bool RefundPendingWeapon(UShopComponent& Shop, FGameplayTag ItemId);
+	bool RestorePrimaryAfterPendingRefund(UShopComponent& Shop);
 	bool RefundPendingShield(UShopComponent& Shop);
 
 	// 무료 장착은 거래를 만들지 않으므로 준비 페이즈 여부를 여기서 확인한다.
