@@ -2,66 +2,54 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "Combat/Hitscan/HitZoneDefinition.h"
-#include "Combat/Hitscan/HitscanBallistics.h"
-#include "Combat/Hitscan/HitscanShotTypes.h"
+#include "Combat/CombatHitZoneDefinition.h"
+#include "Combat/Hitscan/Helpers/HitscanMath.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 #include "Tags/GameplayTags.h"
 
-namespace
+static void TestNearly(
+	FAutomationTestBase& Test,
+	const FString& What,
+	const float Actual,
+	const float Expected,
+	const float Tolerance = KINDA_SMALL_NUMBER)
 {
-	void TestNearly(
-		FAutomationTestBase& Test,
-		const FString& What,
-		const float Actual,
-		const float Expected,
-		const float Tolerance = KINDA_SMALL_NUMBER)
-	{
-		Test.TestTrue(
-			FString::Printf(TEXT("%s (Actual=%.6f Expected=%.6f)"), *What, Actual, Expected),
-			FMath::IsNearlyEqual(Actual, Expected, Tolerance));
-	}
+	Test.TestTrue(
+		FString::Printf(TEXT("%s (Actual=%.6f Expected=%.6f)"), *What, Actual, Expected),
+		FMath::IsNearlyEqual(Actual, Expected, Tolerance));
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHitscanPenetrationRetentionTest,
-	"FPS.Combat.Hitscan.Ballistics.PenetrationRetention",
+	"FPS.Combat.Hitscan.Math.PenetrationRetention",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FHitscanPenetrationRetentionTest::RunTest(const FString& Parameters)
 {
 	FHitscanPenetrationState State;
-	State.RemainingPenetrationPower = 30.0f;
 	State.AccumulatedWallRetention = 1.0f;
 
 	FHitscanSurfaceRule Surface;
-	Surface.Hardness = 5.0f;
-	Surface.PenetrationCostPerCentimeter = 1.0f;
-	Surface.DamageRetentionPerCentimeter = 0.9f;
+	Surface.bCanPenetrate = true;
+	Surface.DamageMultiplier = 0.65f;
 
 	FHitscanPenetrationSettings Settings;
 	Settings.MaximumPenetrationCount = 2;
 
-	const FHitscanPenetrationStepResult Result = HitscanBallistics::ResolvePenetration(
+	const FHitscanPenetrationStepResult Result = FHitscanMath::ResolvePenetration(
 		State,
-		10.0f,
 		Surface,
 		Settings);
 
 	TestTrue(TEXT("Surface penetrated"), Result.bPenetrated);
-	TestNearly(*this, TEXT("Penetration cost"), Result.PenetrationCost, 15.0f);
-	TestNearly(*this, TEXT("Remaining power"), Result.ResultingState.RemainingPenetrationPower, 15.0f);
-	TestNearly(
-		*this,
-		TEXT("Wall retention is preserved"),
-		Result.ResultingState.AccumulatedWallRetention,
-		FMath::Pow(0.9f, 10.0f));
+	TestNearly(*this, TEXT("Wall multiplier is applied"), Result.ResultingState.AccumulatedWallRetention, 0.65f);
 	TestEqual(TEXT("Penetration count"), Result.ResultingState.PenetrationCount, 1);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHitscanSequentialPenetrationTest,
-	"FPS.Combat.Hitscan.Ballistics.SequentialPenetration",
+	"FPS.Combat.Hitscan.Math.SequentialPenetration",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FHitscanSequentialPenetrationTest::RunTest(const FString& Parameters)
@@ -70,93 +58,84 @@ bool FHitscanSequentialPenetrationTest::RunTest(const FString& Parameters)
 	Settings.MaximumPenetrationCount = 3;
 
 	FHitscanSurfaceRule FirstSurface;
-	FirstSurface.Hardness = 10.0f;
-	FirstSurface.PenetrationCostPerCentimeter = 2.0f;
-	FirstSurface.DamageRetentionPerCentimeter = 0.98f;
+	FirstSurface.bCanPenetrate = true;
+	FirstSurface.DamageMultiplier = 0.8f;
 
 	FHitscanSurfaceRule SecondSurface;
-	SecondSurface.Hardness = 20.0f;
-	SecondSurface.PenetrationCostPerCentimeter = 2.0f;
-	SecondSurface.DamageRetentionPerCentimeter = 0.95f;
+	SecondSurface.bCanPenetrate = true;
+	SecondSurface.DamageMultiplier = 0.5f;
 
 	FHitscanPenetrationState State;
-	State.RemainingPenetrationPower = 100.0f;
 	State.AccumulatedWallRetention = 1.0f;
 
-	const FHitscanPenetrationStepResult First = HitscanBallistics::ResolvePenetration(
-		State, 10.0f, FirstSurface, Settings);
+	const FHitscanPenetrationStepResult First = FHitscanMath::ResolvePenetration(
+		State, FirstSurface, Settings);
 	if (!TestTrue(TEXT("First surface penetrated"), First.bPenetrated))
 	{
 		return false;
 	}
 
-	const FHitscanPenetrationStepResult Second = HitscanBallistics::ResolvePenetration(
-		First.ResultingState, 5.0f, SecondSurface, Settings);
+	const FHitscanPenetrationStepResult Second = FHitscanMath::ResolvePenetration(
+		First.ResultingState, SecondSurface, Settings);
 	if (!TestTrue(TEXT("Second surface penetrated"), Second.bPenetrated))
 	{
 		return false;
 	}
 
-	const float ExpectedRetention = FMath::Pow(0.98f, 10.0f) * FMath::Pow(0.95f, 5.0f);
 	TestEqual(TEXT("Penetration count"), Second.ResultingState.PenetrationCount, 2);
-	TestNearly(*this, TEXT("Remaining penetration power"), Second.ResultingState.RemainingPenetrationPower, 40.0f);
-	TestNearly(*this, TEXT("Accumulated wall retention"), Second.ResultingState.AccumulatedWallRetention, ExpectedRetention);
+	TestNearly(*this, TEXT("Accumulated wall multiplier"), Second.ResultingState.AccumulatedWallRetention, 0.4f);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FHitscanPositiveRetentionIsNotThresholdedTest,
-	"FPS.Combat.Hitscan.Ballistics.PositiveRetentionIsNotThresholded",
+	FHitscanNonPenetrableSurfaceStopsTest,
+	"FPS.Combat.Hitscan.Math.NonPenetrableSurfaceStops",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHitscanPositiveRetentionIsNotThresholdedTest::RunTest(const FString& Parameters)
+bool FHitscanNonPenetrableSurfaceStopsTest::RunTest(const FString& Parameters)
 {
 	FHitscanPenetrationState State;
-	State.RemainingPenetrationPower = 100.0f;
 	State.AccumulatedWallRetention = 1.0f;
 
 	FHitscanSurfaceRule Surface;
-	Surface.DamageRetentionPerCentimeter = 0.1f;
+	Surface.bCanPenetrate = false;
+	Surface.DamageMultiplier = 0.5f;
 
 	FHitscanPenetrationSettings Settings;
 	Settings.MaximumPenetrationCount = 1;
 
-	const FHitscanPenetrationStepResult Result = HitscanBallistics::ResolvePenetration(
+	const FHitscanPenetrationStepResult Result = FHitscanMath::ResolvePenetration(
 		State,
-		6.0f,
 		Surface,
 		Settings);
 
-	TestTrue(TEXT("Any finite positive retention is passed through"), Result.bPenetrated);
-	TestTrue(TEXT("Retention remains positive"), Result.ResultingState.AccumulatedWallRetention > 0.0f);
+	TestFalse(TEXT("Non-penetrable surfaces stop the shot"), Result.bPenetrated);
+	TestNearly(*this, TEXT("Wall multiplier is unchanged"), Result.ResultingState.AccumulatedWallRetention, 1.0f);
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FHitscanInsufficientPenetrationPowerTest,
-	"FPS.Combat.Hitscan.Ballistics.InsufficientPenetrationPower",
+	FHitscanMaximumPenetrationCountTest,
+	"FPS.Combat.Hitscan.Math.MaximumPenetrationCount",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHitscanInsufficientPenetrationPowerTest::RunTest(const FString& Parameters)
+bool FHitscanMaximumPenetrationCountTest::RunTest(const FString& Parameters)
 {
 	FHitscanPenetrationSettings Settings;
-	Settings.MaximumPenetrationCount = 3;
+	Settings.MaximumPenetrationCount = 1;
 
 	FHitscanSurfaceRule Surface;
-	Surface.Hardness = 20.0f;
-	Surface.PenetrationCostPerCentimeter = 2.0f;
-	Surface.DamageRetentionPerCentimeter = 0.98f;
+	Surface.bCanPenetrate = true;
+	Surface.DamageMultiplier = 0.5f;
 
 	FHitscanPenetrationState State;
-	State.RemainingPenetrationPower = 50.0f;
 	State.AccumulatedWallRetention = 1.0f;
+	State.PenetrationCount = 1;
 
-	const FHitscanPenetrationStepResult Result = HitscanBallistics::ResolvePenetration(
-		State, 20.0f, Surface, Settings);
+	const FHitscanPenetrationStepResult Result = FHitscanMath::ResolvePenetration(State, Surface, Settings);
 
-	TestFalse(TEXT("Insufficient power stops penetration"), Result.bPenetrated);
-	TestNearly(*this, TEXT("Power is unchanged on failure"), Result.ResultingState.RemainingPenetrationPower, 50.0f);
-	TestEqual(TEXT("Count is unchanged on failure"), Result.ResultingState.PenetrationCount, 0);
+	TestFalse(TEXT("Maximum penetration count stops the shot"), Result.bPenetrated);
+	TestEqual(TEXT("Count is unchanged on failure"), Result.ResultingState.PenetrationCount, 1);
 	return true;
 }
 
@@ -174,7 +153,7 @@ bool FHitscanThickSurfaceBoundsTest::RunTest(const FString& Parameters)
 	float ExitDistance = 0.0f;
 	TestTrue(
 		TEXT("500cm wall exit distance can be resolved"),
-		HitscanBallistics::CalculateRayExitDistanceFromBox(
+		FHitscanMath::CalculateRayExitDistanceFromBox(
 			ThickWallBounds,
 			FVector::ZeroVector,
 			FVector::ForwardVector,
@@ -190,31 +169,31 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FHitscanHitZoneResolveTest::RunTest(const FString& Parameters)
 {
-	FHitscanHitZoneRule Torso;
+	FCombatHitZoneRule Torso;
 	Torso.HitZoneTag = RogueTags::Hit_Zone_Torso;
 	Torso.BoneNames = { TEXT("spine_03") };
 	Torso.Priority = 50;
 
-	FHitscanHitZoneRule LowPriorityHead;
+	FCombatHitZoneRule LowPriorityHead;
 	LowPriorityHead.HitZoneTag = RogueTags::Hit_Zone_Torso;
 	LowPriorityHead.BoneNames = { TEXT("head") };
 	LowPriorityHead.Priority = 10;
 
-	FHitscanHitZoneRule InvalidHighPriorityRule;
+	FCombatHitZoneRule InvalidHighPriorityRule;
 	InvalidHighPriorityRule.BoneNames = { TEXT("head") };
 	InvalidHighPriorityRule.Priority = 200;
 
-	FHitscanHitZoneRule Head;
+	FCombatHitZoneRule Head;
 	Head.HitZoneTag = RogueTags::Hit_Zone_Head;
 	Head.BoneNames = { TEXT("head") };
 	Head.Priority = 100;
 
-	const TArray<FHitscanHitZoneRule> Rules = { Torso, LowPriorityHead, InvalidHighPriorityRule, Head };
-	const FGameplayTag ResolvedHead = UHitscanHitZoneDefinition::ResolveRules(
+	const TArray<FCombatHitZoneRule> Rules = { Torso, LowPriorityHead, InvalidHighPriorityRule, Head };
+	const FGameplayTag ResolvedHead = UCombatHitZoneDefinition::ResolveRules(
 		Rules,
 		TEXT("head"),
 		RogueTags::Hit_Zone_Torso);
-	const FGameplayTag Fallback = UHitscanHitZoneDefinition::ResolveRules(
+	const FGameplayTag Fallback = UCombatHitZoneDefinition::ResolveRules(
 		Rules,
 		TEXT("missing_bone"),
 		RogueTags::Hit_Zone_Torso);
@@ -225,34 +204,8 @@ bool FHitscanHitZoneResolveTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FHitscanFallbackDisabledByDefaultTest,
-	"FPS.Combat.Hitscan.Penetration.FallbackDisabledByDefault",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FHitscanFallbackDisabledByDefaultTest::RunTest(const FString& Parameters)
-{
-	const FHitscanTraceSettings Settings;
-	TestFalse(TEXT("Fallback thickness is opt-in"), Settings.bAllowFallbackSurfaceThickness);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FHitscanZeroCostSurfacePolicyTest,
-	"FPS.Combat.Hitscan.Penetration.ZeroCostSurfacePolicy",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FHitscanZeroCostSurfacePolicyTest::RunTest(const FString& Parameters)
-{
-	const FHitscanTraceSettings Settings;
-	TestFalse(
-		TEXT("Unconfigured zero-cost surfaces fail closed by default"),
-		Settings.bAllowZeroCostSurfaceRule);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHitscanBackstabHorizontalProjectionTest,
-	"FPS.Combat.Hitscan.Ballistics.BackstabHorizontalProjection",
+	"FPS.Combat.Hitscan.Math.BackstabHorizontalProjection",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FHitscanBackstabHorizontalProjectionTest::RunTest(const FString& Parameters)
@@ -261,13 +214,13 @@ bool FHitscanBackstabHorizontalProjectionTest::RunTest(const FString& Parameters
 
 	TestTrue(
 		TEXT("Vertical component does not affect rear alignment"),
-		HitscanBallistics::IsBackstabDirection(Facing, FVector(1.0f, 0.0f, 5.0f), 45.0f));
+		FHitscanMath::IsBackstabDirection(Facing, FVector(1.0f, 0.0f, 5.0f), 45.0f));
 	TestFalse(
 		TEXT("Front attack is not a backstab"),
-		HitscanBallistics::IsBackstabDirection(Facing, FVector(-1.0f, 0.0f, 0.0f), 45.0f));
+		FHitscanMath::IsBackstabDirection(Facing, FVector(-1.0f, 0.0f, 0.0f), 45.0f));
 	TestTrue(
 		TEXT("Rear cone boundary is accepted"),
-		HitscanBallistics::IsBackstabDirection(Facing, FVector(1.0f, 1.0f, 0.0f), 45.0f));
+		FHitscanMath::IsBackstabDirection(Facing, FVector(1.0f, 1.0f, 0.0f), 45.0f));
 	return true;
 }
 

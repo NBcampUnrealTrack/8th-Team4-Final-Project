@@ -43,6 +43,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
 
+	bool FireMelee(bool bHeavyAttack = false);
+	bool FireRanged(float ClientFireServerTime);
+
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void StartReload();
@@ -219,7 +222,10 @@ protected:
 		const FVector& TraceStart,
 		const TArray<FVector>& PelletDirections,
 		float ShotDamage,
-		int32 ShotIndexInMagazine);
+		int32 ShotIndexInMagazine,
+		float ClientFireServerTime);
+
+	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
 
 	// --- Fire() 단계 분리 ---
 	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.
@@ -313,11 +319,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Hitscan")
 	TObjectPtr<UHitscanWeaponDefinition> HitscanDefinition;
 
-	// --- 관통 튜닝 값 ---
-	// B Resolver에 전달할 무기 기본 관통력.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float PenetrationPower = 70.f;
-
 	// B Resolver의 최대 Trace 사거리 (cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float TraceRange = 4000.f;
@@ -327,19 +328,6 @@ protected:
 	// 원거리 무기는 값을 건드리는 호출자가 없어 항상 TraceRange와 같다.
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float EffectiveTraceRange = 4000.f;
-
-	// 실제 출구점을 찾지 못했고 UPenetrableSurfaceComponent도 없는 표면에 적용할 Fallback 두께
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float DefaultSurfaceThickness = 10.f;
-
-	// SurfaceDefinition, SurfaceHardnessMap, PenetrableSurfaceComponent에 별도 값이 없을 때 사용할 기본 경도.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	float DefaultSurfaceHardness = 0.f;
-
-	// 기존 무기 BP의 EPhysicalSurface별 경도 오버라이드.
-	// 최종 우선순위는 PenetrableSurfaceComponent > 이 맵 > HitscanDefinition/기본 규칙이다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
-	TMap<TEnumAsByte<EPhysicalSurface>, float> SurfaceHardnessMap;
 
 	// 발사/재장전/화면흔들림 사운드·VFX 슬롯과 재생 로직을 전담하는 서브 컴포넌트. 이 무기의
 	// 발사/탄약/탄퍼짐/반동 상태와는 결합이 없어 별도 컴포넌트로 분리했다 - WeaponBase는 "언제"

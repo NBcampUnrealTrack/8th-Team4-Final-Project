@@ -45,6 +45,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
 }
 
 UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
@@ -227,6 +228,23 @@ void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
 
 void AShooterPlayerState::OnRep_LoadedIntoMatch()
 {
+}
+
+void AShooterPlayerState::SetVoiceTalking(bool bNewVoiceTalking)
+{
+	if (!HasAuthority() || bIsVoiceTalking == bNewVoiceTalking)
+	{
+		return;
+	}
+
+	bIsVoiceTalking = bNewVoiceTalking;
+	OnRep_VoiceTalking();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_VoiceTalking()
+{
+	OnVoiceTalkingChanged.Broadcast(this, bIsVoiceTalking);
 }
 
 void AShooterPlayerState::ServerGrantStartupAbilities()

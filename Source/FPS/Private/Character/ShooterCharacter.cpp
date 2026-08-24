@@ -1,6 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Character/ShooterCharacter.h"
 
 #include "AbilitySystemComponent.h"
@@ -8,12 +7,14 @@
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Combat/LagCompensationComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameMode/BaseRoundGameMode.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameMode/BaseRoundGameMode.h"
 #include "InputActionValue.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Weapon/WeaponBase.h"
 
@@ -70,7 +71,8 @@ namespace
 }
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(
+		  ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -96,6 +98,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	LagCompensation = CreateDefaultSubobject<ULagCompensationComponent>(TEXT("LagCompensation"));
 }
 
 void AShooterCharacter::BeginPlay()
@@ -138,9 +142,9 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 		Log,
 		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s Melee=%s"),
 		*GetNameSafe(this),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)));
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)));
 
 	return true;
 }
@@ -230,6 +234,11 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Con
 	{
 		RoundGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
 	}
+}
+
+UCombatHitZoneDefinition* AShooterCharacter::GetCombatHitZoneDefinition_Implementation() const
+{
+	return CombatHitZoneDefinition.Get();
 }
 
 void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction)

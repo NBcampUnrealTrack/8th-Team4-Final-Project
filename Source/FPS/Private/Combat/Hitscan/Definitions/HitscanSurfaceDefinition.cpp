@@ -1,4 +1,4 @@
-#include "Combat/Hitscan/HitscanSurfaceDefinition.h"
+#include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 
 FHitscanSurfaceRule UHitscanSurfaceDefinition::ResolveSurfaceRule(
 	const TEnumAsByte<EPhysicalSurface> SurfaceType) const

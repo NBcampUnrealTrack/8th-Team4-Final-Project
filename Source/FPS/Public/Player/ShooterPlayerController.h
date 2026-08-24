@@ -6,13 +6,17 @@
 #include "GameMode/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "TimerManager.h"
 
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
+class UNetworkTimeSyncComponent;
 class UShooterInputConfig;
+class USteamVoiceComponent;
+class APlayerState;
 struct FInputActionValue;
 
 UCLASS()
@@ -25,6 +29,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void StartVoiceTalking();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void StopVoiceTalking();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
+	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Shooter|Voice")
+	void ReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 
 	// 클라이언트는 GameMode 에 직접 접근할 수 없으므로 서버 RPC 로 팀 선택을 요청
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
@@ -61,6 +77,11 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
+	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
+
+	USteamVoiceComponent* GetSteamVoiceComponent() const { return SteamVoiceComponent; }
+
 	// 라운드, 사망, 전체 입력 차단처럼 모든 게임플레이 입력에 공통인 게이트다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Input")
 	virtual bool CanProcessGameplayInput() const;
@@ -76,10 +97,23 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest) override;
+	virtual void ReceivedPlayer() override;
 	virtual void SetupInputComponent() override;
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetVoiceTalking(bool bNewVoiceTalking);
+
+	UFUNCTION(Server, Unreliable)
+	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	UFUNCTION(Client, Unreliable)
+	void ClientReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
+
+	UFUNCTION(Server, Reliable)
+	void ServerNotifyLoadedIntoMatch();
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
@@ -93,6 +127,9 @@ protected:
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 
 private:
+	void StartMatchLoadReadyCheck();
+	void StopMatchLoadReadyCheck();
+	void CheckMatchLoadReady();
 	bool HasDataJackInteractionInputBlock() const;
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
@@ -102,6 +139,17 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
+	void Input_PushToTalkPressed();
+	void Input_PushToTalkReleased();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Network", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNetworkTimeSyncComponent> NetworkTimeSyncComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
+	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	FTimerHandle MatchLoadReadyCheckTimerHandle;
+	bool bNotifiedLoadedIntoMatch = false;
 };

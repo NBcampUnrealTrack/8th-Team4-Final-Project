@@ -5,12 +5,6 @@
 #include "CoreMinimal.h"
 #include "NativeGameplayTags.h"
 
-namespace ShooterTags
-{
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_None);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_Rifle);
-	UE_DECLARE_GAMEPLAY_TAG_EXTERN(TAG_WeaponType_Pistol);
-}
 
 // TAG_WeaponType_Rifle / Pistol 과 Weapon_Type_Rifle / Pistol 은 같은 태그 문자열을 가리키고 있습니다.
 // 하나로 통합하는 것이 좋아보이지만, 해당 머지에서는 두 태그 다 남기는 것으로 유지하겠습니다.
@@ -24,7 +18,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Damage_Source_SelfCost);
 
 	// 무기 종류
-	// FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_None); - 기존 코드와 중복되어 주석 처리
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_None);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Rifle);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Sniper);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Type_Shotgun);

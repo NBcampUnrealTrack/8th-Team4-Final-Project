@@ -75,8 +75,21 @@ void ULobbyWidget::StartRoomGame()
 		return;
 	}
 
+	APlayerController* RequestingPlayer = GetOwningPlayer();
+	if (!RequestingPlayer && GetGameInstance())
+	{
+		RequestingPlayer = GetGameInstance()->GetFirstLocalPlayerController();
+	}
+
+	if (!RequestingPlayer)
+	{
+		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
+		OnStartRoomGameResult(false);
+		return;
+	}
+
 	SetStatusMessage(FText::FromString(TEXT("Starting game...")));
-	if (!LobbyGameMode->RequestStartRoomGame(GetOwningPlayer(), MapName))
+	if (!LobbyGameMode->RequestStartRoomGame(RequestingPlayer, MapName))
 	{
 		SetStatusMessage(FText::FromString(TEXT("Cannot start until every client is ready.")));
 		OnStartRoomGameResult(false);

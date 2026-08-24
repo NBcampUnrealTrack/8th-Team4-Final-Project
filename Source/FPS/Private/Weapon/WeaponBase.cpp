@@ -4,7 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
-#include "Combat/Hitscan/HitscanWeaponDefinition.h"
+#include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "Interfaces/PlayerInterface.h"
@@ -12,8 +12,6 @@
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogWeaponHitscanBridge, Log, All);
 
 AWeaponBase::AWeaponBase()
 {
@@ -272,6 +270,21 @@ void AWeaponBase::AttachToOwnerMeshes() const
 
 bool AWeaponBase::Fire(bool bHeavyAttack)
 {
+	return FireMelee(bHeavyAttack);
+}
+
+bool AWeaponBase::FireMelee(bool bHeavyAttack)
+{
+	return FireInternal(bHeavyAttack, 0.0f);
+}
+
+bool AWeaponBase::FireRanged(float ClientFireServerTime)
+{
+	return FireInternal(false, ClientFireServerTime);
+}
+
+bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
+{
 	if (!CanFireNow(bHeavyAttack))
 	{
 		return false;
@@ -296,7 +309,7 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime);
 	if (Effects)
 	{
 		Effects->PlayFireEffects(TraceStart, PelletDirections);
@@ -435,7 +448,8 @@ void AWeaponBase::ResolveHitscanShot(
 	const FVector& TraceStart,
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
-	const int32 ShotIndexInMagazine)
+	const int32 ShotIndexInMagazine,
+	const float ClientFireServerTime)
 {
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
@@ -446,20 +460,11 @@ void AWeaponBase::ResolveHitscanShot(
 	UHitscanResolverSubsystem* Resolver = World->GetSubsystem<UHitscanResolverSubsystem>();
 	if (!IsValid(Resolver))
 	{
-		if (HasAuthority())
-		{
-			UE_LOG(LogWeaponHitscanBridge, Warning, TEXT("Hitscan Resolver subsystem is unavailable. Weapon=%s"), *GetNameSafe(this));
-		}
 		return;
 	}
 
 	if (!IsValid(HitscanDefinition.Get()))
 	{
-		UE_LOG(
-			LogWeaponHitscanBridge,
-			Error,
-			TEXT("HitscanDefinition is required by the GAS damage pipeline. Weapon=%s"),
-			*GetNameSafe(this));
 		return;
 	}
 
@@ -468,11 +473,7 @@ void AWeaponBase::ResolveHitscanShot(
 	(void)ShotDamage;
 
 	FHitscanShotRequest Request;
-	HitscanDefinition->ConfigureShotRequest(
-		Request,
-		EffectiveTraceRange,
-		DefaultSurfaceThickness,
-		DefaultSurfaceHardness);
+	HitscanDefinition->ConfigureShotRequest(Request, EffectiveTraceRange);
 
 	Request.InstigatorActor = GetOwner();
 	Request.CauserActor = this;
@@ -491,23 +492,10 @@ void AWeaponBase::ResolveHitscanShot(
 		Request.DamageDistanceOrigin = TraceStart;
 	}
 
-	Request.bHasDamageDistanceOrigin = true;
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
-	Request.InitialPenetrationPower = FMath::Max(0.0f, PenetrationPower);
-	Request.SurfaceHardnessOverrides = &SurfaceHardnessMap;
+	Request.ClientFireServerTime = ClientFireServerTime;
 
-	const FHitscanShotResult ShotResult = Resolver->ResolveServerShot(Request);
-	if (HasAuthority() && !ShotResult.bProcessed)
-	{
-		UE_LOG(
-			LogWeaponHitscanBridge,
-			Warning,
-			TEXT("Hitscan shot request was rejected. Weapon=%s PelletCount=%d Range=%.2f Damage=%.1f"),
-			*GetNameSafe(this),
-			PelletDirections.Num(),
-			EffectiveTraceRange,
-			ShotDamage);
-	}
+	Resolver->ResolveServerShot(Request);
 }

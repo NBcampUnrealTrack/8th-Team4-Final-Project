@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Interfaces/RogueDamageableTarget.h"
@@ -11,15 +11,20 @@
 
 class UAbilitySystemComponent;
 class UCameraComponent;
+class UCombatHitZoneDefinition;
 class UCombatComponent;
 class UInputAction;
+class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
 class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
 
 UCLASS()
-class FPS_API AShooterCharacter : public ACharacter, public IPlayerInterface, public IAbilitySystemInterface, public IRogueDamageableTarget
+class FPS_API AShooterCharacter : public ACharacter,
+								  public IPlayerInterface,
+								  public IAbilitySystemInterface,
+								  public IRogueDamageableTarget
 {
 	GENERATED_BODY()
 
@@ -45,6 +50,7 @@ public:
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
+	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
 	virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Character")
@@ -108,6 +114,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<UCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
+	TObjectPtr<ULagCompensationComponent> LagCompensation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Hit Zone")
+	TObjectPtr<UCombatHitZoneDefinition> CombatHitZoneDefinition;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;

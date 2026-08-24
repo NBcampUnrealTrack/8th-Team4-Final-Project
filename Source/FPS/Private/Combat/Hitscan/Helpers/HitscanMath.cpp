@@ -1,11 +1,9 @@
-#include "Combat/Hitscan/HitscanBallistics.h"
+#include "Combat/Hitscan/Helpers/HitscanMath.h"
 
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 
-namespace
-{
-	FVector ResolveHorizontalFacing(const AActor* TargetActor)
+FVector FHitscanMath::ResolveHorizontalFacing(const AActor* TargetActor)
 	{
 		if (!IsValid(TargetActor))
 		{
@@ -21,65 +19,37 @@ namespace
 		Facing.Z = 0.0f;
 		return Facing.GetSafeNormal();
 	}
-}
 
-FHitscanPenetrationStepResult HitscanBallistics::ResolvePenetration(
+FHitscanPenetrationStepResult FHitscanMath::ResolvePenetration(
 	const FHitscanPenetrationState& CurrentState,
-	const float ThicknessCentimeters,
 	const FHitscanSurfaceRule& SurfaceRule,
 	const FHitscanPenetrationSettings& PenetrationSettings)
 {
 	FHitscanPenetrationStepResult Result;
 	Result.ResultingState = CurrentState;
 
-	if (!FMath::IsFinite(ThicknessCentimeters)
-		|| ThicknessCentimeters <= 0.0f
-		|| !FMath::IsFinite(CurrentState.RemainingPenetrationPower)
-		|| !FMath::IsFinite(CurrentState.AccumulatedWallRetention)
-		|| CurrentState.RemainingPenetrationPower < 0.0f
+	if (!FMath::IsFinite(CurrentState.AccumulatedWallRetention)
 		|| CurrentState.AccumulatedWallRetention < 0.0f
 		|| CurrentState.AccumulatedWallRetention > 1.0f
 		|| CurrentState.PenetrationCount < 0
 		|| PenetrationSettings.MaximumPenetrationCount <= 0
 		|| CurrentState.PenetrationCount >= PenetrationSettings.MaximumPenetrationCount
-		|| !FMath::IsFinite(SurfaceRule.Hardness)
-		|| SurfaceRule.Hardness < 0.0f
-		|| !FMath::IsFinite(SurfaceRule.PenetrationCostPerCentimeter)
-		|| SurfaceRule.PenetrationCostPerCentimeter < 0.0f
-		|| !FMath::IsFinite(SurfaceRule.DamageRetentionPerCentimeter)
-		|| SurfaceRule.DamageRetentionPerCentimeter < 0.0f
-		|| SurfaceRule.DamageRetentionPerCentimeter > 1.0f)
+		|| !SurfaceRule.bCanPenetrate
+		|| !FMath::IsFinite(SurfaceRule.DamageMultiplier)
+		|| SurfaceRule.DamageMultiplier <= 0.0f
+		|| SurfaceRule.DamageMultiplier > 1.0f)
 	{
 		return Result;
 	}
 
-	const float PenetrationCost = SurfaceRule.Hardness
-		+ ThicknessCentimeters * SurfaceRule.PenetrationCostPerCentimeter;
-	Result.PenetrationCost = PenetrationCost;
-
-	if (CurrentState.RemainingPenetrationPower + KINDA_SMALL_NUMBER < PenetrationCost)
-	{
-		return Result;
-	}
-
-	const float SurfaceWallRetention = FMath::Pow(
-		FMath::Clamp(SurfaceRule.DamageRetentionPerCentimeter, 0.0f, 1.0f),
-		ThicknessCentimeters);
 	const float ResultingWallRetention = CurrentState.AccumulatedWallRetention
-		* SurfaceWallRetention;
-
-	// 로컬 임계값으로 작은 양수 계수를 버리지 않는다. 실제 보존 계수는 그대로 GAS에 전달한다.
-	if (!FMath::IsFinite(SurfaceWallRetention)
-		|| !FMath::IsFinite(ResultingWallRetention)
-		|| ResultingWallRetention <= 0.0f)
+		* FMath::Clamp(SurfaceRule.DamageMultiplier, 0.0f, 1.0f);
+	if (!FMath::IsFinite(ResultingWallRetention) || ResultingWallRetention <= 0.0f)
 	{
 		return Result;
 	}
 
 	Result.bPenetrated = true;
-	Result.ResultingState.RemainingPenetrationPower = FMath::Max(
-		0.0f,
-		CurrentState.RemainingPenetrationPower - PenetrationCost);
 	Result.ResultingState.AccumulatedWallRetention = FMath::Clamp(
 		ResultingWallRetention,
 		0.0f,
@@ -88,7 +58,7 @@ FHitscanPenetrationStepResult HitscanBallistics::ResolvePenetration(
 	return Result;
 }
 
-bool HitscanBallistics::IsBackstabDirection(
+bool FHitscanMath::IsBackstabDirection(
 	const FVector& TargetFacingDirection,
 	const FVector& ShotDirection,
 	const float RearConeHalfAngleDegrees)
@@ -111,7 +81,7 @@ bool HitscanBallistics::IsBackstabDirection(
 	return FVector::DotProduct(HorizontalFacing, HorizontalShotDirection) >= MinimumAlignment;
 }
 
-bool HitscanBallistics::IsBackstab(
+bool FHitscanMath::IsBackstab(
 	const AActor* TargetActor,
 	const FVector& ShotDirection,
 	const float RearConeHalfAngleDegrees)
@@ -122,7 +92,7 @@ bool HitscanBallistics::IsBackstab(
 		RearConeHalfAngleDegrees);
 }
 
-bool HitscanBallistics::CalculateRayExitDistanceFromBox(
+bool FHitscanMath::CalculateRayExitDistanceFromBox(
 	const FBox& Box,
 	const FVector& Origin,
 	const FVector& Direction,

@@ -527,6 +527,13 @@ bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, int32 Slo
 	}
 
 	ClearRoundDraftState();
+	if (IsValid(AbilitySystemComponent))
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(
+			RogueTags::State_Gameplay_InputBlocked_AugmentDraft,
+			0,
+			EGameplayTagReplicationState::TagOnly);
+	}
 	OnOffersChanged.Broadcast();
 	return true;
 }

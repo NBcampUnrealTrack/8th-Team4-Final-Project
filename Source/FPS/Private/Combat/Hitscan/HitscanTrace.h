@@ -1,28 +1,68 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Combat/Hitscan/HitscanShotTypes.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 
 class UWorld;
+class AActor;
+struct FCollisionQueryParams;
+struct FHitResult;
+struct FHitscanPenetrationState;
 
-struct FHitscanImpactSample
+class FHitscanTrace
 {
-	TWeakObjectPtr<AActor> TargetActor;
-	FVector ImpactPoint = FVector::ZeroVector;
-	FName BoneName = NAME_None;
-	FVector ShotDirection = FVector::ForwardVector;
-	float WallRetention = 1.0f;
-	int32 PelletIndex = 0;
-};
+public:
+	static bool ResolveImpacts(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		TArray<FHitscanImpactSample>& OutImpactSamples);
 
-// 월드 충돌, 표면 통과, 피해 후보 충돌 추출만 담당한다.
-// 대상별 집계와 GAS 호출은 UHitscanResolverSubsystem이 담당한다.
-namespace HitscanTrace
-{
-	bool ResolvePellet(
+private:
+	static bool IsPotentialDamageTargetActor(
+		AActor* TargetActor,
+		const FHitscanDamageTargetSettings& TargetSettings);
+	static bool IsPotentialDamageTarget(
+		const FHitResult& HitResult,
+		const FHitscanDamageTargetSettings& TargetSettings);
+	static FGameplayTag ResolveHitZoneTag(
+		const FHitResult& HitResult,
+		const FHitscanShotRequest& Request,
+		FName BoneName);
+	static bool FindSurfaceExit(
+		const FHitResult& EntryHit,
+		const FVector& TraceDirection,
+		const FHitscanTraceSettings& TraceSettings,
+		float RemainingRangeAfterEntryCentimeters,
+		FVector& OutExitPoint);
+	static FHitscanSurfaceRule ResolveSurfaceRule(
+		const FHitResult& HitResult,
+		const FHitscanShotRequest& Request);
+	static bool TraceNextBlockingHit(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		const FCollisionQueryParams& QueryParams,
+		const FVector& TraceStart,
+		const FVector& TraceDirection,
+		float RemainingRangeCentimeters,
+		FHitResult& OutHitResult);
+	static bool TryBuildImpactSample(
+		const FHitResult& HitResult,
+		const FVector& TraceDirection,
+		const FHitscanPenetrationState& PenetrationState,
+		const FHitscanShotRequest& Request,
+		int32 PelletIndex,
+		FHitscanImpactSample& OutImpactSample);
+	static bool TryAdvanceThroughSurface(
+		const FHitResult& EntryHit,
+		const FVector& TraceDirection,
+		float RemainingRangeAfterEntryCentimeters,
+		const FHitscanShotRequest& Request,
+		FHitscanPenetrationState& InOutPenetrationState,
+		FVector& OutNextTraceStart);
+	static bool ResolveCurrentPellet(
 		UWorld* World,
 		const FHitscanShotRequest& Request,
 		const FVector& PelletDirection,
 		int32 PelletIndex,
 		FHitscanImpactSample& OutImpactSample);
-}
+};

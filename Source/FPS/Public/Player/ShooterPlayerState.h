@@ -9,6 +9,7 @@
 
 #include "ShooterPlayerState.generated.h"
 
+class AShooterPlayerState;
 class UAugmentInventoryComponent;
 class UCreditWalletComponent;
 class URogueAbilitySystemComponent;
@@ -18,6 +19,8 @@ class URogueVitalAttributeSet;
 class UShopComponent;
 class UShopPurchaseComponent;
 class UWeaponInventoryComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterVoiceTalkingChangedSignature, AShooterPlayerState*, PlayerState, bool, bIsTalking);
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -79,6 +82,14 @@ public:
 
 	void SetLoadedIntoMatch(bool bNewLoadedIntoMatch);
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Voice")
+	bool IsVoiceTalking() const { return bIsVoiceTalking; }
+
+	void SetVoiceTalking(bool bNewVoiceTalking);
+
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Voice")
+	FShooterVoiceTalkingChangedSignature OnVoiceTalkingChanged;
+
 protected:
 	virtual void PostInitializeComponents() override;
 
@@ -97,6 +108,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LoadedIntoMatch();
+
+	UFUNCTION()
+	void OnRep_VoiceTalking();
 
 	UFUNCTION(Client, Reliable)
 	void ClientSyncEquippedWeaponState(FGameplayTag EquippedStateTag);
@@ -159,4 +173,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_LoadedIntoMatch, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Loading", meta = (AllowPrivateAccess = "true"))
 	bool bLoadedIntoMatch = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_VoiceTalking, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Voice", meta = (AllowPrivateAccess = "true"))
+	bool bIsVoiceTalking = false;
 };
