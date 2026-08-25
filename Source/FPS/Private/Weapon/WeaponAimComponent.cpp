@@ -141,9 +141,10 @@ void UWeaponAimComponent::TickSpreadDecay(float DeltaTime)
 
 void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
 {
-	// ADS 중 사격 유지 구간(마지막 발사 이후 RecoilRecoveryDelay가 지나지 않은 동안)에만 생성한다.
-	// 이 구간을 벗어나면(사격 중단/ADS 해제) 다음 진입 시 새 버스트로 취급하도록 플래그를 내린다.
-	if (!bIsADS || !RecoilCurve || TimeSinceLastShot >= RecoilRecoveryDelay)
+	// 사격 유지 구간(마지막 발사 이후 RecoilRecoveryDelay가 지나지 않은 동안)에 생성한다. ADS 여부와
+	// 무관하게 지향 사격/ADS 공용으로 동작한다(3.3.1 개정 - 일반 사격도 반동 적용).
+	// 이 구간을 벗어나면(사격 중단) 다음 진입 시 새 버스트로 취급하도록 플래그를 내린다.
+	if (!RecoilCurve || TimeSinceLastShot >= RecoilRecoveryDelay)
 	{
 		bRecoilBurstActive = false;
 		return;

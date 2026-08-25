@@ -9,9 +9,9 @@
 class UCurveVector;
 class UDataTable;
 
-// ADS 상태 + 탄퍼짐(블룸) + ADS 반동을 전담한다. 전투 시스템 명세서 3.3.1의 원칙("지향 사격은
-// 탄퍼짐만, ADS는 반동만")대로 이 셋은 bIsADS 하나를 기준으로 서로 배타적으로 갈리는 한 묶음의
-// 개념이라 하나의 컴포넌트로 분리했다. AWeaponBase는 "언제" 갱신할지(Fire()/Tick() 호출 시점)만
+// ADS 상태 + 탄퍼짐(블룸) + 반동을 전담한다. 전투 시스템 명세서 3.3.1 원칙이 테스트 후 개정되어,
+// 반동은 지향 사격/ADS 공용으로 항상 생성되고 탄퍼짐만 bIsADS로 배타적으로 갈린다(ADS 중엔 0 고정).
+// 이 셋이 bIsADS를 기준으로 얽혀 있는 한 묶음의 개념이라 하나의 컴포넌트로 분리했다. AWeaponBase는 "언제" 갱신할지(Fire()/Tick() 호출 시점)만
 // 알려주고, AWeaponBase의 기존 public 함수(SetADS/IsADS/GetCurrentSpreadDegrees 등)는 전부 이
 // 컴포넌트로 위임하는 얇은 껍데기로 남아 있어 외부 호출부(GA_ADS/CombatComponent/ShooterReticle
 // 등)는 변경이 필요 없다.
@@ -59,10 +59,10 @@ protected:
 	float CalculateCurrentSpreadDegrees() const;
 	void TickSpreadDecay(float DeltaTime);
 
-	// ADS 중 사격 유지 구간(TimeSinceLastShot < RecoilRecoveryDelay)에 매 프레임 호출된다. RecoilCurve
-	// (UCurveVector, X=Yaw/Y=Pitch)를 FiringElapsedTime으로 계속 evaluate해 이전 프레임과의 델타만
-	// 컨트롤러에 적용한다 - 발당 1회가 아니라 시간 기반 연속 적용이라 프레임/RPM과 무관하게 항상 같은
-	// 반동 패턴을 그린다.
+	// 사격 유지 구간(TimeSinceLastShot < RecoilRecoveryDelay)에 매 프레임 호출된다(ADS 여부 무관 - 지향
+	// 사격/ADS 공용). RecoilCurve(UCurveVector, X=Yaw/Y=Pitch)를 FiringElapsedTime으로 계속 evaluate해
+	// 이전 프레임과의 델타만 컨트롤러에 적용한다 - 발당 1회가 아니라 시간 기반 연속 적용이라 프레임/RPM과
+	// 무관하게 항상 같은 반동 패턴을 그린다.
 	void TickProceduralRecoilGeneration(float DeltaTime);
 	void TickRecoilRecovery(float DeltaTime);
 
