@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Abilities/GA_DataJackHoldAbilityBase.h"
+#include "GameplayTagContainer.h"
 #include "GA_DataJackInteract.generated.h"
 
 UCLASS()
@@ -20,6 +21,13 @@ public:
 		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
 protected:
+	virtual void EndAbility(
+		FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayAbilityActivationInfo ActivationInfo,
+		bool bReplicateEndAbility,
+		bool bWasCancelled) override;
+
 	virtual EDataJackOperation GetDataJackOperation() const override;
 	virtual bool BeginDataJackOperation(
 		UBombObjectiveManager& ObjectiveManager,
@@ -30,6 +38,8 @@ protected:
 	virtual void HandleDataJackOperationStarted(APlayerController& PlayerController) override;
 
 private:
-	// 복제된 Objective 상태만으로 설치/해체 가능 여부를 판정한다. 서버 검증을 대체하지 않는다.
-	bool CanStartInteraction(const APawn* AvatarPawn) const;
+	// 이전 태그를 걷어내고 새 태그를 붙인다. 무효 태그를 넣으면 제거만 한다.
+	void SetInteractionStateTag(const FGameplayAbilityActorInfo* ActorInfo, FGameplayTag NewStateTag);
+
+	FGameplayTag AppliedInteractionStateTag;
 };
