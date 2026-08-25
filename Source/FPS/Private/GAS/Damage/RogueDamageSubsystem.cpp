@@ -77,6 +77,12 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 		return FRogueDamageResult();
 	}
 
+	// 팀킬 차단
+	if (URogueTargetFilter::GetRelation(Params.Instigator, TargetActor) == ERogueTargetRelation::Friendly)
+	{
+		return FRogueDamageResult();
+	}
+
 	// 대미지 GE 확보
 	UClass* DamageGEClass = ResolveDamageEffectClass();
 	if (!DamageGEClass)

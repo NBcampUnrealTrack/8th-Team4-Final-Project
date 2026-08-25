@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Actor/DataJackTypes.h"
@@ -61,6 +61,10 @@ public:
 	bool IsCarriedBy(const ABaseTeamPlayerState* PlayerState) const;
 	bool IsInteractingPlayer(const ABaseTeamPlayerState* PlayerState) const;
 	bool IsRoundActive() const;
+
+	// public으로 노출
+	bool CanPawnPlant(const APawn* PlayerPawn, const ADataJackSiteVolume* SiteVolume) const;
+	bool CanPawnDefuse(const APawn* PlayerPawn) const;
 
 	void ConfigureForMode(float NewPlantDuration, float NewCountdownDuration, float NewDefuseDuration, float NewDropHoldDuration, float NewValidationInterval);
 	void InitializeForRound(const FTransform& SpawnTransform, UBombObjectiveManager* InObjectiveManager);
@@ -128,8 +132,6 @@ private:
 	void UpdatePickupCollision();
 	void EvaluatePickupOverlaps();
 	FVector GetInteractionWorldLocation() const;
-	bool CanPawnPlant(const APawn* PlayerPawn, const ADataJackSiteVolume* SiteVolume) const;
-	bool CanPawnDefuse(const APawn* PlayerPawn) const;
 	void ValidateActiveInteraction();
 	void CompleteActiveInteraction();
 	void CompletePlanting();

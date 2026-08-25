@@ -36,8 +36,17 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 
 public:
+	// 팀 윤곽선 초기화
+	void RefreshTeamOutline();
+
+	// 모든 플레이어 캐릭터의 팀 윤곽선 초기화
+	static void RefreshTeamOutlineForAll(UWorld* World);
+
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
@@ -125,6 +134,14 @@ protected:
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
+	// 발각 태그 구독 갱신
+	void UpdateRevealTagSubscription();
+	void UnsubscribeRevealTag();
+	void HandleRevealTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
+
+	TWeakObjectPtr<UAbilitySystemComponent> RevealTagAbilitySystem;
+	FDelegateHandle RevealTagEventHandle;
+
 	// 랙돌에 피격 임펄스 적용
 	void ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const;
 

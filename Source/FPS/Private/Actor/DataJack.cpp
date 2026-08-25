@@ -1,15 +1,37 @@
-#include "Actor/DataJack.h"
+﻿#include "Actor/DataJack.h"
 
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameMode/BombObjectiveManager.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/ShooterPlayerState.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 #include "TimerManager.h"
+
+namespace
+{
+	// DataJack 보유 상태 태그 관리 함수
+	void SetDataJackCarryingTag(ABaseTeamPlayerState* PlayerState, const bool bCarrying)
+	{
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		URogueAbilitySystemComponent* AbilitySystem = IsValid(ShooterPlayerState)
+			? ShooterPlayerState->GetRogueAbilitySystemComponent()
+			: nullptr;
+		if (IsValid(AbilitySystem))
+		{
+			AbilitySystem->SetLooseGameplayTagCount(
+				RogueTags::State_Combat_DataJack_Carrying,
+				bCarrying ? 1 : 0,
+				EGameplayTagReplicationState::TagOnly);
+		}
+	}
+}
 
 ADataJack::ADataJack()
 {
@@ -61,6 +83,7 @@ void ADataJack::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		APlayerController* ActiveInteractionController = ResetInteractionState();
 		FinishDropHold();
 		NotifyInteractionStopped(ActiveInteractionController);
+		SetDataJackCarryingTag(CarrierPlayerState, false);
 	}
 	else
 	{
@@ -367,7 +390,9 @@ void ADataJack::SetCarrierPlayerState(ABaseTeamPlayerState* NewCarrierPlayerStat
 		return;
 	}
 
+	SetDataJackCarryingTag(CarrierPlayerState, false);
 	CarrierPlayerState = NewCarrierPlayerState;
+	SetDataJackCarryingTag(CarrierPlayerState, true);
 	BroadcastDataChanged();
 	ForceNetUpdate();
 }
