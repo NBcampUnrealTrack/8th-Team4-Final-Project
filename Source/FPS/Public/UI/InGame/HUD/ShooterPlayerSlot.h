@@ -1,7 +1,8 @@
-﻿// ShooterPlayerSlot.h
+// ShooterPlayerSlot.h
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "ShooterAttributeWidget.h"
 #include "ShooterPlayerSlot.generated.h"
 
@@ -18,24 +19,24 @@ UCLASS()
 class FPS_API UShooterPlayerSlot : public UShooterAttributeWidget
 {
 	GENERATED_BODY()
-	
+
 public:
 	UShooterPlayerSlot();
-	
+
 	// 컨테이너가 호출. nullptr이면 슬롯을 비움
 	void SetPlayerState(AShooterPlayerState* NewPlayerState);
-	
+
 	// 아군/적군 외형 결정. SetPlayerState보다 선호출
 	void SetSlotStyle(bool bInShowHealth, FLinearColor InTintColor);
 
 protected:
 	virtual void NativeDestruct() override;
-	
+
 	virtual void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC) override;
 	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC) override;
-	
+
 	void UnbindFromPlayerState();
-	
+
 	void RefreshHealth();
 
 	UFUNCTION()
@@ -43,7 +44,12 @@ protected:
 
 	void HandleHealthChanged(const struct FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
-	
+
+	// 폭탄(Data Jack) 보유는 State.Combat.DataJack.Carrying GAS 태그로 판별. 공격팀 시점에서만 표시한다.
+	void HandleBombCarryingTagChanged(FGameplayTag Tag, int32 NewCount);
+	void RefreshBombCarrierIcon();
+	bool IsLocalTeamAttacking() const;
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_AliveIcon;
 	UPROPERTY(meta = (BindWidget))
@@ -51,13 +57,20 @@ protected:
 	// 적군 슬롯에는 없음
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterGauge> Gauge_Health;
-	
+
+	// 생사 아이콘 밑에 표시할 폭탄 보유 뱃지 (공격팀 시점에서만 표시)
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_BombCarrierIcon;
+
 private:
 	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
-	
+
 	bool bShowHealth = false;
 	FLinearColor TintColor = FLinearColor::White;
-	
+
 	float CachedHealth = 0.f;
 	float CachedMaxHealth = 0.f;
+
+	bool bIsBombCarrier = false;
+	FDelegateHandle BombCarryingTagEventHandle;
 };

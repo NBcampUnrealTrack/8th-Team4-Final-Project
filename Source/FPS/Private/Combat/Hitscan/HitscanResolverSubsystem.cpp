@@ -34,19 +34,20 @@ bool UHitscanResolverSubsystem::IsValidShotRequest(
 void UHitscanResolverSubsystem::ResolveImpactSamples(
 	UWorld* World,
 	const FHitscanShotRequest& Request,
-	TArray<FHitscanImpactSample>& OutImpactSamples) const
+	TArray<FHitscanImpactSample>& OutImpactSamples,
+	TArray<FHitscanImpactEffectData>& OutImpactEffects) const
 {
 	if (Request.ClientFireServerTime > 0.0f)
 	{
 		FLagCompensationRewindScope RewindScope(World, Request);
 		if (RewindScope.IsActive())
 		{
-			FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples);
+			FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples, OutImpactEffects);
 			return;
 		}
 	}
 
-	FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples);
+	FHitscanTrace::ResolveImpacts(World, Request, OutImpactSamples, OutImpactEffects);
 }
 
 void UHitscanResolverSubsystem::ApplyDamageToTargets(
@@ -80,9 +81,9 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 
 bool UHitscanResolverSubsystem::ResolveServerShot(
 	const FHitscanShotRequest& Request,
-	TArray<FVector>& OutImpactPoints) const
+	TArray<FHitscanImpactEffectData>& OutImpactEffects) const
 {
-	OutImpactPoints.Reset();
+	OutImpactEffects.Reset();
 
 	UWorld* World = GetWorld();
 	if (!IsValidShotRequest(World, Request))
@@ -91,13 +92,7 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 	}
 
 	TArray<FHitscanImpactSample> ImpactSamples;
-	ResolveImpactSamples(World, Request, ImpactSamples);
-
-	OutImpactPoints.Reserve(ImpactSamples.Num());
-	for (const FHitscanImpactSample& Impact : ImpactSamples)
-	{
-		OutImpactPoints.Add(Impact.ImpactPoint);
-	}
+	ResolveImpactSamples(World, Request, ImpactSamples, OutImpactEffects);
 
 	TArray<FRogueHitContext> HitContexts;
 	FHitscanHitContextBuilder::Build(Request, ImpactSamples, HitContexts);

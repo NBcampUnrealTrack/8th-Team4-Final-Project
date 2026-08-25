@@ -10,11 +10,14 @@
 #include "Combat/LagCompensationComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "EngineUtils.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
 #include "InputActionValue.h"
 #include "Player/BaseRoundPlayerController.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
@@ -23,6 +26,11 @@ DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
 
 namespace
 {
+	// MM_CharacterOutliner 의 If 노드가 비교하는 상수와 같아야 한다.
+	constexpr int32 TeamOutlineStencilAlly = 1;
+	constexpr int32 TeamOutlineStencilEnemy = 2;
+	constexpr int32 TeamOutlineStencilEnemyRevealed = 3;
+
 	AShooterPlayerState* ResolveShooterPlayerState(AActor* Actor)
 	{
 		if (!IsValid(Actor))
@@ -111,6 +119,121 @@ void AShooterCharacter::BeginPlay()
 	{
 		InitializeDefaultWeaponLoadout();
 	}
+}
+
+void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnsubscribeRevealTag();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AShooterCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	UpdateRevealTagSubscription();
+	RefreshTeamOutline();
+}
+
+void AShooterCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	UpdateRevealTagSubscription();
+	RefreshTeamOutline();
+}
+
+void AShooterCharacter::RefreshTeamOutline()
+{
+	USkeletalMeshComponent* Mesh3P = GetMesh();
+	if (!IsValid(Mesh3P))
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const APlayerController* ViewerController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	const ABaseTeamPlayerState* ViewerPlayerState = IsValid(ViewerController)
+		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const ABaseTeamPlayerState* OwnerPlayerState = GetPlayerState<ABaseTeamPlayerState>();
+
+	if (!IsValid(ViewerPlayerState)
+		|| !IsValid(OwnerPlayerState)
+		|| ViewerPlayerState == OwnerPlayerState
+		|| ViewerPlayerState->GetTeam() == EGameTeam::None
+		|| OwnerPlayerState->GetTeam() == EGameTeam::None)
+	{
+		Mesh3P->SetRenderCustomDepth(false);
+		return;
+	}
+
+	int32 StencilValue = TeamOutlineStencilAlly;
+	if (ViewerPlayerState->GetTeam() != OwnerPlayerState->GetTeam())
+	{
+		const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+		const bool bRevealed = IsValid(AbilitySystem)
+			&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_Revealed);
+
+		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
+	}
+
+	Mesh3P->SetCustomDepthStencilValue(StencilValue);
+	Mesh3P->SetRenderCustomDepth(true);
+}
+
+void AShooterCharacter::RefreshTeamOutlineForAll(UWorld* World)
+{
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	for (TActorIterator<AShooterCharacter> Iterator(World); Iterator; ++Iterator)
+	{
+		if (AShooterCharacter* Character = *Iterator)
+		{
+			Character->RefreshTeamOutline();
+		}
+	}
+}
+
+void AShooterCharacter::UpdateRevealTagSubscription()
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (RevealTagAbilitySystem.Get() == AbilitySystem)
+	{
+		return;
+	}
+
+	UnsubscribeRevealTag();
+
+	if (IsValid(AbilitySystem))
+	{
+		RevealTagAbilitySystem = AbilitySystem;
+		RevealTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_Revealed,
+			EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleRevealTagChanged);
+	}
+}
+
+void AShooterCharacter::UnsubscribeRevealTag()
+{
+	if (UAbilitySystemComponent* AbilitySystem = RevealTagAbilitySystem.Get())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_Revealed,
+			EGameplayTagEventType::NewOrRemoved).Remove(RevealTagEventHandle);
+	}
+
+	RevealTagEventHandle.Reset();
+	RevealTagAbilitySystem.Reset();
+}
+
+void AShooterCharacter::HandleRevealTagChanged(const FGameplayTag, const int32)
+{
+	RefreshTeamOutline();
 }
 
 bool AShooterCharacter::InitializeDefaultWeaponLoadout()

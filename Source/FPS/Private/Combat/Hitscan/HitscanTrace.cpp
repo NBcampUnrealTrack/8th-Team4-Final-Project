@@ -222,12 +222,26 @@ bool FHitscanTrace::TryBuildImpactSample(const FHitResult& HitResult, const FVec
 
 	OutImpactSample.TargetActor = HitResult.GetActor();
 	OutImpactSample.ImpactPoint = HitResult.ImpactPoint;
+	OutImpactSample.ImpactNormal = HitResult.ImpactNormal;
+	OutImpactSample.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
 	OutImpactSample.BoneName = HitResult.BoneName;
 	OutImpactSample.ShotDirection = TraceDirection;
 	OutImpactSample.WallRetention = FMath::Clamp(PenetrationState.AccumulatedWallRetention, 0.0f, 1.0f);
 	OutImpactSample.PelletIndex = PelletIndex;
 	OutImpactSample.HitZoneTag = ResolveHitZoneTag(HitResult, Request, HitResult.BoneName);
 	return true;
+}
+
+FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
+	const FHitResult& HitResult,
+	const int32 PelletIndex)
+{
+	FHitscanImpactEffectData ImpactEffectData;
+	ImpactEffectData.ImpactPoint = HitResult.ImpactPoint;
+	ImpactEffectData.ImpactNormal = HitResult.ImpactNormal;
+	ImpactEffectData.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+	ImpactEffectData.PelletIndex = PelletIndex;
+	return ImpactEffectData;
 }
 
 bool FHitscanTrace::TryAdvanceThroughSurface(const FHitResult& EntryHit, const FVector& TraceDirection,
@@ -264,9 +278,14 @@ bool FHitscanTrace::TryAdvanceThroughSurface(const FHitResult& EntryHit, const F
 
 bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotRequest& Request,
 										 const FVector& PelletDirection, const int32 PelletIndex,
-										 FHitscanImpactSample& OutImpactSample)
+										 FHitscanImpactSample& OutImpactSample,
+										 FHitscanImpactEffectData& OutImpactEffect,
+										 bool& bOutHasImpactEffect)
 {
 	OutImpactSample = FHitscanImpactSample();
+	OutImpactEffect = FHitscanImpactEffectData();
+	bOutHasImpactEffect = false;
+
 	if (!IsValid(World))
 	{
 		return false;
@@ -313,6 +332,9 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 			return false;
 		}
 
+		OutImpactEffect = BuildImpactEffectData(HitResult, PelletIndex);
+		bOutHasImpactEffect = true;
+
 		// 현재 규칙은 피해 대상에서 펠릿을 종료하고, 월드 표면만 연속 관통한다.
 		if (TryBuildImpactSample(HitResult, TraceDirection, PenetrationState, Request, PelletIndex, OutImpactSample))
 		{
@@ -333,19 +355,36 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 }
 
 bool FHitscanTrace::ResolveImpacts(UWorld* World, const FHitscanShotRequest& Request,
-								   TArray<FHitscanImpactSample>& OutImpactSamples)
+								   TArray<FHitscanImpactSample>& OutImpactSamples,
+								   TArray<FHitscanImpactEffectData>& OutImpactEffects)
 {
 	OutImpactSamples.Reset();
+	OutImpactEffects.Reset();
 
 	OutImpactSamples.Reserve(Request.PelletDirections.Num());
+	OutImpactEffects.Reserve(Request.PelletDirections.Num());
 	for (int32 PelletIndex = 0; PelletIndex < Request.PelletDirections.Num(); ++PelletIndex)
 	{
 		FHitscanImpactSample ImpactSample;
-		if (ResolveCurrentPellet(World, Request, Request.PelletDirections[PelletIndex], PelletIndex, ImpactSample))
+		FHitscanImpactEffectData ImpactEffect;
+		bool bHasImpactEffect = false;
+		if (ResolveCurrentPellet(
+			World,
+			Request,
+			Request.PelletDirections[PelletIndex],
+			PelletIndex,
+			ImpactSample,
+			ImpactEffect,
+			bHasImpactEffect))
 		{
 			OutImpactSamples.Add(MoveTemp(ImpactSample));
 		}
+
+		if (bHasImpactEffect)
+		{
+			OutImpactEffects.Add(ImpactEffect);
+		}
 	}
 
-	return !OutImpactSamples.IsEmpty();
+	return !OutImpactSamples.IsEmpty() || !OutImpactEffects.IsEmpty();
 }

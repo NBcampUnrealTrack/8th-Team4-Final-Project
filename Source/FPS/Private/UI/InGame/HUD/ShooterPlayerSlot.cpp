@@ -1,10 +1,13 @@
-﻿// ShooterPlayerSlot.cpp
+// ShooterPlayerSlot.cpp
 #include "UI/InGame/HUD/ShooterPlayerSlot.h"
 
 #include "Components/Image.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "UI/Common/ShooterGauge.h"
 
 UShooterPlayerSlot::UShooterPlayerSlot()
@@ -16,40 +19,57 @@ UShooterPlayerSlot::UShooterPlayerSlot()
 void UShooterPlayerSlot::NativeDestruct()
 {
 	UnbindFromPlayerState();
-	
+
 	Super::NativeDestruct();
 }
 
 void UShooterPlayerSlot::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 {
 	Super::OnAbilitySystemReady(ASC);
-	
-	if (bShowHealth == false)
-	{
-		return;
-	}
-	
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URogueVitalAttributeSet::GetHealthAttribute()).AddUObject(this, &ThisClass::HandleHealthChanged);
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URogueVitalAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ThisClass::HandleMaxHealthChanged);
-	
-	CachedHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetHealthAttribute());
-	CachedMaxHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxHealthAttribute());
 
-	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
-	
-	Gauge_Health->SetProgressImmediate(TargetHealthRatio);
+	if (bShowHealth)
+	{
+		ASC->GetGameplayAttributeValueChangeDelegate(
+			URogueVitalAttributeSet::GetHealthAttribute()).AddUObject(this, &ThisClass::HandleHealthChanged);
+		ASC->GetGameplayAttributeValueChangeDelegate(
+			URogueVitalAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ThisClass::HandleMaxHealthChanged);
+
+		CachedHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetHealthAttribute());
+		CachedMaxHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxHealthAttribute());
+
+		const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
+
+		Gauge_Health->SetProgressImmediate(TargetHealthRatio);
+	}
+
+	// 아군/적군 관계없이 폭탄 보유 태그는 항상 구독, 실제로 뱃지를 보여줄지는 RefreshBombCarrierIcon에서 공격팀 여부로 gate.
+	BombCarryingTagEventHandle = ASC->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_DataJack_Carrying, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &ThisClass::HandleBombCarryingTagChanged);
+
+	bIsBombCarrier = ASC->HasMatchingGameplayTag(RogueTags::State_Combat_DataJack_Carrying);
+	RefreshBombCarrierIcon();
 }
 
 void UShooterPlayerSlot::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
 {
 	Super::OnAbilitySystemLost(ASC);
-	
+
 	ASC->GetGameplayAttributeValueChangeDelegate(
 	URogueVitalAttributeSet::GetHealthAttribute()).RemoveAll(this);
 	ASC->GetGameplayAttributeValueChangeDelegate(
 		URogueVitalAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
+
+	// 폭탄 보유 태그 구독 해제
+	if (BombCarryingTagEventHandle.IsValid())
+	{
+		ASC->UnregisterGameplayTagEvent(
+			BombCarryingTagEventHandle, RogueTags::State_Combat_DataJack_Carrying, EGameplayTagEventType::NewOrRemoved);
+		BombCarryingTagEventHandle.Reset();
+	}
+
+	bIsBombCarrier = false;
+	RefreshBombCarrierIcon();
 }
 
 void UShooterPlayerSlot::UnbindFromPlayerState()
@@ -58,16 +78,16 @@ void UShooterPlayerSlot::UnbindFromPlayerState()
 	{
 		BoundPlayerState->OnPlayerAliveStateChanged.RemoveAll(this);
 	}
-	
+
 	BoundPlayerState.Reset();
 }
 
 void UShooterPlayerSlot::SetPlayerState(AShooterPlayerState* NewPlayerState)
 {
 	UnbindFromPlayerState();
-	
+
 	BoundPlayerState = NewPlayerState;
-	
+
 	// 비우기 요청이면 숨기고 끝낸다.
 	if (NewPlayerState == nullptr)
 	{
@@ -75,13 +95,13 @@ void UShooterPlayerSlot::SetPlayerState(AShooterPlayerState* NewPlayerState)
 		SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
-	
+
 	NewPlayerState->OnPlayerAliveStateChanged.AddDynamic(this, &ThisClass::HandleAliveStateChanged);
-	
+
 	// 현재 생사 즉시 반영
 	HandleAliveStateChanged(NewPlayerState->IsAlive());
-	
-	// ShooterAttributeWidget에서 구독
+
+	// ShooterAttributeWidget에서 구독 (여기서 OnAbilitySystemReady/Lost가 호출되며 폭탄 태그도 같이 갱신됨)
 	SetSourcePlayerState(NewPlayerState);
 }
 
@@ -89,17 +109,17 @@ void UShooterPlayerSlot::SetSlotStyle(bool bInShowHealth, FLinearColor InTintCol
 {
 	bShowHealth = bInShowHealth;
 	TintColor = InTintColor;
-	
+
 	if (Image_AliveIcon)
 	{
 		Image_AliveIcon->SetColorAndOpacity(TintColor);
 	}
-	
+
 	if (Image_DeadIcon)
 	{
 		Image_DeadIcon->SetColorAndOpacity(TintColor);
 	}
-	
+
 	if (Gauge_Health)
 	{
 		Gauge_Health->SetVisibility(bShowHealth ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
@@ -121,7 +141,7 @@ void UShooterPlayerSlot::HandleAliveStateChanged(bool bNewIsAlive)
 	if (Image_AliveIcon && Image_DeadIcon)
 	{
 		Image_AliveIcon->SetVisibility(bNewIsAlive ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
-		
+
 		Image_DeadIcon->SetVisibility(bNewIsAlive ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
 	}
 }
@@ -138,6 +158,34 @@ void UShooterPlayerSlot::HandleMaxHealthChanged(const struct FOnAttributeChangeD
 	RefreshHealth();
 }
 
+// 폭탄(Data Jack) 보유자 뱃지 - GAS 태그(State.Combat.DataJack.Carrying) 기반, 공격팀 시점에서만 노출
+void UShooterPlayerSlot::HandleBombCarryingTagChanged(FGameplayTag Tag, int32 NewCount)
+{
+	bIsBombCarrier = NewCount > 0;
+	RefreshBombCarrierIcon();
+}
 
+void UShooterPlayerSlot::RefreshBombCarrierIcon()
+{
+	if (!Image_BombCarrierIcon)
+	{
+		return;
+	}
 
+	const bool bShouldShow = bIsBombCarrier && IsLocalTeamAttacking();
+	Image_BombCarrierIcon->SetVisibility(bShouldShow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+}
 
+bool UShooterPlayerSlot::IsLocalTeamAttacking() const
+{
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const UWorld* World = GetWorld();
+	const ABaseRoundGameState* RoundGameState = World ? World->GetGameState<ABaseRoundGameState>() : nullptr;
+
+	if (!IsValid(LocalPlayerState) || !IsValid(RoundGameState))
+	{
+		return false;
+	}
+
+	return RoundGameState->GetTeamRole(LocalPlayerState->GetTeam()) == ETeamRole::Attackers;
+}

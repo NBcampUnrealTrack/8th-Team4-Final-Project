@@ -15,7 +15,8 @@ public:
 	static bool ResolveImpacts(
 		UWorld* World,
 		const FHitscanShotRequest& Request,
-		TArray<FHitscanImpactSample>& OutImpactSamples);
+		TArray<FHitscanImpactSample>& OutImpactSamples,
+		TArray<FHitscanImpactEffectData>& OutImpactEffects);
 
 private:
 	static bool IsPotentialDamageTargetActor(
@@ -52,6 +53,9 @@ private:
 		const FHitscanShotRequest& Request,
 		int32 PelletIndex,
 		FHitscanImpactSample& OutImpactSample);
+	static FHitscanImpactEffectData BuildImpactEffectData(
+		const FHitResult& HitResult,
+		int32 PelletIndex);
 	static bool TryAdvanceThroughSurface(
 		const FHitResult& EntryHit,
 		const FVector& TraceDirection,
@@ -64,5 +68,7 @@ private:
 		const FHitscanShotRequest& Request,
 		const FVector& PelletDirection,
 		int32 PelletIndex,
-		FHitscanImpactSample& OutImpactSample);
+		FHitscanImpactSample& OutImpactSample,
+		FHitscanImpactEffectData& OutImpactEffect,
+		bool& bOutHasImpactEffect);
 };

@@ -51,7 +51,10 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_ActionInProgress, "State.Gameplay.ActionInProgress", "Data Jack 설치/해체와 동시에 진행할 수 없는 GameplayAbility 실행 중");
 
 	// Data Jack 상태
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting, "State.Combat.DataJack.Interacting", "Data Jack 설치/해체 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Carrying, "State.Combat.DataJack.Carrying", "Data Jack 보유 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting, "State.Combat.DataJack.Interacting", "Data Jack 설치/해체 중. 부모 태그");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting_Planting, "State.Combat.DataJack.Interacting.Planting", "Data Jack 설치 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting_Defusing, "State.Combat.DataJack.Interacting.Defusing", "Data Jack 해체 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Dropping, "State.Combat.DataJack.Dropping", "Data Jack 드롭 입력 유지 중");
 
 	// 전투 상태

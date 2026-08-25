@@ -430,6 +430,11 @@ void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 	HideLoadingScreen();
 }
 
+void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRed)
+{
+	OnHitMarker.Broadcast(bRed);
+}
+
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())

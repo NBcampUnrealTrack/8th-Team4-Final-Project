@@ -3,6 +3,7 @@
 #include "Player/ShooterPlayerState.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
@@ -114,9 +115,6 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
-	// CombatComponent가 BeginPlay에서 이미 기본 로드아웃을 장착해 둔 상태(캐릭터 스폰 -> BeginPlay ->
-	// 이후 Possess 순서)라 가정하고, 실제 장착된 무기의 태그를 그대로 읽어온다. 아직 장착 전이라면
-	// (예: 로드아웃 순서가 바뀐 경우) 빈 태그로 초기화되며, 이후 무기 교체 시 GA_SwitchWeapon이 갱신한다.
 	FGameplayTag InitialWeaponTag;
 	if (const UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
 	{
@@ -125,7 +123,11 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 			InitialWeaponTag = EquippedWeapon->GetEquippedStateTag();
 		}
 	}
-	AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
+
+	if (InitialWeaponTag.IsValid())
+	{
+		AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
+	}
 
 	// 초기화는 한번만 수행
 	if (HasAuthority() && !bVitalsInitialized)
@@ -205,6 +207,8 @@ void AShooterPlayerState::OnRep_LobbyReady()
 void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
 {
 	Super::OnRep_Team(PreviousTeam);
+
+	AShooterCharacter::RefreshTeamOutlineForAll(GetWorld());
 
 	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
 	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신

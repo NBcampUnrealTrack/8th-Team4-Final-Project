@@ -1,4 +1,4 @@
-#include "Weapon/WeaponLoadoutService.h"
+﻿#include "Weapon/WeaponLoadoutService.h"
 
 #include "Combat/CombatComponent.h"
 #include "GameFramework/Pawn.h"
@@ -54,6 +54,26 @@ bool RogueWeaponLoadout::ApplyPrimaryWeapon(APawn* Pawn, const FGameplayTag Weap
 	}
 
 	if (!bApplied)
+	{
+		return false;
+	}
+
+	SyncEquippedWeaponState(*PlayerState, *Combat);
+	return true;
+}
+
+bool RogueWeaponLoadout::EquipSidearmForRoundStart(APawn* Pawn)
+{
+	UCombatComponent* Combat = IsValid(Pawn) ? Pawn->FindComponentByClass<UCombatComponent>() : nullptr;
+	AShooterPlayerState* PlayerState = IsValid(Pawn) ? Pawn->GetPlayerState<AShooterPlayerState>() : nullptr;
+	if (!IsValid(Combat) || !IsValid(PlayerState))
+	{
+		return false;
+	}
+
+	Combat->FinishCycling();
+
+	if (!Combat->SwitchWeaponSlot(EWeaponSlot::Secondary))
 	{
 		return false;
 	}

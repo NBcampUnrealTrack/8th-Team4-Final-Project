@@ -1,14 +1,35 @@
-#include "Actor/DataJackWorldQueries.h"
+﻿#include "Actor/DataJackWorldQueries.h"
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Actor/DataJackSiteVolume.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 
 namespace DataJackWorldQueries
 {
+	// 클라이언트에서 폰이 사이트 안에 있는지 확인
+	ADataJackSiteVolume* FindSiteContainingPawn(UWorld* World, const APawn* PlayerPawn)
+	{
+		if (!IsValid(World) || !IsValid(PlayerPawn))
+		{
+			return nullptr;
+		}
+
+		for (TActorIterator<ADataJackSiteVolume> Iterator(World); Iterator; ++Iterator)
+		{
+			ADataJackSiteVolume* SiteVolume = *Iterator;
+			if (IsValid(SiteVolume) && SiteVolume->ContainsPawn(PlayerPawn))
+			{
+				return SiteVolume;
+			}
+		}
+
+		return nullptr;
+	}
+
 	bool CanPawnPlant(const APawn* PlayerPawn, const ADataJackSiteVolume* SiteVolume)
 	{
 		if (!IsValid(PlayerPawn) || !IsValid(SiteVolume) || !SiteVolume->ContainsPawn(PlayerPawn))

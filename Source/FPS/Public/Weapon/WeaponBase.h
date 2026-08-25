@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
@@ -108,9 +109,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsOutOfAmmo() const { return bUsesAmmo && CurrentAmmo <= 0; }
 
-	// 탄약이 없어 발사가 막혔을 때 호출한다. 실제 RPM 간격과 같은 쿨다운으로 스스로 스팸을 막으므로
-	// (CanActivateAbility는 트리거를 누르고 있는 동안 매 프레임 재평가되지만) 호출자가 별도로 디바운스할
-	// 필요가 없다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void TryPlayEmptyClipSound();
 
@@ -223,6 +221,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon|Mesh")
 	void SetPresentationActive(bool bActive);
 
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	FVector LastImpactPoint = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	FVector LastImpactNormal = FVector::UpVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	TEnumAsByte<EPhysicalSurface> LastImpactSurfaceType = SurfaceType_Default;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	int32 LastImpactPelletIndex = 0;
+
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category = "FPS|Weapon|Effects")
+	void FireEffects(
+		FVector ImpactPoint,
+		FVector ImpactNormal,
+		EPhysicalSurface ImpactSurfaceType,
+		bool bIsFirstPerson);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -238,6 +255,14 @@ protected:
 		bool bHeavyAttack);
 
 	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
+
+	void PlayFireEffects(
+		const FVector& TraceStart,
+		const TArray<FVector>& PelletDirections,
+		const TArray<FHitscanImpactEffectData>& ImpactEffects);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayFireEffects(const TArray<FHitscanImpactEffectData>& ImpactEffects);
 
 	// --- Fire() 단계 분리 ---
 	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.
@@ -346,9 +371,7 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Penetration")
 	float EffectiveTraceRange = 4000.f;
 
-	// 발사/재장전/화면흔들림 사운드·VFX 슬롯과 재생 로직을 전담하는 서브 컴포넌트. 이 무기의
-	// 발사/탄약/탄퍼짐/반동 상태와는 결합이 없어 별도 컴포넌트로 분리했다 - WeaponBase는 "언제"
-	// 재생할지(Fire()/StartReload() 등 호출 시점)만 알려주고, "무엇을 어떻게"는 이쪽이 담당한다.
+	// 발사 카메라 쉐이크를 전담하는 서브 컴포넌트.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Weapon")
 	TObjectPtr<UWeaponEffectsComponent> Effects;
 
@@ -379,6 +402,18 @@ protected:
 	// 가리키면 캐릭터 애니메이션이 매 프레임 그 본의 회전을 덮어써서 소켓 보정 회전이 무시된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
 	FName GripSocketName3P = TEXT("Weapon_R_Socket");
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FVector GripOffsetLocation1P = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FRotator GripOffsetRotation1P = FRotator::ZeroRotator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FVector GripOffsetLocation3P = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FRotator GripOffsetRotation3P = FRotator::ZeroRotator;
 
 private:
 	// 사격 위치/방향 계산에 사용하는 카메라. 소유 액터에서 BeginPlay 시 캐싱한다.

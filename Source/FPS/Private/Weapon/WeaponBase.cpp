@@ -7,6 +7,7 @@
 #include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
@@ -117,8 +118,6 @@ void AWeaponBase::TryPlayEmptyClipSound()
 		return;
 	}
 
-	// 연사 입력을 누르고 있으면 CanActivateAbility가 매 프레임 재평가되므로, 실제 총이 쐈을 법한
-	// RPM 간격으로만 딸깍 소리가 나도록 LastFireTime을 그대로 재사용해 스스로 스팸을 막는다.
 	const float ClickInterval = EffectiveRPM > 0.f ? (60.f / EffectiveRPM) : 0.5f;
 	if ((World->GetTimeSeconds() - LastFireTime) < ClickInterval)
 	{
@@ -274,12 +273,20 @@ void AWeaponBase::AttachToOwnerMeshes() const
 	{
 		Mesh1P->AttachToComponent(
 			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName1P);
+
+		// 무기별 보정값
+		Mesh1P->SetRelativeLocation(GripOffsetLocation1P);
+		Mesh1P->SetRelativeRotation(GripOffsetRotation1P);
 	}
 
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
 		Mesh3P->AttachToComponent(
 			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+
+		// 무기별 보정값
+		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
+		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
 	}
 }
 
@@ -327,7 +334,6 @@ bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
 	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime, bHeavyAttack);
 	if (Effects)
 	{
-		Effects->PlayFireEffects(TraceStart, PelletDirections);
 		Effects->PlayFireCameraShake();
 	}
 	AdvanceFireCounters();
@@ -389,6 +395,64 @@ void AWeaponBase::AdvanceFireCounters()
 	}
 }
 
+void AWeaponBase::PlayFireEffects(
+	const FVector& TraceStart,
+	const TArray<FVector>& PelletDirections,
+	const TArray<FHitscanImpactEffectData>& ImpactEffects)
+{
+	if (!HasAuthority() || PelletDirections.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FHitscanImpactEffectData> FireEffectData;
+	FireEffectData.Reserve(PelletDirections.Num());
+
+	for (int32 PelletIndex = 0; PelletIndex < PelletDirections.Num(); ++PelletIndex)
+	{
+		const FVector Direction = PelletDirections[PelletIndex].GetSafeNormal();
+
+		FHitscanImpactEffectData EffectData;
+		EffectData.ImpactPoint = TraceStart + Direction * EffectiveTraceRange;
+		EffectData.ImpactNormal = -Direction;
+		EffectData.ImpactSurfaceType = SurfaceType_Default;
+		EffectData.PelletIndex = PelletIndex;
+
+		for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
+		{
+			if (ImpactEffect.PelletIndex == PelletIndex)
+			{
+				EffectData = ImpactEffect;
+				break;
+			}
+		}
+
+		FireEffectData.Add(EffectData);
+	}
+
+	Multicast_PlayFireEffects(FireEffectData);
+}
+
+void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscanImpactEffectData>& ImpactEffects)
+{
+	const APawn* OwningPawn = Cast<APawn>(GetOwner());
+	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
+
+	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
+	{
+		LastImpactPoint = ImpactEffect.ImpactPoint;
+		LastImpactNormal = ImpactEffect.ImpactNormal;
+		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
+		LastImpactPelletIndex = ImpactEffect.PelletIndex;
+
+		FireEffects(
+			ImpactEffect.ImpactPoint,
+			ImpactEffect.ImpactNormal,
+			ImpactEffect.ImpactSurfaceType.GetValue(),
+			bIsFirstPerson);
+	}
+}
+
 void AWeaponBase::StartReload()
 {
 	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize)
@@ -408,11 +472,6 @@ void AWeaponBase::StartReload()
 		ForceNetUpdate();
 	}
 
-	if (Effects)
-	{
-		Effects->NotifyReloadStarted(EffectiveReloadDuration);
-	}
-
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
@@ -426,11 +485,6 @@ void AWeaponBase::FinishReload()
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
-	}
-
-	if (Effects)
-	{
-		Effects->PlayReloadFinishSound();
 	}
 }
 
@@ -518,11 +572,7 @@ void AWeaponBase::ResolveHitscanShot(
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
 
-	TArray<FVector> ImpactPoints;
-	Resolver->ResolveServerShot(Request, ImpactPoints);
-
-	if (Effects)
-	{
-		Effects->PlayHitEffects(ImpactPoints);
-	}
+	TArray<FHitscanImpactEffectData> ImpactEffects;
+	Resolver->ResolveServerShot(Request, ImpactEffects);
+	PlayFireEffects(TraceStart, PelletDirections, ImpactEffects);
 }
