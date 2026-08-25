@@ -213,12 +213,18 @@ void ULobbyWidget::UnbindSessionDelegates()
 void ULobbyWidget::BindLobbyGameState()
 {
 	ALobbyGameState* LobbyGameState = GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr;
-	if (!IsValid(LobbyGameState) || BoundLobbyGameState == LobbyGameState)
+	if (BoundLobbyGameState == LobbyGameState)
 	{
 		return;
 	}
 
 	UnbindLobbyGameState();
+
+	if (!IsValid(LobbyGameState))
+	{
+		return;
+	}
+
 	BoundLobbyGameState = LobbyGameState;
 	BoundLobbyGameState->OnLobbyPlayerListChanged.AddUniqueDynamic(this, &ThisClass::HandleLobbyPlayerListChanged);
 }

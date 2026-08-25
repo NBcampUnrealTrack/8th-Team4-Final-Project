@@ -408,7 +408,7 @@ void UShooterUIInitComponent::HandleReturnToLobbyRequested()
 {
 	if (ABaseRoundPlayerController* PlayerController = GetRoundPlayerController())
 	{
-		PlayerController->RequestReturnToFrontend();
+		PlayerController->RequestReturnToLobby();
 	}
 }
 

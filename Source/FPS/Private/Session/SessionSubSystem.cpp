@@ -3,7 +3,9 @@
 
 #include "Session/SessionSubSystem.h"
 
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Interfaces/OnlineIdentityInterface.h"
 #include "Online/OnlineSessionNames.h"
@@ -73,7 +75,8 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 
 	if (SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
 	{
-		bCreateRoomAfterDestroy = true;
+		LeaveRoomContinuation = ELeaveRoomContinuation::CreateRoom;
+		CachedJoinSessionIndex = INDEX_NONE;
 		LeaveRoom();
 		return;
 	}
@@ -168,6 +171,16 @@ void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 		return;
 	}
 
+	// 이전 방을 떠나지 않은 상태에서 같은 NAME_GameSession으로 JoinSession을 호출하면
+	// OnlineSubsystem이 기존 Named Session 때문에 거부한다. 먼저 정상적으로 정리한 뒤 재시도한다.
+	if (SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
+	{
+		CachedJoinSessionIndex = SessionIndex;
+		LeaveRoomContinuation = ELeaveRoomContinuation::JoinRoom;
+		LeaveRoom();
+		return;
+	}
+
 	JoinSessionCompleteDelegateHandle = SessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
 
 	const ULocalPlayer* LocalPlayer = GetWorld() ? GetWorld()->GetFirstLocalPlayerFromController() : nullptr;
@@ -189,13 +202,13 @@ void USessionSubSystem::LeaveRoom()
 {
 	if (!EnsureSessionInterface())
 	{
-		OnLeaveRoomComplete.Broadcast(false);
+		CompleteLeaveRoom(false);
 		return;
 	}
 
 	if (SessionInterface->GetNamedSession(NAME_GameSession) == nullptr)
 	{
-		OnLeaveRoomComplete.Broadcast(true);
+		CompleteLeaveRoom(true);
 		return;
 	}
 
@@ -204,8 +217,44 @@ void USessionSubSystem::LeaveRoom()
 	if (!SessionInterface->DestroySession(NAME_GameSession))
 	{
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
-		OnLeaveRoomComplete.Broadcast(false);
+		CompleteLeaveRoom(false);
 	}
+}
+
+void USessionSubSystem::LeaveRoomAndReturnToFrontend()
+{
+	LeaveRoomContinuation = ELeaveRoomContinuation::ReturnToFrontend;
+	CachedJoinSessionIndex = INDEX_NONE;
+
+	// OnlineSubsystem 자체가 없는 실행 환경에서는 정리할 Named Session도 없다.
+	// Frontend 이동까지 막지는 않는다.
+	if (!EnsureSessionInterface())
+	{
+		LeaveRoomContinuation = ELeaveRoomContinuation::None;
+		OnLeaveRoomComplete.Broadcast(true);
+		ReturnToFrontendNow();
+		return;
+	}
+
+	LeaveRoom();
+}
+
+bool USessionSubSystem::ReturnRoomToLobby()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->GetNetMode() == NM_Client)
+	{
+		return false;
+	}
+
+	// 같은 방을 유지하는 경로이므로 세션을 Destroy하지 않는다.
+	// 로비에서는 다시 참가할 수 있도록 광고/JoinInProgress만 열어 둔다.
+	if (EnsureSessionInterface() && SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
+	{
+		SetRoomJoinable(true);
+	}
+
+	return World->ServerTravel(LobbyMapPath + TEXT("?listen"));
 }
 
 void USessionSubSystem::StartRoomGame(const FString& GameMapName)
@@ -462,14 +511,76 @@ void USessionSubSystem::OnDestroySessionComplete(FName SessionName, bool bWasSuc
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
 	}
 
-	if (bWasSuccessful && bCreateRoomAfterDestroy)
+	CompleteLeaveRoom(bWasSuccessful);
+}
+
+void USessionSubSystem::CompleteLeaveRoom(const bool bWasSuccessful)
+{
+	const ELeaveRoomContinuation Continuation = LeaveRoomContinuation;
+	LeaveRoomContinuation = ELeaveRoomContinuation::None;
+
+	if (!bWasSuccessful)
 	{
-		bCreateRoomAfterDestroy = false;
+		CachedJoinSessionIndex = INDEX_NONE;
+
+		switch (Continuation)
+		{
+		case ELeaveRoomContinuation::CreateRoom:
+			OnCreateRoomComplete.Broadcast(false);
+			return;
+
+		case ELeaveRoomContinuation::JoinRoom:
+			OnJoinRoomComplete.Broadcast(false);
+			return;
+
+		default:
+			OnLeaveRoomComplete.Broadcast(false);
+			return;
+		}
+	}
+
+	switch (Continuation)
+	{
+	case ELeaveRoomContinuation::CreateRoom:
 		CreateRoom(CachedMaxPlayers, CachedRoomName, CachedMapName, CachedMatchType);
+		return;
+
+	case ELeaveRoomContinuation::JoinRoom:
+	{
+		const int32 SessionIndex = CachedJoinSessionIndex;
+		CachedJoinSessionIndex = INDEX_NONE;
+		JoinRoomByIndex(SessionIndex);
 		return;
 	}
 
-	OnLeaveRoomComplete.Broadcast(bWasSuccessful);
+	case ELeaveRoomContinuation::ReturnToFrontend:
+		OnLeaveRoomComplete.Broadcast(true);
+		ReturnToFrontendNow();
+		return;
+
+	default:
+		OnLeaveRoomComplete.Broadcast(true);
+		return;
+	}
+}
+
+void USessionSubSystem::ReturnToFrontendNow()
+{
+	UWorld* World = GetWorld();
+	if (IsValid(World) && World->GetNetMode() != NM_Client)
+	{
+		if (AGameModeBase* GameMode = World->GetAuthGameMode())
+		{
+			// 리슨 호스트는 접속 중인 클라이언트도 정상적으로 Main Menu로 보낸다.
+			GameMode->ReturnToMainMenuHost();
+			return;
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		GameInstance->ReturnToMainMenu();
+	}
 }
 
 void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSuccessful)

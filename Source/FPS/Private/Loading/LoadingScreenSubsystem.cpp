@@ -63,12 +63,18 @@ void ULoadingScreenSubsystem::HideLoadingScreen()
 
 void ULoadingScreenSubsystem::BindToRoundGameState(ABaseRoundGameState* RoundGameState)
 {
-	if (!IsValid(RoundGameState) || BoundRoundGameState == RoundGameState)
+	if (BoundRoundGameState == RoundGameState)
 	{
 		return;
 	}
 
 	UnbindFromRoundGameState();
+
+	if (!IsValid(RoundGameState))
+	{
+		return;
+	}
+
 	BoundRoundGameState = RoundGameState;
 	BoundRoundGameState->OnRoundStateChanged.AddUniqueDynamic(this, &ThisClass::HandleRoundStateChanged);
 	SyncWithRoundGameState();

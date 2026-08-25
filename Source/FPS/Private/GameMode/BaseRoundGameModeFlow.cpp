@@ -1,12 +1,14 @@
 ﻿#include "GameMode/BaseRoundGameMode.h"
 
 #include "Economy/CreditEconomyManager.h"
+#include "Engine/GameInstance.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
 #include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/ShooterPlayerState.h"
+#include "Session/SessionSubSystem.h"
 #include "TimerManager.h"
 
 void ABaseRoundGameMode::TryBeginNextRound()
@@ -372,20 +374,32 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 
 	if (RoundEndDelay <= 0.0f)
 	{
-		ReturnToFrontendAfterMatch();
+		ReturnToLobbyAfterMatch();
 		return;
 	}
 
 	GetWorldTimerManager().SetTimer(
 		PhaseTimerHandle,
 		this,
-		&ThisClass::ReturnToFrontendAfterMatch,
+		&ThisClass::ReturnToLobbyAfterMatch,
 		RoundEndDelay,
 		false);
 }
 
-void ABaseRoundGameMode::ReturnToFrontendAfterMatch()
+void ABaseRoundGameMode::ReturnToLobbyAfterMatch()
 {
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			if (SessionSubsystem->ReturnRoomToLobby())
+			{
+				return;
+			}
+		}
+	}
+
+	// 세션 계층을 사용할 수 없는 예외 상황에서는 기존 안전 경로로 빠진다.
 	ReturnToMainMenuHost();
 }
 

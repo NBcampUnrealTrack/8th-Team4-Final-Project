@@ -62,7 +62,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void HideLoadingScreen();
 
-	// 프로젝트 설정의 Game Default Map으로 돌아간다.
+	// 호스트는 현재 방을 유지한 채 공유 로비로 돌아간다.
+	// 일반 클라이언트는 서버 맵을 바꿀 수 없으므로 방을 떠난 뒤 Frontend로 돌아간다.
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestReturnToLobby();
+
+	// 현재 온라인 세션을 먼저 정리한 뒤 프로젝트 설정의 Game Default Map으로 돌아간다.
 	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
 	void RequestReturnToFrontend();
 
