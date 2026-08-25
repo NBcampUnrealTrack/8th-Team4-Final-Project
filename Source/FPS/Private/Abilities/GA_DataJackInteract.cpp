@@ -1,10 +1,15 @@
-#include "Abilities/GA_DataJackInteract.h"
+﻿#include "Abilities/GA_DataJackInteract.h"
 
+#include "Actor/DataJack.h"
+#include "Actor/DataJackWorldQueries.h"
 #include "Combat/CombatComponent.h"
+#include "Engine/World.h"
+#include "GameMode/BombGameState.h"
 #include "GameMode/BombObjectiveManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -37,8 +42,48 @@ bool UGA_DataJackInteract::CanActivateAbility(
 		? CombatComponent->GetEquippedWeapon()
 		: nullptr;
 
-	return (!IsValid(CombatComponent) || CombatComponent->IsWeaponReady())
-		&& (!IsValid(EquippedWeapon) || !EquippedWeapon->IsReloading());
+	if ((IsValid(CombatComponent) && !CombatComponent->IsWeaponReady())
+		|| (IsValid(EquippedWeapon) && EquippedWeapon->IsReloading()))
+	{
+		return false;
+	}
+
+	return CanStartInteraction(AvatarPawn);
+}
+
+bool UGA_DataJackInteract::CanStartInteraction(const APawn* AvatarPawn) const
+{
+	if (!IsValid(AvatarPawn))
+	{
+		return false;
+	}
+
+	UWorld* World = AvatarPawn->GetWorld();
+	const ABombGameState* BombGameState = IsValid(World) ? World->GetGameState<ABombGameState>() : nullptr;
+	ADataJack* DataJack = IsValid(BombGameState) ? BombGameState->GetActiveDataJack() : nullptr;
+	const ABaseTeamPlayerState* PlayerState = AvatarPawn->GetPlayerState<ABaseTeamPlayerState>();
+	if (!IsValid(DataJack) || !IsValid(PlayerState))
+	{
+		return false;
+	}
+
+	if (DataJack->IsInteractingPlayer(PlayerState))
+	{
+		return true;
+	}
+
+	const EDataJackState ObjectiveState = DataJack->GetDataJackState();
+	const ETeamRole PlayerRole = BombGameState->GetTeamRole(PlayerState->GetTeam());
+	if (PlayerRole == ETeamRole::Attackers)
+	{
+		return ObjectiveState == EDataJackState::Carried
+			&& DataJack->IsCarriedBy(PlayerState)
+			&& DataJack->CanPawnPlant(AvatarPawn, DataJackWorldQueries::FindSiteContainingPawn(World, AvatarPawn));
+	}
+
+	return PlayerRole == ETeamRole::Defenders
+		&& ObjectiveState == EDataJackState::Planted
+		&& DataJack->CanPawnDefuse(AvatarPawn);
 }
 
 EDataJackOperation UGA_DataJackInteract::GetDataJackOperation() const

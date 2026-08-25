@@ -28,4 +28,8 @@ protected:
 		UBombObjectiveManager& ObjectiveManager,
 		APlayerController& PlayerController) override;
 	virtual void HandleDataJackOperationStarted(APlayerController& PlayerController) override;
+
+private:
+	// 복제된 Objective 상태만으로 설치/해체 가능 여부를 판정한다. 서버 검증을 대체하지 않는다.
+	bool CanStartInteraction(const APawn* AvatarPawn) const;
 };
