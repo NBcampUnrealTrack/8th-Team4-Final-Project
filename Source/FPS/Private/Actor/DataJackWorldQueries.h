@@ -32,6 +32,10 @@ namespace DataJackWorldQueries
 		float SurfaceClearance = 1.0f;
 	};
 
+	ADataJackSiteVolume* FindSiteContainingPawn(
+		UWorld* World,
+		const APawn* PlayerPawn);
+
 	bool CanPawnPlant(
 		const APawn* PlayerPawn,
 		const ADataJackSiteVolume* SiteVolume);
