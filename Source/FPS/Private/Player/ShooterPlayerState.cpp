@@ -114,9 +114,6 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 	WeaponInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
 
-	// CombatComponent가 BeginPlay에서 이미 기본 로드아웃을 장착해 둔 상태(캐릭터 스폰 -> BeginPlay ->
-	// 이후 Possess 순서)라 가정하고, 실제 장착된 무기의 태그를 그대로 읽어온다. 아직 장착 전이라면
-	// (예: 로드아웃 순서가 바뀐 경우) 빈 태그로 초기화되며, 이후 무기 교체 시 GA_SwitchWeapon이 갱신한다.
 	FGameplayTag InitialWeaponTag;
 	if (const UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
 	{
@@ -125,7 +122,11 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 			InitialWeaponTag = EquippedWeapon->GetEquippedStateTag();
 		}
 	}
-	AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
+
+	if (InitialWeaponTag.IsValid())
+	{
+		AbilitySystemComponent->SetEquippedWeaponType(InitialWeaponTag);
+	}
 
 	// 초기화는 한번만 수행
 	if (HasAuthority() && !bVitalsInitialized)

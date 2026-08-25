@@ -389,6 +389,14 @@ ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 			CleanupFailedPreparation(Players);
 			return ERoundPlayerPreparationResult::InvalidState;
 		}
+
+		// 라운드 시작 시 권총으로 교체
+		if (!RogueWeaponLoadout::EquipSidearmForRoundStart(SpawnedPawn))
+		{
+			UE_LOG(LogTeamPlayerManager, Warning,
+				TEXT("Could not equip the sidearm for %s at round start."),
+				*GetNameSafe(PlayerState));
+		}
 	}
 
 	RoundParticipants.Reserve(Players.Num());
