@@ -62,7 +62,7 @@ void UShooterReticle::NativeOnInitialized()
 		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
 	}
 
-	// (Modified: 히트마커 페이드 효과 추가) 페이드 애니메이션이 끝나는 시점에 크로스헤어를 복원
+	// 페이드 애니메이션이 끝나는 시점에 크로스헤어를 복원
 	if (Anim_HitMarker)
 	{
 		FWidgetAnimationDynamicEvent FinishedEvent;
@@ -194,7 +194,7 @@ void UShooterReticle::HideHitMarker()
 	SetCrosshairArmsVisible(true);
 }
 
-// (Modified: 히트마커 페이드 효과 추가) Anim_HitMarker 재생 종료 시 호출
+// Anim_HitMarker 재생 종료 시 호출
 void UShooterReticle::HandleHitMarkerAnimationFinished()
 {
 	HideHitMarker();
