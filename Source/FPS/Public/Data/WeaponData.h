@@ -63,6 +63,7 @@ public:
 	const FPlayerAnims* FindPlayerAnims(FGameplayTag WeaponTag, bool bFirstPerson) const;
 	const FWeaponMontageData* FindWeaponMontages(FGameplayTag WeaponTag, bool bFirstPerson) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
+	float GetReloadDuration(FGameplayTag WeaponTag) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|WeaponData|Weapons")
 	TMap<FGameplayTag, FName> GripPoints;
