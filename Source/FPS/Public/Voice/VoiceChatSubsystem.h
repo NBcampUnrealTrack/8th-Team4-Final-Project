@@ -55,7 +55,7 @@ private:
 	bool ArePlayersOnSameTeam(const APlayerState* Listener, const APlayerState* Speaker) const;
 
 	UPROPERTY()
-	EVoiceChatAudience VoiceAudience = EVoiceChatAudience::Everyone;
+	EVoiceChatAudience VoiceAudience = EVoiceChatAudience::Team;
 
 	mutable TSet<TWeakObjectPtr<APlayerState>> MutedPlayers;
 };
