@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/ShooterAnimInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Tags/GameplayTags.h"
@@ -63,7 +64,7 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		const float FinalSpreadDegrees = URogueAugmentStatResolver::GetFinalSpread(Avatar, Weapon->GetBaseSpreadDegrees());
 		Weapon->SetEffectiveSpreadDegrees(FinalSpreadDegrees);
 
-		// 반동은 ADS 중에만 실제로 적용되지만(WeaponBase::TickProceduralRecoilGeneration), 매번 최신 배율을 반영해둔다.
+		// 반동은 지향 사격/ADS 공용으로 적용된다(WeaponBase::TickProceduralRecoilGeneration). 매번 최신 배율을 반영해둔다.
 		// GetFinalRecoil은 배율(1.0 기준) 함수라 Base 인자로 1.0을 넘긴다.
 		const float FinalRecoilMultiplier = URogueAugmentStatResolver::GetFinalRecoil(Avatar, 1.f);
 		Weapon->SetEffectiveRecoilMultiplier(FinalRecoilMultiplier);
@@ -86,11 +87,12 @@ void UGA_RangedAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 	if (bFired)
 	{
 		// 연사 입력은 Triggered 동안 반복 활성화되므로 실제 발사가 승인된 프레임에만 몽타주를 재생한다.
-		if (FireMontage && ActorInfo)
+		// 몽타주 자체는 무기 태그별로 WeaponData에서 찾아 재생한다(ShooterAnimInstance::PlayFireMontageForCurrentWeapon).
+		if (ActorInfo)
 		{
-			if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
+			if (UShooterAnimInstance* ShooterAnim = Cast<UShooterAnimInstance>(ActorInfo->GetAnimInstance()))
 			{
-				AnimInstance->Montage_Play(FireMontage);
+				ShooterAnim->PlayFireMontageForCurrentWeapon();
 			}
 		}
 

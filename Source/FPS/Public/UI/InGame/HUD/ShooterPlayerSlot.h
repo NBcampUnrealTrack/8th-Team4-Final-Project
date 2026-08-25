@@ -5,6 +5,8 @@
 #include "ShooterAttributeWidget.h"
 #include "ShooterPlayerSlot.generated.h"
 
+class ABombGameState;
+class ADataJack;
 class AShooterPlayerState;
 class UImage;
 class UShooterGauge;
@@ -35,7 +37,7 @@ protected:
 	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC) override;
 	
 	void UnbindFromPlayerState();
-	
+
 	void RefreshHealth();
 
 	UFUNCTION()
@@ -44,6 +46,17 @@ protected:
 	void HandleHealthChanged(const struct FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
 	
+	void HandleActiveDataJackChanged(ADataJack* NewActiveDataJack);
+
+	UFUNCTION()
+	void HandleDataJackChanged();
+
+	void BindToBombGameState();
+	void BindToActiveDataJack(ADataJack* NewActiveDataJack);
+	void UnbindFromBombGameState();
+	void UnbindFromDataJack();
+	void RefreshBombCarrierIcon();
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_AliveIcon;
 	UPROPERTY(meta = (BindWidget))
@@ -51,13 +64,18 @@ protected:
 	// 적군 슬롯에는 없음
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterGauge> Gauge_Health;
-	
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_BombCarrierIcon;
+
 private:
 	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
-	
+	TWeakObjectPtr<ABombGameState> BoundBombGameState;
+	TWeakObjectPtr<ADataJack> BoundDataJack;
+
 	bool bShowHealth = false;
 	FLinearColor TintColor = FLinearColor::White;
-	
+
 	float CachedHealth = 0.f;
 	float CachedMaxHealth = 0.f;
 };
