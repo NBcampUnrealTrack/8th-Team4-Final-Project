@@ -10,6 +10,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StreamableManager.h"
+#include "GameFramework/PlayerController.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
@@ -205,6 +206,23 @@ void UShooterAugmentSelectScreen::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+// 증강 선택 UI가 활성화될 때 마우스 커서를 표시 (이동 입력은 유지)
+void UShooterAugmentSelectScreen::NativeOnActivated()
+{
+	Super::NativeOnActivated();
+
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		FInputModeGameAndUI InputModeData;
+		InputModeData.SetWidgetToFocus(TakeWidget());
+		InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputModeData.SetHideCursorDuringCapture(false);
+
+		PlayerController->SetInputMode(InputModeData);
+		PlayerController->SetShowMouseCursor(true);
+	}
+}
+
 void UShooterAugmentSelectScreen::NativeOnDeactivated()
 {
 	if (IconLoadHandle.IsValid())
@@ -212,8 +230,15 @@ void UShooterAugmentSelectScreen::NativeOnDeactivated()
 		IconLoadHandle->CancelHandle();
 		IconLoadHandle.Reset();
 	}
-	
+
 	LastDisplayedOffers.Reset();
-	
+
+	// 증강 선택 후 커서를 숨기고 게임 입력 모드로 복귀
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
+
 	Super::NativeOnDeactivated();
 }

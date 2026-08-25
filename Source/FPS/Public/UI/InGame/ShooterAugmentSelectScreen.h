@@ -44,6 +44,7 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
 
 	// 준비 확인 -> 아이콘 요청 -> 카드 생성
