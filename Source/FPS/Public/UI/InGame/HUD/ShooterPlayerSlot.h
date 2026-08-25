@@ -1,12 +1,11 @@
-﻿// ShooterPlayerSlot.h
+// ShooterPlayerSlot.h
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "ShooterAttributeWidget.h"
 #include "ShooterPlayerSlot.generated.h"
 
-class ABombGameState;
-class ADataJack;
 class AShooterPlayerState;
 class UImage;
 class UShooterGauge;
@@ -20,22 +19,22 @@ UCLASS()
 class FPS_API UShooterPlayerSlot : public UShooterAttributeWidget
 {
 	GENERATED_BODY()
-	
+
 public:
 	UShooterPlayerSlot();
-	
+
 	// 컨테이너가 호출. nullptr이면 슬롯을 비움
 	void SetPlayerState(AShooterPlayerState* NewPlayerState);
-	
+
 	// 아군/적군 외형 결정. SetPlayerState보다 선호출
 	void SetSlotStyle(bool bInShowHealth, FLinearColor InTintColor);
 
 protected:
 	virtual void NativeDestruct() override;
-	
+
 	virtual void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC) override;
 	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC) override;
-	
+
 	void UnbindFromPlayerState();
 
 	void RefreshHealth();
@@ -46,16 +45,9 @@ protected:
 	void HandleHealthChanged(const struct FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
 	
-	void HandleActiveDataJackChanged(ADataJack* NewActiveDataJack);
-
-	UFUNCTION()
-	void HandleDataJackChanged();
-
-	void BindToBombGameState();
-	void BindToActiveDataJack(ADataJack* NewActiveDataJack);
-	void UnbindFromBombGameState();
-	void UnbindFromDataJack();
+	void HandleBombCarryingTagChanged(FGameplayTag Tag, int32 NewCount);
 	void RefreshBombCarrierIcon();
+	bool IsLocalTeamAttacking() const;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_AliveIcon;
@@ -70,12 +62,13 @@ protected:
 
 private:
 	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
-	TWeakObjectPtr<ABombGameState> BoundBombGameState;
-	TWeakObjectPtr<ADataJack> BoundDataJack;
 
 	bool bShowHealth = false;
 	FLinearColor TintColor = FLinearColor::White;
 
 	float CachedHealth = 0.f;
 	float CachedMaxHealth = 0.f;
+
+	bool bIsBombCarrier = false;
+	FDelegateHandle BombCarryingTagEventHandle;
 };

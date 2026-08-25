@@ -1,12 +1,13 @@
-﻿// ShooterPlayerSlot.cpp
+// ShooterPlayerSlot.cpp
 #include "UI/InGame/HUD/ShooterPlayerSlot.h"
 
-#include "Actor/DataJack.h"
 #include "Components/Image.h"
-#include "GameMode/BombGameState.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 #include "UI/Common/ShooterGauge.h"
 
 UShooterPlayerSlot::UShooterPlayerSlot()
@@ -18,40 +19,57 @@ UShooterPlayerSlot::UShooterPlayerSlot()
 void UShooterPlayerSlot::NativeDestruct()
 {
 	UnbindFromPlayerState();
-	
+
 	Super::NativeDestruct();
 }
 
 void UShooterPlayerSlot::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 {
 	Super::OnAbilitySystemReady(ASC);
-	
-	if (bShowHealth == false)
-	{
-		return;
-	}
-	
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URogueVitalAttributeSet::GetHealthAttribute()).AddUObject(this, &ThisClass::HandleHealthChanged);
-	ASC->GetGameplayAttributeValueChangeDelegate(
-		URogueVitalAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ThisClass::HandleMaxHealthChanged);
-	
-	CachedHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetHealthAttribute());
-	CachedMaxHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxHealthAttribute());
 
-	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
-	
-	Gauge_Health->SetProgressImmediate(TargetHealthRatio);
+	if (bShowHealth)
+	{
+		ASC->GetGameplayAttributeValueChangeDelegate(
+			URogueVitalAttributeSet::GetHealthAttribute()).AddUObject(this, &ThisClass::HandleHealthChanged);
+		ASC->GetGameplayAttributeValueChangeDelegate(
+			URogueVitalAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &ThisClass::HandleMaxHealthChanged);
+
+		CachedHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetHealthAttribute());
+		CachedMaxHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxHealthAttribute());
+
+		const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
+
+		Gauge_Health->SetProgressImmediate(TargetHealthRatio);
+	}
+
+	// 아군/적군 관계없이 폭탄 보유 태그는 항상 구독, 실제로 뱃지를 보여줄지는 RefreshBombCarrierIcon에서 공격팀 여부로 gate.
+	BombCarryingTagEventHandle = ASC->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_DataJack_Carrying, EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(this, &ThisClass::HandleBombCarryingTagChanged);
+
+	bIsBombCarrier = ASC->HasMatchingGameplayTag(RogueTags::State_Combat_DataJack_Carrying);
+	RefreshBombCarrierIcon();
 }
 
 void UShooterPlayerSlot::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
 {
 	Super::OnAbilitySystemLost(ASC);
-	
+
 	ASC->GetGameplayAttributeValueChangeDelegate(
 	URogueVitalAttributeSet::GetHealthAttribute()).RemoveAll(this);
 	ASC->GetGameplayAttributeValueChangeDelegate(
 		URogueVitalAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
+
+	//  폭탄 보유 태그 구독 해제
+	if (BombCarryingTagEventHandle.IsValid())
+	{
+		ASC->UnregisterGameplayTagEvent(
+			BombCarryingTagEventHandle, RogueTags::State_Combat_DataJack_Carrying, EGameplayTagEventType::NewOrRemoved);
+		BombCarryingTagEventHandle.Reset();
+	}
+
+	bIsBombCarrier = false;
+	RefreshBombCarrierIcon();
 }
 
 void UShooterPlayerSlot::UnbindFromPlayerState()
@@ -62,9 +80,6 @@ void UShooterPlayerSlot::UnbindFromPlayerState()
 	}
 
 	BoundPlayerState.Reset();
-
-	// Modified: 슬롯이 비워지거나 파괴될 때 폭탄 델리게이트도 정리
-	UnbindFromBombGameState();
 }
 
 void UShooterPlayerSlot::SetPlayerState(AShooterPlayerState* NewPlayerState)
@@ -88,27 +103,23 @@ void UShooterPlayerSlot::SetPlayerState(AShooterPlayerState* NewPlayerState)
 
 	// ShooterAttributeWidget에서 구독
 	SetSourcePlayerState(NewPlayerState);
-
-	// Modified: 폭탄 보유자 뱃지 갱신을 위해 바인딩
-	BindToBombGameState();
-	RefreshBombCarrierIcon();
 }
 
 void UShooterPlayerSlot::SetSlotStyle(bool bInShowHealth, FLinearColor InTintColor)
 {
 	bShowHealth = bInShowHealth;
 	TintColor = InTintColor;
-	
+
 	if (Image_AliveIcon)
 	{
 		Image_AliveIcon->SetColorAndOpacity(TintColor);
 	}
-	
+
 	if (Image_DeadIcon)
 	{
 		Image_DeadIcon->SetColorAndOpacity(TintColor);
 	}
-	
+
 	if (Gauge_Health)
 	{
 		Gauge_Health->SetVisibility(bShowHealth ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
@@ -130,7 +141,7 @@ void UShooterPlayerSlot::HandleAliveStateChanged(bool bNewIsAlive)
 	if (Image_AliveIcon && Image_DeadIcon)
 	{
 		Image_AliveIcon->SetVisibility(bNewIsAlive ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
-		
+
 		Image_DeadIcon->SetVisibility(bNewIsAlive ? ESlateVisibility::Hidden : ESlateVisibility::SelfHitTestInvisible);
 	}
 }
@@ -147,67 +158,10 @@ void UShooterPlayerSlot::HandleMaxHealthChanged(const struct FOnAttributeChangeD
 	RefreshHealth();
 }
 
-// 폭탄(DataJack) 보유자 뱃지 - BombGameState/ADataJack 델리게이트를 따라감
-void UShooterPlayerSlot::BindToBombGameState()
+// 폭탄(Data Jack) 보유자 뱃지
+void UShooterPlayerSlot::HandleBombCarryingTagChanged(FGameplayTag Tag, int32 NewCount)
 {
-	const UWorld* World = GetWorld();
-	ABombGameState* BombGameState = IsValid(World) ? World->GetGameState<ABombGameState>() : nullptr;
-	if (!IsValid(BombGameState) || BoundBombGameState.Get() == BombGameState)
-	{
-		return;
-	}
-
-	UnbindFromBombGameState();
-	BoundBombGameState = BombGameState;
-	BombGameState->OnActiveDataJackChanged.AddDynamic(this, &ThisClass::HandleActiveDataJackChanged);
-	BindToActiveDataJack(BombGameState->GetActiveDataJack());
-}
-
-void UShooterPlayerSlot::BindToActiveDataJack(ADataJack* NewActiveDataJack)
-{
-	if (BoundDataJack.Get() == NewActiveDataJack)
-	{
-		return;
-	}
-
-	UnbindFromDataJack();
-	BoundDataJack = NewActiveDataJack;
-	if (IsValid(NewActiveDataJack))
-	{
-		NewActiveDataJack->OnDataJackChanged.AddDynamic(this, &ThisClass::HandleDataJackChanged);
-	}
-}
-
-void UShooterPlayerSlot::UnbindFromBombGameState()
-{
-	UnbindFromDataJack();
-
-	if (ABombGameState* BombGameState = BoundBombGameState.Get())
-	{
-		BombGameState->OnActiveDataJackChanged.RemoveDynamic(this, &ThisClass::HandleActiveDataJackChanged);
-	}
-
-	BoundBombGameState.Reset();
-}
-
-void UShooterPlayerSlot::UnbindFromDataJack()
-{
-	if (ADataJack* DataJack = BoundDataJack.Get())
-	{
-		DataJack->OnDataJackChanged.RemoveDynamic(this, &ThisClass::HandleDataJackChanged);
-	}
-
-	BoundDataJack.Reset();
-}
-
-void UShooterPlayerSlot::HandleActiveDataJackChanged(ADataJack* NewActiveDataJack)
-{
-	BindToActiveDataJack(NewActiveDataJack);
-	RefreshBombCarrierIcon();
-}
-
-void UShooterPlayerSlot::HandleDataJackChanged()
-{
+	bIsBombCarrier = NewCount > 0;
 	RefreshBombCarrierIcon();
 }
 
@@ -218,12 +172,20 @@ void UShooterPlayerSlot::RefreshBombCarrierIcon()
 		return;
 	}
 
-	const ADataJack* DataJack = BoundDataJack.Get();
-	const bool bIsBombCarrier = IsValid(DataJack) && BoundPlayerState.IsValid() && DataJack->IsCarriedBy(BoundPlayerState.Get());
-
-	Image_BombCarrierIcon->SetVisibility(bIsBombCarrier ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+	const bool bShouldShow = bIsBombCarrier && IsLocalTeamAttacking();
+	Image_BombCarrierIcon->SetVisibility(bShouldShow ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
 }
 
+bool UShooterPlayerSlot::IsLocalTeamAttacking() const
+{
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const UWorld* World = GetWorld();
+	const ABaseRoundGameState* RoundGameState = World ? World->GetGameState<ABaseRoundGameState>() : nullptr;
 
+	if (!IsValid(LocalPlayerState) || !IsValid(RoundGameState))
+	{
+		return false;
+	}
 
-
+	return RoundGameState->GetTeamRole(LocalPlayerState->GetTeam()) == ETeamRole::Attackers;
+}
