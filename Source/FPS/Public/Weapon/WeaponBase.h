@@ -394,6 +394,18 @@ protected:
 	// 가리키면 캐릭터 애니메이션이 매 프레임 그 본의 회전을 덮어써서 소켓 보정 회전이 무시된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
 	FName GripSocketName3P = TEXT("Weapon_R_Socket");
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FVector GripOffsetLocation1P = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FRotator GripOffsetRotation1P = FRotator::ZeroRotator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FVector GripOffsetLocation3P = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Mesh")
+	FRotator GripOffsetRotation3P = FRotator::ZeroRotator;
 
 private:
 	// 사격 위치/방향 계산에 사용하는 카메라. 소유 액터에서 BeginPlay 시 캐싱한다.
