@@ -24,11 +24,21 @@ namespace LobbyWidgetRefresh
 	constexpr float InitialRefreshRetryInterval = 0.1f;
 }
 
-void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
+AShooterPlayerController* ULobbyWidget::GetLocalShooterPlayerController() const
 {
-	AShooterPlayerController* PlayerController = GetGameInstance()
+	if (AShooterPlayerController* OwningPlayerController = Cast<AShooterPlayerController>(GetOwningPlayer()))
+	{
+		return OwningPlayerController;
+	}
+
+	return GetGameInstance()
 		? Cast<AShooterPlayerController>(GetGameInstance()->GetFirstLocalPlayerController())
 		: nullptr;
+}
+
+void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
+{
+	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
 	if (!PlayerController)
 	{
 		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
@@ -49,7 +59,7 @@ void ULobbyWidget::ToggleLobbyReady()
 
 void ULobbyWidget::SelectTeam(const EGameTeam RequestedTeam)
 {
-	AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(GetOwningPlayer());
+	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
 	if (!PlayerController)
 	{
 		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
