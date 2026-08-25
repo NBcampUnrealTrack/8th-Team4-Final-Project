@@ -79,8 +79,11 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 }
 
 bool UHitscanResolverSubsystem::ResolveServerShot(
-	const FHitscanShotRequest& Request) const
+	const FHitscanShotRequest& Request,
+	TArray<FVector>& OutImpactPoints) const
 {
+	OutImpactPoints.Reset();
+
 	UWorld* World = GetWorld();
 	if (!IsValidShotRequest(World, Request))
 	{
@@ -89,6 +92,12 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 
 	TArray<FHitscanImpactSample> ImpactSamples;
 	ResolveImpactSamples(World, Request, ImpactSamples);
+
+	OutImpactPoints.Reserve(ImpactSamples.Num());
+	for (const FHitscanImpactSample& Impact : ImpactSamples)
+	{
+		OutImpactPoints.Add(Impact.ImpactPoint);
+	}
 
 	TArray<FRogueHitContext> HitContexts;
 	FHitscanHitContextBuilder::Build(Request, ImpactSamples, HitContexts);

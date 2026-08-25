@@ -180,8 +180,11 @@ public:
 
 	// Hitscan Definition의 Weapon.Type.* 태그를 그대로 노출한다.
 	// 스왑/애니메이션/로그가 DamageRequest와 동일한 태그 원본을 사용하게 하기 위한 접근자다.
+	// bHeavyAttack이 true고 AltWeaponTag가 채워져 있으면(예: 전술 칼 우클릭) AltWeaponTag를 대신 반환한다 -
+	// 좌/우 공격이 서로 다른 Weapon.Type.* 태그로 취급돼야 하는 무기용. 대부분의 총기는 AltWeaponTag가
+	// 비어있어 bHeavyAttack 값과 무관하게 항상 기본 태그를 반환한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
-	FGameplayTag GetWeaponTag() const;
+	FGameplayTag GetWeaponTag(bool bHeavyAttack = false) const;
 
 	// 이 무기를 장착했을 때 ASC에 붙는 State.Weapon.Equipped.* 태그(예: State.Weapon.Equipped.Firearm.Pistol).
 	// 무기별 BP에서 값을 지정한다. GA_SwitchWeapon과 초기 로드아웃이 CombatComponent 경유로 이 값을 읽어
@@ -223,7 +226,8 @@ protected:
 		const TArray<FVector>& PelletDirections,
 		float ShotDamage,
 		int32 ShotIndexInMagazine,
-		float ClientFireServerTime);
+		float ClientFireServerTime,
+		bool bHeavyAttack);
 
 	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
 
@@ -261,6 +265,11 @@ protected:
 	// 강공격(예: 전술 칼 우클릭) 대미지. 0이면 강공격이 없는 무기로 취급해 BaseDamage를 그대로 쓴다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")
 	float AltBaseDamage = 0.f;
+
+	// 강공격 전용 Weapon.Type.* 태그(예: 칼 우클릭의 Weapon.Type.Knife.Heavy). 비어 있으면(대부분의
+	// 총기) GetWeaponTag(true)도 기본 태그를 그대로 반환한다 - AltBaseDamage와 동일한 폴백 규칙.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Damage")
+	FGameplayTag AltWeaponTag;
 
 	// 사격 1회당 발사되는 펠릿 수. 샷건은 10, 그 외 단발 무기는 1.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Fire")

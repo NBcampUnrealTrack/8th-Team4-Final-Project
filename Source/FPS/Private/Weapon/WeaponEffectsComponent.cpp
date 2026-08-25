@@ -41,6 +41,20 @@ void UWeaponEffectsComponent::PlayFireEffects(const FVector& TraceStart, const T
 	}
 }
 
+void UWeaponEffectsComponent::PlayHitEffects(const TArray<FVector>& ImpactPoints)
+{
+	const AActor* Owner = GetOwner();
+	if (!IsValid(Owner) || !Owner->HasAuthority())
+	{
+		return;
+	}
+
+	if (HitImpactEffect && !ImpactPoints.IsEmpty())
+	{
+		Multicast_PlayHitEffects(ImpactPoints);
+	}
+}
+
 void UWeaponEffectsComponent::PlayFireCameraShake() const
 {
 	if (!FireCameraShake)
@@ -160,6 +174,19 @@ void UWeaponEffectsComponent::Multicast_PlayMuzzleEffects_Implementation(const T
 {
 	SpawnMuzzleFlash();
 	SpawnProjectileTrails(PelletDirections);
+}
+
+void UWeaponEffectsComponent::Multicast_PlayHitEffects_Implementation(const TArray<FVector>& ImpactPoints)
+{
+	if (!HitImpactEffect)
+	{
+		return;
+	}
+
+	for (const FVector& ImpactPoint : ImpactPoints)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, HitImpactEffect, ImpactPoint);
+	}
 }
 
 void UWeaponEffectsComponent::SpawnMuzzleFlash() const

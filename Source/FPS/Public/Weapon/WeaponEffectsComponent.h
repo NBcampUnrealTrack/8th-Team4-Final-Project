@@ -35,6 +35,11 @@ public:
 	// AWeaponBase::TryPlayEmptyClipSound()가 디바운스(RPM 간격) 판정을 마친 뒤 호출한다.
 	void PlayEmptyClipSound();
 
+	// AWeaponBase::ResolveHitscanShot()에서 서버 트레이스 결과(Hitscan Resolver가 돌려준 실제 피격
+	// 지점들)를 받아 호출한다. 지점마다 HitImpactEffect를 재생한다 - 대상/총구에 부착할 필요가 없는
+	// 월드 좌표 스폰이라 PlayFireEffects와 달리 소켓을 몰라도 된다.
+	void PlayHitEffects(const TArray<FVector>& ImpactPoints);
+
 	// AWeaponBase::StartReload() 시작 시점에 호출한다. ReloadStartSound를 즉시 재생하고,
 	// ReloadChargeSoundDelay가 ReloadDuration보다 짧으면 스스로 타이머를 걸어 ReloadChargeSound도
 	// 재생한다 - 재장전 중간 사운드 타이밍은 이 컴포넌트가 전담한다.
@@ -67,6 +72,9 @@ protected:
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_PlayMuzzleEffects(const TArray<FVector>& PelletDirections);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayHitEffects(const TArray<FVector>& ImpactPoints);
 
 	// --- 사운드 슬롯 ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
@@ -109,6 +117,11 @@ protected:
 	// 발사 방향으로 재생되는 탄 궤적(트레이서). 비어 있으면 재생하지 않는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
 	TObjectPtr<UNiagaraSystem> ProjectileTrailEffect;
+
+	// 피격 지점(Hitscan Resolver가 돌려준 실제 트레이스 충돌 지점)마다 재생할 임팩트 이펙트
+	// (스파크/피격 파티클 등). 비어 있으면 재생하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")
+	TObjectPtr<UNiagaraSystem> HitImpactEffect;
 
 	// 1인칭(Mesh1P) 총구 소켓 이름. GripSocketName1P와 같은 이유로 3인칭과 분리한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Effects")

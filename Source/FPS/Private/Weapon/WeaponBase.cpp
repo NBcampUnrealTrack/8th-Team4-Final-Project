@@ -187,8 +187,13 @@ void AWeaponBase::SetEffectiveTraceRange(const float NewTraceRangeCentimeters)
 	EffectiveTraceRange = NewTraceRangeCentimeters;
 }
 
-FGameplayTag AWeaponBase::GetWeaponTag() const
+FGameplayTag AWeaponBase::GetWeaponTag(const bool bHeavyAttack) const
 {
+	if (bHeavyAttack && AltWeaponTag.IsValid())
+	{
+		return AltWeaponTag;
+	}
+
 	return IsValid(HitscanDefinition.Get()) ? HitscanDefinition->GetWeaponTag() : FGameplayTag();
 }
 
@@ -309,7 +314,7 @@ bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime, bHeavyAttack);
 	if (Effects)
 	{
 		Effects->PlayFireEffects(TraceStart, PelletDirections);
@@ -449,7 +454,8 @@ void AWeaponBase::ResolveHitscanShot(
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
 	const int32 ShotIndexInMagazine,
-	const float ClientFireServerTime)
+	const float ClientFireServerTime,
+	const bool bHeavyAttack)
 {
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
@@ -475,6 +481,11 @@ void AWeaponBase::ResolveHitscanShot(
 	FHitscanShotRequest Request;
 	HitscanDefinition->ConfigureShotRequest(Request, EffectiveTraceRange);
 
+	// 좌/우 공격이 서로 다른 Weapon.Type.* 태그를 쓰는 무기(칼 등)는 ConfigureShotRequest가 채운
+	// 기본 태그를 강공격 태그로 덮어써야 한다. AltWeaponTag가 비어있으면 GetWeaponTag가 기본 태그를
+	// 그대로 반환하므로 대부분의 총기는 이 줄이 사실상 no-op이다.
+	Request.WeaponTag = GetWeaponTag(bHeavyAttack);
+
 	Request.InstigatorActor = GetOwner();
 	Request.CauserActor = this;
 	Request.TraceStart = TraceStart;
@@ -497,5 +508,11 @@ void AWeaponBase::ResolveHitscanShot(
 	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
 
-	Resolver->ResolveServerShot(Request);
+	TArray<FVector> ImpactPoints;
+	Resolver->ResolveServerShot(Request, ImpactPoints);
+
+	if (Effects)
+	{
+		Effects->PlayHitEffects(ImpactPoints);
+	}
 }
