@@ -56,7 +56,10 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_ActionInProgress);
 
 	// Data Jack 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Carrying);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Interacting);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Interacting_Planting);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Interacting_Defusing);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_DataJack_Dropping);
 
 	// 전투 상태
