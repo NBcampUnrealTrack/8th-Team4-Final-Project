@@ -49,6 +49,11 @@ void UVoiceChatSubsystem::TogglePlayerMuted(APlayerState* PlayerState)
 	SetPlayerMuted(PlayerState, !IsPlayerMuted(PlayerState));
 }
 
+void UVoiceChatSubsystem::SetVoiceAudience(const EVoiceChatAudience NewAudience)
+{
+	VoiceAudience = NewAudience;
+}
+
 bool UVoiceChatSubsystem::IsPlayerMuted(const APlayerState* PlayerState) const
 {
 	if (!IsValid(PlayerState))
@@ -74,14 +79,14 @@ bool UVoiceChatSubsystem::IsPlayerMuted(const APlayerState* PlayerState) const
 	return false;
 }
 
-bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker) const
+bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker, const EVoiceChatAudience Audience) const
 {
 	if (!IsValid(Speaker))
 	{
 		return false;
 	}
 
-	if (!IsTeamVoiceOnly(Speaker->GetWorld()))
+	if (GetEffectiveVoiceAudience(Speaker->GetWorld(), Audience) == EVoiceChatAudience::Everyone)
 	{
 		return true;
 	}
@@ -90,19 +95,27 @@ bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker) const
 	return IsValid(TeamSpeaker) && TeamSpeaker->GetTeam() != EGameTeam::None;
 }
 
-bool UVoiceChatSubsystem::CanHearVoice(const APlayerState* Listener, const APlayerState* Speaker) const
+bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker) const
+{
+	return CanSendVoice(Speaker, VoiceAudience);
+}
+
+bool UVoiceChatSubsystem::CanHearVoice(
+	const APlayerState* Listener,
+	const APlayerState* Speaker,
+	const EVoiceChatAudience Audience) const
 {
 	if (!IsValid(Listener) || !IsValid(Speaker) || Listener == Speaker)
 	{
 		return false;
 	}
 
-	if (IsPlayerMuted(Speaker) || !CanSendVoice(Speaker))
+	if (IsPlayerMuted(Speaker) || !CanSendVoice(Speaker, Audience))
 	{
 		return false;
 	}
 
-	if (!IsTeamVoiceOnly(Listener->GetWorld()))
+	if (GetEffectiveVoiceAudience(Listener->GetWorld(), Audience) == EVoiceChatAudience::Everyone)
 	{
 		return true;
 	}
@@ -110,17 +123,24 @@ bool UVoiceChatSubsystem::CanHearVoice(const APlayerState* Listener, const APlay
 	return ArePlayersOnSameTeam(Listener, Speaker);
 }
 
-bool UVoiceChatSubsystem::IsTeamVoiceOnly(const UWorld* World) const
+bool UVoiceChatSubsystem::CanHearVoice(const APlayerState* Listener, const APlayerState* Speaker) const
+{
+	return CanHearVoice(Listener, Speaker, VoiceAudience);
+}
+
+EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
+	const UWorld* World,
+	const EVoiceChatAudience RequestedAudience) const
 {
 	if (!IsValid(World))
 	{
-		return false;
+		return RequestedAudience;
 	}
 
 	const ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();
 	if (!IsValid(RoundGameState))
 	{
-		return false;
+		return RequestedAudience;
 	}
 
 	switch (RoundGameState->GetGameFlowPhase())
@@ -128,9 +148,9 @@ bool UVoiceChatSubsystem::IsTeamVoiceOnly(const UWorld* World) const
 	case EGameFlowPhase::WaitingForPlayers:
 	case EGameFlowPhase::WaitingForPlayersReady:
 	case EGameFlowPhase::MatchEnded:
-		return false;
+		return EVoiceChatAudience::Everyone;
 	default:
-		return true;
+		return RequestedAudience;
 	}
 }
 

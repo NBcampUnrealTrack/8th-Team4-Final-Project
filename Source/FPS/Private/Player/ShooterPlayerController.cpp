@@ -232,13 +232,22 @@ void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& 
 		return;
 	}
 
+	EVoiceChatAudience Audience = EVoiceChatAudience::Team;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UVoiceChatSubsystem* VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>())
+		{
+			Audience = VoiceChatSubsystem->GetVoiceAudience();
+		}
+	}
+
 	if (HasAuthority())
 	{
-		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData);
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience);
 		return;
 	}
 
-	ServerSubmitCompressedVoicePacket(CompressedVoiceData);
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience);
 }
 
 void AShooterPlayerController::ToggleDynamicCrosshair()
@@ -377,7 +386,9 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 	}
 }
 
-void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(const TArray<uint8>& CompressedVoiceData)
+void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
+	const TArray<uint8>& CompressedVoiceData,
+	const EVoiceChatAudience Audience)
 {
 	if (CompressedVoiceData.IsEmpty())
 	{
@@ -396,7 +407,7 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (!IsValid(VoiceChatSubsystem) || !VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState))
+	if (!IsValid(VoiceChatSubsystem) || !VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState, Audience))
 	{
 		return;
 	}
@@ -417,10 +428,10 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		}
 
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
-		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState))
+		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience))
 		{
 			++RoutedTargetCount;
-			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData);
+			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData, Audience);
 		}
 	}
 
@@ -432,7 +443,8 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
 	APlayerState* SpeakerPlayerState,
-	const TArray<uint8>& CompressedVoiceData)
+	const TArray<uint8>& CompressedVoiceData,
+	const EVoiceChatAudience Audience)
 {
 	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
 	{
@@ -445,7 +457,7 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState))
+	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState, Audience))
 	{
 		return;
 	}
