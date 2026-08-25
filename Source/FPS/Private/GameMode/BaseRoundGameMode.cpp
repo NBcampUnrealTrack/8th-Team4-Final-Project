@@ -53,6 +53,9 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
+	const EGameTeam ExitingTeam = IsValid(ExitingPlayerState)
+		? ExitingPlayerState->GetTeam()
+		: EGameTeam::None;
 
 	// Super::Logout 이전에는 PlayerState와 Wallet이 유효하므로 미확정 거래를 정상 환불할 수 있다.
 	if (IsValid(ExitingPlayerState))
@@ -64,7 +67,12 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	{
 		NotifyPlayerEliminated(Exiting);
 	}
-	else if (Phase == EGameFlowPhase::AugmentSelecting)
+
+	// 아직 PlayerArray에 이탈자가 남아 있는 시점에 "이번 이탈로 팀이 비는지"를 판단한다.
+	// 한 팀이 모두 나간 경우에는 라운드 승점으로 돌리지 않고 상대 팀의 매치 승리로 종료한다.
+	const bool bMatchFinishedByDeparture = TryFinishMatchForPlayerDeparture(ExitingTeam);
+
+	if (!bMatchFinishedByDeparture && Phase == EGameFlowPhase::AugmentSelecting)
 	{
 		const UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
 		if (IsValid(DraftManager) && DraftManager->IsParticipant(ExitingPlayerState))
@@ -75,8 +83,50 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	}
 
 	Super::Logout(Exiting);
+
+	if (bMatchFinishedByDeparture)
+	{
+		return;
+	}
+
 	UpdateInitialLoadingStatus();
 	HandlePlayerRosterChanged();
+}
+
+bool ABaseRoundGameMode::TryFinishMatchForPlayerDeparture(const EGameTeam DepartingTeam)
+{
+	if (!HasAuthority() || DepartingTeam == EGameTeam::None)
+	{
+		return false;
+	}
+
+	ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	if (!IsValid(RoundGameState) || RoundGameState->GetGameFlowPhase() == EGameFlowPhase::MatchEnded)
+	{
+		return false;
+	}
+
+	const EGameTeam WinningTeam = ResolveModeMatchWinnerAfterPlayerDeparture(DepartingTeam);
+	if (WinningTeam == EGameTeam::None)
+	{
+		return false;
+	}
+
+	const EGameFlowPhase Phase = RoundGameState->GetGameFlowPhase();
+	if (Phase == EGameFlowPhase::RoundInProgress)
+	{
+		DeactivateModeRound(WinningTeam, ERoundEndReason::Forced);
+	}
+	else
+	{
+		ResetModeState();
+	}
+
+	RoundGameState->SetRoundResult(WinningTeam, ERoundEndReason::Forced);
+	UE_LOG(LogBaseRoundGameMode, Display,
+		TEXT("The active mode resolved a match winner after a player departure."));
+	FinishMatch(WinningTeam);
+	return true;
 }
 
 void ABaseRoundGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -438,6 +488,11 @@ void ABaseRoundGameMode::HandleModePlayerEliminated(ABaseTeamPlayerState*)
 
 void ABaseRoundGameMode::ResolveModeRoundTimeExpired()
 {
+}
+
+EGameTeam ABaseRoundGameMode::ResolveModeMatchWinnerAfterPlayerDeparture(const EGameTeam) const
+{
+	return EGameTeam::None;
 }
 
 bool ABaseRoundGameMode::HasModeRequiredPlayers() const

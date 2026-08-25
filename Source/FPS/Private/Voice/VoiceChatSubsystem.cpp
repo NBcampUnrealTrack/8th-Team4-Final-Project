@@ -7,38 +7,22 @@
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 
-static FString VoiceAudienceToString(const EVoiceChatAudience Audience)
-{
-	if (const UEnum* AudienceEnum = StaticEnum<EVoiceChatAudience>())
-	{
-		return AudienceEnum->GetNameStringByValue(static_cast<int64>(Audience));
-	}
-
-	return FString::FromInt(static_cast<int32>(Audience));
-}
-
 void UVoiceChatSubsystem::SetPlayerMuted(APlayerState* PlayerState, const bool bMuted)
 {
 	if (!IsValid(PlayerState))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] SetPlayerMuted blocked: PlayerState=null Muted=%s"),
-			bMuted ? TEXT("true") : TEXT("false"));
 		return;
 	}
 
 	const bool bWasMuted = IsPlayerMuted(PlayerState);
 	if (bWasMuted == bMuted)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] SetPlayerMuted unchanged. Player=%s Muted=%s"),
-			*GetNameSafe(PlayerState),
-			bMuted ? TEXT("true") : TEXT("false"));
 		return;
 	}
 
 	if (bMuted)
 	{
 		MutedPlayers.Add(PlayerState);
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] Muted player. Player=%s"), *GetNameSafe(PlayerState));
 		OnVoiceMuteChanged.Broadcast(PlayerState, true);
 		return;
 	}
@@ -53,7 +37,6 @@ void UVoiceChatSubsystem::SetPlayerMuted(APlayerState* PlayerState, const bool b
 	}
 
 	OnVoiceMuteChanged.Broadcast(PlayerState, false);
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] Unmuted player. Player=%s"), *GetNameSafe(PlayerState));
 }
 
 void UVoiceChatSubsystem::TogglePlayerMuted(APlayerState* PlayerState)
@@ -64,14 +47,6 @@ void UVoiceChatSubsystem::TogglePlayerMuted(APlayerState* PlayerState)
 	}
 
 	SetPlayerMuted(PlayerState, !IsPlayerMuted(PlayerState));
-}
-
-void UVoiceChatSubsystem::SetVoiceAudience(const EVoiceChatAudience NewAudience)
-{
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] VoiceAudience changed. Old=%s New=%s"),
-		*VoiceAudienceToString(VoiceAudience),
-		*VoiceAudienceToString(NewAudience));
-	VoiceAudience = NewAudience;
 }
 
 bool UVoiceChatSubsystem::IsPlayerMuted(const APlayerState* PlayerState) const
@@ -99,70 +74,35 @@ bool UVoiceChatSubsystem::IsPlayerMuted(const APlayerState* PlayerState) const
 	return false;
 }
 
-bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker, const EVoiceChatAudience Audience) const
+bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker) const
 {
 	if (!IsValid(Speaker))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] CanSendVoice=false Speaker=null Audience=%s"),
-			*VoiceAudienceToString(Audience));
 		return false;
 	}
 
-	if (GetEffectiveVoiceAudience(Speaker->GetWorld(), Audience) == EVoiceChatAudience::Everyone)
+	if (!IsTeamVoiceOnly(Speaker->GetWorld()))
 	{
 		return true;
 	}
 
 	const ABaseTeamPlayerState* TeamSpeaker = Cast<ABaseTeamPlayerState>(Speaker);
-	const bool bCanSendVoice = IsValid(TeamSpeaker) && TeamSpeaker->GetTeam() != EGameTeam::None;
-	if (!bCanSendVoice)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] CanSendVoice=false Speaker=%s TeamState=%s Audience=%s"),
-			*GetNameSafe(Speaker),
-			IsValid(TeamSpeaker) ? TEXT("valid") : TEXT("null"),
-			*VoiceAudienceToString(Audience));
-	}
-	return bCanSendVoice;
+	return IsValid(TeamSpeaker) && TeamSpeaker->GetTeam() != EGameTeam::None;
 }
 
-bool UVoiceChatSubsystem::CanSendVoice(const APlayerState* Speaker) const
-{
-	return CanSendVoice(Speaker, VoiceAudience);
-}
-
-bool UVoiceChatSubsystem::CanHearVoice(
-	const APlayerState* Listener,
-	const APlayerState* Speaker,
-	const EVoiceChatAudience Audience) const
+bool UVoiceChatSubsystem::CanHearVoice(const APlayerState* Listener, const APlayerState* Speaker) const
 {
 	if (!IsValid(Listener) || !IsValid(Speaker) || Listener == Speaker)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] CanHearVoice=false invalid/self. Listener=%s Speaker=%s Audience=%s"),
-			*GetNameSafe(Listener),
-			*GetNameSafe(Speaker),
-			*VoiceAudienceToString(Audience));
 		return false;
 	}
 
-	if (IsPlayerMuted(Speaker))
+	if (IsPlayerMuted(Speaker) || !CanSendVoice(Speaker))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] CanHearVoice=false muted. Listener=%s Speaker=%s Audience=%s"),
-			*GetNameSafe(Listener),
-			*GetNameSafe(Speaker),
-			*VoiceAudienceToString(Audience));
 		return false;
 	}
 
-	if (!CanSendVoice(Speaker, Audience))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Policy] CanHearVoice=false speaker cannot send. Listener=%s Speaker=%s Audience=%s"),
-			*GetNameSafe(Listener),
-			*GetNameSafe(Speaker),
-			*VoiceAudienceToString(Audience));
-		return false;
-	}
-
-	if (GetEffectiveVoiceAudience(Listener->GetWorld(), Audience) == EVoiceChatAudience::Everyone)
+	if (!IsTeamVoiceOnly(Listener->GetWorld()))
 	{
 		return true;
 	}
@@ -170,24 +110,17 @@ bool UVoiceChatSubsystem::CanHearVoice(
 	return ArePlayersOnSameTeam(Listener, Speaker);
 }
 
-bool UVoiceChatSubsystem::CanHearVoice(const APlayerState* Listener, const APlayerState* Speaker) const
-{
-	return CanHearVoice(Listener, Speaker, VoiceAudience);
-}
-
-EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
-	const UWorld* World,
-	const EVoiceChatAudience RequestedAudience) const
+bool UVoiceChatSubsystem::IsTeamVoiceOnly(const UWorld* World) const
 {
 	if (!IsValid(World))
 	{
-		return RequestedAudience;
+		return false;
 	}
 
 	const ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();
 	if (!IsValid(RoundGameState))
 	{
-		return RequestedAudience;
+		return false;
 	}
 
 	switch (RoundGameState->GetGameFlowPhase())
@@ -195,9 +128,9 @@ EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
 	case EGameFlowPhase::WaitingForPlayers:
 	case EGameFlowPhase::WaitingForPlayersReady:
 	case EGameFlowPhase::MatchEnded:
-		return EVoiceChatAudience::Everyone;
+		return false;
 	default:
-		return RequestedAudience;
+		return true;
 	}
 }
 
