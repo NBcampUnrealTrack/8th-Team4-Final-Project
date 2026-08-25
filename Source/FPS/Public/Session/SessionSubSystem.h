@@ -35,6 +35,14 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void LeaveRoom();
 
+	// 현재 Named Session을 정리한 뒤 Frontend(Game Default Map)로 돌아간다.
+	// 세션 종료는 비동기이므로 이동은 DestroySession 완료 뒤에 수행한다.
+	void LeaveRoomAndReturnToFrontend();
+
+	// 리슨 서버가 현재 방을 유지한 채 공유 로비 맵으로 돌아간다.
+	// 일반 클라이언트에서는 호출할 수 없다.
+	bool ReturnRoomToLobby();
+
 	UFUNCTION(BlueprintCallable)
 	void StartRoomGame(const FString& GameMapName = TEXT(""));
 
@@ -63,6 +71,8 @@ private:
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
 	bool SetRoomJoinable(bool bIsJoinable);
+	void CompleteLeaveRoom(bool bWasSuccessful);
+	void ReturnToFrontendNow();
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
@@ -71,6 +81,14 @@ private:
 	void OnStartSessionComplete(FName SessionName, bool bWasSuccessful);
 
 private:
+	enum class ELeaveRoomContinuation : uint8
+	{
+		None,
+		CreateRoom,
+		JoinRoom,
+		ReturnToFrontend
+	};
+
 	IOnlineSessionPtr SessionInterface;
 	TSharedPtr<FOnlineSessionSettings> LastSessionSettings;
 	TSharedPtr<FOnlineSessionSearch> LastSessionSearch;
@@ -90,9 +108,9 @@ private:
 	FOnStartSessionCompleteDelegate StartSessionCompleteDelegate;
 	FDelegateHandle StartSessionCompleteDelegateHandle;
 
-	bool bCreateRoomAfterDestroy = false;
-	bool bLeaveAfterDestroy = false;
+	ELeaveRoomContinuation LeaveRoomContinuation = ELeaveRoomContinuation::None;
 	bool bStartRoomGamePending = false;
+	int32 CachedJoinSessionIndex = INDEX_NONE;
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");

@@ -34,6 +34,7 @@ protected:
 	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason) override;
 	virtual void HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState) override;
 	virtual void ResolveModeRoundTimeExpired() override;
+	virtual EGameTeam ResolveModeMatchWinnerAfterPlayerDeparture(EGameTeam DepartingTeam) const override;
 	virtual bool HasModeRequiredPlayers() const override;
 	virtual bool IsModeConfigurationValid() const override;
 

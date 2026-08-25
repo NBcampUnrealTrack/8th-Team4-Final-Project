@@ -7,7 +7,6 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
-#include "Voice/VoiceChatSubsystem.h"
 
 #include "ShooterPlayerController.generated.h"
 
@@ -62,7 +61,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void HideLoadingScreen();
 
-	// 프로젝트 설정의 Game Default Map으로 돌아간다.
+	// 호스트는 현재 방을 유지한 채 공유 로비로 돌아간다.
+	// 일반 클라이언트는 서버 맵을 바꿀 수 없으므로 방을 떠난 뒤 Frontend로 돌아간다.
+	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
+	void RequestReturnToLobby();
+
+	// 현재 온라인 세션을 먼저 정리한 뒤 프로젝트 설정의 Game Default Map으로 돌아간다.
 	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
 	void RequestReturnToFrontend();
 
@@ -108,13 +112,10 @@ protected:
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);
 
 	UFUNCTION(Server, Unreliable)
-	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData, EVoiceChatAudience Audience);
+	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
 
 	UFUNCTION(Client, Unreliable)
-	void ClientReceiveCompressedVoicePacket(
-		APlayerState* SpeakerPlayerState,
-		const TArray<uint8>& CompressedVoiceData,
-		EVoiceChatAudience Audience);
+	void ClientReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();

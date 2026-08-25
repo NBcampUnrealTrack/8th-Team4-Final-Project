@@ -67,6 +67,7 @@ protected:
 	virtual void DeactivateModeRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
 	virtual void HandleModePlayerEliminated(ABaseTeamPlayerState* EliminatedPlayerState);
 	virtual void ResolveModeRoundTimeExpired();
+	virtual EGameTeam ResolveModeMatchWinnerAfterPlayerDeparture(EGameTeam DepartingTeam) const;
 	virtual bool HasModeRequiredPlayers() const;
 	virtual bool IsModeConfigurationValid() const;
 
@@ -87,6 +88,7 @@ protected:
 private:
 	void InitializeGameFlow();
 	void HandlePlayerRosterChanged();
+	bool TryFinishMatchForPlayerDeparture(EGameTeam DepartingTeam);
 	void HandleDraftDependenciesReady();
 	bool InitializeRoundParticipantCredits();
 	bool ResetEconomyForNewMatch();
@@ -112,7 +114,7 @@ private:
 	bool TryStartRoundCombat();     // 준비 완료 -> RoundInProgress
 	void AdvanceToNextRound();      // RoundEnding -> Waiting
 	void FinishMatch(EGameTeam WinningTeam);
-	void ReturnToFrontendAfterMatch();
+	void ReturnToLobbyAfterMatch();
 	bool BuildSurrenderVoteRequest(
 		ABaseRoundPlayerController* Requester,
 		EGameTeam& OutTeam,

@@ -17,6 +17,7 @@ public:
 	ALobbyGameMode();
 
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void PostSeamlessTravel() override;
 	virtual void Logout(AController* Exiting) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Lobby")
@@ -42,6 +43,7 @@ protected:
 
 private:
 	void AssignHostPlayerIfNeeded(APlayerController* NewPlayer);
+	void RebuildLobbyStateAfterSeamlessTravel();
 	void ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState);
 	void NotifyLobbyPlayerListChanged();
 	bool AreAllClientsReady() const;

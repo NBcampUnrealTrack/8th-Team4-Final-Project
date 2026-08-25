@@ -253,6 +253,21 @@ void ABombGameMode::ResolveModeRoundTimeExpired()
 	}
 }
 
+EGameTeam ABombGameMode::ResolveModeMatchWinnerAfterPlayerDeparture(const EGameTeam DepartingTeam) const
+{
+	if (DepartingTeam == EGameTeam::None || GetTeamPlayerCount(DepartingTeam) > 1)
+	{
+		return EGameTeam::None;
+	}
+
+	const EGameTeam OpposingTeam = DepartingTeam == EGameTeam::TeamA
+		? EGameTeam::TeamB
+		: EGameTeam::TeamA;
+	return GetTeamPlayerCount(OpposingTeam) > 0
+		? OpposingTeam
+		: EGameTeam::None;
+}
+
 bool ABombGameMode::HasModeRequiredPlayers() const
 {
 	return GetTeamPlayerCount(EGameTeam::TeamA) > 0

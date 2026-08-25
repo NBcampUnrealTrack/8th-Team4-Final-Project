@@ -23,6 +23,7 @@ void USteamVoiceComponent::StartCapture()
 {
 	if (!SteamUser())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=null Owner=%s"), *GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -31,6 +32,7 @@ void USteamVoiceComponent::StartCapture()
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=valid Owner=%s"), *GetNameSafe(GetOwner()));
 	SteamUser()->StartVoiceRecording();
 	bCapturingVoice = true;
 
@@ -94,17 +96,7 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 {
 	OutPcmVoiceData.Reset();
 
-	if (!IsValid(SpeakerPlayerState))
-	{
-		return false;
-	}
-
-	if (CompressedVoiceData.IsEmpty())
-	{
-		return false;
-	}
-
-	if (!SteamUser())
+	if (!IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty() || !SteamUser())
 	{
 		return false;
 	}
@@ -147,10 +139,20 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 	if (DecompressResult != k_EVoiceResultOK || BytesWritten == 0)
 	{
 		OutPcmVoiceData.Reset();
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Failed Speaker=%s CompressedBytes=%d Result=%d SampleRate=%d"),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			static_cast<int32>(DecompressResult),
+			SampleRate);
 		return false;
 	}
 
 	OutPcmVoiceData.SetNum(static_cast<int32>(BytesWritten));
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Success Speaker=%s CompressedBytes=%d PcmBytes=%d SampleRate=%d"),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num(),
+		OutPcmVoiceData.Num(),
+		SampleRate);
 	return true;
 }
 
@@ -222,6 +224,9 @@ void USteamVoiceComponent::PollVoiceCapture()
 	}
 
 	CompressedVoiceData.SetNum(static_cast<int32>(BytesWritten));
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Capture] Owner=%s CompressedBytes=%d"),
+		*GetNameSafe(GetOwner()),
+		CompressedVoiceData.Num());
 
 	if (AShooterPlayerController* PlayerController = GetOwnerShooterPlayerController())
 	{

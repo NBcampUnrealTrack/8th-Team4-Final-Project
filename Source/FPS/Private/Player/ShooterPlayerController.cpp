@@ -7,7 +7,6 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
 #include "GameMode/BaseRoundGameState.h"
-#include "GameFramework/GameModeBase.h"
 #include "GameMode/LobbyGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
@@ -15,6 +14,7 @@
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Session/SessionSubSystem.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -31,6 +31,11 @@ void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (!IsLocalController())
+	{
+		return;
+	}
+
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		ABaseRoundGameState* RoundGameState = nullptr;
@@ -42,7 +47,7 @@ void AShooterPlayerController::BeginPlay()
 		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 	}
 
-	if (!IsLocalController() || !InputConfig || !InputConfig->DefaultMappingContext)
+	if (!InputConfig || !InputConfig->DefaultMappingContext)
 	{
 		return;
 	}
@@ -70,8 +75,18 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 
-	StopMatchLoadReadyCheck();
-	HideLoadingScreen();
+	if (IsLocalController())
+	{
+		StopMatchLoadReadyCheck();
+
+		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+		{
+			// GameInstanceSubsystem은 World보다 오래 산다. World Actor 참조는
+			// PlayerController가 끝나는 경계에서 명시적으로 끊는다.
+			LoadingScreenSubsystem->UnbindFromRoundGameState();
+			LoadingScreenSubsystem->HideLoadingScreen();
+		}
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -80,7 +95,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 {
 	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
 
-	if (!bFinalDest)
+	if (!bFinalDest || !IsLocalController())
 	{
 		return;
 	}
@@ -221,43 +236,24 @@ void AShooterPlayerController::StopVoiceTalking()
 
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
 {
-	if (!IsLocalController())
-	{
-		return;
-	}
-
-	if (CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
 
 	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
-	if (!IsValid(ShooterPlayerState))
+	if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsVoiceTalking())
 	{
 		return;
-	}
-
-	if (!ShooterPlayerState->IsVoiceTalking())
-	{
-		return;
-	}
-
-	EVoiceChatAudience Audience = EVoiceChatAudience::Team;
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (const UVoiceChatSubsystem* VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>())
-		{
-			Audience = VoiceChatSubsystem->GetVoiceAudience();
-		}
 	}
 
 	if (HasAuthority())
 	{
-		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience);
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData);
 		return;
 	}
 
-	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience);
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData);
 }
 
 void AShooterPlayerController::ToggleDynamicCrosshair()
@@ -320,6 +316,11 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 
 void AShooterPlayerController::SetLoadingProgress(const float Progress)
 {
+	if (!IsLocalController())
+	{
+		return;
+	}
+
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		ABaseRoundGameState* RoundGameState = nullptr;
@@ -335,10 +336,40 @@ void AShooterPlayerController::SetLoadingProgress(const float Progress)
 
 void AShooterPlayerController::HideLoadingScreen()
 {
+	if (!IsLocalController())
+	{
+		return;
+	}
+
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		LoadingScreenSubsystem->HideLoadingScreen();
 	}
+}
+
+void AShooterPlayerController::RequestReturnToLobby()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	USessionSubSystem* SessionSubsystem = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<USessionSubSystem>()
+		: nullptr;
+
+	// 공유 로비 맵은 서버만 이동시킬 수 있다. 리슨 호스트는 방을 유지한 채
+	// 전원을 로비로 돌리고, 일반 클라이언트는 현재 방을 정상적으로 떠난다.
+	if (HasAuthority() && IsValid(SessionSubsystem))
+	{
+		if (SessionSubsystem->ReturnRoomToLobby())
+		{
+			return;
+		}
+	}
+
+	RequestReturnToFrontend();
 }
 
 void AShooterPlayerController::RequestReturnToFrontend()
@@ -348,13 +379,19 @@ void AShooterPlayerController::RequestReturnToFrontend()
 		return;
 	}
 
-	if (AGameModeBase* GameMode = GetWorld()->GetAuthGameMode())
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!IsValid(GameInstance))
 	{
-		GameMode->ReturnToMainMenuHost();
 		return;
 	}
 
-	GetGameInstance()->ReturnToMainMenu();
+	if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+	{
+		SessionSubsystem->LeaveRoomAndReturnToFrontend();
+		return;
+	}
+
+	GameInstance->ReturnToMainMenu();
 }
 
 void AShooterPlayerController::RequestQuitGame()
@@ -396,9 +433,7 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 	}
 }
 
-void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
-	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(const TArray<uint8>& CompressedVoiceData)
 {
 	if (CompressedVoiceData.IsEmpty())
 	{
@@ -417,12 +452,7 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (!IsValid(VoiceChatSubsystem))
-	{
-		return;
-	}
-
-	if (!VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState, Audience))
+	if (!IsValid(VoiceChatSubsystem) || !VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState))
 	{
 		return;
 	}
@@ -443,31 +473,24 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		}
 
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
-		const bool bCanHearVoice = VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience);
-		if (bCanHearVoice)
+		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState))
 		{
 			++RoutedTargetCount;
-			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData, Audience);
+			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData);
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Targets=%d"),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num(),
+		RoutedTargetCount);
 }
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
 	APlayerState* SpeakerPlayerState,
-	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+	const TArray<uint8>& CompressedVoiceData)
 {
-	if (!IsLocalController())
-	{
-		return;
-	}
-
-	if (!IsValid(SpeakerPlayerState))
-	{
-		return;
-	}
-
-	if (CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
@@ -478,10 +501,15 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState, Audience))
+	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState))
 	{
 		return;
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Listener=%s Speaker=%s CompressedBytes=%d"),
+		*GetNameSafe(PlayerState),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num());
 
 	if (SteamVoiceComponent)
 	{

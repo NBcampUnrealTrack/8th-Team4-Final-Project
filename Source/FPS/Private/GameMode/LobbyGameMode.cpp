@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "GameMode/LobbyGameState.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
@@ -24,6 +25,12 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 	Super::PostLogin(NewPlayer);
 	AssignHostPlayerIfNeeded(NewPlayer);
 	NotifyLobbyPlayerListChanged();
+}
+
+void ALobbyGameMode::PostSeamlessTravel()
+{
+	Super::PostSeamlessTravel();
+	RebuildLobbyStateAfterSeamlessTravel();
 }
 
 void ALobbyGameMode::Logout(AController* Exiting)
@@ -85,6 +92,57 @@ void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
 	}
 
 	HostPlayerState = NewPlayer->PlayerState;
+}
+
+void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
+{
+	HostPlayerState.Reset();
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	APlayerState* FallbackHostPlayerState = nullptr;
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PlayerController = Iterator->Get();
+		AShooterPlayerState* ShooterPlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<AShooterPlayerState>()
+			: nullptr;
+		if (!IsValid(ShooterPlayerState))
+		{
+			continue;
+		}
+
+		// 새 로비 사이클의 Ready는 이전 로비/매치 상태를 이어받지 않는다.
+		ShooterPlayerState->SetLobbyReady(false);
+
+		if (!IsValid(FallbackHostPlayerState))
+		{
+			FallbackHostPlayerState = ShooterPlayerState;
+		}
+
+		// 리슨 서버의 로컬 컨트롤러가 실제 방장이다.
+		if (PlayerController->IsLocalController())
+		{
+			HostPlayerState = ShooterPlayerState;
+		}
+	}
+
+	// Dedicated Server 등 로컬 컨트롤러가 없는 환경에서는 기존 정책처럼 첫 플레이어를 사용한다.
+	if (!HostPlayerState.IsValid() && IsValid(FallbackHostPlayerState))
+	{
+		HostPlayerState = FallbackHostPlayerState;
+	}
+
+	if (!HostPlayerState.IsValid())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Lobby seamless travel completed without a valid host player."));
+	}
+
+	NotifyLobbyPlayerListChanged();
 }
 
 void ALobbyGameMode::ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState)
