@@ -52,6 +52,7 @@ public:
 
 private:
 	EVoiceChatAudience GetEffectiveVoiceAudience(const UWorld* World, EVoiceChatAudience RequestedAudience) const;
+	bool IsTeamVoiceOnly(const UWorld* World) const;
 	bool ArePlayersOnSameTeam(const APlayerState* Listener, const APlayerState* Speaker) const;
 
 	UPROPERTY()

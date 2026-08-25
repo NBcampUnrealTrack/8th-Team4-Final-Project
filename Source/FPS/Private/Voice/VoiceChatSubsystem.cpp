@@ -39,6 +39,11 @@ void UVoiceChatSubsystem::SetPlayerMuted(APlayerState* PlayerState, const bool b
 	OnVoiceMuteChanged.Broadcast(PlayerState, false);
 }
 
+void UVoiceChatSubsystem::SetVoiceAudience(const EVoiceChatAudience NewAudience)
+{
+	VoiceAudience = NewAudience;
+}
+
 void UVoiceChatSubsystem::TogglePlayerMuted(APlayerState* PlayerState)
 {
 	if (!IsValid(PlayerState))
