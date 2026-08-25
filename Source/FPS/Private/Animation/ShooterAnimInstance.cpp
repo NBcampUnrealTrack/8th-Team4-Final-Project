@@ -238,6 +238,28 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 	}
 }
 
+void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
+	{
+		return;
+	}
+
+	const UWeaponData* WeaponData = Combat->GetWeaponData();
+	if (!IsValid(WeaponData))
+	{
+		return;
+	}
+
+	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
+	if (!MontageData || !IsValid(MontageData->FireMontage))
+	{
+		return;
+	}
+
+	Montage_Play(MontageData->FireMontage);
+}
+
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)
 {
 	if (AO_Yaw > 90.f)
