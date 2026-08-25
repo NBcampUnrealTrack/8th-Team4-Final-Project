@@ -9,6 +9,7 @@
 #include "LobbyWidget.generated.h"
 
 class ALobbyGameState;
+class AShooterPlayerController;
 class AShooterPlayerState;
 class UButton;
 class ULobbyPlayerEntryWidget;
@@ -69,6 +70,7 @@ private:
 	void UpdateLobbyButtons();
 	bool IsLocalPlayerHost() const;
 	AShooterPlayerState* GetLocalShooterPlayerState() const;
+	AShooterPlayerController* GetLocalShooterPlayerController() const;
 	FString BuildLobbyListSignature() const;
 
 	UFUNCTION()
