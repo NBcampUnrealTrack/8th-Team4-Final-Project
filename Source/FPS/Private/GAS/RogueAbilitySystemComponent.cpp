@@ -85,7 +85,8 @@ void URogueAbilitySystemComponent::ReportInputResult(
 	{
 		UE_LOG(LogRogueAbility, Error,
 			TEXT("[RogueAbility] 입력 태그 %s 를 가진 어빌리티가 없습니다. "
-			     "AbilitySet 에 등록했는지, InputTags.ini 의 태그 이름과 같은지 확인하세요"),
+			     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set 및 "
+			     "해당 AbilitySet의 InputTag를 확인하세요"),
 			*InputTag.ToString());
 		return;
 	}
@@ -122,7 +123,7 @@ void URogueAbilitySystemComponent::ReportInputResult(
 
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s: 후보 %d개가 전부 활성화를 거절했습니다. "
-		     "장착 태그(State.Weapon.Equipped.*)와 쿨다운/코스트를 확인하세요"),
+		     "CanActivateAbility 조건과 차단 태그/쿨다운/코스트를 확인하세요"),
 		*InputTag.ToString(), CandidateCount);
 }
 

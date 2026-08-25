@@ -11,6 +11,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Tags/GameplayTags.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogDataJackAbility, Log, All);
+
 UGA_DataJackHoldAbilityBase::UGA_DataJackHoldAbilityBase()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -86,6 +88,11 @@ void UGA_DataJackHoldAbilityBase::ActivateAbility(
 		BindOperationEnded(*ObjectiveManager);
 		if (!BeginDataJackOperation(*ObjectiveManager, *PlayerController))
 		{
+			UE_LOG(LogDataJackAbility, Warning,
+				TEXT("[DataJackAbility] %s was rejected for %s. "
+				     "Check the player role, carrier/objective state, and interaction site."),
+				*GetNameSafe(GetClass()),
+				*GetNameSafe(PlayerController));
 			UnbindOperationEnded();
 			OperationController.Reset();
 			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);

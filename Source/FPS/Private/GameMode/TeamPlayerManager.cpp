@@ -436,37 +436,6 @@ bool UTeamPlayerManager::AreRoundParticipantsReady() const
 	return true;
 }
 
-bool UTeamPlayerManager::AreAllEligiblePlayersRoundParticipants() const
-{
-	TArray<APlayerController*> EligiblePlayers;
-	if (!GatherEligiblePlayers(EligiblePlayers)
-		|| EligiblePlayers.Num() != RoundParticipants.Num())
-	{
-		return false;
-	}
-
-	for (APlayerController* PlayerController : EligiblePlayers)
-	{
-		const AShooterPlayerState* PlayerState = IsValid(PlayerController)
-			? PlayerController->GetPlayerState<AShooterPlayerState>()
-			: nullptr;
-		const bool bIsParticipant = IsValid(PlayerState)
-			&& RoundParticipants.ContainsByPredicate(
-				[PlayerController, PlayerState](const FTeamRoundParticipant& Participant)
-				{
-					return Participant.Controller.Get() == PlayerController
-						&& Participant.PlayerState.Get() == PlayerState;
-				});
-
-		if (!bIsParticipant)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
 bool UTeamPlayerManager::IsRoundParticipant(const ABaseTeamPlayerState* PlayerState) const
 {
 	if (!IsValid(PlayerState))

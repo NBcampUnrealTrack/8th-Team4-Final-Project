@@ -9,7 +9,6 @@
 #include "GameMode/BaseRoundGameState.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameMode/LobbyGameMode.h"
-#include "GameMode/LobbyGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -21,6 +20,16 @@
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
+
+static FString VoiceAudienceToString(const EVoiceChatAudience Audience)
+{
+	if (const UEnum* AudienceEnum = StaticEnum<EVoiceChatAudience>())
+	{
+		return AudienceEnum->GetNameStringByValue(static_cast<int64>(Audience));
+	}
+
+	return FString::FromInt(static_cast<int32>(Audience));
+}
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -85,10 +94,6 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	{
 		return;
 	}
-
-	// A controller may survive or be replaced during seamless travel. In either
-	// case, every destination reports readiness with its own PlayerState/GameState.
-	bNotifiedLoadedIntoMatch = false;
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
@@ -188,6 +193,13 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerController::StartVoiceTalking()
 {
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStart] PC=%s Local=%s Auth=%s VoiceComponent=%s PlayerState=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("true") : TEXT("false"),
+		HasAuthority() ? TEXT("true") : TEXT("false"),
+		IsValid(SteamVoiceComponent) ? TEXT("valid") : TEXT("null"),
+		*GetNameSafe(PlayerState));
+
 	if (IsLocalController() && SteamVoiceComponent)
 	{
 		SteamVoiceComponent->StartCapture();
@@ -198,15 +210,25 @@ void AShooterPlayerController::StartVoiceTalking()
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 		{
 			ShooterPlayerState->SetVoiceTalking(true);
+			UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStart] Authority set talking true. PlayerState=%s"),
+				*GetNameSafe(ShooterPlayerState));
 		}
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStart] Send ServerSetVoiceTalking(true). PC=%s"), *GetNameSafe(this));
 	ServerSetVoiceTalking(true);
 }
 
 void AShooterPlayerController::StopVoiceTalking()
 {
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStop] PC=%s Local=%s Auth=%s VoiceComponent=%s PlayerState=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("true") : TEXT("false"),
+		HasAuthority() ? TEXT("true") : TEXT("false"),
+		IsValid(SteamVoiceComponent) ? TEXT("valid") : TEXT("null"),
+		*GetNameSafe(PlayerState));
+
 	if (IsLocalController() && SteamVoiceComponent)
 	{
 		SteamVoiceComponent->StopCapture();
@@ -217,33 +239,73 @@ void AShooterPlayerController::StopVoiceTalking()
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 		{
 			ShooterPlayerState->SetVoiceTalking(false);
+			UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStop] Authority set talking false. PlayerState=%s"),
+				*GetNameSafe(ShooterPlayerState));
 		}
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PCStop] Send ServerSetVoiceTalking(false). PC=%s"), *GetNameSafe(this));
 	ServerSetVoiceTalking(false);
 }
 
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
 {
-	if (!IsLocalController() || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Submit] Blocked: not local. PC=%s Bytes=%d"),
+			*GetNameSafe(this),
+			CompressedVoiceData.Num());
+		return;
+	}
+
+	if (CompressedVoiceData.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Submit] Blocked: empty packet. PC=%s"), *GetNameSafe(this));
 		return;
 	}
 
 	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
-	if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsVoiceTalking())
+	if (!IsValid(ShooterPlayerState))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Submit] Blocked: ShooterPlayerState=null. PC=%s Bytes=%d"),
+			*GetNameSafe(this),
+			CompressedVoiceData.Num());
 		return;
 	}
+
+	if (!ShooterPlayerState->IsVoiceTalking())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Submit] Blocked: PlayerState is not talking. PC=%s PS=%s Bytes=%d"),
+			*GetNameSafe(this),
+			*GetNameSafe(ShooterPlayerState),
+			CompressedVoiceData.Num());
+		return;
+	}
+
+	EVoiceChatAudience Audience = EVoiceChatAudience::Team;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UVoiceChatSubsystem* VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>())
+		{
+			Audience = VoiceChatSubsystem->GetVoiceAudience();
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Submit] Sending packet. PC=%s PS=%s Bytes=%d Audience=%s Auth=%s"),
+		*GetNameSafe(this),
+		*GetNameSafe(ShooterPlayerState),
+		CompressedVoiceData.Num(),
+		*VoiceAudienceToString(Audience),
+		HasAuthority() ? TEXT("true") : TEXT("false"));
 
 	if (HasAuthority())
 	{
-		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData);
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience);
 		return;
 	}
 
-	ServerSubmitCompressedVoicePacket(CompressedVoiceData);
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience);
 }
 
 void AShooterPlayerController::ToggleDynamicCrosshair()
@@ -379,19 +441,38 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
 		ShooterPlayerState->SetVoiceTalking(bNewVoiceTalking);
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerTalking] PC=%s PS=%s Talking=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(ShooterPlayerState),
+			bNewVoiceTalking ? TEXT("true") : TEXT("false"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerTalking] Blocked: ShooterPlayerState=null. PC=%s Talking=%s"),
+			*GetNameSafe(this),
+			bNewVoiceTalking ? TEXT("true") : TEXT("false"));
 	}
 }
 
-void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(const TArray<uint8>& CompressedVoiceData)
+void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
+	const TArray<uint8>& CompressedVoiceData,
+	const EVoiceChatAudience Audience)
 {
 	if (CompressedVoiceData.IsEmpty())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerSubmit] Blocked: empty packet. PC=%s Audience=%s"),
+			*GetNameSafe(this),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
 	const APlayerState* SpeakerPlayerState = PlayerState;
 	if (!IsValid(SpeakerPlayerState))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerSubmit] Blocked: speaker PlayerState=null. PC=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(this),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
@@ -401,18 +482,36 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (!IsValid(VoiceChatSubsystem) || !VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState))
+	if (!IsValid(VoiceChatSubsystem))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerSubmit] Blocked: VoiceChatSubsystem=null. Speaker=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
+		return;
+	}
+
+	if (!VoiceChatSubsystem->CanSendVoice(SpeakerPlayerState, Audience))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerSubmit] Blocked: CanSendVoice=false. Speaker=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerSubmit] Blocked: World=null. Speaker=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
 	int32 RoutedTargetCount = 0;
+	int32 CheckedTargetCount = 0;
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		AShooterPlayerController* ListenerController = Cast<AShooterPlayerController>(It->Get());
@@ -422,25 +521,59 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		}
 
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
-		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState))
+		const bool bCanHearVoice = VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience);
+		++CheckedTargetCount;
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRouteCheck] Speaker=%s Listener=%s CanHear=%s Audience=%s"),
+			*GetNameSafe(SpeakerPlayerState),
+			*GetNameSafe(ListenerPlayerState),
+			bCanHearVoice ? TEXT("true") : TEXT("false"),
+			*VoiceAudienceToString(Audience));
+
+		if (bCanHearVoice)
 		{
 			++RoutedTargetCount;
-			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData);
+			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData, Audience);
 		}
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Targets=%d"),
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Checked=%d Targets=%d Audience=%s"),
 		*GetNameSafe(SpeakerPlayerState),
 		CompressedVoiceData.Num(),
-		RoutedTargetCount);
+		CheckedTargetCount,
+		RoutedTargetCount,
+		*VoiceAudienceToString(Audience));
 }
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
 	APlayerState* SpeakerPlayerState,
-	const TArray<uint8>& CompressedVoiceData)
+	const TArray<uint8>& CompressedVoiceData,
+	const EVoiceChatAudience Audience)
 {
-	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Blocked: not local. PC=%s Speaker=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
+		return;
+	}
+
+	if (!IsValid(SpeakerPlayerState))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Blocked: SpeakerPlayerState=null. PC=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(this),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
+		return;
+	}
+
+	if (CompressedVoiceData.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Blocked: empty packet. PC=%s Speaker=%s Audience=%s"),
+			*GetNameSafe(this),
+			*GetNameSafe(SpeakerPlayerState),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
@@ -450,15 +583,22 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		VoiceChatSubsystem = GameInstance->GetSubsystem<UVoiceChatSubsystem>();
 	}
 
-	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState))
+	if (IsValid(VoiceChatSubsystem) && !VoiceChatSubsystem->CanHearVoice(PlayerState, SpeakerPlayerState, Audience))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Blocked: CanHearVoice=false. Listener=%s Speaker=%s Bytes=%d Audience=%s"),
+			*GetNameSafe(PlayerState),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num(),
+			*VoiceAudienceToString(Audience));
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Listener=%s Speaker=%s CompressedBytes=%d"),
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Accepted. Listener=%s Speaker=%s CompressedBytes=%d Audience=%s VoiceComponent=%s"),
 		*GetNameSafe(PlayerState),
 		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num());
+		CompressedVoiceData.Num(),
+		*VoiceAudienceToString(Audience),
+		IsValid(SteamVoiceComponent) ? TEXT("valid") : TEXT("null"));
 
 	if (SteamVoiceComponent)
 	{
@@ -515,23 +655,6 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	if (bNotifiedLoadedIntoMatch)
 	{
 		StopMatchLoadReadyCheck();
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!IsValid(World) || !World->GetGameState())
-	{
-		return;
-	}
-	if (World->GetGameState<ALobbyGameState>())
-	{
-		// The lobby has no in-game readiness gate. Do not leave a polling timer
-		// running for the whole lobby lifetime.
-		StopMatchLoadReadyCheck();
-		return;
-	}
-	if (!World->GetGameState<ABaseRoundGameState>())
-	{
 		return;
 	}
 
@@ -657,11 +780,19 @@ void AShooterPlayerController::Input_SprintReleased()
 
 void AShooterPlayerController::Input_PushToTalkPressed()
 {
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Input] PushToTalkPressed PC=%s Local=%s VoiceComponent=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("true") : TEXT("false"),
+		IsValid(SteamVoiceComponent) ? TEXT("valid") : TEXT("null"));
 	StartVoiceTalking();
 }
 
 void AShooterPlayerController::Input_PushToTalkReleased()
 {
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Input] PushToTalkReleased PC=%s Local=%s VoiceComponent=%s"),
+		*GetNameSafe(this),
+		IsLocalController() ? TEXT("true") : TEXT("false"),
+		IsValid(SteamVoiceComponent) ? TEXT("valid") : TEXT("null"));
 	StopVoiceTalking();
 }
 

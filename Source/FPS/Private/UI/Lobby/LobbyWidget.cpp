@@ -26,7 +26,9 @@ namespace LobbyWidgetRefresh
 
 void ULobbyWidget::SetLobbyReady(bool bNewLobbyReady)
 {
-	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+	AShooterPlayerController* PlayerController = GetGameInstance()
+		? Cast<AShooterPlayerController>(GetGameInstance()->GetFirstLocalPlayerController())
+		: nullptr;
 	if (!PlayerController)
 	{
 		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
@@ -47,7 +49,7 @@ void ULobbyWidget::ToggleLobbyReady()
 
 void ULobbyWidget::SelectTeam(const EGameTeam RequestedTeam)
 {
-	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+	AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(GetOwningPlayer());
 	if (!PlayerController)
 	{
 		SetStatusMessage(FText::FromString(TEXT("Player controller is not available.")));
@@ -384,18 +386,6 @@ AShooterPlayerState* ULobbyWidget::GetLocalShooterPlayerState() const
 {
 	const APlayerController* PlayerController = GetOwningPlayer();
 	return IsValid(PlayerController) ? PlayerController->GetPlayerState<AShooterPlayerState>() : nullptr;
-}
-
-AShooterPlayerController* ULobbyWidget::GetLocalShooterPlayerController() const
-{
-	if (AShooterPlayerController* OwningPlayer = Cast<AShooterPlayerController>(GetOwningPlayer()))
-	{
-		return OwningPlayer;
-	}
-
-	return GetGameInstance()
-		? Cast<AShooterPlayerController>(GetGameInstance()->GetFirstLocalPlayerController())
-		: nullptr;
 }
 
 FString ULobbyWidget::BuildLobbyListSignature() const

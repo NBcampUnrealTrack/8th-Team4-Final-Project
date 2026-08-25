@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
+#include "Voice/VoiceChatSubsystem.h"
 
 #include "ShooterPlayerController.generated.h"
 
@@ -107,10 +108,13 @@ protected:
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);
 
 	UFUNCTION(Server, Unreliable)
-	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData, EVoiceChatAudience Audience);
 
 	UFUNCTION(Client, Unreliable)
-	void ClientReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
+	void ClientReceiveCompressedVoicePacket(
+		APlayerState* SpeakerPlayerState,
+		const TArray<uint8>& CompressedVoiceData,
+		EVoiceChatAudience Audience);
 
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();

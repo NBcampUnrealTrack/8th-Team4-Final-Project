@@ -29,6 +29,7 @@ void USteamVoiceComponent::StartCapture()
 
 	if (bCapturingVoice)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] Already capturing. Owner=%s"), *GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -44,6 +45,14 @@ void USteamVoiceComponent::StartCapture()
 			&ThisClass::PollVoiceCapture,
 			FMath::Max(0.01f, CapturePollInterval),
 			true);
+
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] Timer started. Owner=%s Interval=%.3f"),
+			*GetNameSafe(GetOwner()),
+			FMath::Max(0.01f, CapturePollInterval));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] World=null. Owner=%s"), *GetNameSafe(GetOwner()));
 	}
 }
 
@@ -51,12 +60,18 @@ void USteamVoiceComponent::StopCapture()
 {
 	if (!bCapturingVoice)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StopCapture] Already stopped. Owner=%s"), *GetNameSafe(GetOwner()));
 		return;
 	}
 
 	if (SteamUser())
 	{
 		SteamUser()->StopVoiceRecording();
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StopCapture] SteamUser=valid Owner=%s"), *GetNameSafe(GetOwner()));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StopCapture] SteamUser=null Owner=%s"), *GetNameSafe(GetOwner()));
 	}
 
 	bCapturingVoice = false;
@@ -69,23 +84,43 @@ void USteamVoiceComponent::StopCapture()
 
 void USteamVoiceComponent::PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Playback] Received compressed packet. Owner=%s Speaker=%s CompressedBytes=%d"),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(SpeakerPlayerState),
+		CompressedVoiceData.Num());
+
 	TArray<uint8> PcmVoiceData;
 	if (!DecompressVoicePacket(SpeakerPlayerState, CompressedVoiceData, PcmVoiceData))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Playback] Blocked: decompress failed. Owner=%s Speaker=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState));
 		return;
 	}
 
 	FSteamVoicePlaybackSlot* PlaybackSlot = FindOrCreatePlaybackSlot(SpeakerPlayerState);
 	if (!PlaybackSlot || !PlaybackSlot->SoundWave || !PlaybackSlot->AudioComponent)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Playback] Blocked: playback slot invalid. Owner=%s Speaker=%s Slot=%s SoundWave=%s AudioComponent=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState),
+			PlaybackSlot ? TEXT("valid") : TEXT("null"),
+			PlaybackSlot && PlaybackSlot->SoundWave ? TEXT("valid") : TEXT("null"),
+			PlaybackSlot && PlaybackSlot->AudioComponent ? TEXT("valid") : TEXT("null"));
 		return;
 	}
 
 	PlaybackSlot->SoundWave->QueueAudio(PcmVoiceData.GetData(), PcmVoiceData.Num());
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Playback] Queued PCM. Speaker=%s PcmBytes=%d SampleRate=%d IsPlaying=%s"),
+		*GetNameSafe(SpeakerPlayerState),
+		PcmVoiceData.Num(),
+		PlaybackSlot->SampleRate,
+		PlaybackSlot->AudioComponent->IsPlaying() ? TEXT("true") : TEXT("false"));
 
 	if (!PlaybackSlot->AudioComponent->IsPlaying())
 	{
 		PlaybackSlot->AudioComponent->Play();
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Playback] AudioComponent Play called. Speaker=%s"), *GetNameSafe(SpeakerPlayerState));
 	}
 }
 
@@ -96,20 +131,48 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 {
 	OutPcmVoiceData.Reset();
 
-	if (!IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty() || !SteamUser())
+	if (!IsValid(SpeakerPlayerState))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Blocked: SpeakerPlayerState=null. Owner=%s CompressedBytes=%d"),
+			*GetNameSafe(GetOwner()),
+			CompressedVoiceData.Num());
+		return false;
+	}
+
+	if (CompressedVoiceData.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Blocked: compressed packet empty. Owner=%s Speaker=%s"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState));
+		return false;
+	}
+
+	if (!SteamUser())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Blocked: SteamUser=null. Owner=%s Speaker=%s CompressedBytes=%d"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState),
+			CompressedVoiceData.Num());
 		return false;
 	}
 
 	const int32 SampleRate = GetVoiceSampleRate();
 	if (SampleRate <= 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Blocked: SampleRate invalid. Owner=%s Speaker=%s SampleRate=%d"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState),
+			SampleRate);
 		return false;
 	}
 
 	OutPcmVoiceData.SetNumUninitialized(FMath::Max(InitialPcmBufferBytes, 0));
 	if (OutPcmVoiceData.IsEmpty())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Blocked: InitialPcmBufferBytes invalid. Owner=%s Speaker=%s InitialPcmBufferBytes=%d"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState),
+			InitialPcmBufferBytes);
 		return false;
 	}
 
@@ -183,6 +246,10 @@ void USteamVoiceComponent::PollVoiceCapture()
 {
 	if (!bCapturingVoice || !SteamUser())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Poll] Stop polling. Owner=%s Capturing=%s SteamUser=%s"),
+			*GetNameSafe(GetOwner()),
+			bCapturingVoice ? TEXT("true") : TEXT("false"),
+			SteamUser() ? TEXT("valid") : TEXT("null"));
 		StopCapture();
 		return;
 	}
@@ -191,12 +258,19 @@ void USteamVoiceComponent::PollVoiceCapture()
 	const EVoiceResult AvailableResult = SteamUser()->GetAvailableVoice(&AvailableCompressedBytes);
 	if (AvailableResult == k_EVoiceResultNotRecording)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Poll] Not recording. Owner=%s Result=%d"),
+			*GetNameSafe(GetOwner()),
+			static_cast<int32>(AvailableResult));
 		StopCapture();
 		return;
 	}
 
 	if (AvailableResult != k_EVoiceResultOK || AvailableCompressedBytes == 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Poll] No voice bytes. Owner=%s Result=%d AvailableBytes=%u"),
+			*GetNameSafe(GetOwner()),
+			static_cast<int32>(AvailableResult),
+			AvailableCompressedBytes);
 		return;
 	}
 
@@ -205,6 +279,10 @@ void USteamVoiceComponent::PollVoiceCapture()
 		static_cast<uint32>(FMath::Max(0, MaxCompressedVoiceBytes)));
 	if (BufferSize == 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Poll] BufferSize=0. Owner=%s AvailableBytes=%u MaxCompressedVoiceBytes=%d"),
+			*GetNameSafe(GetOwner()),
+			AvailableCompressedBytes,
+			MaxCompressedVoiceBytes);
 		return;
 	}
 
@@ -220,6 +298,11 @@ void USteamVoiceComponent::PollVoiceCapture()
 
 	if (VoiceResult != k_EVoiceResultOK || BytesWritten == 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Poll] GetVoice failed. Owner=%s Result=%d BufferSize=%u BytesWritten=%u"),
+			*GetNameSafe(GetOwner()),
+			static_cast<int32>(VoiceResult),
+			BufferSize,
+			BytesWritten);
 		return;
 	}
 
@@ -232,6 +315,11 @@ void USteamVoiceComponent::PollVoiceCapture()
 	{
 		PlayerController->SubmitCompressedVoicePacket(CompressedVoiceData);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Capture] Blocked: owner is not ShooterPlayerController. Owner=%s"),
+			*GetNameSafe(GetOwner()));
+	}
 }
 
 FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerState* SpeakerPlayerState)
@@ -239,6 +327,10 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	const int32 SampleRate = GetVoiceSampleRate();
 	if (!IsValid(SpeakerPlayerState) || SampleRate <= 0)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Blocked: invalid speaker or sample rate. Owner=%s Speaker=%s SampleRate=%d"),
+			*GetNameSafe(GetOwner()),
+			*GetNameSafe(SpeakerPlayerState),
+			SampleRate);
 		return nullptr;
 	}
 
@@ -250,6 +342,9 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 				&& PlaybackSlot.SoundWave
 				&& PlaybackSlot.AudioComponent)
 			{
+				UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Reuse slot. Speaker=%s SampleRate=%d"),
+					*GetNameSafe(SpeakerPlayerState),
+					SampleRate);
 				return &PlaybackSlot;
 			}
 
@@ -266,6 +361,9 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 
 			PlaybackSlot = FSteamVoicePlaybackSlot();
 			PlaybackSlot.SpeakerPlayerState = SpeakerPlayerState;
+			UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Recreate slot. Speaker=%s SampleRate=%d"),
+				*GetNameSafe(SpeakerPlayerState),
+				SampleRate);
 			break;
 		}
 	}
@@ -284,18 +382,27 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	{
 		PlaybackSlot = &PlaybackSlots.AddDefaulted_GetRef();
 		PlaybackSlot->SpeakerPlayerState = SpeakerPlayerState;
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Create slot. Speaker=%s SampleRate=%d"),
+			*GetNameSafe(SpeakerPlayerState),
+			SampleRate);
 	}
 
 	AActor* OwnerActor = GetOwner();
 	UWorld* World = GetWorld();
 	if (!IsValid(OwnerActor) || !IsValid(World))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Blocked: owner/world invalid. Owner=%s World=%s Speaker=%s"),
+			*GetNameSafe(OwnerActor),
+			*GetNameSafe(World),
+			*GetNameSafe(SpeakerPlayerState));
 		return nullptr;
 	}
 
 	USoundWaveProcedural* SoundWave = NewObject<USoundWaveProcedural>(this);
 	if (!IsValid(SoundWave))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Blocked: SoundWave create failed. Speaker=%s"),
+			*GetNameSafe(SpeakerPlayerState));
 		return nullptr;
 	}
 
@@ -308,6 +415,8 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	UAudioComponent* AudioComponent = NewObject<UAudioComponent>(OwnerActor);
 	if (!IsValid(AudioComponent))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Blocked: AudioComponent create failed. Speaker=%s"),
+			*GetNameSafe(SpeakerPlayerState));
 		return nullptr;
 	}
 
@@ -318,6 +427,9 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	PlaybackSlot->SoundWave = SoundWave;
 	PlaybackSlot->AudioComponent = AudioComponent;
 	PlaybackSlot->SampleRate = SampleRate;
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][PlaybackSlot] Ready. Speaker=%s SampleRate=%d"),
+		*GetNameSafe(SpeakerPlayerState),
+		SampleRate);
 	return PlaybackSlot;
 }
 
@@ -335,9 +447,13 @@ int32 USteamVoiceComponent::GetVoiceSampleRate()
 
 	if (!SteamUser())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][SampleRate] SteamUser=null. Owner=%s"), *GetNameSafe(GetOwner()));
 		return 0;
 	}
 
 	CachedVoiceSampleRate = static_cast<int32>(SteamUser()->GetVoiceOptimalSampleRate());
+	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][SampleRate] Cached sample rate. Owner=%s SampleRate=%d"),
+		*GetNameSafe(GetOwner()),
+		CachedVoiceSampleRate);
 	return CachedVoiceSampleRate;
 }

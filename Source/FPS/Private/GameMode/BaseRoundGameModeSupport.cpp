@@ -24,14 +24,6 @@ FRoundContext ABaseRoundGameMode::MakeRoundContext(const int32 RoundNumber) cons
 
 bool ABaseRoundGameMode::HasRequiredPlayersToStart() const
 {
-	// MinimumPlayersToStart is the gameplay minimum, not the size of the lobby
-	// roster. During seamless travel, wait until AGameMode has processed every
-	// controller carried from the lobby before taking the first-round snapshot.
-	if (LastCompletedRoundNumber == 0 && NumTravellingPlayers > 0)
-	{
-		return false;
-	}
-
 	const int32 AssignedPlayerCount = GetTeamPlayerCount(EGameTeam::TeamA)
 		+ GetTeamPlayerCount(EGameTeam::TeamB);
 	return AssignedPlayerCount >= MinimumPlayersToStart && HasModeRequiredPlayers();

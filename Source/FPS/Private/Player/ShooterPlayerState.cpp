@@ -251,9 +251,11 @@ void AShooterPlayerState::ServerGrantStartupAbilities()
 {
 	const TSoftObjectPtr<URogueAbilitySet>& SetPtr = GetDefault<URogueGASSettings>()->StartupAbilitySet;
 
-	// 아직 목록을 안 만든 단계일 수 있으므로 미설정은 정상으로 본다
 	if (SetPtr.IsNull())
 	{
+		UE_LOG(LogShooterPlayerState, Error,
+			TEXT("[ShooterPlayerState] StartupAbilitySet이 지정되지 않았습니다. "
+			     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set을 확인하세요."));
 		return;
 	}
 

@@ -20,7 +20,8 @@ struct FShooterAbilityInputAction
 	FGameplayTag InputTag;
 
 	// AR 연사처럼 누르고 있는 동안 매 프레임 활성화를 재시도해야 하는 입력에 사용한다.
-	// 실제 발사 간격은 Weapon::CanFireNow()가 RPM으로 제한한다. Q/E/Reload는 false가 기본이다.
+	// 실제 발사 간격은 Weapon::CanFireNow()가 RPM으로 제한한다.
+	// GA 내부에서 입력 해제를 기다리는 상호작용/드롭 같은 홀드 동작은 false로 둔다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	bool bTriggerWhileHeld = false;
 };
