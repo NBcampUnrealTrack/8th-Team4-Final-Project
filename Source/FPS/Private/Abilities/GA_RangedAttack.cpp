@@ -33,7 +33,6 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 		return true;
 	}
 
-	// 탄약이 없어서 못 쐈다면 빈 탄창 사운드를 시도한다(내부적으로 RPM 간격만큼 스스로 디바운스함).
 	if (Weapon->IsOutOfAmmo())
 	{
 		Weapon->TryPlayEmptyClipSound();

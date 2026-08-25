@@ -4,6 +4,7 @@
 #include "Containers/ArrayView.h"
 #include "Engine/EngineTypes.h"
 #include "GameplayTagContainer.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "HitscanShotTypes.generated.h"
 
 class AActor;
@@ -105,11 +106,31 @@ struct FHitscanImpactSample
 {
 	TWeakObjectPtr<AActor> TargetActor;
 	FVector ImpactPoint = FVector::ZeroVector;
+	FVector ImpactNormal = FVector::UpVector;
+	TEnumAsByte<EPhysicalSurface> ImpactSurfaceType = SurfaceType_Default;
 	FName BoneName = NAME_None;
 	FVector ShotDirection = FVector::ForwardVector;
 	float WallRetention = 1.0f;
 	int32 PelletIndex = 0;
 	FGameplayTag HitZoneTag;
+};
+
+USTRUCT(BlueprintType)
+struct FHitscanImpactEffectData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	FVector ImpactPoint = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	FVector ImpactNormal = FVector::UpVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	TEnumAsByte<EPhysicalSurface> ImpactSurfaceType = SurfaceType_Default;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	int32 PelletIndex = 0;
 };
 
 // 한 발의 실행 시점 데이터. 동기 C++ 호출 전용이라 Blueprint Reflection을 붙이지 않는다.
