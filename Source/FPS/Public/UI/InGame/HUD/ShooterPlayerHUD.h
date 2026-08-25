@@ -6,6 +6,7 @@
 #include "ShooterPlayerHUD.generated.h"
 
 class UImage;
+class UCombatComponent;
 class UShooterHealthBar;
 class UWidgetAnimation;
 class URetainerBox;
@@ -41,6 +42,14 @@ protected:
 	void HandleHealthDamaged();
 	void HandleShieldDamaged();
 	void HandleLowHealthStateChanged(bool bIsLow);
+
+	// 로컬 Pawn의 CombatComponent가 준비되면 ADS HUD 표현 상태를 구독한다.
+	void TryBindCombatComponent();
+	void UnbindCombatComponent();
+	void ApplyMainHUDSuppression(bool bSuppressed);
+
+	UFUNCTION()
+	void HandleMainHUDSuppressionChanged(bool bSuppressed);
 	
 	// LowHealth 애니메이션이 끝나면 HUD 글리치도 같이 종료
 	UFUNCTION()
@@ -79,6 +88,10 @@ protected:
 	float RandomGlitchMax = 4.0f;
 	
 	FTimerHandle LowHealthGlitchTimerHandle;
+	FTimerHandle CombatBindingRetryTimerHandle;
+	TWeakObjectPtr<UCombatComponent> BoundCombatComponent;
+	ESlateVisibility MainHUDContentDefaultVisibility = ESlateVisibility::Visible;
+	bool bMainHUDDefaultVisibilityCached = false;
 	bool bIsLowHealthActive = false;
 	
 };

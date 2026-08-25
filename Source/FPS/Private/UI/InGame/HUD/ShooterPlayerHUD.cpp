@@ -1,9 +1,12 @@
 ﻿// ShooterPlayerHUD.cpp
 #include "UI/InGame/HUD/ShooterPlayerHUD.h"
+#include "Combat/CombatComponent.h"
 #include "Components/Image.h"
 #include "UI/InGame/HUD/ShooterHealthBar.h"
 #include "Animation/WidgetAnimation.h"
 #include "Components/RetainerBox.h"
+#include "GameFramework/Pawn.h"
+#include "TimerManager.h"
 
 UShooterPlayerHUD::UShooterPlayerHUD()
 {
@@ -48,16 +51,22 @@ void UShooterPlayerHUD::NativeConstruct()
 	if (RetainerBox_HUD)
 	{
 		HUDGlitchMID = RetainerBox_HUD->GetEffectMaterial();
+		MainHUDContentDefaultVisibility = RetainerBox_HUD->GetVisibility();
+		bMainHUDDefaultVisibilityCached = true;
 		
 		if (HUDGlitchMID)
 		{
 			HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
 		}
 	}
+
+	TryBindCombatComponent();
 }
 
 void UShooterPlayerHUD::NativeDestruct()
 {
+	UnbindCombatComponent();
+
 	if (HealthBar)
 	{
 		HealthBar->OnHealthDamaged.RemoveAll(this);
@@ -68,9 +77,95 @@ void UShooterPlayerHUD::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(LowHealthGlitchTimerHandle);
+		World->GetTimerManager().ClearTimer(CombatBindingRetryTimerHandle);
 	}
 	
 	Super::NativeDestruct();
+}
+
+void UShooterPlayerHUD::TryBindCombatComponent()
+{
+	APawn* OwningPawn = GetOwningPlayerPawn();
+	UCombatComponent* CombatComponent = IsValid(OwningPawn)
+		? OwningPawn->FindComponentByClass<UCombatComponent>()
+		: nullptr;
+
+	if (!IsValid(CombatComponent))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				CombatBindingRetryTimerHandle,
+				this,
+				&ThisClass::TryBindCombatComponent,
+				0.1f,
+				false);
+		}
+		return;
+	}
+
+	if (BoundCombatComponent.Get() != CombatComponent)
+	{
+		UnbindCombatComponent();
+		BoundCombatComponent = CombatComponent;
+		CombatComponent->OnMainHUDSuppressionChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleMainHUDSuppressionChanged);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(CombatBindingRetryTimerHandle);
+	}
+
+	ApplyMainHUDSuppression(CombatComponent->ShouldSuppressMainHUDForADS());
+}
+
+void UShooterPlayerHUD::UnbindCombatComponent()
+{
+	if (UCombatComponent* CombatComponent = BoundCombatComponent.Get())
+	{
+		CombatComponent->OnMainHUDSuppressionChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleMainHUDSuppressionChanged);
+	}
+	BoundCombatComponent.Reset();
+}
+
+void UShooterPlayerHUD::HandleMainHUDSuppressionChanged(const bool bSuppressed)
+{
+	ApplyMainHUDSuppression(bSuppressed);
+}
+
+void UShooterPlayerHUD::ApplyMainHUDSuppression(const bool bSuppressed)
+{
+	// RetainerBox_HUD가 일반 인게임 HUD의 시각 루트다. 스코프/레티클처럼 ADS에서도 살아야 하는
+	// 오버레이는 이 RetainerBox 바깥에 두면 별도 Visibility 바인딩 없이 그대로 유지된다.
+	if (RetainerBox_HUD)
+	{
+		if (!bMainHUDDefaultVisibilityCached)
+		{
+			MainHUDContentDefaultVisibility = RetainerBox_HUD->GetVisibility();
+			bMainHUDDefaultVisibilityCached = true;
+		}
+
+		RetainerBox_HUD->SetVisibility(
+			bSuppressed ? ESlateVisibility::Collapsed : MainHUDContentDefaultVisibility);
+	}
+
+	// 저체력 비네트가 RetainerBox 바깥에 배치된 BP에서도 ADS 중 잔상으로 남지 않게 한다.
+	if (Image_LowHealthVignette)
+	{
+		if (bSuppressed)
+		{
+			Image_LowHealthVignette->SetVisibility(ESlateVisibility::Hidden);
+		}
+		else
+		{
+			Image_LowHealthVignette->SetVisibility(
+				bIsLowHealthActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		}
+	}
 }
 
 void UShooterPlayerHUD::ScheduleNextLowHealthGlitch()

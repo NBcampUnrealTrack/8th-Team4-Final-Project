@@ -73,12 +73,14 @@ private:
 	bool SetRoomJoinable(bool bIsJoinable);
 	void CompleteLeaveRoom(bool bWasSuccessful);
 	void ReturnToFrontendNow();
+	bool TravelRoomToLobbyNow();
 
 	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnFindSessionsComplete(bool bWasSuccessful);
 	void OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
 	void OnDestroySessionComplete(FName SessionName, bool bWasSuccessful);
 	void OnStartSessionComplete(FName SessionName, bool bWasSuccessful);
+	void OnEndSessionComplete(FName SessionName, bool bWasSuccessful);
 
 private:
 	enum class ELeaveRoomContinuation : uint8
@@ -108,8 +110,12 @@ private:
 	FOnStartSessionCompleteDelegate StartSessionCompleteDelegate;
 	FDelegateHandle StartSessionCompleteDelegateHandle;
 
+	FOnEndSessionCompleteDelegate EndSessionCompleteDelegate;
+	FDelegateHandle EndSessionCompleteDelegateHandle;
+
 	ELeaveRoomContinuation LeaveRoomContinuation = ELeaveRoomContinuation::None;
 	bool bStartRoomGamePending = false;
+	bool bReturnRoomToLobbyPending = false;
 	int32 CachedJoinSessionIndex = INDEX_NONE;
 
 	int32 CachedMaxPlayers = 4;

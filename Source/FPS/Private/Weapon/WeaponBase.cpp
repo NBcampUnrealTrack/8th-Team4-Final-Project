@@ -220,6 +220,16 @@ float AWeaponBase::GetADSFieldOfView() const
 	return Aim ? Aim->GetADSFieldOfView() : 0.f;
 }
 
+bool AWeaponBase::ShouldHideFirstPersonPresentationWhileADS() const
+{
+	return Aim && Aim->ShouldHideFirstPersonPresentationWhileADS();
+}
+
+bool AWeaponBase::ShouldHideMainHUDWhileADS() const
+{
+	return Aim && Aim->ShouldHideMainHUDWhileADS();
+}
+
 float AWeaponBase::GetBaseSpreadDegrees() const
 {
 	return Aim ? Aim->GetBaseSpreadDegrees() : 0.f;

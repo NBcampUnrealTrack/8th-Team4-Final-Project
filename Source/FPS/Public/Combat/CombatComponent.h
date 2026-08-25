@@ -14,6 +14,7 @@ class AWeaponBase;
 class UWeaponData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCyclingStateChanged, bool, bIsCycling);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainHUDSuppressionChanged, bool, bSuppressed);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UCombatComponent : public UActorComponent
@@ -86,6 +87,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
 	FOnCyclingStateChanged OnCyclingStateChanged;
 
+	// 로컬 플레이어의 ADS 표현 정책이 Main HUD를 가려야 하는 상태로 바뀔 때 알린다.
+	// UI는 무기 태그를 직접 해석하지 않고 이 상태만 구독한다.
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat|ADS")
+	FOnMainHUDSuppressionChanged OnMainHUDSuppressionChanged;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
@@ -93,7 +99,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon")
 	TObjectPtr<UWeaponData> WeaponData;
 
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Combat")
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Aiming, Category = "FPS|Combat")
 	bool bAiming = false;
 
 	// GA_ADS가 로컬 예측으로 호출한다(WeaponBase::SetEffectiveRPM과 같은 패턴 - 서버/클라 양쪽에서
@@ -101,6 +107,10 @@ public:
 	// 조준 블렌드에 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
 	void SetAiming(bool bNewAiming);
+
+	// 현재 ADS 상태와 장착 무기의 표현 설정을 조합한 최종 Main HUD 숨김 여부.
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat|ADS")
+	bool ShouldSuppressMainHUDForADS() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -157,14 +167,24 @@ private:
 	void UpdateMovementSpreadMultiplier() const;
 	// 매 틱 카메라 FOV를 평상시 값 <-> 조준 시 목표값 사이로 보간한다.
 	void UpdateCameraZoom(float DeltaTime) const;
+	// 현재 ADS/무기 설정에 맞춰 로컬 플레이어의 1인칭 팔/무기 표시만 갱신한다.
+	void RefreshFirstPersonADSPresentation() const;
+	// 현재 ADS/무기 설정에 맞춰 로컬 Main HUD suppression 상태를 갱신하고 변경 시 알린다.
+	void RefreshMainHUDSuppressionState();
 
 	// BeginPlay 시점에 캐싱해두는 오너 카메라의 평상시(비-ADS) FOV. 무기별 ADS FOV와 보간할 때
 	// 기준값으로 쓴다 - 캐릭터 BP마다 카메라 기본 FOV가 다를 수 있어 하드코딩하지 않는다.
 	UPROPERTY(Transient)
 	float DefaultFieldOfView = 90.f;
 
+	// UI에 마지막으로 전달한 로컬 ADS HUD suppression 상태. 같은 값의 중복 브로드캐스트를 막는다.
+	bool bMainHUDSuppressedForADS = false;
+
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);
+
+	UFUNCTION()
+	void OnRep_Aiming();
 
 	UFUNCTION()
 	void OnRep_WeaponSlots();
