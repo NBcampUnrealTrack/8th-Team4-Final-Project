@@ -20,8 +20,8 @@ class USteamVoiceComponent;
 class APlayerState;
 struct FInputActionValue;
 
-// 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bHeadshot이면 빨간 X, 아니면 기본 X.
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnHitMarker, bool /*bHeadshot*/);
+// 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bRed면 빨간 X(헤드샷 또는 처치), 아니면 기본 X.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnHitMarker, bool /*bRed*/);
 
 UCLASS()
 class FPS_API AShooterPlayerController : public APlayerController
@@ -89,10 +89,9 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
 
-	// 서버가 히트/헤드샷을 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커를 재생
-	// RogueDamageSubsystem::BroadcastCombatEvents에서 호출.
+	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커를 재생.
 	UFUNCTION(Client, Reliable)
-	void ClientPlayHitMarker(bool bHeadshot);
+	void ClientPlayHitMarker(bool bRed);
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }

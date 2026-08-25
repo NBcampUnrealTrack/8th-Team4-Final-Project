@@ -398,13 +398,31 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		Send(Src, RogueTags::Event_Combat_Headshot, Result.HealthDamage);
 	}
 
-	// 히트마커 기능
-	// 즉시 피드백. 헤드샷이면 빨간 X, 아니면 기본 X.
+	// 히트마커 기능. 벽 관통(WallRetentionSum < PelletCount)으로 얻은 히트는 벽 뒤 위치를 알려주는
+	// 정보가 되므로 억제하되, 처치는 예외로 항상 표시하고 빨간색으로 강조
 	if (const APawn* SrcPawn = Cast<APawn>(Src))
 	{
 		if (AShooterPlayerController* SrcPC = Cast<AShooterPlayerController>(SrcPawn->GetController()))
 		{
-			SrcPC->ClientPlayHitMarker(Ctx && Ctx->bHeadshot);
+			bool bHitObstructed = false;
+			if (Ctx)
+			{
+				for (const FRogueHitGroup& Group : Ctx->HitGroups)
+				{
+					if (Group.WallRetentionSum < static_cast<float>(Group.PelletCount) - KINDA_SMALL_NUMBER)
+					{
+						bHitObstructed = true;
+						break;
+					}
+				}
+			}
+
+			const bool bIsKill = Result.bHealthDepleted;
+			if (!bHitObstructed || bIsKill)
+			{
+				const bool bRed = bIsKill || (Ctx && Ctx->bHeadshot);
+				SrcPC->ClientPlayHitMarker(bRed);
+			}
 		}
 	}
 

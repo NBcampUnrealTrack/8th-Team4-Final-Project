@@ -159,7 +159,7 @@ void UShooterReticle::SetCrosshairArmsVisible(const bool bVisible)
 	if (Image_Center) { Image_Center->SetVisibility(NewVisibility); }
 }
 
-void UShooterReticle::HandleHitMarker(const bool bHeadshot)
+void UShooterReticle::HandleHitMarker(const bool bRed)
 {
 	if (!Text_HitMarker)
 	{
@@ -168,7 +168,7 @@ void UShooterReticle::HandleHitMarker(const bool bHeadshot)
 
 	SetCrosshairArmsVisible(false);
 
-	Text_HitMarker->SetColorAndOpacity(bHeadshot ? FLinearColor::Red : FLinearColor::White);
+	Text_HitMarker->SetColorAndOpacity(bRed ? FLinearColor::Red : FLinearColor::White);
 	Text_HitMarker->SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	// 애니메이션이 있으면 그걸로 페이드, 없으면 즉시 켜고 HitMarkerDuration 뒤에 끈다.

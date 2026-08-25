@@ -41,7 +41,7 @@ protected:
 
 	// AShooterPlayerController::OnHitMarker 구독 핸들러
 	// 히트 시 X 표시, 헤드샷이면 빨간색으로 표시
-	void HandleHitMarker(bool bHeadshot);
+	void HandleHitMarker(bool bRed);
 	void HideHitMarker();
 	void SetCrosshairArmsVisible(bool bVisible);
 
