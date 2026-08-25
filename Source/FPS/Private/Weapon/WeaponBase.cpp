@@ -264,12 +264,20 @@ void AWeaponBase::AttachToOwnerMeshes() const
 	{
 		Mesh1P->AttachToComponent(
 			CharacterMesh1P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName1P);
+
+		// 무기별 보정값
+		Mesh1P->SetRelativeLocation(GripOffsetLocation1P);
+		Mesh1P->SetRelativeRotation(GripOffsetRotation1P);
 	}
 
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
 		Mesh3P->AttachToComponent(
 			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+
+		// 무기별 보정값
+		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
+		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
 	}
 }
 
