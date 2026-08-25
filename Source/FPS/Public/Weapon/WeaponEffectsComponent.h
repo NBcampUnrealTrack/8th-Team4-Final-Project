@@ -55,6 +55,12 @@ protected:
 
 	bool IsLocalShooterListening() const;
 
+	// 로컬 사수용 즉시 2D 재생. authority와 무관하게(LocalPredicted 어빌리티의 클라이언트 예측 실행
+	// 시점에) 호출되어야 서버 왕복 지연/지터 없이 즉시 들린다 - PlayFireCameraShake와 동일한 패턴.
+	// 내부에서 IsLocalShooterListening()으로 걸러지므로 원격 청취자에게는 재생되지 않는다(그쪽은
+	// Multicast_Play*가 3D 위치 사운드로 담당).
+	void PlayLocalWeaponSound(USoundBase* Sound) const;
+
 	// MuzzleFlashEffect가 지정된 경우 Mesh1P/Mesh3P 각 Muzzle 소켓에 부착해 재생한다(둘 다 시도 -
 	// bOnlyOwnerSee/bOwnerNoSee가 이미 보는 사람을 갈라주므로 중복 재생처럼 보이지 않는다).
 	void SpawnMuzzleFlash() const;
@@ -101,11 +107,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio")
 	TObjectPtr<USoundBase> EmptyClipSound;
 
-	// 본인에게 들리는 발사/재장전 사운드 볼륨 배율
+	// 본인에게 들리는 발사/재장전 사운드 볼륨 배율. 2D(비공간음향)로 즉시 재생되는 쪽에 적용된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
 	float LocalListenerVolumeMultiplier = 1.0f;
 
-	// 다른 플레이어에게 들리는 발사/재장전 사운드 볼륨 배율.
+	// 다른 플레이어에게 들리는 발사/재장전 사운드 볼륨 배율. 서버 Multicast로 3D(위치 기반) 재생되는
+	// 쪽에 적용된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Audio", meta = (ClampMin = "0.0"))
 	float RemoteListenerVolumeMultiplier = 0.2f;
 

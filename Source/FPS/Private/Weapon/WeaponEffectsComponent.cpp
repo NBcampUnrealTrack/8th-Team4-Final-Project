@@ -24,6 +24,10 @@ AWeaponBase* UWeaponEffectsComponent::GetWeaponOwner() const
 
 void UWeaponEffectsComponent::PlayFireEffects(const FVector& TraceStart, const TArray<FVector>& PelletDirections)
 {
+	// 로컬 사수 사운드는 authority와 무관하게 즉시 2D로 재생한다(FireInternal은 LocalPredicted
+	// 어빌리티의 클라이언트 예측 실행에서도 호출되므로, 여기서 걸어야 서버 왕복 없이 바로 들린다).
+	PlayLocalWeaponSound(FireSound);
+
 	const AActor* Owner = GetOwner();
 	if (!IsValid(Owner) || !Owner->HasAuthority())
 	{
@@ -76,6 +80,8 @@ void UWeaponEffectsComponent::PlayFireCameraShake() const
 
 void UWeaponEffectsComponent::PlayEmptyClipSound()
 {
+	PlayLocalWeaponSound(EmptyClipSound);
+
 	const AActor* Owner = GetOwner();
 	if (IsValid(Owner) && Owner->HasAuthority() && EmptyClipSound)
 	{
@@ -85,6 +91,8 @@ void UWeaponEffectsComponent::PlayEmptyClipSound()
 
 void UWeaponEffectsComponent::NotifyReloadStarted(const float ReloadDuration)
 {
+	PlayLocalWeaponSound(ReloadStartSound);
+
 	const AActor* Owner = GetOwner();
 	if (IsValid(Owner) && Owner->HasAuthority() && ReloadStartSound)
 	{
@@ -105,6 +113,8 @@ void UWeaponEffectsComponent::NotifyReloadStarted(const float ReloadDuration)
 
 void UWeaponEffectsComponent::PlayReloadChargeSound()
 {
+	PlayLocalWeaponSound(ReloadChargeSound);
+
 	const AActor* Owner = GetOwner();
 	if (IsValid(Owner) && Owner->HasAuthority() && ReloadChargeSound)
 	{
@@ -114,6 +124,8 @@ void UWeaponEffectsComponent::PlayReloadChargeSound()
 
 void UWeaponEffectsComponent::PlayReloadFinishSound()
 {
+	PlayLocalWeaponSound(ReloadFinishSound);
+
 	const AActor* Owner = GetOwner();
 	if (IsValid(Owner) && Owner->HasAuthority() && ReloadFinishSound)
 	{
@@ -123,44 +135,42 @@ void UWeaponEffectsComponent::PlayReloadFinishSound()
 
 void UWeaponEffectsComponent::Multicast_PlayFireSound_Implementation(FVector Location)
 {
-	if (FireSound && GetOwner())
+	// 로컬 사수는 PlayLocalWeaponSound()에서 이미 2D로 즉시 들었으므로, 여기서는 원격 청취자에게만
+	// 3D 위치 사운드로 재생한다(중복 재생 방지).
+	if (!FireSound || !GetOwner() || IsLocalShooterListening())
 	{
-		// 시전자/비시전자 볼륨 설정
-		const float VolumeMultiplier = IsLocalShooterListening()
-			? LocalListenerVolumeMultiplier
-			: RemoteListenerVolumeMultiplier;
-
-		UGameplayStatics::SpawnSoundAttached(
-			FireSound,
-			GetOwner()->GetRootComponent(),
-			NAME_None,
-			Location,
-			FRotator::ZeroRotator,
-			EAttachLocation::KeepWorldPosition,
-			false,
-			VolumeMultiplier);
+		return;
 	}
+
+	UGameplayStatics::SpawnSoundAttached(
+		FireSound,
+		GetOwner()->GetRootComponent(),
+		NAME_None,
+		Location,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepWorldPosition,
+		false,
+		RemoteListenerVolumeMultiplier);
 }
 
 void UWeaponEffectsComponent::Multicast_PlayWeaponSound_Implementation(USoundBase* Sound)
 {
-	if (Sound && GetOwner())
+	// 로컬 사수는 PlayLocalWeaponSound()에서 이미 2D로 즉시 들었으므로, 여기서는 원격 청취자에게만
+	// 3D 위치 사운드로 재생한다(중복 재생 방지).
+	if (!Sound || !GetOwner() || IsLocalShooterListening())
 	{
-		// 본인/타인 볼륨을 차등 적용
-		const float VolumeMultiplier = IsLocalShooterListening()
-			? LocalListenerVolumeMultiplier
-			: RemoteListenerVolumeMultiplier;
-
-		UGameplayStatics::SpawnSoundAttached(
-			Sound,
-			GetOwner()->GetRootComponent(),
-			NAME_None,
-			FVector(ForceInit),
-			FRotator::ZeroRotator,
-			EAttachLocation::KeepRelativeOffset,
-			false,
-			VolumeMultiplier);
+		return;
 	}
+
+	UGameplayStatics::SpawnSoundAttached(
+		Sound,
+		GetOwner()->GetRootComponent(),
+		NAME_None,
+		FVector(ForceInit),
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		false,
+		RemoteListenerVolumeMultiplier);
 }
 
 bool UWeaponEffectsComponent::IsLocalShooterListening() const
@@ -168,6 +178,16 @@ bool UWeaponEffectsComponent::IsLocalShooterListening() const
 	const AActor* WeaponOwner = GetOwner();
 	const APawn* OwningPawn = WeaponOwner ? Cast<APawn>(WeaponOwner->GetOwner()) : nullptr;
 	return OwningPawn && OwningPawn->IsLocallyControlled();
+}
+
+void UWeaponEffectsComponent::PlayLocalWeaponSound(USoundBase* Sound) const
+{
+	if (!Sound || !IsLocalShooterListening())
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySound2D(this, Sound, LocalListenerVolumeMultiplier);
 }
 
 void UWeaponEffectsComponent::Multicast_PlayMuzzleEffects_Implementation(const TArray<FVector>& PelletDirections)
