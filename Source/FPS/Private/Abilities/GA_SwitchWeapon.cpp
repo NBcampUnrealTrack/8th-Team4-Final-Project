@@ -2,8 +2,9 @@
 
 #include "Abilities/GA_SwitchWeapon.h"
 
+#include "AbilitySystemComponent.h"
 #include "Combat/CombatComponent.h"
-#include "GAS/RogueAbilitySystemComponent.h"
+#include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -37,9 +38,19 @@ void UGA_SwitchWeapon::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 	{
 		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Swap);
 
-		if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+		// SetEquippedWeaponType()은 로컬 태그 세팅뿐 자체 리플리케이션이 없다(비복제 Loose Tag).
+		// 이 if 블록은 SwitchWeaponSlot()의 authority 게이트 때문에 서버 실행에서만 도달하므로,
+		// 여기서 직접 ASC->SetEquippedWeaponType()만 부르면 서버 ASC만 바뀌고 소유 클라이언트의
+		// 로컬 ASC 사본은 예전 무기 태그에 멈춰 남는다 - 이후 그 클라이언트의 LocalPredicted
+		// Fire/Reload 어빌리티가 새 무기의 ActivationRequiredTags(장착 태그)를 로컬에서 통과하지
+		// 못해 조용히 막힌다. PlayerState::SyncEquippedWeaponState()는 서버 세팅 + Client RPC
+		// push를 함께 하므로(WeaponLoadoutService가 쓰는 것과 동일한 패턴) 이걸 대신 쓴다.
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
 		{
-			RogueASC->SetEquippedWeaponType(CombatComponent->GetCurrentWeapon()->GetEquippedStateTag());
+			if (AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(ASC->GetOwner()))
+			{
+				PlayerState->SyncEquippedWeaponState(CombatComponent->GetCurrentWeapon()->GetEquippedStateTag());
+			}
 		}
 	}
 
