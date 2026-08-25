@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
@@ -26,4 +26,7 @@ namespace RogueWeaponLoadout
 	// 확정된 EquippedPrimaryTag를 폰에 적용한다.
 	// 폰은 라운드마다 새로 만들어지므로 이 호출이 없으면 소지한 주무기가 손에서 사라진다.
 	FPS_API bool RestoreConfirmedPrimary(AShooterPlayerState* PlayerState, APawn* Pawn);
+
+	// 라운드 시작 시 권총으로 교체
+	FPS_API bool EquipSidearmForRoundStart(APawn* Pawn);
 }

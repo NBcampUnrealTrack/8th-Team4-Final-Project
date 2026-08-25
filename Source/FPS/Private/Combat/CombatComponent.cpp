@@ -4,6 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -441,6 +442,67 @@ bool UCombatComponent::IsWeaponReady() const
 void UCombatComponent::SetAiming(const bool bNewAiming)
 {
 	bAiming = bNewAiming;
+	RefreshFirstPersonADSPresentation();
+	RefreshMainHUDSuppressionState();
+}
+
+bool UCombatComponent::ShouldSuppressMainHUDForADS() const
+{
+	const AWeaponBase* Weapon = CurrentWeapon.Get();
+	return bAiming
+		&& IsValid(Weapon)
+		&& Weapon->ShouldHideMainHUDWhileADS();
+}
+
+void UCombatComponent::RefreshFirstPersonADSPresentation() const
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
+		|| !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerPawn);
+	if (!IsValid(CharacterMesh1P))
+	{
+		return;
+	}
+
+	AWeaponBase* Weapon = CurrentWeapon.Get();
+	const bool bHideFirstPerson = bAiming
+		&& IsValid(Weapon)
+		&& Weapon->ShouldHideFirstPersonPresentationWhileADS();
+
+	// ADS는 Visibility만 건드린다. 사망 처리의 HiddenInGame 상태를 해제하지 않으므로,
+	// ADS 도중 사망한 뒤 어빌리티가 종료되어도 1인칭 메시가 다시 튀어나오지 않는다.
+	CharacterMesh1P->SetVisibility(!bHideFirstPerson, false);
+
+	if (IsValid(Weapon))
+	{
+		if (USkeletalMeshComponent* WeaponMesh1P = Weapon->GetMesh1P())
+		{
+			WeaponMesh1P->SetVisibility(!bHideFirstPerson, false);
+		}
+	}
+}
+
+void UCombatComponent::RefreshMainHUDSuppressionState()
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled())
+	{
+		return;
+	}
+
+	const bool bShouldSuppress = ShouldSuppressMainHUDForADS();
+	if (bMainHUDSuppressedForADS == bShouldSuppress)
+	{
+		return;
+	}
+
+	bMainHUDSuppressedForADS = bShouldSuppress;
+	OnMainHUDSuppressionChanged.Broadcast(bMainHUDSuppressedForADS);
 }
 
 void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
@@ -465,6 +527,8 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	}
 
 	RefreshWeaponPresentation();
+	RefreshFirstPersonADSPresentation();
+	RefreshMainHUDSuppressionState();
 }
 
 void UCombatComponent::ClearWeaponLoadout()
@@ -608,6 +672,14 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 	}
 
 	RefreshWeaponPresentation();
+	RefreshFirstPersonADSPresentation();
+	RefreshMainHUDSuppressionState();
+}
+
+void UCombatComponent::OnRep_Aiming()
+{
+	RefreshFirstPersonADSPresentation();
+	RefreshMainHUDSuppressionState();
 }
 
 void UCombatComponent::OnRep_WeaponSlots()
@@ -642,4 +714,8 @@ void UCombatComponent::RefreshWeaponPresentation()
 	{
 		CurrentWeapon->SetPresentationActive(true);
 	}
+
+	// SetPresentationActive가 현재 무기의 Mesh1P Visibility를 다시 켤 수 있으므로,
+	// 장착/복제 갱신이 끝난 뒤 ADS 전용 1인칭 표시 규칙을 마지막에 다시 적용한다.
+	RefreshFirstPersonADSPresentation();
 }

@@ -143,6 +143,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	float GetADSFieldOfView() const;
 
+	// 스코프 ADS처럼 로컬 1인칭 팔/무기 표현을 숨겨야 하는지 Aim 설정을 그대로 노출한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	bool ShouldHideFirstPersonPresentationWhileADS() const;
+
+	// ADS 중 일반 인게임 HUD를 숨겨야 하는지 Aim 설정을 그대로 노출한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	bool ShouldHideMainHUDWhileADS() const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 

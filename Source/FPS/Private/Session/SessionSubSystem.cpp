@@ -56,6 +56,7 @@ USessionSubSystem::USessionSubSystem()
 	, JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
 	, DestroySessionCompleteDelegate(FOnDestroySessionCompleteDelegate::CreateUObject(this, &ThisClass::OnDestroySessionComplete))
 	, StartSessionCompleteDelegate(FOnStartSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnStartSessionComplete))
+	, EndSessionCompleteDelegate(FOnEndSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnEndSessionComplete))
 {
 }
 
@@ -242,19 +243,52 @@ void USessionSubSystem::LeaveRoomAndReturnToFrontend()
 bool USessionSubSystem::ReturnRoomToLobby()
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(World) || World->GetNetMode() == NM_Client)
+	if (!IsValid(World) || World->GetNetMode() == NM_Client || bReturnRoomToLobbyPending)
 	{
 		return false;
 	}
 
-	// 같은 방을 유지하는 경로이므로 세션을 Destroy하지 않는다.
-	// 로비에서는 다시 참가할 수 있도록 광고/JoinInProgress만 열어 둔다.
-	if (EnsureSessionInterface() && SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
+	// OnlineSubsystem이 없는 로컬 실행은 세션 수명주기 없이 맵만 이동한다.
+	if (!EnsureSessionInterface() || SessionInterface->GetNamedSession(NAME_GameSession) == nullptr)
 	{
-		SetRoomJoinable(true);
+		return TravelRoomToLobbyNow();
 	}
 
-	return World->ServerTravel(LobbyMapPath + TEXT("?listen"));
+	const EOnlineSessionState::Type SessionState = SessionInterface->GetSessionState(NAME_GameSession);
+	if (SessionState == EOnlineSessionState::InProgress)
+	{
+		// 같은 방을 유지하되 현재 매치만 종료한다. 다음 로비 Start에서
+		// Ended -> StartSession -> InProgress 순서를 다시 밟을 수 있게 한다.
+		bReturnRoomToLobbyPending = true;
+		EndSessionCompleteDelegateHandle = SessionInterface->AddOnEndSessionCompleteDelegate_Handle(EndSessionCompleteDelegate);
+		if (SessionInterface->EndSession(NAME_GameSession))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Ending active session before returning to lobby."));
+			return true;
+		}
+
+		SessionInterface->ClearOnEndSessionCompleteDelegate_Handle(EndSessionCompleteDelegateHandle);
+		bReturnRoomToLobbyPending = false;
+
+		// 동기 실패 직전에 상태가 이미 Ended로 바뀐 구현체는 정상 완료로 취급한다.
+		if (SessionInterface->GetSessionState(NAME_GameSession) == EOnlineSessionState::Ended)
+		{
+			return TravelRoomToLobbyNow();
+		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] EndSession could not begin; lobby travel was cancelled."));
+		return false;
+	}
+
+	if (SessionState == EOnlineSessionState::Pending || SessionState == EOnlineSessionState::Ended)
+	{
+		return TravelRoomToLobbyNow();
+	}
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[SessionSubSystem] ReturnRoomToLobby blocked by session state %s."),
+		SessionStateToString(SessionState));
+	return false;
 }
 
 void USessionSubSystem::StartRoomGame(const FString& GameMapName)
@@ -267,13 +301,17 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		return;
 	}
 
-	if (!EnsureSessionInterface() || SessionInterface->GetNamedSession(NAME_GameSession) == nullptr || bStartRoomGamePending)
+	if (!EnsureSessionInterface()
+		|| SessionInterface->GetNamedSession(NAME_GameSession) == nullptr
+		|| bStartRoomGamePending
+		|| bReturnRoomToLobbyPending)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[SessionSubSystem] StartRoomGame blocked: SessionInterface=%s NamedSession=%s Pending=%s"),
+			TEXT("[SessionSubSystem] StartRoomGame blocked: SessionInterface=%s NamedSession=%s StartPending=%s LobbyReturnPending=%s"),
 			SessionInterface.IsValid() ? TEXT("Valid") : TEXT("Invalid"),
 			SessionInterface.IsValid() && SessionInterface->GetNamedSession(NAME_GameSession) ? TEXT("Valid") : TEXT("None"),
-			bStartRoomGamePending ? TEXT("true") : TEXT("false"));
+			bStartRoomGamePending ? TEXT("true") : TEXT("false"),
+			bReturnRoomToLobbyPending ? TEXT("true") : TEXT("false"));
 		OnStartRoomGameComplete.Broadcast(false);
 		return;
 	}
@@ -300,15 +338,11 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 
 		bStartRoomGamePending = false;
 		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
-		if (SessionState == EOnlineSessionState::InProgress)
-		{
-			OnStartRoomGameComplete.Broadcast(true);
-		}
-		else
-		{
-			SetRoomJoinable(true);
-			OnStartRoomGameComplete.Broadcast(false);
-		}
+
+		// InProgress를 성공으로 우회하면 두 번째 매치가 이전 세션 상태를 재사용한다.
+		// 새 게임은 Pending/Ended 상태에서 StartSession이 실제로 성공해야만 이동한다.
+		SetRoomJoinable(true);
+		OnStartRoomGameComplete.Broadcast(false);
 	}
 }
 
@@ -583,6 +617,61 @@ void USessionSubSystem::ReturnToFrontendNow()
 	}
 }
 
+bool USessionSubSystem::TravelRoomToLobbyNow()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->GetNetMode() == NM_Client)
+	{
+		return false;
+	}
+
+	// 방 자체는 유지하므로 로비에서 다시 검색/참가할 수 있게 연다.
+	if (SessionInterface.IsValid() && SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
+	{
+		SetRoomJoinable(true);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] Returning room to lobby. SessionState=%s"),
+		SessionInterface.IsValid()
+			? SessionStateToString(SessionInterface->GetSessionState(NAME_GameSession))
+			: TEXT("NoInterface"));
+
+	return World->ServerTravel(LobbyMapPath + TEXT("?listen"));
+}
+
+void USessionSubSystem::OnEndSessionComplete(FName SessionName, bool bWasSuccessful)
+{
+	if (SessionInterface)
+	{
+		SessionInterface->ClearOnEndSessionCompleteDelegate_Handle(EndSessionCompleteDelegateHandle);
+	}
+
+	if (!bReturnRoomToLobbyPending)
+	{
+		return;
+	}
+
+	bReturnRoomToLobbyPending = false;
+	const EOnlineSessionState::Type SessionState = SessionInterface.IsValid()
+		? SessionInterface->GetSessionState(NAME_GameSession)
+		: EOnlineSessionState::NoSession;
+
+	if (!bWasSuccessful && SessionState != EOnlineSessionState::Ended)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] EndSession failed. Session=%s State=%s"),
+			*SessionName.ToString(),
+			SessionStateToString(SessionState));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[SessionSubSystem] Session ended; continuing to lobby. Session=%s State=%s"),
+		*SessionName.ToString(),
+		SessionStateToString(SessionState));
+	TravelRoomToLobbyNow();
+}
+
 void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSuccessful)
 {
 	if (SessionInterface)
@@ -603,15 +692,8 @@ void USessionSubSystem::OnStartSessionComplete(FName SessionName, bool bWasSucce
 			SessionStateToString(SessionState),
 			*CachedMapPath);
 
-		if (SessionState == EOnlineSessionState::InProgress)
-		{
-			OnStartRoomGameComplete.Broadcast(true);
-		}
-		else
-		{
-			SetRoomJoinable(true);
-			OnStartRoomGameComplete.Broadcast(false);
-		}
+		SetRoomJoinable(true);
+		OnStartRoomGameComplete.Broadcast(false);
 		return;
 	}
 
@@ -628,6 +710,7 @@ void USessionSubSystem::Deinitialize()
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
 		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
+		SessionInterface->ClearOnEndSessionCompleteDelegate_Handle(EndSessionCompleteDelegateHandle);
 	}
 
 	LastSessionSettings.Reset();

@@ -116,8 +116,9 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 			continue;
 		}
 
-		// 새 로비 사이클의 Ready는 이전 로비/매치 상태를 이어받지 않는다.
+		// 새 로비 사이클의 Ready/Load 상태는 이전 매치 값을 이어받지 않는다.
 		ShooterPlayerState->SetLobbyReady(false);
+		ShooterPlayerState->SetLoadedIntoMatch(false);
 
 		if (!IsValid(FallbackHostPlayerState))
 		{

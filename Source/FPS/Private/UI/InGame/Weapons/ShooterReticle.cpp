@@ -122,6 +122,18 @@ bool UShooterReticle::IsPerfectAccuracy() const
 	return GetSpreadDegrees() <= UE_KINDA_SMALL_NUMBER;
 }
 
+bool UShooterReticle::IsAiming() const
+{
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return IsValid(Weapon) && Weapon->IsADS();
+}
+
+FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
+{
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return IsValid(Weapon) ? Weapon->GetWeaponTag() : FGameplayTag();
+}
+
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);

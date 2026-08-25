@@ -100,6 +100,10 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 		return;
 	}
 
+	// 이 플래그는 World 단위의 1회성 상태다. 로비에서 한 번 소비한 값을
+	// 다음 인게임 World까지 들고 가지 않도록 최종 목적지마다 재무장한다.
+	bNotifiedLoadedIntoMatch = false;
+
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		ABaseRoundGameState* RoundGameState = nullptr;
@@ -538,21 +542,24 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 {
-	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
-	{
-		ShooterPlayerState->SetLoadedIntoMatch(true);
-	}
-
 	ABaseRoundGameMode* RoundGameMode = nullptr;
 	if (UWorld* World = GetWorld())
 	{
 		RoundGameMode = World->GetAuthGameMode<ABaseRoundGameMode>();
 	}
 
-	if (RoundGameMode)
+	// 로비에서 늦게 도착한 RPC가 다음 매치용 로드 상태를 미리 소비하면 안 된다.
+	if (!IsValid(RoundGameMode))
 	{
-		RoundGameMode->NotifyPlayerReadyForGameFlow(this);
+		return;
 	}
+
+	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
+	{
+		ShooterPlayerState->SetLoadedIntoMatch(true);
+	}
+
+	RoundGameMode->NotifyPlayerReadyForGameFlow(this);
 }
 
 void AShooterPlayerController::StartMatchLoadReadyCheck()
@@ -583,6 +590,25 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	if (bNotifiedLoadedIntoMatch)
 	{
 		StopMatchLoadReadyCheck();
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		StopMatchLoadReadyCheck();
+		return;
+	}
+
+	ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();
+	if (!IsValid(RoundGameState))
+	{
+		// GameState가 아직 복제되지 않았다면 조금 더 기다린다. 다른 모드의
+		// GameState가 이미 존재하면 로비/프론트엔드이므로 이 체크를 종료한다.
+		if (IsValid(World->GetGameState()))
+		{
+			StopMatchLoadReadyCheck();
+		}
 		return;
 	}
 

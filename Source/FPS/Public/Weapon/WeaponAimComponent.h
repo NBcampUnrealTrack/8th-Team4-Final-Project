@@ -30,6 +30,8 @@ public:
 	bool IsADS() const { return bIsADS; }
 	bool CanADS() const { return bCanADS; }
 	float GetADSFieldOfView() const { return ADSFieldOfView; }
+	bool ShouldHideFirstPersonPresentationWhileADS() const { return bHideFirstPersonPresentationWhileADS; }
+	bool ShouldHideMainHUDWhileADS() const { return bHideMainHUDWhileADS; }
 
 	// --- 탄퍼짐 ---
 	void SetMovementSpreadMultiplier(float NewMultiplier);
@@ -85,6 +87,16 @@ protected:
 	// 값을 갖는다. CombatComponent가 bAiming/CanADS()를 보고 이 값과 평상시 FOV 사이를 보간한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float ADSFieldOfView = 60.f;
+
+	// 스코프처럼 ADS 중 1인칭 팔/무기 표현을 가려야 하는 무기만 true로 설정한다. 실제 표시 전환은
+	// CombatComponent가 로컬 플레이어의 Mesh1P에만 적용하며, 다른 플레이어가 보는 Mesh3P에는 영향이 없다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS")
+	bool bHideFirstPersonPresentationWhileADS = false;
+
+	// 스코프 ADS처럼 일반 인게임 HUD를 가려야 하는 무기만 true로 설정한다. HUD가 무기 태그를
+	// 직접 분기하지 않도록 무기별 ADS 표현 정책은 Aim 컴포넌트가 소유한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS")
+	bool bHideMainHUDWhileADS = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|ADS")
 	bool bIsADS = false;
