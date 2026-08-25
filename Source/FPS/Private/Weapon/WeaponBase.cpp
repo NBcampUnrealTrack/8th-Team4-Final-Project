@@ -239,14 +239,21 @@ float AWeaponBase::GetCurrentSpreadDegrees() const
 	return Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
 }
 
+void AWeaponBase::SetFirstPersonPresentationVisible(const bool bVisible)
+{
+	if (IsValid(Mesh1P))
+	{
+		// 스코프/도트사이트처럼 BP에서 Mesh1P 소켓 아래에 추가한 1P 부착물도
+		// ADS 표현 정책을 그대로 따라가게 한다.
+		Mesh1P->SetVisibility(bVisible, true);
+	}
+}
+
 void AWeaponBase::SetPresentationActive(const bool bActive)
 {
 	SetActorHiddenInGame(!bActive);
 
-	if (IsValid(Mesh1P))
-	{
-		Mesh1P->SetVisibility(bActive, true);
-	}
+	SetFirstPersonPresentationVisible(bActive);
 	if (IsValid(Mesh3P))
 	{
 		Mesh3P->SetVisibility(bActive, true);
