@@ -9,6 +9,8 @@
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
+#include "GameFramework/Pawn.h"
+#include "Player/ShooterPlayerController.h"
 
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
@@ -394,6 +396,16 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 	if (Ctx && Ctx->bHeadshot)
 	{
 		Send(Src, RogueTags::Event_Combat_Headshot, Result.HealthDamage);
+	}
+
+	// 히트마커 기능
+	// 즉시 피드백. 헤드샷이면 빨간 X, 아니면 기본 X.
+	if (const APawn* SrcPawn = Cast<APawn>(Src))
+	{
+		if (AShooterPlayerController* SrcPC = Cast<AShooterPlayerController>(SrcPawn->GetController()))
+		{
+			SrcPC->ClientPlayHitMarker(Ctx && Ctx->bHeadshot);
+		}
 	}
 
 	if (Result.bShieldBroken)
