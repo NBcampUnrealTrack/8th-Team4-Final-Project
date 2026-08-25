@@ -202,6 +202,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
 
+	// 현재 무기의 1인칭 표현 트리만 켜고 끈다. BP에서 스코프/부착물을 Mesh1P 아래에
+	// 자식으로 구성하면 함께 토글된다. Mesh3P에는 영향이 없어 다른 플레이어의 무기 표시는 유지된다.
+	void SetFirstPersonPresentationVisible(bool bVisible);
+
 	// 3인칭(다른 플레이어에게 보이는 몸통)에 부착될 때 쓰는 메쉬. CombatComponent가 장착 시 오너 캐릭터의 Mesh3P에 붙인다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Mesh")
 	USkeletalMeshComponent* GetMesh3P() const { return Mesh3P; }

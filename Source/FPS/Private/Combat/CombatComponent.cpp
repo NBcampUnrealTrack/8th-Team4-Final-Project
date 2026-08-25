@@ -474,16 +474,16 @@ void UCombatComponent::RefreshFirstPersonADSPresentation() const
 		&& IsValid(Weapon)
 		&& Weapon->ShouldHideFirstPersonPresentationWhileADS();
 
-	// ADS는 Visibility만 건드린다. 사망 처리의 HiddenInGame 상태를 해제하지 않으므로,
-	// ADS 도중 사망한 뒤 어빌리티가 종료되어도 1인칭 메시가 다시 튀어나오지 않는다.
+	// 캐릭터 팔은 자기 자신만 토글한다. 자식까지 전파하면 과거에 Mesh1P에 부착된 채
+	// 비활성화된 다른 무기까지 ADS 해제 시 다시 보이게 만들 수 있다.
+	// 사망 처리의 HiddenInGame 상태도 건드리지 않는다.
 	CharacterMesh1P->SetVisibility(!bHideFirstPerson, false);
 
 	if (IsValid(Weapon))
 	{
-		if (USkeletalMeshComponent* WeaponMesh1P = Weapon->GetMesh1P())
-		{
-			WeaponMesh1P->SetVisibility(!bHideFirstPerson, false);
-		}
+		// 현재 무기 안에서는 Mesh1P가 1P 표현 루트다. BP에서 Mesh1P 소켓 아래에
+		// 추가한 스코프/부착물까지 현재 무기와 함께 숨기도록 WeaponBase에 위임한다.
+		Weapon->SetFirstPersonPresentationVisible(!bHideFirstPerson);
 	}
 }
 
