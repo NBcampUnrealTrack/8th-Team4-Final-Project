@@ -17,6 +17,7 @@
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "UI/InGame/Shop/ShooterShopScreen.h"
+#include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterUIInitComp, Log, All);
@@ -496,6 +497,16 @@ void UShooterUIInitComponent::HandleAugmentOffersChanged()
 
 void UShooterUIInitComponent::HandleRoundStateChanged()
 {
+	// 매치 종료시 Result 위함
+	if (BoundRoundGameState.IsValid()
+	&& BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::MatchEnded)
+	{
+		UShooterMatchResultSubsystem* MatchResultSubsystem = 
+			GetWorld()->GetGameInstance()->GetSubsystem<UShooterMatchResultSubsystem>();
+		
+		MatchResultSubsystem->CaptureSnapshot(BoundRoundGameState.Get());
+	}
+	
 	if (BoundRoundGameState.IsValid()
 		&& BoundRoundGameState->GetGameFlowPhase() != EGameFlowPhase::AugmentSelecting)
 	{

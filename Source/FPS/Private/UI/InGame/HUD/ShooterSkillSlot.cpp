@@ -27,6 +27,11 @@ void UShooterSkillSlot::NativeOnInitialized()
 		BindToAnimationFinished(Anim_ReadyGlow, FinishedReadyAnim);
 	}
 	
+	if (!bUseDebugDriver)
+	{
+		SetVisibility(ESlateVisibility::Hidden);
+	}
+	
 	// 디버그 모드는 ASC 이벤트를 안 받으므로 초기 Ready 상태를 여기서 한 번 잡아준다.
 	// 실데이터 모드에서도 상관없다 CachedCooldownTag가 없으면 리턴
 	RefreshCooldownDisplay();
@@ -479,6 +484,7 @@ void UShooterSkillSlot::TryBindCooldownTag(URogueAbilitySystemComponent* ASC)
 	CachedCooldownTag = CooldownTags->First();
 	CooldownTagEventHandle = ASC->RegisterGameplayTagEvent(CachedCooldownTag, EGameplayTagEventType::AnyCountChange).AddUObject(this, &ThisClass::HandleCooldownTagChanged);
 	AbilityFailedEventHandle = ASC->AbilityFailedCallbacks.AddUObject(this, &ThisClass::HandleAbilityFailed);
+	SetVisibility(ESlateVisibility::HitTestInvisible);
 	
 	// 늦게 발견 됐을 경우 이미 쿨다운 중일 수 있으므로 즉시 한번 반영
 	RefreshCooldownDisplay(); 
