@@ -116,6 +116,10 @@ protected:
 	virtual void ReceivedPlayer() override;
 	virtual void SetupInputComponent() override;
 
+	// 공용 Controller는 모드별 GameState 타입을 모르며, 필요한 바인딩은 전용 Controller가 구현한다.
+	virtual void RefreshLoadingScreenGameStateBinding(ULoadingScreenSubsystem* LoadingScreenSubsystem);
+	virtual void ClearLoadingScreenGameStateBinding(ULoadingScreenSubsystem* LoadingScreenSubsystem);
+
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
 

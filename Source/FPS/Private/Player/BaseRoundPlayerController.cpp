@@ -7,8 +7,10 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
+#include "GameMode/BaseRoundGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputMappingContext.h"
+#include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/Frontend/ShooterUIInitComponent.h"
@@ -62,6 +64,23 @@ void ABaseRoundPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
+}
+
+void ABaseRoundPlayerController::RefreshLoadingScreenGameStateBinding(
+	ULoadingScreenSubsystem* LoadingScreenSubsystem)
+{
+	if (!IsValid(LoadingScreenSubsystem))
+	{
+		return;
+	}
+
+	ABaseRoundGameState* RoundGameState = nullptr;
+	if (UWorld* World = GetWorld())
+	{
+		RoundGameState = World->GetGameState<ABaseRoundGameState>();
+	}
+
+	LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
 }
 
 void ABaseRoundPlayerController::GetLifetimeReplicatedProps(

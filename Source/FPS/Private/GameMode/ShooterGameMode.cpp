@@ -7,3 +7,13 @@ AShooterGameMode::AShooterGameMode()
 {
 	bUseSeamlessTravel = true;
 }
+
+void AShooterGameMode::NotifyPlayerEliminatedBy(
+	AController*,
+	AShooterPlayerState*)
+{
+}
+
+void AShooterGameMode::NotifyPlayerReadyForGameFlow(APlayerController*)
+{
+}

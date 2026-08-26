@@ -5,9 +5,9 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GAS/RogueAbilitySystemComponent.h"
-#include "GameMode/BaseRoundGameMode.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
+#include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -38,13 +38,7 @@ void AShooterPlayerController::BeginPlay()
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		ABaseRoundGameState* RoundGameState = nullptr;
-		if (UWorld* World = GetWorld())
-		{
-			RoundGameState = World->GetGameState<ABaseRoundGameState>();
-		}
-
-		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 	}
 
 	if (!InputConfig || !InputConfig->DefaultMappingContext)
@@ -83,7 +77,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			// GameInstanceSubsystem은 World보다 오래 산다. World Actor 참조는
 			// PlayerController가 끝나는 경계에서 명시적으로 끊는다.
-			LoadingScreenSubsystem->UnbindFromRoundGameState();
+			ClearLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 			LoadingScreenSubsystem->HideLoadingScreen();
 		}
 	}
@@ -106,13 +100,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		ABaseRoundGameState* RoundGameState = nullptr;
-		if (UWorld* World = GetWorld())
-		{
-			RoundGameState = World->GetGameState<ABaseRoundGameState>();
-		}
-
-		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->SetLoadingProgress(0.5f);
 	}
 
@@ -183,6 +171,21 @@ void AShooterPlayerController::SetupInputComponent()
 			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+	}
+}
+
+void AShooterPlayerController::RefreshLoadingScreenGameStateBinding(
+	ULoadingScreenSubsystem*)
+{
+}
+
+void AShooterPlayerController::ClearLoadingScreenGameStateBinding(
+	ULoadingScreenSubsystem* LoadingScreenSubsystem)
+{
+	// 해제는 바인딩된 GameState 타입을 몰라도 되므로 공용 계층에서 처리한다.
+	if (IsValid(LoadingScreenSubsystem))
+	{
+		LoadingScreenSubsystem->UnbindFromRoundGameState();
 	}
 }
 
@@ -308,19 +311,13 @@ void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		ABaseRoundGameState* RoundGameState = nullptr;
-		if (UWorld* World = GetWorld())
-		{
-			RoundGameState = World->GetGameState<ABaseRoundGameState>();
-		}
-
-		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, InitialProgress);
 	}
 
 	if (UWorld* World = GetWorld())
 	{
-		if (World->GetGameState<ABaseRoundGameState>())
+		if (World->GetGameState<ABaseTeamGameState>())
 		{
 			StartMatchLoadReadyCheck();
 		}
@@ -336,13 +333,7 @@ void AShooterPlayerController::SetLoadingProgress(const float Progress)
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
-		ABaseRoundGameState* RoundGameState = nullptr;
-		if (UWorld* World = GetWorld())
-		{
-			RoundGameState = World->GetGameState<ABaseRoundGameState>();
-		}
-
-		LoadingScreenSubsystem->BindToRoundGameState(RoundGameState);
+		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->SetLoadingProgress(Progress);
 	}
 }
@@ -542,14 +533,14 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 {
-	ABaseRoundGameMode* RoundGameMode = nullptr;
+	AShooterGameMode* ShooterGameMode = nullptr;
 	if (UWorld* World = GetWorld())
 	{
-		RoundGameMode = World->GetAuthGameMode<ABaseRoundGameMode>();
+		ShooterGameMode = World->GetAuthGameMode<AShooterGameMode>();
 	}
 
 	// 로비에서 늦게 도착한 RPC가 다음 매치용 로드 상태를 미리 소비하면 안 된다.
-	if (!IsValid(RoundGameMode))
+	if (!IsValid(ShooterGameMode))
 	{
 		return;
 	}
@@ -559,7 +550,7 @@ void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 		ShooterPlayerState->SetLoadedIntoMatch(true);
 	}
 
-	RoundGameMode->NotifyPlayerReadyForGameFlow(this);
+	ShooterGameMode->NotifyPlayerReadyForGameFlow(this);
 }
 
 void AShooterPlayerController::StartMatchLoadReadyCheck()
@@ -600,8 +591,8 @@ void AShooterPlayerController::CheckMatchLoadReady()
 		return;
 	}
 
-	ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();
-	if (!IsValid(RoundGameState))
+	ABaseTeamGameState* TeamGameState = World->GetGameState<ABaseTeamGameState>();
+	if (!IsValid(TeamGameState))
 	{
 		// GameState가 아직 복제되지 않았다면 조금 더 기다린다. 다른 모드의
 		// GameState가 이미 존재하면 로비/프론트엔드이므로 이 체크를 종료한다.

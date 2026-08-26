@@ -14,9 +14,8 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
-#include "GameMode/BaseRoundGameMode.h"
+#include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
-#include "Player/BaseRoundPlayerController.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
@@ -353,10 +352,10 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Con
 
 	AController* OwningController = GetController();
 	UWorld* World = GetWorld();
-	ABaseRoundGameMode* RoundGameMode = IsValid(World) ? World->GetAuthGameMode<ABaseRoundGameMode>() : nullptr;
-	if (IsValid(OwningController) && IsValid(RoundGameMode))
+	AShooterGameMode* ShooterGameMode = IsValid(World) ? World->GetAuthGameMode<AShooterGameMode>() : nullptr;
+	if (IsValid(OwningController) && IsValid(ShooterGameMode))
 	{
-		RoundGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
+		ShooterGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
 	}
 }
 

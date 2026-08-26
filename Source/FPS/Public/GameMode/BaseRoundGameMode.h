@@ -35,7 +35,9 @@ public:
 	void NotifyPlayerEliminated(AController* EliminatedController);
 
 	// DeathContext가 있는 C++ 사망 경로에서 킬러 정보까지 전달한다.
-	void NotifyPlayerEliminatedBy(AController* EliminatedController, AShooterPlayerState* KillerPlayerState);
+	virtual void NotifyPlayerEliminatedBy(
+		AController* EliminatedController,
+		AShooterPlayerState* KillerPlayerState) override;
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Game Flow|Match")
 	void RestartGameFlow();
@@ -44,7 +46,7 @@ public:
 	void RetryRoundOpening();
 
 	// 각 로컬 플레이어의 인게임 UI가 준비되면 첫 라운드 시작 조건을 다시 평가한다.
-	void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController);
+	virtual void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController) override;
 
 	// PlayerController RPC의 서버 진입점이다. 팀과 유권자는 서버 상태로 다시 결정한다.
 	ESurrenderVoteStartResult RequestStartSurrenderVote(ABaseRoundPlayerController* Requester);
