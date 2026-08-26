@@ -225,6 +225,28 @@ int32 UBaseBombGameFlowWidget::GetTeamBScore() const
 	return IsValid(BombGameState) ? BombGameState->GetTeamBScore() : 0;
 }
 
+int32 UBaseBombGameFlowWidget::GetLocalTeamScore() const
+{
+	const EGameTeam LocalTeam = GetLocalPlayerTeam();
+	if (LocalTeam == EGameTeam::None)
+	{
+		return 0;
+	}
+
+	return LocalTeam == EGameTeam::TeamA ? GetTeamAScore() : GetTeamBScore();
+}
+
+int32 UBaseBombGameFlowWidget::GetEnemyTeamScore() const
+{
+	const EGameTeam LocalTeam = GetLocalPlayerTeam();
+	if (LocalTeam == EGameTeam::None)
+	{
+		return 0;
+	}
+
+	return LocalTeam == EGameTeam::TeamA ? GetTeamBScore() : GetTeamAScore();
+}
+
 ADataJack* UBaseBombGameFlowWidget::GetActiveDataJack() const
 {
 	if (BoundDataJack.IsValid())

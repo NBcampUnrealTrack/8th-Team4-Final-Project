@@ -110,6 +110,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Score")
 	int32 GetTeamBScore() const;
+	
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Score")
+	int32 GetLocalTeamScore() const;
+
+	UFUNCTION(BlueprintPure, Category = "Game Flow|Score")
+	int32 GetEnemyTeamScore() const;
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Data Jack")
 	ADataJack* GetActiveDataJack() const;
