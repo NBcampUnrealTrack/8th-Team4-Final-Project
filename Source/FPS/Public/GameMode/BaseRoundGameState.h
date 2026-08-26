@@ -1,14 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/BaseTeamGameState.h"
+#include "GameMode/BaseTeamMatchGameState.h"
 #include "GameMode/RoundTypes.h"
 #include "BaseRoundGameState.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoundStateChangedSignature);
 
 UCLASS()
-class FPS_API ABaseRoundGameState : public ABaseTeamGameState
+class FPS_API ABaseRoundGameState : public ABaseTeamMatchGameState
 {
 	GENERATED_BODY()
 
@@ -26,9 +26,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Round")
 	ERoundEndReason GetRoundEndReason() const;
-
-	UFUNCTION(BlueprintPure, Category = "Game Flow|Match")
-	EGameTeam GetMatchWinner() const;
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Round")
 	ETeamRole GetTeamRole(EGameTeam Team) const;
@@ -66,12 +63,13 @@ public:
 	void ClearRoundTimer();
 	void SetRoundResult(EGameTeam WinningTeam, ERoundEndReason EndReason);
 	void ClearRoundResult();
-	void SetMatchWinner(EGameTeam WinningTeam);
 	void SetTeamRoles(ETeamRole NewTeamARole, ETeamRole NewTeamBRole);
 	void SetLoadingStatus(int32 NewLoadedPlayerCount, int32 NewRequiredPlayerCount);
 	void ClearLoadingStatus();
 
 protected:
+	virtual void HandleMatchStateChanged() override;
+
 	UFUNCTION()
 	void OnRep_RoundState();
 
@@ -89,9 +87,6 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Round")
 	ERoundEndReason RoundEndReason = ERoundEndReason::None;
-
-	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Match")
-	EGameTeam MatchWinner = EGameTeam::None;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RoundState, VisibleInstanceOnly, Category = "Game Flow|Round")
 	ETeamRole TeamARole = ETeamRole::Attackers;
