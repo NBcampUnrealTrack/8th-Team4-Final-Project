@@ -1,0 +1,39 @@
+﻿// ShooterMatchResultRowWidget.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "UI/OutGame/MatchResult/ShooterMatchResultTypes.h"
+#include "ShooterMatchResultRowWidget.generated.h"
+
+class UCommonTextBlock;
+
+/**
+ * 결과 화면의 플레이어 한 줄로 표시만 한다.
+ */
+UCLASS(Abstract)
+class FPS_API UShooterMatchResultRowWidget : public UUserWidget
+{
+	GENERATED_BODY()
+
+public:
+	// bStatsAvailable이 false 면 K/D/A Collum을 Collapsed 로 둔다
+	void SetRowData(const FShooterMatchResultRow& InRow, bool bStatsAvailable);
+
+protected:
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonTextBlock> Text_PlayerName;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_Kills;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_Deaths;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_Assists;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_Stats;
+
+};

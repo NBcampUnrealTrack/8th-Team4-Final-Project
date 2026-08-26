@@ -77,6 +77,7 @@ private:
 	void HandleSurrenderMenuRequested();
 	void HandleSurrenderVoteStateChanged();
 	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
+	
   UFUNCTION()
   void HandleAugmentSelected(int32 OfferIndex);
 
