@@ -41,6 +41,8 @@ void AShooterPlayerController::BeginPlay()
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 	}
 
+	StartMatchLoadReadyCheck();
+
 	if (!InputConfig || !InputConfig->DefaultMappingContext)
 	{
 		return;

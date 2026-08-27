@@ -2,11 +2,36 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamMatchGameState.h"
+#include "GameMode/DominationTypes.h"
 #include "DominationGameState.generated.h"
 
-// Domination 전용 상태는 이후 매치 흐름과 점령 진행 커밋에서 확장한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDominationFlowStateChangedSignature);
+
 UCLASS()
 class FPS_API ADominationGameState : public ABaseTeamMatchGameState
 {
 	GENERATED_BODY()
+
+public:
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Game Flow")
+	EDominationMatchPhase GetDominationPhase() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Game Flow")
+	float GetPhaseTimeRemaining() const;
+
+	void SetDominationPhase(EDominationMatchPhase NewPhase, float PhaseDuration = 0.0f);
+
+	UPROPERTY(BlueprintAssignable, Category = "Domination|Game Flow")
+	FOnDominationFlowStateChangedSignature OnDominationFlowStateChanged;
+
+private:
+	UFUNCTION()
+	void OnRep_MatchFlowState();
+
+	void BroadcastMatchFlowStateChanged();
+
+	UPROPERTY(ReplicatedUsing = OnRep_MatchFlowState, VisibleInstanceOnly, Category = "Domination|Game Flow")
+	FDominationMatchFlowState MatchFlowState;
 };
