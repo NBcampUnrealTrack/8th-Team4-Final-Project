@@ -39,6 +39,10 @@ public:
 		return Levels.IsValidIndex(Level - 1) ? &Levels[Level - 1] : nullptr;
 	}
 
+	// 액티브 증강이 쓰는 입력 슬롯. 애셋에서 지정하며 액티브가 아니면 무효 태그
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	FGameplayTag GetActiveInputSlotTag() const;
+
 	// AssetManager 에 등록하는 타입 이름.
 	static const FPrimaryAssetType AugmentAssetType;
 

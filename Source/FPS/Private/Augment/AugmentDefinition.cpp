@@ -5,7 +5,6 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
-#include "Tags/GameplayTags.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "AugmentDefinition"
@@ -17,6 +16,19 @@ const FPrimaryAssetType UAugmentDefinition::AugmentAssetType("Augment");
 FPrimaryAssetId UAugmentDefinition::GetPrimaryAssetId() const
 {
 	return FPrimaryAssetId(AugmentAssetType, GetFName());
+}
+
+FGameplayTag UAugmentDefinition::GetActiveInputSlotTag() const
+{
+	for (const FAugmentGrantedAbility& Granted : GrantedAbilities)
+	{
+		if (Granted.InputTag.IsValid())
+		{
+			return Granted.InputTag;
+		}
+	}
+
+	return FGameplayTag();
 }
 
 #if WITH_EDITOR
@@ -195,7 +207,7 @@ namespace
 				continue;
 			}
 
-			SlotInputCount += Granted.InputTag == RogueTags::InputTag_Ability_AugmentSlot ? 1 : 0;
+			++SlotInputCount;
 
 			if (UsedInputTags.HasTagExact(Granted.InputTag))
 			{
@@ -208,12 +220,12 @@ namespace
 			UsedInputTags.AddTag(Granted.InputTag);
 		}
 
-		// Active 계열이면 슬롯 표식이 반드시 1개 있어야함
+		// Active 계열이면 입력 슬롯이 지정된 어빌리티가 반드시 1개 있어야함
 		const int32 ExpectedSlotCount = Definition.AugmentCategory == EAugmentCategory::Active ? 1 : 0;
 		if (SlotInputCount != ExpectedSlotCount)
 		{
 			Context.AddError(FText::Format(
-				LOCTEXT("SlotInputCount", "InputTag.Ability.AugmentSlot 을 가진 어빌리티가 {0}개여야 하는데 {1}개입니다"),
+				LOCTEXT("SlotInputCount", "InputTag 가 지정된 어빌리티가 {0}개여야 하는데 {1}개입니다"),
 				ExpectedSlotCount, SlotInputCount));
 			bValid = false;
 		}

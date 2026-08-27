@@ -218,12 +218,14 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	// 액티브 증강이 쓸 빈 칸이 없는 경우, 레벨업은 예외
-	if (!bIsLevelUp
-		&& Definition.AugmentCategory == EAugmentCategory::Active
-		&& !State.bHasFreeInputSlot)
+	// 액티브는 애셋이 지정한 슬롯이 비어 있어야 함, 레벨업은 예외
+	if (!bIsLevelUp && Definition.AugmentCategory == EAugmentCategory::Active)
 	{
-		return false;
+		const FGameplayTag SlotTag = Definition.GetActiveInputSlotTag();
+		if (!SlotTag.IsValid() || State.OccupiedActiveSlots.HasTagExact(SlotTag))
+		{
+			return false;
+		}
 	}
 
 	// 재등장 금지는 매치 전체, 레벨업은 예외, 현재는 동작 X

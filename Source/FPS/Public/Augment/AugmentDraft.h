@@ -35,8 +35,8 @@ struct FAugmentDraftEligibility
 	// 보유 목록. 인벤토리의 Entries
 	TArray<FAugmentInventoryEntry> Owned;
 
-	// 액티브 증강이 들어갈 빈 입력 슬롯이 남았는지
-	bool bHasFreeInputSlot = false;
+	// 보유 액티브가 이미 쓰고 있는 입력 슬롯
+	FGameplayTagContainer OccupiedActiveSlots;
 
 	// ASC 가 보유한 해금 태그
 	FGameplayTagContainer UnlockTags;

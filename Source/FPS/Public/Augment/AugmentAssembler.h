@@ -58,8 +58,7 @@ struct FAugmentResolvedGrant
 namespace RogueAugmentAssembler
 {
 	// 증강 정의 해석, GE/GA 로드
-	FPS_API bool ResolveAugment(const UAugmentDefinition& Definition, int32 Level, FAugmentResolvedGrant& OutResolved,
-		FGameplayTag SlotOverride = FGameplayTag());
+	FPS_API bool ResolveAugment(const UAugmentDefinition& Definition, int32 Level, FAugmentResolvedGrant& OutResolved);
 
 	// 해석된 증강을 ASC에 적용
 	FPS_API FAugmentGrantHandles ApplyResolved(UAbilitySystemComponent& ASC, const FAugmentResolvedGrant& Resolved);
