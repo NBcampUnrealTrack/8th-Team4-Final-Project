@@ -2,7 +2,7 @@
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 
 #include "GameFramework/PlayerState.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/BaseTeamMatchGameState.h"
 #include "GameMode/LobbyGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
@@ -41,7 +41,8 @@ void UShooterMatchResultSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void UShooterMatchResultSubsystem::CaptureSnapshot(const ABaseRoundGameState* RoundGameState)
+void UShooterMatchResultSubsystem::CaptureSnapshot(
+	const ABaseTeamMatchGameState* MatchGameState)
 {
 	// 중복 캡처 방지
 	if (Snapshot.bValid)
@@ -49,13 +50,13 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(const ABaseRoundGameState* Ro
 		return;
 	}
 
-	if (!IsValid(RoundGameState))
+	if (!IsValid(MatchGameState))
 	{
 		return;
 	}
 
 	// 무승부는 없으므로 처리하지않고 비정상으로 처리
-	if (RoundGameState->GetMatchWinner() == EGameTeam::None)
+	if (MatchGameState->GetMatchWinner() == EGameTeam::None)
 	{
 		UE_LOG(LogShooterMatchResult, Error, TEXT("Match가 끝났지만 승자가 없으므로 결과를 띄우지않습니다."));
 		return;
@@ -83,11 +84,11 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(const ABaseRoundGameState* Ro
 	}
 
 	Snapshot.LocalTeam = LocalTeam;
-	Snapshot.MatchWinner = RoundGameState->GetMatchWinner();
-	Snapshot.TeamAScore = RoundGameState->GetTeamAScore();
-	Snapshot.TeamBScore = RoundGameState->GetTeamBScore();
+	Snapshot.MatchWinner = MatchGameState->GetMatchWinner();
+	Snapshot.TeamAScore = MatchGameState->GetTeamAScore();
+	Snapshot.TeamBScore = MatchGameState->GetTeamBScore();
 
-	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	for (APlayerState* PlayerState : MatchGameState->PlayerArray)
 	{
 		const ABaseTeamPlayerState* TeamPlayerState = Cast<ABaseTeamPlayerState>(PlayerState);
 
@@ -204,8 +205,8 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 	}
 
 	// 새 매치 입장 시
-	ABaseRoundGameState* RoundGS = Cast<ABaseRoundGameState>(GameState);
-	if (RoundGS)
+	ABaseTeamMatchGameState* MatchGS = Cast<ABaseTeamMatchGameState>(GameState);
+	if (MatchGS)
 	{
 		Snapshot.Reset();
 		ClearEvaluateTimer();

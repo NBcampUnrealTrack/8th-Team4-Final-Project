@@ -1,15 +1,20 @@
 #include "GameMode/DominationGameMode.h"
 
+#include "Augment/AugmentDraftProfile.h"
 #include "Character/ShooterCharacter.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
+#include "GameMode/AugmentDraftManager.h"
 #include "GameMode/DominationGameState.h"
 #include "GameMode/DominationLoadoutManager.h"
 #include "GameMode/DominationMatchStartManager.h"
 #include "GameMode/DominationObjectiveManager.h"
 #include "GameMode/DominationRespawnManager.h"
+#include "GameMode/SurrenderVoteTypes.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
+#include "Session/SessionSubSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationGameMode, Log, All);
 
@@ -24,6 +29,7 @@ ADominationGameMode::ADominationGameMode()
 	LoadoutManager = CreateDefaultSubobject<UDominationLoadoutManager>(TEXT("LoadoutManager"));
 	ObjectiveManager = CreateDefaultSubobject<UDominationObjectiveManager>(TEXT("ObjectiveManager"));
 	RespawnManager = CreateDefaultSubobject<UDominationRespawnManager>(TEXT("RespawnManager"));
+	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
 
 	CombatClassPawnClasses.Add(EDominationCombatClass::Trooper, nullptr);
 	CombatClassPawnClasses.Add(EDominationCombatClass::Ranger, nullptr);
@@ -53,6 +59,24 @@ void ADominationGameMode::BeginPlay()
 		return;
 	}
 
+	if (bEnableAugmentDraft && !IsValid(AugmentDraftProfile))
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination match start stopped because no augment draft profile is configured."));
+		return;
+	}
+
+	AugmentDraftManager->Initialize(this, bEnableAugmentDraft, AugmentDraftProfile);
+	AugmentDraftManager->OnDependenciesReady.AddUObject(
+		this,
+		&ThisClass::HandleAugmentDraftDependenciesReady);
+	if (!AugmentDraftManager->HasRequiredDependencies())
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination match start stopped because the augment draft subsystem is missing."));
+		return;
+	}
+
 	if (IsValid(MatchStartManager))
 	{
 		MatchStartManager->OnInitialPlayersSpawned.AddUObject(
@@ -64,6 +88,11 @@ void ADominationGameMode::BeginPlay()
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
+
+	AugmentDraftManager->OnDependenciesReady.RemoveAll(this);
+	AugmentDraftManager->Shutdown();
+
 	if (IsValid(ObjectiveManager))
 	{
 		ObjectiveManager->OnCaptureCompleted.RemoveAll(this);
@@ -116,7 +145,29 @@ void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* Player
 	}
 
 	Super::NotifyPlayerReadyForGameFlow(PlayerController);
+	if (!AreAugmentDraftDependenciesReady())
+	{
+		return;
+	}
+
 	MatchStartManager->NotifyPlayerLoaded();
+}
+
+bool ADominationGameMode::IsSurrenderVoteAllowedNow() const
+{
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	return Super::IsSurrenderVoteAllowedNow()
+		&& IsValid(DominationGameState)
+		&& DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+}
+
+void ADominationGameMode::HandleSurrenderApproved(const EGameTeam SurrenderingTeam)
+{
+	const EGameTeam WinningTeam = SurrenderVoteRules::GetOpposingTeam(SurrenderingTeam);
+	if (WinningTeam != EGameTeam::None)
+	{
+		FinishDominationMatch(WinningTeam);
+	}
 }
 
 void ADominationGameMode::RequestCombatClass(
@@ -211,6 +262,72 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 		UE_LOG(LogDominationGameMode, Error,
 			TEXT("Failed to restore the Domination class loadout for %s."),
 			*GetNameSafe(PlayerState));
+		return;
+	}
+
+	ServeNextAugmentReward(PlayerState);
+}
+
+bool ADominationGameMode::AreAugmentDraftDependenciesReady() const
+{
+	return !bEnableAugmentDraft
+		|| AugmentDraftManager->AreDependenciesReady();
+}
+
+void ADominationGameMode::HandleAugmentDraftDependenciesReady()
+{
+	if (HasAuthority() && IsValid(MatchStartManager))
+	{
+		MatchStartManager->NotifyPlayerLoaded();
+	}
+}
+
+void ADominationGameMode::GrantAugmentRewardsForRound(
+	const int32 RewardRoundNumber)
+{
+	if (!bEnableAugmentDraft)
+	{
+		return;
+	}
+
+	switch (RewardRoundNumber)
+	{
+	case 1:
+		AugmentDraftManager->GrantToAll(
+			EAugmentRewardPool::Active,
+			RewardRoundNumber,
+			FGameplayTag::RequestGameplayTag(FName(TEXT("InputTag.Ability.Slot1"))));
+		break;
+	case 2:
+		AugmentDraftManager->GrantToAll(
+			EAugmentRewardPool::Active,
+			RewardRoundNumber,
+			FGameplayTag::RequestGameplayTag(FName(TEXT("InputTag.Ability.Slot2"))));
+		break;
+	case 3:
+		AugmentDraftManager->GrantToAll(
+			EAugmentRewardPool::Active,
+			RewardRoundNumber,
+			FGameplayTag::RequestGameplayTag(FName(TEXT("InputTag.Ability.Slot3"))));
+		break;
+	case 4:
+	case 5:
+		break;
+	default:
+		return;
+	}
+
+	AugmentDraftManager->GrantToAll(
+		EAugmentRewardPool::Passive,
+		RewardRoundNumber);
+}
+
+void ADominationGameMode::ServeNextAugmentReward(
+	AShooterPlayerState* PlayerState)
+{
+	if (bEnableAugmentDraft)
+	{
+		AugmentDraftManager->ServeNextReward(PlayerState);
 	}
 }
 
@@ -221,6 +338,15 @@ void ADominationGameMode::HandleInitialPlayersSpawned()
 		UE_LOG(LogDominationGameMode, Error,
 			TEXT("Domination failed to activate the center capture point."));
 		return;
+	}
+
+	GrantAugmentRewardsForRound(1);
+
+	TArray<ADominationPlayerState*> InitialPlayerStates;
+	GetInitialParticipantPlayerStates(InitialPlayerStates);
+	for (ADominationPlayerState* PlayerState : InitialPlayerStates)
+	{
+		ServeNextAugmentReward(PlayerState);
 	}
 
 	OnDominationMatchStarted.Broadcast();
@@ -241,6 +367,11 @@ void ADominationGameMode::HandleCaptureCompleted(
 	DominationGameState->AddTeamScore(CapturingTeam);
 	const int32 TeamScore = DominationGameState->GetTeamScore(CapturingTeam);
 	const bool bMatchWon = TeamScore >= DominationGameState->GetRoundsToWin();
+	if (!bMatchWon)
+	{
+		GrantAugmentRewardsForRound(
+			DominationGameState->GetCompletedRoundCount() + 1);
+	}
 
 	UE_LOG(
 		LogDominationGameMode,
@@ -275,7 +406,9 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 	}
 
 	DominationGameState->SetMatchWinner(WinningTeam);
-	DominationGameState->SetDominationPhase(EDominationMatchPhase::MatchEnded);
+	DominationGameState->SetDominationPhase(
+		EDominationMatchPhase::MatchEnded,
+		MatchEndDelay);
 
 	if (IsValid(ObjectiveManager))
 	{
@@ -285,6 +418,7 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 	{
 		RespawnManager->CancelPendingRespawns();
 	}
+	AugmentDraftManager->CancelDraft();
 
 	EndMatch();
 	UE_LOG(
@@ -294,6 +428,37 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 		static_cast<uint8>(WinningTeam),
 		DominationGameState->GetTeamAScore(),
 		DominationGameState->GetTeamBScore());
+
+	if (MatchEndDelay <= 0.0f)
+	{
+		ReturnToLobbyAfterMatch();
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(
+			MatchEndTimerHandle,
+			this,
+			&ThisClass::ReturnToLobbyAfterMatch,
+			MatchEndDelay,
+			false);
+	}
+}
+
+void ADominationGameMode::ReturnToLobbyAfterMatch()
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem =
+			GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			if (SessionSubsystem->ReturnRoomToLobby())
+			{
+				return;
+			}
+		}
+	}
+
+	ReturnToMainMenuHost();
 }
 
 void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -302,6 +467,11 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 	if (!InitializeTeamPlayer(NewPlayer))
 	{
 		return;
+	}
+
+	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
+	{
+		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
 	}
 }
 

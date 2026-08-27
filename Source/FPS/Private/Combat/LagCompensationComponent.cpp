@@ -130,10 +130,13 @@ bool ULagCompensationComponent::ApplyFramePackageForTrace(float ServerTime, ECol
 
 		FLagCompensationPrimitiveRestoreState RestoreState;
 		RestoreState.PrimitiveComponent = PrimitiveComponent;
-		RestoreState.CollisionEnabled = PrimitiveComponent->GetCollisionEnabled();
-		OutRestoreState.DisabledPrimitives.Add(RestoreState);
+		RestoreState.CollisionResponses = PrimitiveComponent->GetCollisionResponseToChannels();
+		OutRestoreState.SuppressedPrimitives.Add(RestoreState);
 
-		PrimitiveComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		// 리와인드 히트박스만 현재 사격 채널에 응답하게 한다.
+		// 캡슐의 Pawn 오버랩 등 다른 채널은 유지해야 게임플레이 볼륨이
+		// 리와인드를 실제 퇴장으로 오인하지 않는다.
+		PrimitiveComponent->SetCollisionResponseToChannel(TraceChannel, ECR_Ignore);
 	}
 
 	for (const TObjectPtr<UBoxComponent>& BoxComponent : CachedHitBoxes)
@@ -195,7 +198,7 @@ void ULagCompensationComponent::RestoreAfterTrace(const FLagCompensationRewindRe
 		HitBox->SetCollisionEnabled(HitBoxState.CollisionEnabled);
 	}
 
-	for (const FLagCompensationPrimitiveRestoreState& PrimitiveState : RestoreState.DisabledPrimitives)
+	for (const FLagCompensationPrimitiveRestoreState& PrimitiveState : RestoreState.SuppressedPrimitives)
 	{
 		UPrimitiveComponent* PrimitiveComponent = PrimitiveState.PrimitiveComponent.Get();
 		if (!IsValid(PrimitiveComponent))
@@ -203,7 +206,7 @@ void ULagCompensationComponent::RestoreAfterTrace(const FLagCompensationRewindRe
 			continue;
 		}
 
-		PrimitiveComponent->SetCollisionEnabled(PrimitiveState.CollisionEnabled);
+		PrimitiveComponent->SetCollisionResponseToChannels(PrimitiveState.CollisionResponses);
 	}
 }
 

@@ -1,5 +1,6 @@
 #include "UI/Frontend/DominationUIInitComponent.h"
 
+#include "Augment/AugmentInventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameMode/DominationGameState.h"
@@ -8,7 +9,11 @@
 #include "Tags/UITags.h"
 #include "TimerManager.h"
 #include "UI/InGame/HUD/ShooterPlayerHUD.h"
+#include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
+#include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
+#include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
@@ -58,7 +63,8 @@ void UDominationUIInitComponent::BeginPlay()
 	TryInitializePlayerHUD();
 }
 
-void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UDominationUIInitComponent::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
 {
 	ClearInitializationRetry();
 	UnbindFromGameState();
@@ -67,7 +73,9 @@ void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	{
 		if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
 		{
-			UIManager->RemoveWidgetFromLayer(InitialWidgetLayer, InitialWidgetInstance);
+			UIManager->RemoveWidgetFromLayer(
+				InitialWidgetLayer,
+				InitialWidgetInstance);
 		}
 		InitialWidgetInstance = nullptr;
 	}
@@ -77,7 +85,7 @@ void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void UDominationUIInitComponent::TryInitializePlayerHUD()
 {
-	if (IsValid(InitialWidgetInstance))
+	if (IsValid(InitialWidgetInstance) && IsTeamMatchUIReady())
 	{
 		return;
 	}
@@ -95,18 +103,16 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 	if (DominationGameState->GetDominationPhase()
 		== EDominationMatchPhase::WaitingForPlayers)
 	{
-		// 초기 참가자 확정 후 발생하는 GameState 이벤트에서 다시 시도한다.
 		ClearInitializationRetry();
 		return;
 	}
 
 	ADominationPlayerController* PlayerController =
 		Cast<ADominationPlayerController>(GetOwner());
-	const ADominationPlayerState* PlayerState = IsValid(PlayerController)
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
 		? PlayerController->GetPlayerState<ADominationPlayerState>()
 		: nullptr;
-	if (!IsValid(PlayerState)
-		|| PlayerState->GetTeam() == EGameTeam::None)
+	if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
 	{
 		ScheduleInitializationRetry();
 		return;
@@ -122,26 +128,66 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 		return;
 	}
 
-	InitialWidgetInstance = Cast<UShooterPlayerHUD>(
-		UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass));
 	if (!IsValid(InitialWidgetInstance))
 	{
-		ClearInitializationRetry();
-		UnbindFromGameState();
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Failed to create the Domination player HUD. Layer=%s WidgetClass=%s"),
-			*InitialWidgetLayer.ToString(),
-			*GetNameSafe(InitialWidgetClass));
+		InitialWidgetInstance = Cast<UShooterPlayerHUD>(
+			UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass));
+		if (!IsValid(InitialWidgetInstance))
+		{
+			ClearInitializationRetry();
+			UnbindFromGameState();
+			UE_LOG(LogDominationUIInit, Error,
+				TEXT("Failed to create the Domination player HUD. Layer=%s WidgetClass=%s"),
+				*InitialWidgetLayer.ToString(),
+				*GetNameSafe(InitialWidgetClass));
+			return;
+		}
+	}
+
+	UAugmentInventoryComponent* Inventory = PlayerState->GetAugmentInventory();
+	if (!IsValid(Inventory))
+	{
+		ScheduleInitializationRetry();
 		return;
 	}
 
+	InitializeTeamMatchUI(PlayerController, Inventory);
 	ClearInitializationRetry();
-	UnbindFromGameState();
 }
 
 void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 {
 	TryInitializePlayerHUD();
+	TryCaptureMatchResult();
+
+	if (IsTeamMatchUIReady())
+	{
+		NotifyModeUIStateChanged();
+	}
+}
+
+void UDominationUIInitComponent::HandleMatchStateChanged()
+{
+	TryCaptureMatchResult();
+}
+
+void UDominationUIInitComponent::TryCaptureMatchResult()
+{
+	if (BoundGameState.IsValid()
+		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded
+		&& BoundGameState->GetMatchWinner() != EGameTeam::None)
+	{
+		UGameInstance* GameInstance = GetWorld()
+			? GetWorld()->GetGameInstance()
+			: nullptr;
+		UShooterMatchResultSubsystem* MatchResultSubsystem = IsValid(GameInstance)
+			? GameInstance->GetSubsystem<UShooterMatchResultSubsystem>()
+			: nullptr;
+		if (IsValid(MatchResultSubsystem))
+		{
+			MatchResultSubsystem->CaptureSnapshot(BoundGameState.Get());
+		}
+	}
 }
 
 void UDominationUIInitComponent::ScheduleInitializationRetry()
@@ -182,6 +228,9 @@ void UDominationUIInitComponent::BindToGameState(
 	DominationGameState->OnDominationFlowStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleDominationFlowStateChanged);
+	DominationGameState->OnMatchStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleMatchStateChanged);
 }
 
 void UDominationUIInitComponent::UnbindFromGameState()
@@ -189,15 +238,70 @@ void UDominationUIInitComponent::UnbindFromGameState()
 	if (BoundGameState.IsValid())
 	{
 		BoundGameState->OnDominationFlowStateChanged.RemoveAll(this);
+		BoundGameState->OnMatchStateChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
 }
 
-UShooterUIManagerSubsystem* UDominationUIInitComponent::GetUIManager() const
+bool UDominationUIInitComponent::IsAugmentPresentationAllowed() const
 {
-	const UWorld* World = GetWorld();
-	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
-	return IsValid(GameInstance)
-		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
-		: nullptr;
+	return BoundGameState.IsValid()
+		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+}
+
+bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const
+{
+	return BoundGameState.IsValid()
+		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+}
+
+TSubclassOf<UShooterInGameMenuScreen>
+UDominationUIInitComponent::GetInGameMenuWidgetClass() const
+{
+	return InGameMenuClass;
+}
+
+TSubclassOf<UShooterSurrenderVoteScreen>
+UDominationUIInitComponent::GetSurrenderVoteWidgetClass() const
+{
+	return SurrenderVoteClass;
+}
+
+TSubclassOf<UShooterAugmentSelectScreen>
+UDominationUIInitComponent::GetAugmentSelectWidgetClass() const
+{
+	return AugmentSelectClass;
+}
+
+UShooterInGameMenuScreen* UDominationUIInitComponent::GetInGameMenuInstance() const
+{
+	return InGameMenuInstance;
+}
+
+void UDominationUIInitComponent::SetInGameMenuInstance(
+	UShooterInGameMenuScreen* Instance)
+{
+	InGameMenuInstance = Instance;
+}
+
+UShooterSurrenderVoteScreen* UDominationUIInitComponent::GetSurrenderVoteInstance() const
+{
+	return SurrenderVoteInstance;
+}
+
+void UDominationUIInitComponent::SetSurrenderVoteInstance(
+	UShooterSurrenderVoteScreen* Instance)
+{
+	SurrenderVoteInstance = Instance;
+}
+
+UShooterAugmentSelectScreen* UDominationUIInitComponent::GetAugmentSelectInstance() const
+{
+	return AugmentSelectInstance;
+}
+
+void UDominationUIInitComponent::SetAugmentSelectInstance(
+	UShooterAugmentSelectScreen* Instance)
+{
+	AugmentSelectInstance = Instance;
 }

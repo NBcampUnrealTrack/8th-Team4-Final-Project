@@ -6,8 +6,8 @@
 #include "UObject/Object.h"
 #include "SurrenderVoteManager.generated.h"
 
-class ABaseRoundGameMode;
-class ABaseRoundPlayerController;
+class ABaseTeamGameMode;
+class AShooterPlayerController;
 
 UCLASS()
 class FPS_API USurrenderVoteManager : public UObject
@@ -15,37 +15,37 @@ class FPS_API USurrenderVoteManager : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(ABaseRoundGameMode* InOwnerGameMode, float InVoteDuration, float InVoteCooldown);
+	void Initialize(ABaseTeamGameMode* InOwnerGameMode, float InVoteDuration, float InVoteCooldown);
 	void Shutdown();
 
 	ESurrenderVoteStartResult TryStartVote(
 		EGameTeam Team,
-		const TArray<ABaseRoundPlayerController*>& Voters);
+		const TArray<AShooterPlayerController*>& Voters);
 
 	EGameTeam SubmitVote(
 		EGameTeam Team,
-		ABaseRoundPlayerController* Voter,
+		AShooterPlayerController* Voter,
 		int32 VoteId,
 		bool bApprove);
 
-	void HandleVoterLeaving(ABaseRoundPlayerController* Voter);
-	void CancelAllActiveVotes();
+	void HandleVoterLeaving(AShooterPlayerController* Voter);
 	void ResetForNewMatch();
 
 private:
 	struct FTeamVoteRuntime
 	{
 		FSurrenderVoteState State;
-		TArray<TWeakObjectPtr<ABaseRoundPlayerController>> Voters;
+		TArray<TWeakObjectPtr<AShooterPlayerController>> Voters;
 		FTimerHandle ExpirationTimerHandle;
 	};
 
 	void PublishVoteState(const FTeamVoteRuntime& Vote) const;
+	void CancelAllActiveVotes();
 	void CloseVote(EGameTeam Team, bool bStartCooldown);
 	void HandleVoteExpired(EGameTeam Team, int32 VoteId);
 	float GetServerTime() const;
 
-	TWeakObjectPtr<ABaseRoundGameMode> OwnerGameMode;
+	TWeakObjectPtr<ABaseTeamGameMode> OwnerGameMode;
 	TMap<EGameTeam, FTeamVoteRuntime> ActiveVotes;
 	TMap<EGameTeam, float> NextVoteAllowedTimes;
 

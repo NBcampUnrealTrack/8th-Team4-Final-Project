@@ -29,8 +29,15 @@ void UDominationCaptureProgressWidget::NativeConstruct()
 	DominationGameState->OnObjectiveFlowStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleObjectiveFlowStateChanged);
+	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleTeamScoreChanged);
+	DominationGameState->OnDominationFlowStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleDominationFlowStateChanged);
 	RefreshActiveCapturePoint();
 	RefreshBlueprint();
+	RefreshRoundBlueprint();
 	RefreshLocalCaptureZoneState();
 	GetWorld()->GetTimerManager().SetTimer(
 		LocalCaptureZoneTimerHandle,
@@ -53,6 +60,12 @@ void UDominationCaptureProgressWidget::NativeDestruct()
 		DominationGameState->OnObjectiveFlowStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleObjectiveFlowStateChanged);
+		DominationGameState->OnTeamScoreChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleTeamScoreChanged);
+		DominationGameState->OnDominationFlowStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleDominationFlowStateChanged);
 	}
 	if (UWorld* World = GetWorld())
 	{
@@ -114,6 +127,18 @@ void UDominationCaptureProgressWidget::HandleObjectiveFlowStateChanged()
 	RefreshLocalCaptureZoneState();
 }
 
+void UDominationCaptureProgressWidget::HandleTeamScoreChanged(
+	const EGameTeam,
+	const int32)
+{
+	RefreshRoundBlueprint();
+}
+
+void UDominationCaptureProgressWidget::HandleDominationFlowStateChanged()
+{
+	RefreshRoundBlueprint();
+}
+
 void UDominationCaptureProgressWidget::RefreshBlueprint()
 {
 	const ADominationGameState* DominationGameState = BoundGameState.Get();
@@ -125,6 +150,20 @@ void UDominationCaptureProgressWidget::RefreshBlueprint()
 	BP_OnObjectiveStateChanged(
 		DominationGameState->GetActivePointId(),
 		DominationGameState->GetCaptureState());
+}
+
+void UDominationCaptureProgressWidget::RefreshRoundBlueprint()
+{
+	const ADominationGameState* DominationGameState = BoundGameState.Get();
+	if (!IsValid(DominationGameState))
+	{
+		return;
+	}
+
+	BP_OnRoundStateChanged(
+		DominationGameState->GetCurrentRoundNumber(),
+		DominationGameState->GetTeamAScore(),
+		DominationGameState->GetTeamBScore());
 }
 
 void UDominationCaptureProgressWidget::RefreshActiveCapturePoint()

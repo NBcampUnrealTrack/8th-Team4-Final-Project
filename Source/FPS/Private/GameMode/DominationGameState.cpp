@@ -46,7 +46,9 @@ int32 ADominationGameState::GetCompletedRoundCount() const
 int32 ADominationGameState::GetCurrentRoundNumber() const
 {
 	const int32 CompletedRoundCount = GetCompletedRoundCount();
-	return MatchFlowState.Phase == EDominationMatchPhase::MatchEnded
+	const bool bWinningScoreReached = GetTeamAScore() >= GetRoundsToWin()
+		|| GetTeamBScore() >= GetRoundsToWin();
+	return bWinningScoreReached
 		? CompletedRoundCount
 		: CompletedRoundCount + 1;
 }

@@ -276,9 +276,10 @@ bool UDominationMatchStartManager::SpawnInitialParticipants()
 			return false;
 		}
 
-		if (!GameMode->RestartPlayerAtObjective(
-			PlayerController,
-			EDominationPointId::C))
+		if (!LoadoutManager->InitializeCombatClassInventory(PlayerState)
+			|| !GameMode->RestartPlayerAtObjective(
+				PlayerController,
+				EDominationPointId::C))
 		{
 			return false;
 		}

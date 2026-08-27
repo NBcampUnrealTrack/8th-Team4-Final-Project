@@ -4,32 +4,56 @@
 #include "GameFramework/Pawn.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/WeaponInventoryComponent.h"
 #include "Weapon/WeaponLoadoutService.h"
+
+bool UDominationLoadoutManager::InitializeCombatClassInventory(
+	ADominationPlayerState* PlayerState) const
+{
+	UWeaponInventoryComponent* WeaponInventory = IsValid(PlayerState)
+		? PlayerState->GetWeaponInventory()
+		: nullptr;
+	const FGameplayTag PrimaryWeaponTag = IsValid(PlayerState)
+		? ResolvePrimaryWeaponTag(PlayerState->GetCombatClass())
+		: FGameplayTag();
+	if (!IsValid(WeaponInventory) || !PrimaryWeaponTag.IsValid())
+	{
+		return false;
+	}
+
+	WeaponInventory->ServerInitializeForNewMatch();
+	return WeaponInventory->ServerConfirmPrimaryPurchase(PrimaryWeaponTag);
+}
 
 bool UDominationLoadoutManager::ApplyCombatClassLoadout(
 	const ADominationPlayerState* PlayerState,
 	APawn* Pawn) const
 {
-	if (!IsValid(PlayerState) || !IsValid(Pawn))
+	const UWeaponInventoryComponent* WeaponInventory = IsValid(PlayerState)
+		? PlayerState->GetWeaponInventory()
+		: nullptr;
+	if (!IsValid(WeaponInventory) || !IsValid(Pawn))
 	{
 		return false;
 	}
 
-	FGameplayTag PrimaryWeaponTag;
-	switch (PlayerState->GetCombatClass())
+	return RogueWeaponLoadout::ApplyPrimaryWeapon(
+		Pawn,
+		WeaponInventory->GetEquippedPrimaryTag());
+}
+
+FGameplayTag UDominationLoadoutManager::ResolvePrimaryWeaponTag(
+	const EDominationCombatClass CombatClass)
+{
+	switch (CombatClass)
 	{
 	case EDominationCombatClass::Trooper:
-		PrimaryWeaponTag = RogueTags::Weapon_Type_Rifle;
-		break;
+		return RogueTags::Weapon_Type_Rifle;
 	case EDominationCombatClass::Ranger:
-		PrimaryWeaponTag = RogueTags::Weapon_Type_Sniper;
-		break;
+		return RogueTags::Weapon_Type_Sniper;
 	case EDominationCombatClass::Vanguard:
-		PrimaryWeaponTag = RogueTags::Weapon_Type_Shotgun;
-		break;
+		return RogueTags::Weapon_Type_Shotgun;
 	default:
-		return false;
+		return FGameplayTag();
 	}
-
-	return RogueWeaponLoadout::ApplyPrimaryWeapon(Pawn, PrimaryWeaponTag);
 }

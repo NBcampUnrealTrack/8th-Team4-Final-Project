@@ -170,7 +170,11 @@ bool UAugmentInventoryComponent::SetOffers(
 	return true;
 }
 
-void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& OutState) const
+void UAugmentInventoryComponent::FillDraftEligibility(
+	FAugmentDraftEligibility& OutState,
+	const int32 RerollsPerSlot,
+	const bool bIncludeBonusRerolls,
+	const bool bExcludePreviouslyOfferedDefinitions) const
 {
 	OutState.Owned = Entries;
 
@@ -201,11 +205,17 @@ void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& 
 		AbilitySystemComponent->GetOwnedGameplayTags(OutState.UnlockTags);
 	}
 
-	// 이미 등장한 후보는 다시 나오지 않음
-	OutState.SeenDefinitions = SeenDefinitions;
+	// 제시할 1장 + 프로필의 무료 리롤 + 선택적 보너스 리롤
+	const int32 BonusRerolls = bIncludeBonusRerolls
+		? URogueAugmentStatResolver::GetBonusRerollCount(GetOwner())
+		: 0;
+	OutState.CardsPerSlot = 1 + FMath::Max(0, RerollsPerSlot) + BonusRerolls;
 
-	// 제시할 1장 + 리롤 몫(기본 1회 + 리롤 횟수 증강)
-	OutState.CardsPerSlot = 2 + URogueAugmentStatResolver::GetBonusRerollCount(GetOwner());
+	OutState.SeenDefinitions.Reset();
+	if (bExcludePreviouslyOfferedDefinitions)
+	{
+		OutState.SeenDefinitions = SeenDefinitions;
+	}
 }
 
 void UAugmentInventoryComponent::MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers)
@@ -283,8 +293,6 @@ void UAugmentInventoryComponent::ServerRerollOffer_Implementation(const int32 Of
 		*Offers[OfferIndex].DefinitionId.ToString(), *NewOffer.DefinitionId.ToString(), Reserve.Num());
 
 	Offers[OfferIndex] = NewOffer;
-
-	// 새로운 후보를 등장 이력에 기록
 	MarkOffersSeen({ NewOffer });
 
 	// 서버에는 OnRep 이 오지 않으므로 직접 발신
@@ -502,7 +510,7 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 	CachedConditionalRules.Reset();
 	ClearRoundDraftState();
 
-	// 등장 이력과 대기열은 매치 수명
+	// 대기열은 매치 수명
 	SeenDefinitions.Reset();
 	PendingRewards.Reset();
 	ClearSelectionTimeout();

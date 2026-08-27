@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/DominationTypes.h"
+#include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 
 class APlayerController;
@@ -10,6 +11,8 @@ class AShooterCharacter;
 class AShooterPlayerState;
 class ADominationPlayerController;
 class ADominationPlayerState;
+class UAugmentDraftManager;
+class UAugmentDraftProfile;
 class UDominationLoadoutManager;
 class UDominationMatchStartManager;
 class UDominationObjectiveManager;
@@ -62,13 +65,20 @@ public:
 protected:
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
+	virtual bool IsSurrenderVoteAllowedNow() const override;
+	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
 
 private:
+	bool AreAugmentDraftDependenciesReady() const;
+	void HandleAugmentDraftDependenciesReady();
+	void GrantAugmentRewardsForRound(int32 RewardRoundNumber);
+	void ServeNextAugmentReward(AShooterPlayerState* PlayerState);
 	void HandleInitialPlayersSpawned();
 	void HandleCaptureCompleted(
 		EDominationPointId CapturedPointId,
 		EGameTeam CapturingTeam);
 	void FinishDominationMatch(EGameTeam WinningTeam);
+	void ReturnToLobbyAfterMatch();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Class Pawn", meta = (AllowPrivateAccess = "true"))
 	TMap<EDominationCombatClass, TSubclassOf<AShooterCharacter>> CombatClassPawnClasses;
@@ -88,6 +98,15 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
 	float RespawnDelay = 5.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match End", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", Units = "s"))
+	float MatchEndDelay = 3.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Augment", meta = (AllowPrivateAccess = "true"))
+	bool bEnableAugmentDraft = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Augment", meta = (AllowPrivateAccess = "true", EditCondition = "bEnableAugmentDraft"))
+	TObjectPtr<UAugmentDraftProfile> AugmentDraftProfile;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UDominationMatchStartManager> MatchStartManager;
 
@@ -99,4 +118,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDominationRespawnManager> RespawnManager;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
+
+	FTimerHandle MatchEndTimerHandle;
 };

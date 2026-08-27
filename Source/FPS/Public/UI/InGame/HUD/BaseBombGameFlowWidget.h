@@ -8,6 +8,7 @@
 #include "BaseBombGameFlowWidget.generated.h"
 
 class ABaseTeamPlayerState;
+class ABaseTeamGameState;
 class ABombGameState;
 class ADataJack;
 class UTextBlock;
@@ -201,6 +202,7 @@ private:
 	void UnbindFromDataJack();
 	void UnbindFromLocalPlayerState();
 	FText FormatTime(float TimeSeconds) const;
+	ABaseTeamGameState* GetTeamGameState() const;
 	ABombGameState* GetBombGameState() const;
 	ABaseTeamPlayerState* GetLocalTeamPlayerState() const;
 	bool IsLocalPlayerAttacker() const;
@@ -230,7 +232,8 @@ protected:
 	FText DefeatText;
 
 private:
-	TWeakObjectPtr<ABombGameState> BoundGameState;
+	TWeakObjectPtr<ABaseTeamGameState> BoundTeamGameState;
+	TWeakObjectPtr<ABombGameState> BoundBombGameState;
 	TWeakObjectPtr<ADataJack> BoundDataJack;
 	TWeakObjectPtr<ABaseTeamPlayerState> BoundLocalPlayerState;
 	bool bHasInitializedBindings = false;

@@ -1,23 +1,28 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "UObject/Object.h"
 #include "DominationLoadoutManager.generated.h"
 
 class ADominationPlayerState;
 class APawn;
+enum class EDominationCombatClass : uint8;
 
-/**
- * 선택한 Domination 클래스의 전투 로드아웃을 Pawn에 적용한다.
- * 상점용 WeaponInventory 상태는 변경하지 않으며, 증강 쪽은 CombatClass를 기준으로 연결한다.
- */
+/** 선택한 Domination 클래스의 무기 인벤토리와 Pawn 로드아웃을 일관되게 구성한다. */
 UCLASS()
 class FPS_API UDominationLoadoutManager : public UObject
 {
 	GENERATED_BODY()
 
 public:
+	// 최초 스폰 전에 클래스 무기를 보유·해금 상태로 확정한다.
+	bool InitializeCombatClassInventory(ADominationPlayerState* PlayerState) const;
+
 	bool ApplyCombatClassLoadout(
 		const ADominationPlayerState* PlayerState,
 		APawn* Pawn) const;
+
+private:
+	static FGameplayTag ResolvePrimaryWeaponTag(EDominationCombatClass CombatClass);
 };

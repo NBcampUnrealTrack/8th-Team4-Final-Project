@@ -93,20 +93,14 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 	
 	const bool bWasEmpty = LastDisplayedOffers.IsEmpty();
 	const bool bIsEmpty = Offers.IsEmpty();
+	const bool bOfferCountChanged = LastDisplayedOffers.Num() != Offers.Num();
 	
 	TArray<int32> ChangedSlots;
 	
 	// Reroll 했을때 처리
-	if (!bWasEmpty && !bIsEmpty)
+	if (!bWasEmpty && !bIsEmpty && !bOfferCountChanged)
 	{
-		ensureMsgf(LastDisplayedOffers.Num() == Offers.Num(), 
-			TEXT("[ShooterAugmentSelectScreen]LastDisplayedOffers와 Offers의 슬롯 수가 다릅니다. Old = %d, New = %d"),
-			LastDisplayedOffers.Num(),
-			Offers.Num());
-		
-		const int32 CompareCount = FMath::Min(LastDisplayedOffers.Num(), Offers.Num());
-		
-		for (int32 i = 0; i < CompareCount; ++i)
+		for (int32 i = 0; i < Offers.Num(); ++i)
 		{
 			if (LastDisplayedOffers[i].DefinitionId != Offers[i].DefinitionId)
 			{
@@ -115,8 +109,21 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		}
 	}
 	
-	for (int32 i = 0; i < Offers.Num(); ++i)
+	for (int32 i = 0; i < CachedCards.Num(); ++i)
 	{
+		const bool bHasOffer = Offers.IsValidIndex(i);
+		CachedCards[i]->SetVisibility(bHasOffer ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (CachedRerollButtons.IsValidIndex(i))
+		{
+			CachedRerollButtons[i]->SetVisibility(
+				bHasOffer ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+
+		if (!bHasOffer)
+		{
+			continue;
+		}
+
 		UAugmentDefinition* Def = Registry->FindDefinition(Offers[i].DefinitionId);
 		if (IsValid(Def) == false)
 		{
@@ -139,7 +146,7 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		return;
 	}
 	
-	if (bWasEmpty)
+	if (bWasEmpty || bOfferCountChanged)
 	{
 		if (Anim_Intro)
 		{

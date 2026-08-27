@@ -1,4 +1,4 @@
-﻿// ShooterUIInitComponent.cpp
+// ShooterUIInitComponent.cpp
 #include "UI/Frontend/ShooterUIInitComponent.h"
 
 #include "Augment/AugmentInventoryComponent.h"
@@ -6,10 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/BaseRoundGameState.h"
-#include "GameMode/SurrenderVoteTypes.h"
-#include "Loading/LoadingScreenSubsystem.h"
 #include "Player/BaseRoundPlayerController.h"
-#include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
 #include "TimerManager.h"
@@ -50,23 +47,16 @@ void UShooterUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(PlayerStateWaitTimerHandle);
-		World->GetTimerManager().ClearTimer(ModalRefreshTimerHandle);
 	}
 
-	bInGameMenuRequested = false;
-	bModalRefreshPending = false;
-	HideInGameMenu();
-	HideSurrenderVote();
 	HideShop();
-	HideAugmentSelect();
 	UnbindRuntimeDelegates();
-
 	Super::EndPlay(EndPlayReason);
 }
 
 void UShooterUIInitComponent::TryStartInGameUI()
 {
-	if (bInGameUIReady)
+	if (IsTeamMatchUIReady())
 	{
 		return;
 	}
@@ -112,7 +102,6 @@ void UShooterUIInitComponent::TryStartInGameUI()
 				*InitialWidgetLayer.ToString(),
 				*GetNameSafe(InitialWidgetClass));
 		}
-
 		ScheduleInGameUIRetry();
 		return;
 	}
@@ -121,111 +110,12 @@ void UShooterUIInitComponent::TryStartInGameUI()
 	bLoggedInitialWidgetPushFailure = false;
 	UnbindRuntimeDelegates();
 
-	BoundInventory = Inventory;
 	BoundRoundGameState = RoundGameState;
-	BoundRoundPlayerController = PlayerController;
-	Inventory->OnOffersChanged.AddUniqueDynamic(this, &ThisClass::HandleAugmentOffersChanged);
-	RoundGameState->OnRoundStateChanged.AddUniqueDynamic(this, &ThisClass::HandleRoundStateChanged);
-	PlayerController->OnSurrenderVoteStateChanged.AddUObject(
+	RoundGameState->OnRoundStateChanged.AddUniqueDynamic(
 		this,
-		&ThisClass::HandleSurrenderVoteStateChanged);
-	PlayerController->OnSurrenderVoteStartResult.AddUObject(
-		this,
-		&ThisClass::HandleSurrenderVoteStartResult);
-
-	bInGameUIReady = true;
-	bLastObservedVoteActive = PlayerController->GetSurrenderVoteState().IsActive();
-	RefreshAugmentSelection();
-	ScheduleModalRefresh();
+		&ThisClass::HandleRoundStateChanged);
+	InitializeTeamMatchUI(PlayerController, Inventory);
 	PlayerController->NotifyClientReadyForGameFlow();
-}
-
-void UShooterUIInitComponent::ToggleInGameMenu()
-{
-	if (!bInGameUIReady)
-	{
-		return;
-	}
-
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = IsValid(World)
-		? World->GetGameInstance()
-		: nullptr;
-	const ULoadingScreenSubsystem* LoadingScreenSubsystem = IsValid(GameInstance)
-		? GameInstance->GetSubsystem<ULoadingScreenSubsystem>()
-		: nullptr;
-	if (IsValid(LoadingScreenSubsystem) && LoadingScreenSubsystem->IsLoadingScreenVisible())
-	{
-		return;
-	}
-
-	if (IsInGameMenuOpen())
-	{
-		bInGameMenuRequested = false;
-	}
-	else
-	{
-		bInGameMenuRequested = true;
-		HideShop();
-	}
-
-	ScheduleModalRefresh();
-}
-
-void UShooterUIInitComponent::ShowInGameMenu()
-{
-	bInGameMenuRequested = true;
-	HideShop();
-
-	if (IsValid(InGameMenuInstance))
-	{
-		InGameMenuInstance->SetSurrenderEnabled(CanRequestSurrender());
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !IsValid(InGameMenuClass))
-	{
-		UE_LOG(LogShooterUIInitComp, Error, TEXT("InGameMenuClass is not configured."));
-		return;
-	}
-
-	InGameMenuInstance = Cast<UShooterInGameMenuScreen>(
-		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, InGameMenuClass));
-	if (!IsValid(InGameMenuInstance))
-	{
-		return;
-	}
-
-	InGameMenuInstance->OnResumeRequested.AddUObject(this, &ThisClass::HandleResumeRequested);
-	InGameMenuInstance->OnReturnToLobbyRequested.AddUObject(
-		this,
-		&ThisClass::HandleReturnToLobbyRequested);
-	InGameMenuInstance->OnQuitGameRequested.AddUObject(this, &ThisClass::HandleQuitGameRequested);
-	InGameMenuInstance->OnSurrenderRequested.AddUObject(this, &ThisClass::HandleSurrenderRequested);
-	InGameMenuInstance->SetStatusText(FText::GetEmpty());
-	InGameMenuInstance->SetSurrenderEnabled(CanRequestSurrender());
-}
-
-void UShooterUIInitComponent::HideInGameMenu()
-{
-	bInGameMenuRequested = false;
-	if (!IsValid(InGameMenuInstance))
-	{
-		return;
-	}
-
-	InGameMenuInstance->OnResumeRequested.RemoveAll(this);
-	InGameMenuInstance->OnReturnToLobbyRequested.RemoveAll(this);
-	InGameMenuInstance->OnQuitGameRequested.RemoveAll(this);
-	InGameMenuInstance->OnSurrenderRequested.RemoveAll(this);
-	RemoveScreenFromLayer(UITags::UI_Layer_Modal, InGameMenuInstance);
-	InGameMenuInstance = nullptr;
-}
-
-bool UShooterUIInitComponent::IsInGameMenuOpen() const
-{
-	return IsValid(InGameMenuInstance);
 }
 
 void UShooterUIInitComponent::ToggleShop()
@@ -235,10 +125,8 @@ void UShooterUIInitComponent::ToggleShop()
 		HideShop();
 		return;
 	}
-
 	ShowShop();
 }
-
 
 void UShooterUIInitComponent::ShowShop()
 {
@@ -257,14 +145,12 @@ void UShooterUIInitComponent::ShowShop()
 	HideAugmentSelect();
 	ShopScreenInstance = Cast<UShooterShopScreen>(
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, ShopScreenClass));
-	if (!IsValid(ShopScreenInstance))
+	if (IsValid(ShopScreenInstance))
 	{
-		return;
+		ShopScreenInstance->OnCloseRequested.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleShopCloseRequested);
 	}
-
-	ShopScreenInstance->OnCloseRequested.AddUniqueDynamic(
-		this,
-		&ThisClass::HandleShopCloseRequested);
 }
 
 void UShooterUIInitComponent::HideShop()
@@ -281,240 +167,27 @@ void UShooterUIInitComponent::HideShop()
 	ShopScreenInstance = nullptr;
 }
 
-
 bool UShooterUIInitComponent::IsShopOpen() const
 {
 	return IsValid(ShopScreenInstance);
 }
 
-void UShooterUIInitComponent::ShowAugmentSelect(
-	const TArray<FAugmentInventoryEntry>& InOffers)
-{
-	if (IsValid(AugmentSelectInstance) && AugmentSelectInstance->IsActivated())
-	{
-		AugmentSelectInstance->SetOffers(
-			InOffers,
-			BuildRerollsRemaining(InOffers.Num()));
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !IsValid(AugmentSelectClass))
-	{
-		UE_LOG(LogShooterUIInitComp, Error, TEXT("AugmentSelectClass is not configured."));
-		return;
-	}
-
-	AugmentSelectInstance = Cast<UShooterAugmentSelectScreen>(
-		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, AugmentSelectClass));
-	if (!IsValid(AugmentSelectInstance))
-	{
-		return;
-	}
-
-	AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(
-		this,
-		&ThisClass::HandleAugmentSelected);
-	AugmentSelectInstance->OnAugmentSelected.AddUniqueDynamic(
-		this,
-		&ThisClass::HandleAugmentSelected);
-
-	AugmentSelectInstance->OnAugmentRerollRequested.RemoveDynamic(
-		this,
-		&ThisClass::HandleAugmentRerollRequested);
-	AugmentSelectInstance->OnAugmentRerollRequested.AddUniqueDynamic(
-		this,
-		&ThisClass::HandleAugmentRerollRequested);
-
-	AugmentSelectInstance->SetOffers(
-		InOffers,
-		BuildRerollsRemaining(InOffers.Num()));
-}
-
-void UShooterUIInitComponent::HideAugmentSelect()
-{
-	if (!IsValid(AugmentSelectInstance))
-	{
-		return;
-	}
-
-	AugmentSelectInstance->OnAugmentSelected.RemoveDynamic(
-		this,
-		&ThisClass::HandleAugmentSelected);
-	AugmentSelectInstance->OnAugmentRerollRequested.RemoveDynamic(
-		this,
-		&ThisClass::HandleAugmentRerollRequested);
-
-	RemoveScreenFromLayer(UITags::UI_Layer_Modal, AugmentSelectInstance);
-	AugmentSelectInstance = nullptr;
-}
-
-void UShooterUIInitComponent::ShowSurrenderVote()
-{
-	ABaseRoundPlayerController* PlayerController = BoundRoundPlayerController.Get();
-	if (!IsValid(PlayerController))
-	{
-		return;
-	}
-
-	if (IsValid(SurrenderVoteInstance))
-	{
-		SurrenderVoteInstance->SetVoteState(PlayerController->GetSurrenderVoteState());
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !IsValid(SurrenderVoteClass))
-	{
-		UE_LOG(LogShooterUIInitComp, Error, TEXT("SurrenderVoteClass is not configured."));
-		return;
-	}
-
-	SurrenderVoteInstance = Cast<UShooterSurrenderVoteScreen>(
-		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, SurrenderVoteClass));
-	if (!IsValid(SurrenderVoteInstance))
-	{
-		return;
-	}
-
-	SurrenderVoteInstance->OnVoteSubmitted.AddUObject(
-		this,
-		&ThisClass::HandleSurrenderVoteSubmitted);
-	SurrenderVoteInstance->OnMenuRequested.AddUObject(
-		this,
-		&ThisClass::HandleSurrenderMenuRequested);
-	SurrenderVoteInstance->SetVoteState(PlayerController->GetSurrenderVoteState());
-}
-
-void UShooterUIInitComponent::HideSurrenderVote()
-{
-	if (!IsValid(SurrenderVoteInstance))
-	{
-		return;
-	}
-
-	SurrenderVoteInstance->OnVoteSubmitted.RemoveAll(this);
-	SurrenderVoteInstance->OnMenuRequested.RemoveAll(this);
-	RemoveScreenFromLayer(UITags::UI_Layer_Modal, SurrenderVoteInstance);
-	SurrenderVoteInstance = nullptr;
-}
-
-void UShooterUIInitComponent::HandleResumeRequested()
-{
-	bInGameMenuRequested = false;
-	ScheduleModalRefresh();
-}
-
-void UShooterUIInitComponent::HandleReturnToLobbyRequested()
-{
-	if (ABaseRoundPlayerController* PlayerController = GetRoundPlayerController())
-	{
-		PlayerController->RequestReturnToLobby();
-	}
-}
-
-void UShooterUIInitComponent::HandleQuitGameRequested()
-{
-	if (ABaseRoundPlayerController* PlayerController = GetRoundPlayerController())
-	{
-		PlayerController->RequestQuitGame();
-	}
-}
-
-void UShooterUIInitComponent::HandleSurrenderRequested()
-{
-	if (ABaseRoundPlayerController* PlayerController = GetRoundPlayerController())
-	{
-		PlayerController->RequestStartSurrenderVote();
-	}
-}
-
-void UShooterUIInitComponent::HandleSurrenderVoteSubmitted(const bool bApprove)
-{
-	if (ABaseRoundPlayerController* PlayerController = GetRoundPlayerController())
-	{
-		PlayerController->SubmitSurrenderVote(bApprove);
-	}
-}
-
-void UShooterUIInitComponent::HandleSurrenderMenuRequested()
-{
-	bInGameMenuRequested = true;
-	ScheduleModalRefresh();
-}
-
-void UShooterUIInitComponent::HandleSurrenderVoteStateChanged()
-{
-	ScheduleModalRefresh();
-}
-
-void UShooterUIInitComponent::HandleSurrenderVoteStartResult(
-	const ESurrenderVoteStartResult Result)
-{
-	if (!IsValid(InGameMenuInstance))
-	{
-		return;
-	}
-
-	switch (Result)
-	{
-	case ESurrenderVoteStartResult::AlreadyActive:
-		InGameMenuInstance->SetStatusText(
-			NSLOCTEXT("ShooterSurrender", "AlreadyActive", "이미 팀 투표가 진행 중입니다."));
-		break;
-	case ESurrenderVoteStartResult::Cooldown:
-		InGameMenuInstance->SetStatusText(
-			NSLOCTEXT("ShooterSurrender", "Cooldown", "잠시 후 다시 투표할 수 있습니다."));
-		break;
-	case ESurrenderVoteStartResult::NotAllowed:
-		InGameMenuInstance->SetStatusText(
-			NSLOCTEXT("ShooterSurrender", "NotAllowed", "현재는 항복 투표를 시작할 수 없습니다."));
-		break;
-	default:
-		InGameMenuInstance->SetStatusText(FText::GetEmpty());
-		break;
-	}
-}
-
-void UShooterUIInitComponent::HandleAugmentSelected(const int32 OfferIndex)
-{
-	if (BoundInventory.IsValid())
-	{
-		BoundInventory->ServerSelectOffer(OfferIndex);
-	}
-
-	HideAugmentSelect();
-}
-
-void UShooterUIInitComponent::HandleAugmentOffersChanged()
-{
-	RefreshAugmentSelection();
-}
-
 void UShooterUIInitComponent::HandleRoundStateChanged()
 {
-	// 매치 종료시 Result 위함
 	if (BoundRoundGameState.IsValid()
-	&& BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::MatchEnded)
+		&& BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::MatchEnded)
 	{
-		UShooterMatchResultSubsystem* MatchResultSubsystem = 
+		UShooterMatchResultSubsystem* MatchResultSubsystem =
 			GetWorld()->GetGameInstance()->GetSubsystem<UShooterMatchResultSubsystem>();
-		
 		MatchResultSubsystem->CaptureSnapshot(BoundRoundGameState.Get());
 	}
-	
+
 	if (BoundRoundGameState.IsValid()
 		&& BoundRoundGameState->GetGameFlowPhase() != EGameFlowPhase::AugmentSelecting)
 	{
 		HideShop();
 	}
-
-	RefreshAugmentSelection();
-	if (IsValid(InGameMenuInstance))
-	{
-		InGameMenuInstance->SetSurrenderEnabled(CanRequestSurrender());
-	}
-	ScheduleModalRefresh();
+	NotifyModeUIStateChanged();
 }
 
 void UShooterUIInitComponent::HandleShopCloseRequested()
@@ -522,115 +195,27 @@ void UShooterUIInitComponent::HandleShopCloseRequested()
 	HideShop();
 }
 
-void UShooterUIInitComponent::ScheduleModalRefresh()
-{
-	if (bModalRefreshPending || !IsValid(GetWorld()))
-	{
-		return;
-	}
-
-	bModalRefreshPending = true;
-	ModalRefreshTimerHandle = GetWorld()->GetTimerManager().SetTimerForNextTick(
-		FTimerDelegate::CreateUObject(this, &ThisClass::RefreshModalPresentation));
-}
-
-void UShooterUIInitComponent::RefreshModalPresentation()
-{
-	bModalRefreshPending = false;
-
-	const ABaseRoundPlayerController* PlayerController = BoundRoundPlayerController.Get();
-	const bool bVoteActive = IsValid(PlayerController)
-		&& PlayerController->GetSurrenderVoteState().IsActive();
-	if (bVoteActive && !bLastObservedVoteActive)
-	{
-		bInGameMenuRequested = false;
-		HideShop();
-	}
-	bLastObservedVoteActive = bVoteActive;
-
-	if (!bInGameMenuRequested)
-	{
-		HideInGameMenu();
-	}
-
-	if (bVoteActive)
-	{
-		ShowSurrenderVote();
-	}
-	else
-	{
-		HideSurrenderVote();
-	}
-
-	if (bInGameMenuRequested)
-	{
-		ShowInGameMenu();
-	}
-}
-
-void UShooterUIInitComponent::HandleAugmentRerollRequested(int32 SlotIndex)
-{
-	if (BoundInventory.IsValid())
-	{
-		BoundInventory->ServerRerollOffer(SlotIndex);
-	}
-}
-
-void UShooterUIInitComponent::RefreshAugmentSelection()
-{
-	if (!BoundInventory.IsValid() || !BoundRoundGameState.IsValid())
-	{
-		HideAugmentSelect();
-		return;
-	}
-
-	const bool bDraftPhaseIsOpen =
-		BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting;
-	const TArray<FAugmentInventoryEntry> Offers = BoundInventory->GetOffers();
-	if (!bDraftPhaseIsOpen || Offers.IsEmpty())
-	{
-		HideAugmentSelect();
-		return;
-	}
-
-	ShowAugmentSelect(Offers);
-}
-
-bool UShooterUIInitComponent::CanRequestSurrender() const
-{
-	const ABaseRoundPlayerController* PlayerController = BoundRoundPlayerController.Get();
-	const ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
-		? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
-		: nullptr;
-
-	return bInGameUIReady
-		&& BoundRoundGameState.IsValid()
-		&& BoundRoundGameState->HasMatchStarted()
-		&& SurrenderVoteRules::IsVotingPhase(BoundRoundGameState->GetGameFlowPhase())
-		&& IsValid(PlayerState)
-		&& PlayerState->GetTeam() != EGameTeam::None
-		&& !PlayerController->GetSurrenderVoteState().IsActive();
-}
-
 bool UShooterUIInitComponent::CanShowShop() const
 {
-	if (!bInGameUIReady
+	UAugmentInventoryComponent* Inventory = GetBoundAugmentInventory();
+	if (!IsTeamMatchUIReady()
 		|| IsInGameMenuOpen()
-		|| IsValid(SurrenderVoteInstance)
-		|| !BoundInventory.IsValid()
+		|| IsSurrenderVoteOpen()
+		|| !IsValid(Inventory)
 		|| !BoundRoundGameState.IsValid())
 	{
 		return false;
 	}
 
 	return BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting
-		&& BoundInventory->GetOffers().IsEmpty();
+		&& Inventory->GetOffers().IsEmpty();
 }
 
 void UShooterUIInitComponent::ScheduleInGameUIRetry()
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(World) || World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
+	if (!IsValid(World)
+		|| World->GetTimerManager().IsTimerActive(PlayerStateWaitTimerHandle))
 	{
 		return;
 	}
@@ -645,37 +230,13 @@ void UShooterUIInitComponent::ScheduleInGameUIRetry()
 
 void UShooterUIInitComponent::UnbindRuntimeDelegates()
 {
-	if (BoundInventory.IsValid())
-	{
-		BoundInventory->OnOffersChanged.RemoveDynamic(this, &ThisClass::HandleAugmentOffersChanged);
-	}
 	if (BoundRoundGameState.IsValid())
 	{
-		BoundRoundGameState->OnRoundStateChanged.RemoveDynamic(this, &ThisClass::HandleRoundStateChanged);
+		BoundRoundGameState->OnRoundStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleRoundStateChanged);
 	}
-	if (BoundRoundPlayerController.IsValid())
-	{
-		BoundRoundPlayerController->OnSurrenderVoteStateChanged.RemoveAll(this);
-		BoundRoundPlayerController->OnSurrenderVoteStartResult.RemoveAll(this);
-	}
-
-	BoundInventory.Reset();
 	BoundRoundGameState.Reset();
-	BoundRoundPlayerController.Reset();
-}
-
-void UShooterUIInitComponent::RemoveScreenFromLayer(
-	const FGameplayTag LayerTag,
-	UCommonActivatableWidget* Screen)
-{
-	if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
-	{
-		UIManager->RemoveWidgetFromLayer(LayerTag, Screen);
-	}
-	else
-	{
-		Screen->DeactivateWidget();
-	}
 }
 
 ABaseRoundPlayerController* UShooterUIInitComponent::GetRoundPlayerController() const
@@ -683,26 +244,71 @@ ABaseRoundPlayerController* UShooterUIInitComponent::GetRoundPlayerController() 
 	return Cast<ABaseRoundPlayerController>(GetOwner());
 }
 
-UShooterUIManagerSubsystem* UShooterUIInitComponent::GetUIManager() const
+bool UShooterUIInitComponent::IsAugmentPresentationAllowed() const
 {
-	const UWorld* World = GetWorld();
-	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
-	return IsValid(GameInstance)
-		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
-		: nullptr;
+	return BoundRoundGameState.IsValid()
+		&& BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting;
 }
 
-TArray<int32> UShooterUIInitComponent::BuildRerollsRemaining(int32 OfferCount) const
+bool UShooterUIInitComponent::IsSurrenderRequestAllowed() const
 {
-	TArray<int32> Result;
-	Result.Reserve(OfferCount);
-	
-	for (int32 i = 0; i < OfferCount; ++i)
-	{
-		const int32 Remaining = BoundInventory.IsValid() ? BoundInventory->GetSlotRerollsRemaining(i) : 0;
-		
-		Result.Add(Remaining);
-	}
-	
-	return Result;
+	return BoundRoundGameState.IsValid()
+		&& BoundRoundGameState->HasMatchStarted()
+		&& BoundRoundGameState->GetGameFlowPhase() != EGameFlowPhase::MatchEnded;
+}
+
+void UShooterUIInitComponent::CloseModeSpecificScreensForModal()
+{
+	HideShop();
+}
+
+TSubclassOf<UShooterInGameMenuScreen>
+UShooterUIInitComponent::GetInGameMenuWidgetClass() const
+{
+	return InGameMenuClass;
+}
+
+TSubclassOf<UShooterSurrenderVoteScreen>
+UShooterUIInitComponent::GetSurrenderVoteWidgetClass() const
+{
+	return SurrenderVoteClass;
+}
+
+TSubclassOf<UShooterAugmentSelectScreen>
+UShooterUIInitComponent::GetAugmentSelectWidgetClass() const
+{
+	return AugmentSelectClass;
+}
+
+UShooterInGameMenuScreen* UShooterUIInitComponent::GetInGameMenuInstance() const
+{
+	return InGameMenuInstance;
+}
+
+void UShooterUIInitComponent::SetInGameMenuInstance(
+	UShooterInGameMenuScreen* Instance)
+{
+	InGameMenuInstance = Instance;
+}
+
+UShooterSurrenderVoteScreen* UShooterUIInitComponent::GetSurrenderVoteInstance() const
+{
+	return SurrenderVoteInstance;
+}
+
+void UShooterUIInitComponent::SetSurrenderVoteInstance(
+	UShooterSurrenderVoteScreen* Instance)
+{
+	SurrenderVoteInstance = Instance;
+}
+
+UShooterAugmentSelectScreen* UShooterUIInitComponent::GetAugmentSelectInstance() const
+{
+	return AugmentSelectInstance;
+}
+
+void UShooterUIInitComponent::SetAugmentSelectInstance(
+	UShooterAugmentSelectScreen* Instance)
+{
+	AugmentSelectInstance = Instance;
 }

@@ -46,6 +46,12 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Objective UI", meta = (DisplayName = "로컬 점령 UI 표시 상태 변경"))
 	void BP_OnLocalCaptureZoneChanged(bool bShouldShow);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Round UI", meta = (DisplayName = "라운드 상태 갱신"))
+	void BP_OnRoundStateChanged(
+		int32 CurrentRoundNumber,
+		int32 TeamAScore,
+		int32 TeamBScore);
+
 private:
 	UFUNCTION()
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
@@ -56,7 +62,14 @@ private:
 	UFUNCTION()
 	void HandleObjectiveFlowStateChanged();
 
+	UFUNCTION()
+	void HandleTeamScoreChanged(EGameTeam Team, int32 NewScore);
+
+	UFUNCTION()
+	void HandleDominationFlowStateChanged();
+
 	void RefreshBlueprint();
+	void RefreshRoundBlueprint();
 	void RefreshActiveCapturePoint();
 	void RefreshLocalCaptureZoneState();
 

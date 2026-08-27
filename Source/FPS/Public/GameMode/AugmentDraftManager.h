@@ -5,7 +5,7 @@
 #include "Augment/AugmentDraft.h"
 #include "AugmentDraftManager.generated.h"
 
-class ABaseRoundGameMode;
+class ABaseTeamGameMode;
 class AShooterPlayerState;
 class UAugmentDraftProfile;
 class UAugmentInventoryComponent;
@@ -21,7 +21,7 @@ class FPS_API UAugmentDraftManager : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(ABaseRoundGameMode* InOwnerGameMode, bool bInDraftEnabled,
+	void Initialize(ABaseTeamGameMode* InOwnerGameMode, bool bInDraftEnabled,
 		const UAugmentDraftProfile* InDraftProfile = nullptr);
 	void Shutdown();
 
@@ -35,14 +35,14 @@ public:
 	// ActiveSlot 은 Pool 이 Active 일 때만 사용
 	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
 
-	// 대기열 첫 항목의 카드를 제시, 제시할 것이 없으면 false
+	// 현재 대기열을 이번 스폰의 처리 배치로 고정하고 첫 카드를 제시
 	bool ServeNextReward(AShooterPlayerState* PlayerState);
 
 	// 남은 후보를 자동 선택으로 정리
 	void ForceResolveOffers(AShooterPlayerState* PlayerState);
 
 	void ResetForNewMatch();
-	void ResetPlayerForNewMatch(AShooterPlayerState* PlayerState) const;
+	void ResetPlayerForNewMatch(AShooterPlayerState* PlayerState);
 	void SynchronizeGameplayInputBlock(AShooterPlayerState* PlayerState) const;
 
 	FOnAugmentDraftDependenciesReady OnDependenciesReady;
@@ -76,16 +76,19 @@ private:
 		EAugmentTier Tier,
 		FGameplayTag RequiredActiveSlot,
 		int32 InOfferCount) const;
+	bool ServeNextRewardInBatch(
+		AShooterPlayerState* PlayerState,
+		UAugmentInventoryComponent* Inventory);
 
 	// 선택 확정 통보를 받아 남은 대기열을 이어서 제시
 	void HandleOfferCommitted(UAugmentInventoryComponent* Inventory);
-	void StopListeningForCommit(AShooterPlayerState* PlayerState) const;
+	void StopListeningForCommit(AShooterPlayerState* PlayerState);
 
 	void ClearPlayerGameplayInputBlock(AShooterPlayerState* PlayerState) const;
 	UAugmentInventoryComponent* GetInventory(AShooterPlayerState* PlayerState) const;
 	void GetCurrentPlayerStates(TArray<AShooterPlayerState*>& OutPlayerStates) const;
 
-	TWeakObjectPtr<ABaseRoundGameMode> OwnerGameMode;
+	TWeakObjectPtr<ABaseTeamGameMode> OwnerGameMode;
 	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 프로젝트 설정에서 온 추첨 규칙
@@ -97,4 +100,11 @@ private:
 	// Initialize 에서 받은 제시 설정
 	int32 OfferCount = 0;
 	float SelectionTimeout = 0.f;
+	int32 RerollsPerSlot = 1;
+	bool bIncludeBonusRerolls = true;
+	bool bRequireCompleteOfferSet = false;
+	bool bExcludePreviouslyOfferedDefinitions = true;
+
+	// 스폰 시점에 쌓여 있던 보상 수. 처리 중 추가된 보상은 다음 스폰까지 남긴다.
+	TMap<TWeakObjectPtr<UAugmentInventoryComponent>, int32> RemainingBatchRewards;
 };
