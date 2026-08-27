@@ -267,3 +267,26 @@ struct FAugmentInventoryEntry
 
     static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition);
 };
+
+// 적립된 증강 보상 후보
+USTRUCT(BlueprintType)
+struct FAugmentPendingReward
+{
+    GENERATED_BODY()
+
+    // 패시브, 액티브 여부
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentRewardPool Pool = EAugmentRewardPool::Passive;
+
+	// 증강 등급, 액티브는 슬롯으로 추첨하므로 무시
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentTier Tier = EAugmentTier::Common;
+
+    // 액티브 증강 슬롯
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
+    FGameplayTag ActiveSlot;
+
+    // 시드와 로그용
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RoundNumber = 0;
+};

@@ -71,6 +71,25 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	void ClearOffers();
 
+
+	// 증강 보상 큐에 증강 정보 등록 서버 전용
+	void PushPendingReward(const FAugmentPendingReward& Reward);
+
+	// 대기열 첫 항목. 비어 있으면 nullptr
+	const FAugmentPendingReward* PeekPendingReward() const;
+
+	// 첫 항목을 버린다. 서버 전용
+	void PopPendingReward();
+
+	// 선택 마감 시각(서버 월드 시간). 0 이면 제한 없음
+	// 클라이언트는 GameState 의 GetServerWorldTimeSeconds 와 비교해 남은 시간을 구한다
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	float GetSelectionDeadline() const { return SelectionDeadline; }
+
+	// 제한 시간 안에 고르지 않으면 자동 선택. 서버 전용
+	void StartSelectionTimeout(float Seconds);
+	void ClearSelectionTimeout();
+
 	// 이번 라운드에 제시된 후보
 	// 비어있는 경우 = 선택 완료
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
@@ -95,6 +114,8 @@ private:
 
 	UFUNCTION()
 	void OnRep_Offers();
+
+	void HandleSelectionTimeout();
 
 	UAugmentRegistrySubsystem* GetRegistry() const;
 	UAugmentDefinition* ResolveDefinition(const FPrimaryAssetId& DefinitionId) const;
@@ -154,6 +175,14 @@ private:
 
 	// Offers가 복제됐더라도 DraftManager가 선택 페이즈를 열기 전에는 RPC를 거부한다.
 	bool bOfferSelectionEnabled = false;
+
+	// 적립된 증강 보상 후보. 서버 전용
+	TArray<FAugmentPendingReward> PendingRewards;
+
+	UPROPERTY(Replicated)
+	float SelectionDeadline = 0.f;
+
+	FTimerHandle SelectionTimerHandle;
 
 public:
 	// 보유 목록이 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신

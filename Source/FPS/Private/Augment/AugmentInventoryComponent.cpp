@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
 
@@ -59,6 +60,9 @@ void UAugmentInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 
 	// UI 표시를 위한 슬롯별 리롤 횟수
 	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, SlotRerollsRemaining, COND_OwnerOnly);
+
+	// 증강 선택 제한 시간
+	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, SelectionDeadline, COND_OwnerOnly);
 }
 
 void UAugmentInventoryComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InASC)
@@ -372,6 +376,7 @@ bool UAugmentInventoryComponent::SelectAndApplyOffer(const int32 OfferIndex, con
 	RebuildConditionalRuleCache();
 	OnInventoryChanged.Broadcast();
 
+	ClearSelectionTimeout();
 	ClearRoundDraftState();
 	OnOffersChanged.Broadcast();
 	return true;
@@ -403,6 +408,81 @@ void UAugmentInventoryComponent::ClearOffers()
 	}
 }
 
+// 대기열에 보상 추가, 서버 전용
+void UAugmentInventoryComponent::PushPendingReward(const FAugmentPendingReward& Reward)
+{
+	if (!HasServerAuthority(TEXT("보상 적립")))
+	{
+		return;
+	}
+
+	PendingRewards.Add(Reward);
+
+	UE_LOG(LogAugmentInventory, Log,
+		TEXT("[AugmentInventory] %s: 보상 적립 (풀 %s, 등급 %s, 슬롯 %s, 라운드 %d). 대기열 %d개"),
+		*GetNameSafe(GetOwner()),
+		*UEnum::GetValueAsString(Reward.Pool),
+		*UEnum::GetValueAsString(Reward.Tier),
+		*Reward.ActiveSlot.ToString(),
+		Reward.RoundNumber,
+		PendingRewards.Num());
+}
+
+const FAugmentPendingReward* UAugmentInventoryComponent::PeekPendingReward() const
+{
+	return PendingRewards.IsEmpty() ? nullptr : &PendingRewards[0];
+}
+
+void UAugmentInventoryComponent::PopPendingReward()
+{
+	if (!HasServerAuthority(TEXT("보상 소진")) || PendingRewards.IsEmpty())
+	{
+		return;
+	}
+
+	PendingRewards.RemoveAt(0);
+}
+
+void UAugmentInventoryComponent::StartSelectionTimeout(const float Seconds)
+{
+	if (!HasServerAuthority(TEXT("선택 제한 시간 설정")))
+	{
+		return;
+	}
+
+	ClearSelectionTimeout();
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || Seconds <= 0.f)
+	{
+		return;
+	}
+
+	SelectionDeadline = World->GetTimeSeconds() + Seconds;
+	World->GetTimerManager().SetTimer(
+		SelectionTimerHandle, this, &ThisClass::HandleSelectionTimeout, Seconds, false);
+}
+
+void UAugmentInventoryComponent::ClearSelectionTimeout()
+{
+	SelectionDeadline = 0.f;
+
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SelectionTimerHandle);
+	}
+}
+
+void UAugmentInventoryComponent::HandleSelectionTimeout()
+{
+	ClearSelectionTimeout();
+
+	UE_LOG(LogAugmentInventory, Log,
+		TEXT("[AugmentInventory] %s: 선택 제한 시간이 지나 자동 선택합니다"), *GetNameSafe(GetOwner()));
+
+	AutoSelectOffer();
+}
+
 void UAugmentInventoryComponent::RemoveAllAugments()
 {
 	if (!HasServerAuthority(TEXT("증강 전체 해제")))
@@ -416,8 +496,10 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 	CachedConditionalRules.Reset();
 	ClearRoundDraftState();
 
-	// 등장 이력 초기화
+	// 등장 이력과 대기열은 매치 수명
 	SeenDefinitions.Reset();
+	PendingRewards.Reset();
+	ClearSelectionTimeout();
 
 	OnInventoryChanged.Broadcast();
 	OnOffersChanged.Broadcast();
@@ -450,6 +532,7 @@ UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbi
 
 void UAugmentInventoryComponent::OnUnregister()
 {
+	ClearSelectionTimeout();
 	UninitializeFromAbilitySystem();
 
 	Super::OnUnregister();
