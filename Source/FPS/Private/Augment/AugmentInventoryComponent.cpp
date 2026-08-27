@@ -18,10 +18,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogAugmentInventory, Log, All);
 namespace
 {
 	// 부여 가능 여부만 확인
-	bool CanApply(const UAugmentDefinition& Definition, int32 Level)
+	bool CanApply(const UAugmentDefinition& Definition)
 	{
 		FAugmentResolvedGrant Unused;
-		return RogueAugmentAssembler::ResolveAugment(Definition, Level, Unused);
+		return RogueAugmentAssembler::ResolveAugment(Definition, Unused);
 	}
 
 	bool IsGrantComplete(const UAugmentDefinition& Definition, const FAugmentGrantHandles& Handles)
@@ -32,12 +32,11 @@ namespace
 
 	void LogIncompleteGrant(
 		const UAugmentDefinition& Definition,
-		const int32 Level,
 		const FAugmentGrantHandles& Handles)
 	{
 		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s %d레벨 부여가 일부 실패했습니다 (GE %d/%d, GA %d/%d)"),
-			*Definition.GetName(), Level,
+			TEXT("[AugmentInventory] %s 부여가 일부 실패했습니다 (GE %d/%d, GA %d/%d)"),
+			*Definition.GetName(),
 			Handles.EffectHandles.Num(), Definition.GrantedEffects.Num(),
 			Handles.AbilityHandles.Num(), Definition.GrantedAbilities.Num());
 	}
@@ -222,11 +221,7 @@ void UAugmentInventoryComponent::MarkOffersSeen(const TArray<FAugmentInventoryEn
 
 	for (const FAugmentInventoryEntry& Entry : InOffers)
 	{
-		// 레벨업 후보는 보유 계열이 다시 나온 것이라 이력에서 제외
-		if (Entry.Level <= 1)
-		{
-			SeenDefinitions.Add(Entry.DefinitionId);
-		}
+		SeenDefinitions.Add(Entry.DefinitionId);
 	}
 }
 
@@ -385,9 +380,8 @@ bool UAugmentInventoryComponent::CanCommitStagedOffer() const
 	UAugmentDefinition* Definition = ResolveDefinition(StagedOffer.DefinitionId);
 	return IsValid(Definition)
 		&& Definition->LineTag == StagedOffer.LineTag
-		&& Definition->HasLevel(StagedOffer.Level)
-		&& StagedOffer.Level == GetLevelInLine(StagedOffer.LineTag) + 1
-		&& CanApply(*Definition, StagedOffer.Level);
+		&& FindEntryIndexInLine(StagedOffer.LineTag) == INDEX_NONE
+		&& CanApply(*Definition);
 }
 
 bool UAugmentInventoryComponent::CommitStagedOffer()
@@ -422,7 +416,7 @@ bool UAugmentInventoryComponent::CommitStagedOffer()
 	StagedOfferState = EAugmentOfferCommitState::RecoveryPending;
 
 	// 선택한 증강 부여
-	const bool bApplied = ApplyLineAugment(*Definition, StagedOffer.Level, StagedPreviousLine.EntryIndex);
+	const bool bApplied = ApplyLineAugment(*Definition, StagedPreviousLine.EntryIndex);
 
 	if (!bApplied)
 	{
@@ -596,14 +590,6 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 	OnOffersChanged.Broadcast();
 }
 
-int32 UAugmentInventoryComponent::GetLevelInLine(FGameplayTag LineTag) const
-{
-	const int32 Index = FindEntryIndexInLine(LineTag);
-
-	// 엔트리가 레벨을 의미함
-	return Index == INDEX_NONE ? 0 : Entries[Index].Level;
-}
-
 UAugmentInventoryComponent* UAugmentInventoryComponent::FindInventory(const UAbilitySystemComponent* ASC)
 {
 	if (!ASC)
@@ -716,10 +702,9 @@ void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 
 bool UAugmentInventoryComponent::ApplyLineAugment(
 	UAugmentDefinition& Definition,
-	const int32 Level,
 	const int32 EntryIndex)
 {
-	if (!IsValid(AbilitySystemComponent) || !Definition.LineTag.IsValid() || !Definition.HasLevel(Level))
+	if (!IsValid(AbilitySystemComponent) || !Definition.LineTag.IsValid())
 	{
 		return false;
 	}
@@ -728,20 +713,20 @@ bool UAugmentInventoryComponent::ApplyLineAugment(
 
 	FAugmentResolvedGrant Resolved;
 	FAugmentGrantHandles NewHandles;
-	if (RogueAugmentAssembler::ResolveAugment(Definition, Level, Resolved))
+	if (RogueAugmentAssembler::ResolveAugment(Definition, Resolved))
 	{
 		NewHandles = RogueAugmentAssembler::ApplyResolved(*AbilitySystemComponent, Resolved);
 	}
 
 	if (!IsGrantComplete(Definition, NewHandles))
 	{
-		LogIncompleteGrant(Definition, Level, NewHandles);
+		LogIncompleteGrant(Definition, NewHandles);
 		RogueAugmentAssembler::RemoveAugment(*AbilitySystemComponent, NewHandles);
 		return false;
 	}
 
 	GrantHandlesByLine.Add(Definition.LineTag, MoveTemp(NewHandles));
-	const FAugmentInventoryEntry NewEntry = FAugmentInventoryEntry::Make(Definition, Level);
+	const FAugmentInventoryEntry NewEntry = FAugmentInventoryEntry::Make(Definition);
 	if (EntryIndex == INDEX_NONE)
 	{
 		Entries.Add(NewEntry);
@@ -771,13 +756,12 @@ bool UAugmentInventoryComponent::RestoreLineSnapshot(const FAugmentLineSnapshot&
 	if (!PreviousEntry.LineTag.MatchesTagExact(Snapshot.LineTag)
 		|| !IsValid(PreviousDefinition)
 		|| PreviousDefinition->LineTag != PreviousEntry.LineTag
-		|| !PreviousDefinition->HasLevel(PreviousEntry.Level)
-		|| !CanApply(*PreviousDefinition, PreviousEntry.Level))
+		|| !CanApply(*PreviousDefinition))
 	{
 		return false;
 	}
 
-	return ApplyLineAugment(*PreviousDefinition, PreviousEntry.Level, Snapshot.EntryIndex);
+	return ApplyLineAugment(*PreviousDefinition, Snapshot.EntryIndex);
 }
 
 void UAugmentInventoryComponent::RebuildConditionalRuleCache()
@@ -792,8 +776,7 @@ void UAugmentInventoryComponent::RebuildConditionalRuleCache()
 			continue;
 		}
 
-		// 규칙은 레벨마다 다름
-		if (const FAugmentLevelData* LevelData = Definition->FindLevel(Entry.Level))
+		if (const FAugmentLevelData* LevelData = Definition->GetLevelData())
 		{
 			CachedConditionalRules.Append(LevelData->ConditionalDamageRules);
 		}

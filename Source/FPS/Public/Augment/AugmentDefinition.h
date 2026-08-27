@@ -11,7 +11,7 @@
 class UGameplayEffect;
 class UTexture2D;
 
-// 증강 계열 하나. 레벨은 Levels 배열의 인덱스로 표현한다
+// 증강 계열 하나. 애셋 하나가 계열 하나
 UCLASS(BlueprintType)
 class FPS_API UAugmentDefinition : public UPrimaryDataAsset
 {
@@ -24,19 +24,10 @@ public:
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
-	// --------------------------------------------------
-	// 레벨 번호는 1부터. 인덱스와 한 칸 어긋나므로 변환은 여기서만
-
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	int32 GetMaxLevel() const { return Levels.Num(); }
-
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	bool HasLevel(int32 Level) const { return Levels.IsValidIndex(Level - 1); }
-
-	// 없는 레벨이면 nullptr
-	const FAugmentLevelData* FindLevel(int32 Level) const
+	// 증강 수치. 비어 있으면 nullptr
+	const FAugmentLevelData* GetLevelData() const
 	{
-		return Levels.IsValidIndex(Level - 1) ? &Levels[Level - 1] : nullptr;
+		return Levels.IsValidIndex(0) ? &Levels[0] : nullptr;
 	}
 
 	// 액티브 증강이 쓰는 입력 슬롯. 애셋에서 지정하며 액티브가 아니면 무효 태그
@@ -82,7 +73,7 @@ public:
 	FGameplayTagContainer RequiredUnlockTags;
 
 	// --------------------------------------------------
-	// 효과 (레벨 공통). 레벨마다 달라지는 것은 Levels 의 수치
+	// 효과. 수치는 Levels 의 0번 칸
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
 	TArray<TSoftClassPtr<UGameplayEffect>> GrantedEffects;
@@ -91,9 +82,9 @@ public:
 	TArray<FAugmentGrantedAbility> GrantedAbilities;
 
 	// --------------------------------------------------
-	// 레벨. 0번 칸이 1레벨. 밸런싱은 이 배열을 위아래로 훑으며 한다
+	// 증강 수치. 0번 칸만 사용한다
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value",
 		meta = (TitleProperty = "Description"))
 	TArray<FAugmentLevelData> Levels;
 };

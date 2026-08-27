@@ -233,27 +233,22 @@ namespace
 		return bValid;
 	}
 
-	bool IsLevelValid(const UAugmentDefinition& Definition, int32 LevelIndex,
+	bool IsLevelValid(const FAugmentLevelData& LevelData,
 		bool bHasSharedEffects, FDataValidationContext& Context)
 	{
-		const FAugmentLevelData& LevelData = Definition.Levels[LevelIndex];
-		const int32 LevelNumber = LevelIndex + 1;
-
 		bool bValid = true;
 
 		// 공통 GE/GA 가 없는 경우
 		if (!bHasSharedEffects && LevelData.ConditionalDamageRules.IsEmpty())
 		{
-			Context.AddError(FText::Format(
-				LOCTEXT("EmptyLevel", "{0}레벨에 조건부 규칙이 없습니다. 공통 GE / GA 도 없어 획득해도 아무 효과가 없습니다"),
-				LevelNumber));
+			Context.AddError(LOCTEXT("EmptyLevel",
+				"조건부 규칙이 없습니다. 공통 GE / GA 도 없어 획득해도 아무 효과가 없습니다"));
 			bValid = false;
 		}
 
 		for (int32 RuleIndex = 0; RuleIndex < LevelData.ConditionalDamageRules.Num(); ++RuleIndex)
 		{
-			const FString Where = FString::Printf(
-				TEXT("%d레벨 ConditionalDamageRules[%d]"), LevelNumber, RuleIndex);
+			const FString Where = FString::Printf(TEXT("ConditionalDamageRules[%d]"), RuleIndex);
 
 			if (!IsRuleValid(LevelData.ConditionalDamageRules[RuleIndex], Where, Context))
 			{
@@ -286,10 +281,11 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
-	// 레벨 배열이 빈 증강은 상점 후보에서 제외
-	if (Levels.IsEmpty())
+	// 레벨업이 없으므로 수치는 정확히 한 칸
+	if (Levels.Num() != 1)
 	{
-		Context.AddError(LOCTEXT("NoLevels", "Levels 가 비어 있습니다. 최소 1레벨은 있어야 상점에 나옵니다"));
+		Context.AddError(FText::Format(
+			LOCTEXT("LevelCount", "Levels 는 1개여야 하는데 {0}개입니다"), Levels.Num()));
 		MarkInvalid();
 	}
 
@@ -298,25 +294,25 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
-	const bool bHasSharedEffects = !GrantedEffects.IsEmpty() || !GrantedAbilities.IsEmpty();
-	const bool bAnyLevelHasRules = Levels.ContainsByPredicate(
-		[](const FAugmentLevelData& Level) { return !Level.ConditionalDamageRules.IsEmpty(); });
+	const FAugmentLevelData* LevelData = GetLevelData();
+	if (LevelData == nullptr)
+	{
+		return Result;
+	}
 
-	if (!bHasSharedEffects && !bAnyLevelHasRules)
+	const bool bHasSharedEffects = !GrantedEffects.IsEmpty() || !GrantedAbilities.IsEmpty();
+	if (!bHasSharedEffects && LevelData->ConditionalDamageRules.IsEmpty())
 	{
 		Context.AddError(LOCTEXT("NoEffects",
-			"GE / GA 가 없고 어느 레벨에도 조건부 규칙이 없습니다. 획득해도 아무 효과가 없습니다"));
+			"GE / GA 가 없고 조건부 규칙도 없습니다. 획득해도 아무 효과가 없습니다"));
 		MarkInvalid();
 
 		return Result;
 	}
 
-	for (int32 LevelIndex = 0; LevelIndex < Levels.Num(); ++LevelIndex)
+	if (!IsLevelValid(*LevelData, bHasSharedEffects, Context))
 	{
-		if (!IsLevelValid(*this, LevelIndex, bHasSharedEffects, Context))
-		{
-			MarkInvalid();
-		}
+		MarkInvalid();
 	}
 
 	return Result;

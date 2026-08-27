@@ -189,21 +189,21 @@ struct FAugmentGrantedAbility
     bool bDistanceScalesWithRangeBonus = false;
 };
 
-// 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1
+// 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지
 USTRUCT(BlueprintType)
 struct FAugmentLevelData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level", meta = (MultiLine = "true"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value", meta = (MultiLine = "true"))
     FText Description;
 
-	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller. Magnitude 는 레벨마다 다르게 설정
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
+	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value",
         meta = (Categories = "Data.Magnitude", ForceInlineRow))
     TMap<FGameplayTag, float> SetByCallerMagnitudes;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value")
     TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
 };
 
@@ -258,8 +258,5 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "Augment.Line"))
     FGameplayTag LineTag;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
-    int32 Level = 1;
-
-    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level);
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition);
 };

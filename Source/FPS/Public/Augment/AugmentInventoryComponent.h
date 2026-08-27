@@ -111,10 +111,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	const TArray<FAugmentInventoryEntry>& GetEntries() const { return Entries; }
 
-	// 이 계열의 보유 레벨. 미보유면 0.
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	int32 GetLevelInLine(FGameplayTag LineTag) const;
-
 	// ExecCalc(서버전용)이 히트마다 읽음 정의를 매번 훑지 않도록 캐싱
 	const TArray<FAugmentConditionalDamageRule>& GetConditionalDamageRules() const { return CachedConditionalRules; }
 
@@ -140,7 +136,7 @@ private:
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
 	FAugmentLineSnapshot CaptureLineSnapshot(const FGameplayTag& LineTag) const;
 	void RemoveLineAugment(const FGameplayTag& LineTag);
-	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 Level, int32 EntryIndex);
+	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 EntryIndex);
 	bool RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot);
 	void RebuildConditionalRuleCache();
 

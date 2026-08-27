@@ -257,7 +257,7 @@ AActor* URogueTriggeredEffectAbility::ResolveTarget(AActor* Avatar,
 	return TargetActor;
 }
 
-// 증강 레벨에 따라 SetByCaller 수치 적용
+// 증강 수치를 SetByCaller 로 적용
 void URogueTriggeredEffectAbility::InjectLevelMagnitudes(const FGameplayEffectSpecHandle& SpecHandle,
                                                           const FGameplayAbilitySpecHandle Handle,
                                                           const FGameplayAbilityActorInfo* ActorInfo) const
@@ -268,7 +268,7 @@ void URogueTriggeredEffectAbility::InjectLevelMagnitudes(const FGameplayEffectSp
 		return;
 	}
 
-	const FAugmentLevelData* LevelData = Definition->FindLevel(GetAbilityLevel(Handle, ActorInfo));
+	const FAugmentLevelData* LevelData = Definition->GetLevelData();
 	if (!LevelData)
 	{
 		return;

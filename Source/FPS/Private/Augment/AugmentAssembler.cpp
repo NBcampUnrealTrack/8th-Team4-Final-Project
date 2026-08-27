@@ -86,8 +86,7 @@ namespace
 			// 어느 증강이 준 어빌리티인지
 			UObject* SourceObject = const_cast<UAugmentDefinition*>(&Definition);
 
-			// 어빌리티 레벨 = 증강 레벨로 스펙 생성
-			FGameplayAbilitySpec Spec(Ability.AbilityClass, Resolved.Level, INDEX_NONE, SourceObject);
+			FGameplayAbilitySpec Spec(Ability.AbilityClass, 1, INDEX_NONE, SourceObject);
 
 			if (Ability.InputTag.IsValid())
 			{
@@ -114,23 +113,20 @@ namespace
 // 증강 정의 해석, GE/GA 로드
 bool RogueAugmentAssembler::ResolveAugment(
 	const UAugmentDefinition& Definition,
-	int32 Level,
 	FAugmentResolvedGrant& OutResolved)
 {
 	OutResolved = FAugmentResolvedGrant();
 
-	// 레벨 데이터 검사
-	const FAugmentLevelData* LevelData = Definition.FindLevel(Level);
+	// 수치 데이터 검사
+	const FAugmentLevelData* LevelData = Definition.GetLevelData();
 	if (!LevelData)
 	{
 		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
-			*Definition.GetName(), Level, Definition.GetMaxLevel());
+			TEXT("[AugmentAssembler] %s 에 Levels 가 비어 있습니다"), *Definition.GetName());
 		return false;
 	}
 
 	OutResolved.Definition = &Definition;
-	OutResolved.Level      = Level;
 
 	bool bResolved = true;
 

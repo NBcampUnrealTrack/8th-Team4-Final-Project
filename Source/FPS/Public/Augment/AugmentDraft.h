@@ -64,9 +64,6 @@ struct FAugmentOfferResult
 
 	// 증강이 부족 해 못채운 슬롯 수
 	int32 UnfilledSlots = 0;
-
-	// 0번 칸 레벨업 증강 여부
-	bool bLevelUpSlotReserved = false;
 };
 
 // 증강 드래프트 관련 함수
@@ -79,11 +76,6 @@ namespace RogueAugmentDraft
 		int32 Seed,
 		bool bIsBehind,
 		EAugmentTier MinimumTier = EAugmentTier::Common);
-
-	// 후보가 될 증강의 레벨을 판정
-	FPS_API int32 GetOfferLevel(
-		const FAugmentDraftEligibility& State,
-		const UAugmentDefinition& Definition);
 
 	// 해당 증강이 이번 라운드 후보로 제시될 수 있는지 판정
 	FPS_API bool IsCandidateEligible(
