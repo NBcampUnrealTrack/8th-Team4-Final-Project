@@ -33,8 +33,14 @@ struct FAugmentDraftRules
 // 후보 판정에 쓰는 플레이어 상태
 struct FAugmentDraftEligibility
 {
+	// 후보를 뽑을 풀
+	EAugmentRewardPool Pool = EAugmentRewardPool::Any;
+
 	// 이번 라운드 등급
 	EAugmentTier Tier = EAugmentTier::Common;
+
+	// 어떤 슬롯의 액티브 증강인지
+	FGameplayTag RequiredActiveSlot;
 
 	// 보유 목록. 인벤토리의 Entries
 	TArray<FAugmentInventoryEntry> Owned;

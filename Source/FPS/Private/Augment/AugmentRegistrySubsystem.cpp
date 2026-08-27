@@ -35,6 +35,7 @@ void UAugmentRegistrySubsystem::Deinitialize()
 	DefinitionsById.Reset();
 	AllDefinitions.Reset();
 	DefinitionsByTier.Reset();
+	ActiveDefinitions.Reset();
 	bReady = false;
 
 	Super::Deinitialize();
@@ -86,6 +87,7 @@ void UAugmentRegistrySubsystem::BuildIndex()
 	DefinitionsById.Reset();
 	AllDefinitions.Reset();
 	DefinitionsByTier.Reset();
+	ActiveDefinitions.Reset();
 
 	UAssetManager& Manager = UAssetManager::Get();
 
@@ -133,5 +135,10 @@ void UAugmentRegistrySubsystem::BuildIndex()
 		DefinitionsById.Add(Id, Definition);
 		AllDefinitions.Add(Definition);
 		DefinitionsByTier.FindOrAdd(Definition->Tier).Add(Definition);
+
+		if (Definition->AugmentCategory == EAugmentCategory::Active)
+		{
+			ActiveDefinitions.Add(Definition);
+		}
 	}
 }

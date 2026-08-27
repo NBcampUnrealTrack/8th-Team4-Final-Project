@@ -145,15 +145,14 @@ bool UAugmentDraftManager::PrepareDraft(
 		FAugmentDraftContext DraftContext;
 		DraftContext.RoundNumber = RoundNumber;
 		DraftContext.RoundSeed = RoundSeed;
-		DraftContext.TeamScore = bIsTeamA ? TeamAScore : TeamBScore;
-		DraftContext.OpponentScore = bIsTeamA ? TeamBScore : TeamAScore;
 
 		const EAugmentTier Tier = bIsTeamA ? TeamATier : TeamBTier;
 
 		// 후보를 못 받은 플레이어를 이 라운드 드래프트에서 제외
 		// 증강 종류가 추가되고, 삭제 로직이 생기면 발생하지 않을 것으로 예상
 		// 라운드가 열리지 않는 것을 막기 위한 임시 처리
-		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext, Tier, OfferCount))
+		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext,
+			EAugmentRewardPool::Any, Tier, FGameplayTag(), OfferCount))
 		{
 			UE_LOG(LogAugmentDraftManager, Warning,
 				TEXT("%s skips the round %d augment draft."), *GetNameSafe(PlayerState), RoundNumber);
@@ -394,7 +393,9 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 	AShooterPlayerState* PlayerState,
 	UAugmentInventoryComponent* Inventory,
 	const FAugmentDraftContext& DraftContext,
+	const EAugmentRewardPool Pool,
 	const EAugmentTier Tier,
+	const FGameplayTag RequiredActiveSlot,
 	const int32 OfferCount) const
 {
 	const UAugmentRegistrySubsystem* Registry = BoundRegistry.Get();
@@ -405,14 +406,20 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 
 	const int32 Seed = MakeDraftSeed(PlayerState, DraftContext);
 
-	// 플레이어의 인벤토리 상태 저장 및 등급 저장
+	// 플레이어의 인벤토리 상태와 이번 보상의 풀
 	FAugmentDraftEligibility State;
 	Inventory->FillDraftEligibility(State);
+	State.Pool = Pool;
 	State.Tier = Tier;
+	State.RequiredActiveSlot = RequiredActiveSlot;
 
-	// 선택한 등급에 대한 후보 버킷 생성
+	// 패시브, 액티브 증강 여부
+	const TArray<UAugmentDefinition*>& Candidates = Pool == EAugmentRewardPool::Active
+		? Registry->GetActiveDefinitions()
+		: Registry->GetDefinitionsByTier(Tier);
+
 	TArray<FAugmentInventoryEntry> Bucket;
-	RogueAugmentDraft::BuildCandidateBucket(DraftRules, State, Registry->GetDefinitionsByTier(Tier), Bucket);
+	RogueAugmentDraft::BuildCandidateBucket(DraftRules, State, Candidates, Bucket);
 
 	// 뽑을 후보가 없는 경우
 	if (Bucket.IsEmpty())

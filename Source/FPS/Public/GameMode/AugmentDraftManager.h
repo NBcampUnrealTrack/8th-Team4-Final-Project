@@ -68,7 +68,9 @@ private:
 		AShooterPlayerState* PlayerState,
 		UAugmentInventoryComponent* Inventory,
 		const FAugmentDraftContext& DraftContext,
+		EAugmentRewardPool Pool,
 		EAugmentTier Tier,
+		FGameplayTag RequiredActiveSlot,
 		int32 OfferCount) const;
 
 	bool SetSelectionGate(bool bEnabled) const;

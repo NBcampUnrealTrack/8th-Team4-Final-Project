@@ -174,8 +174,17 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	// 등급이 다른 경우
-	if (Definition.Tier != State.Tier)
+	const bool bIsActive = Definition.AugmentCategory == EAugmentCategory::Active;
+
+	// 풀에 맞지 않는 경우
+	if ((State.Pool == EAugmentRewardPool::Passive && bIsActive)
+		|| (State.Pool == EAugmentRewardPool::Active && !bIsActive))
+	{
+		return false;
+	}
+
+	// 등급이 다른 경우, 액티브는 슬롯 기준으로 하므로 건너뜀
+	if (State.Pool != EAugmentRewardPool::Active && Definition.Tier != State.Tier)
 	{
 		return false;
 	}
@@ -204,8 +213,6 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	const bool bIsActive = Definition.AugmentCategory == EAugmentCategory::Active;
-
 	// 인벤토리가 가득 찬 경우
 	if (Rules.MaxTotalLines > 0 && State.Owned.Num() >= Rules.MaxTotalLines)
 	{
@@ -228,6 +235,11 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	{
 		const FGameplayTag SlotTag = Definition.GetActiveInputSlotTag();
 		if (!SlotTag.IsValid() || State.OccupiedActiveSlots.HasTagExact(SlotTag))
+		{
+			return false;
+		}
+
+		if (State.RequiredActiveSlot.IsValid() && !SlotTag.MatchesTagExact(State.RequiredActiveSlot))
 		{
 			return false;
 		}

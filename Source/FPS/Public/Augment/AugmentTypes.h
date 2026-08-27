@@ -37,6 +37,20 @@ enum class EAugmentCategory : uint8
     Weapon_Knife    = 9 UMETA(DisplayName = "전술칼")
 };
 
+// 후보를 어느 풀에서 뽑는지
+UENUM(BlueprintType)
+enum class EAugmentRewardPool : uint8
+{
+    // 액티브, 패시브 둘 다 추첨
+    Any     UMETA(DisplayName = "전체"),
+
+    // 패시브만, 등급을 기준으로 추첨
+    Passive UMETA(DisplayName = "패시브"),
+
+    // 액티브만, 입력 슬롯으로 추첨
+    Active  UMETA(DisplayName = "액티브")
+};
+
 // 조건부 대미지 규칙이 걸리는 방향
 UENUM(BlueprintType)
 enum class EAugmentDamageRuleSide : uint8
@@ -235,13 +249,6 @@ struct FAugmentDraftContext
     // 0 이면 서버가 만들어 로그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
     int32 RoundSeed = 0;
-
-	// 팀 점수, 패배팅 보정, 현재 적용 X
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 TeamScore = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 OpponentScore = 0;
 };
 
 // 보유 증강 한 칸
