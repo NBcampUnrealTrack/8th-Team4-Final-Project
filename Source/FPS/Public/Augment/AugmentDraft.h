@@ -5,28 +5,45 @@
 #include "CoreMinimal.h"
 #include "Augment/AugmentTypes.h"
 
+#include "AugmentDraft.generated.h"
+
 class UAugmentDefinition;
 
 // 등급 추첨 규칙
+USTRUCT()
 struct FAugmentDraftRules
 {
+	GENERATED_BODY()
+
 	// 등급별 가중치
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft")
 	TMap<EAugmentTier, FAugmentTierDraftWeight> TierWeights;
 
+	// 패배팀 보정 여부
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft")
+	bool bPerTeamTiers = true;
+
 	// 패배 팀의 희귀 이상 등장 확률에 곱해지는 배수
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (EditCondition = "bPerTeamTiers", ClampMin = "1.0"))
 	float BehindTierMultiplier = 1.5f;
 
 	// 이 라운드는 강제 등급으로 고정. 0 이면 강제 없음
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (ClampMin = "0"))
 	int32 ForcedTierRound = 11;
 
 	// 강제 등급
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (EditCondition = "ForcedTierRound > 0"))
 	EAugmentTier ForcedTier = EAugmentTier::Legendary;
 
 	// 보유 증강 총 상한. 0 이면 카테고리별 상한만 적용
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (ClampMin = "0"))
 	int32 MaxTotalLines = 0;
 
 	// 카테고리별 보유 상한
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (ClampMin = "0"))
 	int32 MaxPassiveLines = 5;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Rogue|Augment|Draft", meta = (ClampMin = "0"))
 	int32 MaxActiveLines = 3;
 };
 

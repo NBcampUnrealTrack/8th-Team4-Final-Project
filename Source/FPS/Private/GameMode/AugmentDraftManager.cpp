@@ -1,6 +1,7 @@
 ﻿#include "GameMode/AugmentDraftManager.h"
 
 #include "Augment/AugmentDraft.h"
+#include "Augment/AugmentDraftProfile.h"
 #include "Augment/AugmentInventoryComponent.h"
 #include "Augment/AugmentRegistrySubsystem.h"
 #include "Augment/AugmentTypes.h"
@@ -20,17 +21,23 @@ DEFINE_LOG_CATEGORY_STATIC(LogAugmentDraftManager, Log, All);
 void UAugmentDraftManager::Initialize(
 	ABaseRoundGameMode* InOwnerGameMode,
 	const bool bInDraftEnabled,
-	const int32 InOfferCount,
-	const float InSelectionTimeout)
+	const UAugmentDraftProfile* InDraftProfile)
 {
 	Shutdown();
 
 	OwnerGameMode = InOwnerGameMode;
 	bDraftEnabled = bInDraftEnabled;
-	OfferCount = InOfferCount;
-	SelectionTimeout = InSelectionTimeout;
+
+	// 프로필이 없으면 프로필 클래스의 기본값을 사용
+	const UAugmentDraftProfile* Profile = IsValid(InDraftProfile)
+		? InDraftProfile
+		: GetDefault<UAugmentDraftProfile>();
+
+	OfferCount = Profile->GetOfferCount();
+	SelectionTimeout = Profile->GetSelectionTimeout();
+
 	RegenerateMatchSeed();
-	BuildDraftRules();
+	BuildDraftRules(InDraftProfile);
 
 	if (!bDraftEnabled)
 	{
@@ -101,7 +108,6 @@ void UAugmentDraftManager::CancelDraft()
 void UAugmentDraftManager::GrantToAll(
 	const EAugmentRewardPool Pool,
 	const int32 RoundNumber,
-	const bool bPerTeamTiers,
 	const FGameplayTag ActiveSlot)
 {
 	if (!bDraftEnabled)
@@ -117,10 +123,10 @@ void UAugmentDraftManager::GrantToAll(
 		return;
 	}
 
-	// 등급 선택, 동점이거나 bPerTeamTiers == false면 동일한 등급
+	// 등급 선택, 동점이거나 규칙이 팀별 등급을 끄면 동일한 등급
 	EAugmentTier TeamATier = EAugmentTier::Common;
 	EAugmentTier TeamBTier = EAugmentTier::Common;
-	ResolveRewardTiers(RoundNumber, MakeRoundSeed(RoundNumber), bPerTeamTiers, TeamATier, TeamBTier);
+	ResolveRewardTiers(RoundNumber, MakeRoundSeed(RoundNumber), TeamATier, TeamBTier);
 
 	// 증강 풀 등록
 	FAugmentPendingReward Reward;
@@ -304,11 +310,18 @@ int32 UAugmentDraftManager::MakeRoundSeed(const int32 RoundNumber) const
 	return Seed == 0u ? 1 : static_cast<int32>(Seed);
 }
 
-void UAugmentDraftManager::BuildDraftRules()
-{
+void UAugmentDraftManager::BuildDraftRules(const UAugmentDraftProfile* Profile)
+{	
+	// 프로필이 있으면 프로필을 우선
+	if (IsValid(Profile))
+	{
+		DraftRules = Profile->GetRules();
+		return;
+	}
+
 	DraftRules = FAugmentDraftRules();
 
-	// 가중치만 프로젝트 세팅에서 가져오고 나머지는 기본값
+	// 프로필이 없으면 프로젝트 설정의 등급 가중치만 적용
 	if (const URogueAugmentSettings* Settings = GetDefault<URogueAugmentSettings>())
 	{
 		DraftRules.TierWeights = Settings->TierDraftWeights;
@@ -337,7 +350,6 @@ int32 UAugmentDraftManager::MakeDraftSeed(
 void UAugmentDraftManager::ResolveRewardTiers(
 	const int32 RoundNumber,
 	const int32 RoundSeed,
-	const bool bPerTeamTiers,
 	EAugmentTier& OutTeamATier,
 	EAugmentTier& OutTeamBTier) const
 {
@@ -345,7 +357,7 @@ void UAugmentDraftManager::ResolveRewardTiers(
 	int32 TeamBScore = 0;
 
 	// 팀별로 굴릴 때만 점수를 가져옴
-	if (bPerTeamTiers)
+	if (DraftRules.bPerTeamTiers)
 	{
 		const ABaseRoundGameMode* GameMode = OwnerGameMode.Get();
 		if (const ABaseRoundGameState* RoundGameState = IsValid(GameMode)
@@ -358,7 +370,7 @@ void UAugmentDraftManager::ResolveRewardTiers(
 	}
 
 	// 팀별로 굴리지 않거나 동점이면 한 번만 굴려 양 팀 공통
-	if (!bPerTeamTiers || TeamAScore == TeamBScore)
+	if (!DraftRules.bPerTeamTiers || TeamAScore == TeamBScore)
 	{
 		OutTeamATier = RogueAugmentDraft::ResolveTier(DraftRules, RoundNumber, RoundSeed, /*bIsBehind*/ false);
 		OutTeamBTier = OutTeamATier;

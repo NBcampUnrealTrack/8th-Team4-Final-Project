@@ -839,8 +839,8 @@ void ABaseRoundGameMode::InitializeGameFlow()
 	UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
 	if (IsValid(DraftManager))
 	{
-		// 증강 드래프트 초기화, 폭탄 모드는 라운드 페이즈가 시간을 관리하므로 SelectionTimeout을 0으로 설정
-		DraftManager->Initialize(this, bEnableAugmentDraft, AugmentOfferCount, /*SelectionTimeout*/ 0.f);
+		// 증강 드래프트 초기화, 제시 설정은 추첨 프로필이 정한다
+		DraftManager->Initialize(this, bEnableAugmentDraft);
 		DraftManager->OnDependenciesReady.AddUObject(this, &ABaseRoundGameMode::HandleDraftDependenciesReady);
 	}
 

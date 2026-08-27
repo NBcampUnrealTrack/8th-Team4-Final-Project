@@ -193,9 +193,8 @@ void ABaseRoundGameMode::OpenNextRound()
 			EGameFlowPhase::AugmentSelecting,
 			AugmentSelectionDuration);
 
-		// 모든 플레이어에게 후보 등록, 기본은 폭탄 모드는 모든 증강 풀 적용 및 팀 보정 적용
-		DraftManager->GrantToAll(
-			EAugmentRewardPool::Any, RoundContext.RoundNumber, /*bPerTeamTiers*/ true);
+		// 모든 플레이어에게 후보 등록, 폭탄 모드는 모든 증강 풀 적용
+		DraftManager->GrantToAll(EAugmentRewardPool::Any, RoundContext.RoundNumber);
 
 		// 등록된 후보를 모든 참가자에게 제공
 		TArray<AShooterPlayerState*> Participants;

@@ -7,6 +7,7 @@
 
 class ABaseRoundGameMode;
 class AShooterPlayerState;
+class UAugmentDraftProfile;
 class UAugmentInventoryComponent;
 class UAugmentRegistrySubsystem;
 struct FAugmentDraftContext;
@@ -21,7 +22,7 @@ class FPS_API UAugmentDraftManager : public UObject
 
 public:
 	void Initialize(ABaseRoundGameMode* InOwnerGameMode, bool bInDraftEnabled,
-		int32 InOfferCount, float InSelectionTimeout);
+		const UAugmentDraftProfile* InDraftProfile = nullptr);
 	void Shutdown();
 
 	bool HasRequiredDependencies() const;
@@ -31,10 +32,8 @@ public:
 	void CancelDraft();
 
 	// 모든 플레이어의 대기열에 등록
-	// bPerTeamTiers 면 팀별로 증강 등급 선택 및 패배팀 보정 적용
 	// ActiveSlot 은 Pool 이 Active 일 때만 사용
-	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, bool bPerTeamTiers,
-		FGameplayTag ActiveSlot = FGameplayTag());
+	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
 
 	// 대기열 첫 항목의 카드를 제시, 제시할 것이 없으면 false
 	bool ServeNextReward(AShooterPlayerState* PlayerState);
@@ -56,16 +55,15 @@ private:
 	int32 MakeRoundSeed(int32 RoundNumber) const;
 
 	// 등급 가중치 기반 추첨 규칙 생성
-	void BuildDraftRules();
+	void BuildDraftRules(const UAugmentDraftProfile* Profile);
 
 	// 각 플레이어의 드래프트 시드 생성
 	static int32 MakeDraftSeed(const AShooterPlayerState* PlayerState, const FAugmentDraftContext& DraftContext);
 
-	// 이번 증강의 등급, bPerTeamTiers 가 false 면 1회만 굴려 양 팀 공통
+	// 이번 증강의 등급, 규칙의 bPerTeamTiers 가 false 면 1회만 굴려 양 팀 공통
 	void ResolveRewardTiers(
 		int32 RoundNumber,
 		int32 RoundSeed,
-		bool bPerTeamTiers,
 		EAugmentTier& OutTeamATier,
 		EAugmentTier& OutTeamBTier) const;
 
