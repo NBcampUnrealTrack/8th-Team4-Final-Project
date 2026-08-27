@@ -22,8 +22,12 @@ struct FAugmentDraftRules
 	// 강제 등급
 	EAugmentTier ForcedTier = EAugmentTier::Legendary;
 
-	// 보유 증강 상한
-	int32 MaxOwnedLines = 5;
+	// 보유 증강 총 상한. 0 이면 카테고리별 상한만 적용
+	int32 MaxTotalLines = 0;
+
+	// 카테고리별 보유 상한
+	int32 MaxPassiveLines = 5;
+	int32 MaxActiveLines = 3;
 };
 
 // 후보 판정에 쓰는 플레이어 상태
@@ -37,6 +41,9 @@ struct FAugmentDraftEligibility
 
 	// 보유 액티브가 이미 쓰고 있는 입력 슬롯
 	FGameplayTagContainer OccupiedActiveSlots;
+
+	// 보유 중인 액티브 계열 수
+	int32 OwnedActiveCount = 0;
 
 	// ASC 가 보유한 해금 태그
 	FGameplayTagContainer UnlockTags;

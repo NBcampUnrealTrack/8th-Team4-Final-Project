@@ -212,14 +212,30 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
+	const bool bIsActive = Definition.AugmentCategory == EAugmentCategory::Active;
+
 	// 인벤토리가 가득 찬 경우, 레벨업은 예외
-	if (!bIsLevelUp && State.Owned.Num() >= Rules.MaxOwnedLines)
+	if (!bIsLevelUp && Rules.MaxTotalLines > 0 && State.Owned.Num() >= Rules.MaxTotalLines)
 	{
 		return false;
 	}
 
+	// 카테고리별 상한, 레벨업은 예외
+	if (!bIsLevelUp)
+	{
+		const int32 OwnedInCategory = bIsActive
+			? State.OwnedActiveCount
+			: State.Owned.Num() - State.OwnedActiveCount;
+		const int32 CategoryLimit = bIsActive ? Rules.MaxActiveLines : Rules.MaxPassiveLines;
+
+		if (OwnedInCategory >= CategoryLimit)
+		{
+			return false;
+		}
+	}
+
 	// 액티브는 애셋이 지정한 슬롯이 비어 있어야 함, 레벨업은 예외
-	if (!bIsLevelUp && Definition.AugmentCategory == EAugmentCategory::Active)
+	if (!bIsLevelUp && bIsActive)
 	{
 		const FGameplayTag SlotTag = Definition.GetActiveInputSlotTag();
 		if (!SlotTag.IsValid() || State.OccupiedActiveSlots.HasTagExact(SlotTag))

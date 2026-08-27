@@ -179,12 +179,20 @@ void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& 
 {
 	OutState.Owned = Entries;
 
-	// 액티브가 이미 쓰고 있는 슬롯
+	// 액티브 보유 수와 이미 쓰고 있는 슬롯
 	OutState.OccupiedActiveSlots.Reset();
+	OutState.OwnedActiveCount = 0;
 	for (const FAugmentInventoryEntry& Entry : Entries)
 	{
 		const UAugmentDefinition* Definition = ResolveDefinition(Entry.DefinitionId);
-		const FGameplayTag SlotTag = Definition ? Definition->GetActiveInputSlotTag() : FGameplayTag();
+		if (!Definition || Definition->AugmentCategory != EAugmentCategory::Active)
+		{
+			continue;
+		}
+
+		++OutState.OwnedActiveCount;
+
+		const FGameplayTag SlotTag = Definition->GetActiveInputSlotTag();
 		if (SlotTag.IsValid())
 		{
 			OutState.OccupiedActiveSlots.AddTag(SlotTag);
