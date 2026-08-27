@@ -17,7 +17,7 @@ void UShooterMatchResultRowWidget::SetRowData(
 		Panel_Stats->SetVisibility(
 			bStatsAvailable
 				? ESlateVisibility::HitTestInvisible
-				: ESlateVisibility::Collapsed
+				: ESlateVisibility::Hidden
 		);
 	}
 

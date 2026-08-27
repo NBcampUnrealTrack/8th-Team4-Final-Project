@@ -127,7 +127,7 @@ void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot&
 		Panel_StatsHeader->SetVisibility(
 			InSnapshot.bStatsAvailable
 				? ESlateVisibility::HitTestInvisible
-				: ESlateVisibility::Collapsed
+				: ESlateVisibility::Hidden
 		);
 	}
 		
