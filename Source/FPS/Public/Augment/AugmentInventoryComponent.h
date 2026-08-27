@@ -17,28 +17,9 @@ struct FAugmentDraftEligibility;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentOffersChanged);
 
-// 서버 전용 드래프트 선택 커밋 상태.
-enum class EAugmentOfferCommitState : uint8
-{
-	Empty,
-	Selected,
-	Applied,
-	RecoveryPending
-};
-
-struct FAugmentLineSnapshot
-{
-	FGameplayTag LineTag;
-	TOptional<FAugmentInventoryEntry> Entry;
-	int32 EntryIndex = INDEX_NONE;
-
-	void Reset()
-	{
-		LineTag = FGameplayTag();
-		Entry.Reset();
-		EntryIndex = INDEX_NONE;
-	}
-};
+// 증강 선택 후, 대기열 보상 처리 완료 시점에 호출. 서버 전용
+// 남은 증강 대기열이 있다면 다음 증강 처리를 위해 신호를 보냄
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAugmentOfferCommitted, UAugmentInventoryComponent*);
 
 UCLASS(ClassGroup = (Rogue), meta = (BlueprintSpawnableComponent))
 class FPS_API UAugmentInventoryComponent : public UActorComponent
@@ -66,13 +47,12 @@ public:
 	// 후보 판정에 필요한 인벤토리 상태를 채워 반환, 서버 전용
 	void FillDraftEligibility(FAugmentDraftEligibility& OutState) const;
 
-	// 제시된 후보를 매치 등장 이력에 남긴다. 레벨업 후보는 재등장이 정상이라 제외, 서버 전용
+	// 제시된 후보를 매치 등장 이력에 남긴다. 서버 전용
 	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
-	// 카드 선택과 입력 슬롯을 받음. 소유 클라이언트가 호출
-	// SlotIndex 는 0-based, 범위 밖(INDEX_NONE 포함)이면 슬롯 자동 배정
+	// 카드 선택. 소유 클라이언트가 호출. 액티브 슬롯은 서버가 배정
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Rogue|Augment")
-	void ServerSelectOffer(int32 OfferIndex, int32 SlotIndex);
+	void ServerSelectOffer(int32 OfferIndex);
 
 	// 슬롯 하나만 다시 뽑음. 소유 클라이언트가 호출
 	// 비용 없음. 추첨은 라운드 준비 때 완료된 상태
@@ -91,17 +71,28 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	bool AutoSelectOffer();
 
-	// 선택은 먼저 스테이징한다. 직접 선택은 준비 페이즈에서 즉시 적용되지만,
-	// DraftManager가 Finalize하기 전까지는 롤백 가능한 미확정 상태로 유지한다.
-	bool HasStagedOfferSelection() const { return StagedOfferState != EAugmentOfferCommitState::Empty; }
-	bool CanCommitStagedOffer() const;
-	bool CommitStagedOffer();
-	void FinalizeStagedOfferCommit();
-	bool RollbackStagedOfferCommit();
-
 	// 라운드 준비가 취소됐을 때 보유 증강은 유지하고 미선택 후보만 폐기. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	void ClearOffers();
+
+
+	// 증강 보상 큐에 증강 정보 등록 서버 전용
+	void PushPendingReward(const FAugmentPendingReward& Reward);
+
+	// 대기열 첫 항목. 비어 있으면 nullptr
+	const FAugmentPendingReward* PeekPendingReward() const;
+
+	// 첫 항목을 버린다. 서버 전용
+	void PopPendingReward();
+
+	// 선택 마감 시각(서버 월드 시간). 0 이면 제한 없음
+	// 클라이언트는 GameState 의 GetServerWorldTimeSeconds 와 비교해 남은 시간을 구한다
+	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
+	float GetSelectionDeadline() const { return SelectionDeadline; }
+
+	// 제한 시간 안에 고르지 않으면 자동 선택. 서버 전용
+	void StartSelectionTimeout(float Seconds);
+	void ClearSelectionTimeout();
 
 	// 이번 라운드에 제시된 후보
 	// 비어있는 경우 = 선택 완료
@@ -111,14 +102,6 @@ public:
 	// 현재 보유한 증강 목록, 서버에서만 변경하며 클라이언트에게 복제
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
 	const TArray<FAugmentInventoryEntry>& GetEntries() const { return Entries; }
-
-	// 이 계열의 보유 레벨. 미보유면 0.
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	int32 GetLevelInLine(FGameplayTag LineTag) const;
-
-	// 이 후보가 슬롯 선택 버튼을 띄워야 하는지
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	bool DoesOfferNeedInputSlot(int32 OfferIndex) const;
 
 	// ExecCalc(서버전용)이 히트마다 읽음 정의를 매번 훑지 않도록 캐싱
 	const TArray<FAugmentConditionalDamageRule>& GetConditionalDamageRules() const { return CachedConditionalRules; }
@@ -136,6 +119,8 @@ private:
 	UFUNCTION()
 	void OnRep_Offers();
 
+	void HandleSelectionTimeout();
+
 	UAugmentRegistrySubsystem* GetRegistry() const;
 	UAugmentDefinition* ResolveDefinition(const FPrimaryAssetId& DefinitionId) const;
 
@@ -143,25 +128,12 @@ private:
 	bool HasServerAuthority(const TCHAR* Context) const;
 
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
-	int32 FindEntryIndexInSlot(const FGameplayTag& SlotTag) const;
-	FAugmentLineSnapshot CaptureLineSnapshot(const FGameplayTag& LineTag) const;
 	void RemoveLineAugment(const FGameplayTag& LineTag);
-	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 Level, int32 EntryIndex, FGameplayTag InputSlotTag);
-	bool RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot);
+	bool ApplyLineAugment(UAugmentDefinition& Definition);
 	void RebuildConditionalRuleCache();
 
-	// 신규 증강이 들어갈 슬롯. 요청이 없으면 빈 칸, 레벨업은 쓰던 칸
-	FGameplayTag ResolveTargetInputSlot(const UAugmentDefinition& Definition, FGameplayTag Requested) const;
-
-	// 부여된 계열의 슬롯 태그 교체
-	bool MoveEntryToInputSlot(int32 EntryIndex, FGameplayTag NewSlot);
-
-	// 아무 계열도 쓰지 않는 첫 슬롯. 전부 찼으면 무효 태그
-	FGameplayTag FindFreeInputSlot() const;
-
-	// 선택한 후보를 이번 드래프트의 확정 대기 상태로 옮긴다. 서버 전용
-	bool StageOfferSelection(int32 OfferIndex, int32 SlotIndex, const TCHAR* Reason);
-	void ClearStagedOffer();
+	// 후보 하나를 골라 즉시 부여한다. 서버 전용
+	bool SelectAndApplyOffer(int32 OfferIndex, const TCHAR* Reason);
 
 	// 이번 라운드 드래프트 상태 초기화
 	void ClearRoundDraftState();
@@ -198,7 +170,7 @@ private:
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
 
 	// 이 매치에서 한 번이라도 후보로 제시된 증강, 서버 전용
-	// 한번 등장한 증강은 재등장하지 않음, 레벨업 증강은 예외
+	// 한번 등장한 증강은 재등장하지 않음
 	TSet<FPrimaryAssetId> SeenDefinitions;
 
 	// 서버 전용. 매니저가 이번 라운드 추첨에 쓴 시드.
@@ -208,14 +180,13 @@ private:
 	// Offers가 복제됐더라도 DraftManager가 선택 페이즈를 열기 전에는 RPC를 거부한다.
 	bool bOfferSelectionEnabled = false;
 
-	// 서버 전용. 선택은 모든 참가자의 확정 가능 여부를 확인할 때까지 실제 보유 목록에 적용하지 않는다.
-	FAugmentInventoryEntry StagedOffer;
-	FAugmentLineSnapshot StagedPreviousLine;
-	EAugmentOfferCommitState StagedOfferState = EAugmentOfferCommitState::Empty;
+	// 적립된 증강 보상 후보. 서버 전용
+	TArray<FAugmentPendingReward> PendingRewards;
 
-	// 이번 커밋에서 비켜난 계열과 그 계열이 쓰던 칸. 밀어내기가 없었으면 무효 태그
-	FGameplayTag StagedDisplacedLine;
-	FGameplayTag StagedDisplacedSlot;
+	UPROPERTY(Replicated)
+	float SelectionDeadline = 0.f;
+
+	FTimerHandle SelectionTimerHandle;
 
 public:
 	// 보유 목록이 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
@@ -225,4 +196,7 @@ public:
 	// 후보가 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
 	UPROPERTY(BlueprintAssignable, Category = "Rogue|Augment")
 	FOnAugmentOffersChanged OnOffersChanged;
+
+	// 부여와 대기열 소진이 끝난 뒤. 매니저가 다음 보상을 이어 제시하는 지점
+	FOnAugmentOfferCommitted OnOfferCommitted;
 };

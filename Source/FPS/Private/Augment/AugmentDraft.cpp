@@ -162,22 +162,6 @@ EAugmentTier RogueAugmentDraft::ResolveTier(
 	return IsLowerTier(Result, MinimumTier) ? MinimumTier : Result;
 }
 
-// 보유 중이면 다음 레벨, 아니면 1레벨
-int32 RogueAugmentDraft::GetOfferLevel(
-	const FAugmentDraftEligibility& State,
-	const UAugmentDefinition& Definition)
-{
-	for (const FAugmentInventoryEntry& Entry : State.Owned)
-	{
-		if (Entry.LineTag.MatchesTagExact(Definition.LineTag))
-		{
-			return Entry.Level + 1;
-		}
-	}
-
-	return 1;
-}
-
 // 해당 증강이 이번 라운드 후보로 제시될 수 있는지 판정
 bool RogueAugmentDraft::IsCandidateEligible(
 	const FAugmentDraftRules& Rules,
@@ -190,21 +174,38 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	// 등급이 다른 경우
-	if (Definition.Tier != State.Tier)
+	const bool bIsActive = Definition.AugmentCategory == EAugmentCategory::Active;
+
+	// 풀에 맞지 않는 경우
+	if ((State.Pool == EAugmentRewardPool::Passive && bIsActive)
+		|| (State.Pool == EAugmentRewardPool::Active && !bIsActive))
 	{
 		return false;
 	}
 
-	// 다음 레벨이 없는 경우
-	const int32 OfferLevel = GetOfferLevel(State, Definition);
-	if (!Definition.HasLevel(OfferLevel))
+	// 등급이 다른 경우, 액티브는 슬롯 기준으로 하므로 건너뜀
+	if (State.Pool != EAugmentRewardPool::Active && Definition.Tier != State.Tier)
 	{
 		return false;
 	}
 
-	// 이미 보유한 계열이면 레벨업 증강의 후보
-	const bool bIsLevelUp = OfferLevel > 1;
+	// 수치가 없는 경우
+	if (Definition.GetLevelData() == nullptr)
+	{
+		return false;
+	}
+
+	// 이미 보유한 계열인 경우
+	const bool bIsOwned = State.Owned.ContainsByPredicate(
+		[&Definition](const FAugmentInventoryEntry& Entry)
+		{
+			return Entry.LineTag.MatchesTagExact(Definition.LineTag);
+		});
+
+	if (bIsOwned)
+	{
+		return false;
+	}
 
 	// 필요한 태그가 없는 경우
 	if (!State.UnlockTags.HasAll(Definition.RequiredUnlockTags))
@@ -212,22 +213,40 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		return false;
 	}
 
-	// 인벤토리가 가득 찬 경우, 레벨업은 예외
-	if (!bIsLevelUp && State.Owned.Num() >= Rules.MaxOwnedLines)
+	// 인벤토리가 가득 찬 경우
+	if (Rules.MaxTotalLines > 0 && State.Owned.Num() >= Rules.MaxTotalLines)
 	{
 		return false;
 	}
 
-	// 액티브 증강이 쓸 빈 칸이 없는 경우, 레벨업은 예외
-	if (!bIsLevelUp
-		&& Definition.AugmentCategory == EAugmentCategory::Active
-		&& !State.bHasFreeInputSlot)
+	// 카테고리별 상한
+	const int32 OwnedInCategory = bIsActive
+		? State.OwnedActiveCount
+		: State.Owned.Num() - State.OwnedActiveCount;
+	const int32 CategoryLimit = bIsActive ? Rules.MaxActiveLines : Rules.MaxPassiveLines;
+
+	if (OwnedInCategory >= CategoryLimit)
 	{
 		return false;
 	}
 
-	// 재등장 금지는 매치 전체, 레벨업은 예외, 현재는 동작 X
-	if (!bIsLevelUp && State.SeenDefinitions.Contains(Definition.GetPrimaryAssetId()))
+	// 액티브는 애셋이 지정한 슬롯이 비어 있어야 함
+	if (bIsActive)
+	{
+		const FGameplayTag SlotTag = Definition.GetActiveInputSlotTag();
+		if (!SlotTag.IsValid() || State.OccupiedActiveSlots.HasTagExact(SlotTag))
+		{
+			return false;
+		}
+
+		if (State.RequiredActiveSlot.IsValid() && !SlotTag.MatchesTagExact(State.RequiredActiveSlot))
+		{
+			return false;
+		}
+	}
+
+	// 재등장 금지는 매치 전체
+	if (State.SeenDefinitions.Contains(Definition.GetPrimaryAssetId()))
 	{
 		return false;
 	}
@@ -251,7 +270,7 @@ void RogueAugmentDraft::BuildCandidateBucket(
 			continue;
 		}
 
-		OutBucket.Add(FAugmentInventoryEntry::Make(*Definition, GetOfferLevel(State, *Definition)));
+		OutBucket.Add(FAugmentInventoryEntry::Make(*Definition));
 	}
 
 	// 재현성을 위해 이름 순 정렬. 랜덤 추첨은 PickOffers
@@ -261,8 +280,7 @@ void RogueAugmentDraft::BuildCandidateBucket(
 	});
 }
 
-// 레벨업 1장을 0번 칸에 고정하고 나머지를 균등 추출
-// 각 체인 채우는 것을 반복
+// 버킷에서 균등 추출해 각 체인을 채우는 것을 반복
 FAugmentOfferResult RogueAugmentDraft::PickOffers(
 	TArray<FAugmentInventoryEntry>& Bucket,
 	const int32 CardCount,
@@ -286,34 +304,7 @@ FAugmentOfferResult RogueAugmentDraft::PickOffers(
 		// 이번 회차에 채운 슬롯 수
 		int32 Filled = 0;
 
-		// 엔트리 레벨이 2 이상이면 보유 계열의 레벨업
-		TArray<int32> LevelUpIndices;
-		for (int32 Index = 0; Index < Bucket.Num(); ++Index)
-		{
-			if (Bucket[Index].Level > 1)
-			{
-				LevelUpIndices.Add(Index);
-			}
-		}
-
-		// 레벨업이 가능한 증강 중 랜덤으로 선택
-		// 0번 칸에 고정하고 나머지는 균등 추첨
-		if (!LevelUpIndices.IsEmpty())
-		{
-			const int32 Picked = LevelUpIndices[Stream.RandRange(0, LevelUpIndices.Num() - 1)];
-
-			Result.SlotCards[Filled++].Add(Bucket[Picked]);
-
-			if (Pass == 0)
-			{
-				Result.bLevelUpSlotReserved = true;
-			}
-
-			// 뽑은 것은 버킷에서 제거
-			Bucket.RemoveAt(Picked);
-		}
-
-		// 나머지 슬롯은 균등 추첨, 뽑은 것은 버킷에서 제거
+		// 균등 추첨, 뽑은 것은 버킷에서 제거
 		while (Filled < CardCount && !Bucket.IsEmpty())
 		{
 			const int32 Picked = Stream.RandRange(0, Bucket.Num() - 1);
