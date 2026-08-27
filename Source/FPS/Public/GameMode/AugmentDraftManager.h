@@ -72,8 +72,7 @@ private:
 		int32 OfferCount) const;
 
 	bool SetSelectionGate(bool bEnabled) const;
-	bool SetGameplayInputBlocked(bool bBlocked);
-	bool SetPlayerGameplayInputBlocked(AShooterPlayerState* PlayerState, bool bBlocked) const;
+	void ClearPlayerGameplayInputBlock(AShooterPlayerState* PlayerState) const;
 	UAugmentInventoryComponent* GetInventory(AShooterPlayerState* PlayerState) const;
 	void GetCurrentPlayerStates(TArray<AShooterPlayerState*>& OutPlayerStates) const;
 
@@ -86,5 +85,4 @@ private:
 
 	int32 MatchSeed = 1;
 	bool bDraftEnabled = false;
-	bool bGameplayInputBlocked = false;
 };

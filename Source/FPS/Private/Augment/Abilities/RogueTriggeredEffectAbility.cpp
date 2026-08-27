@@ -130,7 +130,7 @@ void URogueTriggeredEffectAbility::ActivateAbility(const FGameplayAbilitySpecHan
 
 	const int32 Level = GetAbilityLevel(Handle, ActorInfo);
 
-	// 증강 레벨에 따라 SetByCaller 수치 적용 후 대상에게 GE 적용
+	// SetByCaller 수치 적용 후 대상에게 GE 적용
 	for (UClass* EffectClass : EffectClasses)
 	{
 		const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(

@@ -17,29 +17,6 @@ struct FAugmentDraftEligibility;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentOffersChanged);
 
-// 서버 전용 드래프트 선택 커밋 상태.
-enum class EAugmentOfferCommitState : uint8
-{
-	Empty,
-	Selected,
-	Applied,
-	RecoveryPending
-};
-
-struct FAugmentLineSnapshot
-{
-	FGameplayTag LineTag;
-	TOptional<FAugmentInventoryEntry> Entry;
-	int32 EntryIndex = INDEX_NONE;
-
-	void Reset()
-	{
-		LineTag = FGameplayTag();
-		Entry.Reset();
-		EntryIndex = INDEX_NONE;
-	}
-};
-
 UCLASS(ClassGroup = (Rogue), meta = (BlueprintSpawnableComponent))
 class FPS_API UAugmentInventoryComponent : public UActorComponent
 {
@@ -66,7 +43,7 @@ public:
 	// 후보 판정에 필요한 인벤토리 상태를 채워 반환, 서버 전용
 	void FillDraftEligibility(FAugmentDraftEligibility& OutState) const;
 
-	// 제시된 후보를 매치 등장 이력에 남긴다. 레벨업 후보는 재등장이 정상이라 제외, 서버 전용
+	// 제시된 후보를 매치 등장 이력에 남긴다. 서버 전용
 	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
 	// 카드 선택. 소유 클라이언트가 호출. 액티브 슬롯은 서버가 배정
@@ -89,14 +66,6 @@ public:
 	// 미선택자 자동 선택. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	bool AutoSelectOffer();
-
-	// 선택은 먼저 스테이징한다. 직접 선택은 준비 페이즈에서 즉시 적용되지만,
-	// DraftManager가 Finalize하기 전까지는 롤백 가능한 미확정 상태로 유지한다.
-	bool HasStagedOfferSelection() const { return StagedOfferState != EAugmentOfferCommitState::Empty; }
-	bool CanCommitStagedOffer() const;
-	bool CommitStagedOffer();
-	void FinalizeStagedOfferCommit();
-	bool RollbackStagedOfferCommit();
 
 	// 라운드 준비가 취소됐을 때 보유 증강은 유지하고 미선택 후보만 폐기. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
@@ -134,15 +103,12 @@ private:
 	bool HasServerAuthority(const TCHAR* Context) const;
 
 	int32 FindEntryIndexInLine(const FGameplayTag& LineTag) const;
-	FAugmentLineSnapshot CaptureLineSnapshot(const FGameplayTag& LineTag) const;
 	void RemoveLineAugment(const FGameplayTag& LineTag);
-	bool ApplyLineAugment(UAugmentDefinition& Definition, int32 EntryIndex);
-	bool RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot);
+	bool ApplyLineAugment(UAugmentDefinition& Definition);
 	void RebuildConditionalRuleCache();
 
-	// 선택한 후보를 이번 드래프트의 확정 대기 상태로 옮긴다. 서버 전용
-	bool StageOfferSelection(int32 OfferIndex, const TCHAR* Reason);
-	void ClearStagedOffer();
+	// 후보 하나를 골라 즉시 부여한다. 서버 전용
+	bool SelectAndApplyOffer(int32 OfferIndex, const TCHAR* Reason);
 
 	// 이번 라운드 드래프트 상태 초기화
 	void ClearRoundDraftState();
@@ -179,7 +145,7 @@ private:
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
 
 	// 이 매치에서 한 번이라도 후보로 제시된 증강, 서버 전용
-	// 한번 등장한 증강은 재등장하지 않음, 레벨업 증강은 예외
+	// 한번 등장한 증강은 재등장하지 않음
 	TSet<FPrimaryAssetId> SeenDefinitions;
 
 	// 서버 전용. 매니저가 이번 라운드 추첨에 쓴 시드.
@@ -188,11 +154,6 @@ private:
 
 	// Offers가 복제됐더라도 DraftManager가 선택 페이즈를 열기 전에는 RPC를 거부한다.
 	bool bOfferSelectionEnabled = false;
-
-	// 서버 전용. 선택은 모든 참가자의 확정 가능 여부를 확인할 때까지 실제 보유 목록에 적용하지 않는다.
-	FAugmentInventoryEntry StagedOffer;
-	FAugmentLineSnapshot StagedPreviousLine;
-	EAugmentOfferCommitState StagedOfferState = EAugmentOfferCommitState::Empty;
 
 public:
 	// 보유 목록이 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신

@@ -48,7 +48,7 @@ public:
 	// --------------------------------------------------
 	// 표시 (레벨 공통)
 
-	// 계열 이름. 레벨 표기(I / II / III)는 UI에서 추가
+	// 계열 이름
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Display")
 	FText DisplayName;
 
@@ -67,7 +67,6 @@ public:
 	// 출현 조건
 
 	// 전부 보유해야 상점에 등장 (Unlock.Weapon.* 등). 비어 있으면 조건 없음
-	// 레벨 선행 조건은 포함 X, 보유 레벨 + 1 로 이미 표현
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Availability",
 		meta = (Categories = "Unlock"))
 	FGameplayTagContainer RequiredUnlockTags;

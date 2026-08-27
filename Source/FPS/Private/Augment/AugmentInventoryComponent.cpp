@@ -118,14 +118,6 @@ bool UAugmentInventoryComponent::SetOffers(
 	// 후보를 채우는 동안에는 선택 RPC를 비활성화
 	bOfferSelectionEnabled = false;
 
-	if (StagedOfferState != EAugmentOfferCommitState::Empty)
-	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 이전 라운드의 확정 대기 선택이 남아 있어 새 후보를 채울 수 없습니다"),
-			*GetNameSafe(Owner));
-		return false;
-	}
-
 	if (SlotCards.IsEmpty())
 	{
 		UE_LOG(LogAugmentInventory, Error,
@@ -235,18 +227,7 @@ void UAugmentInventoryComponent::ServerSelectOffer_Implementation(int32 OfferInd
 		return;
 	}
 
-	if (!StageOfferSelection(OfferIndex, TEXT("클라이언트 선택")))
-	{
-		return;
-	}
-
-	// 준비 페이즈에서도 실제 GAS 상태를 보여주되 Finalize 전까지는 롤백 가능한 상태로 둔다.
-	if (!CommitStagedOffer())
-	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 선택한 증강의 즉시 적용에 실패했습니다. 확정 단계에서 다시 검증합니다"),
-			*GetNameSafe(GetOwner()));
-	}
+	SelectAndApplyOffer(OfferIndex, TEXT("클라이언트 선택"));
 }
 
 // 0보다 크면 UI의 버튼 활성화
@@ -264,15 +245,6 @@ void UAugmentInventoryComponent::ServerRerollOffer_Implementation(const int32 Of
 	{
 		UE_LOG(LogAugmentInventory, Warning,
 			TEXT("[AugmentInventory] %s: 선택 페이즈가 닫힌 상태에서 리롤 요청을 거부했습니다"),
-			*GetNameSafe(Owner));
-		return;
-	}
-
-	// 이미 카드를 고른 경우
-	if (StagedOfferState != EAugmentOfferCommitState::Empty)
-	{
-		UE_LOG(LogAugmentInventory, Warning,
-			TEXT("[AugmentInventory] %s: 선택을 완료한 상태에서 리롤 요청이 들어왔습니다"),
 			*GetNameSafe(Owner));
 		return;
 	}
@@ -308,7 +280,7 @@ void UAugmentInventoryComponent::ServerRerollOffer_Implementation(const int32 Of
 
 	Offers[OfferIndex] = NewOffer;
 
-	// 새로운 후보를 등장 이력에 기록. 레벨업 후보는 제외
+	// 새로운 후보를 등장 이력에 기록
 	MarkOffersSeen({ NewOffer });
 
 	// 서버에는 OnRep 이 오지 않으므로 직접 발신
@@ -323,7 +295,7 @@ bool UAugmentInventoryComponent::SetOfferSelectionEnabled(const bool bEnabled)
 		return false;
 	}
 
-	bOfferSelectionEnabled = bEnabled && !Offers.IsEmpty() && StagedOfferState == EAugmentOfferCommitState::Empty;
+	bOfferSelectionEnabled = bEnabled && !Offers.IsEmpty();
 	return !bEnabled || bOfferSelectionEnabled;
 }
 
@@ -337,14 +309,10 @@ bool UAugmentInventoryComponent::AutoSelectOffer()
 	const AActor* Owner = GetOwner();
 
 	bOfferSelectionEnabled = false;
-	if (StagedOfferState != EAugmentOfferCommitState::Empty)
-	{
-		return true;
-	}
-
+	
 	if (Offers.IsEmpty())
 	{
-		return false;
+		return true;
 	}
 
 	const uint32 AutoSelectSeed = HashCombine(static_cast<uint32>(LastDraftSeed), 0x9E3779B9u);
@@ -355,137 +323,12 @@ bool UAugmentInventoryComponent::AutoSelectOffer()
 		TEXT("[AugmentInventory] %s: 자동 선택 %d번 (후보 %d장, 시드 %d)"),
 		*GetNameSafe(Owner), PickedIndex, Offers.Num(), static_cast<int32>(AutoSelectSeed));
 
-	return StageOfferSelection(PickedIndex, TEXT("자동 선택"));
+	return SelectAndApplyOffer(PickedIndex, TEXT("자동 선택"));
 }
 
-bool UAugmentInventoryComponent::CanCommitStagedOffer() const
+bool UAugmentInventoryComponent::SelectAndApplyOffer(const int32 OfferIndex, const TCHAR* Reason)
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority() || !IsValid(AbilitySystemComponent))
-	{
-		return false;
-	}
-
-	// 직접 선택은 이미 적용됐을 수 있다. 최종 확정 전의 Applied도 커밋 배리어를 충족한 상태다.
-	if (StagedOfferState == EAugmentOfferCommitState::Applied)
-	{
-		return true;
-	}
-
-	if (StagedOfferState != EAugmentOfferCommitState::Selected)
-	{
-		return false;
-	}
-
-	UAugmentDefinition* Definition = ResolveDefinition(StagedOffer.DefinitionId);
-	return IsValid(Definition)
-		&& Definition->LineTag == StagedOffer.LineTag
-		&& FindEntryIndexInLine(StagedOffer.LineTag) == INDEX_NONE
-		&& CanApply(*Definition);
-}
-
-bool UAugmentInventoryComponent::CommitStagedOffer()
-{
-	if (!CanCommitStagedOffer())
-	{
-		return false;
-	}
-
-	// 이미 적용된 Pending 보상은 다시 적용하지 않고 성공으로 처리한다.
-	if (StagedOfferState == EAugmentOfferCommitState::Applied)
-	{
-		return true;
-	}
-
-	UAugmentDefinition* Definition = ResolveDefinition(StagedOffer.DefinitionId);
-	if (!IsValid(Definition))
-	{
-		return false;
-	}
-
-	if (Definition->AugmentCategory == EAugmentCategory::Active
-		&& !Definition->GetActiveInputSlotTag().IsValid())
-	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: %s 에 입력 슬롯 태그가 없어 부여하지 않습니다"),
-			*GetNameSafe(GetOwner()), *Definition->LineTag.ToString());
-		return false;
-	}
-
-	StagedPreviousLine = CaptureLineSnapshot(StagedOffer.LineTag);
-	StagedOfferState = EAugmentOfferCommitState::RecoveryPending;
-
-	// 선택한 증강 부여
-	const bool bApplied = ApplyLineAugment(*Definition, StagedPreviousLine.EntryIndex);
-
-	if (!bApplied)
-	{
-		const bool bRestored = RestoreLineSnapshot(StagedPreviousLine);
-
-		RebuildConditionalRuleCache();
-		OnInventoryChanged.Broadcast();
-
-		if (bRestored)
-		{
-			StagedPreviousLine.Reset();
-			StagedOfferState = EAugmentOfferCommitState::Selected;
-		}
-		return false;
-	}
-
-	RebuildConditionalRuleCache();
-	OnInventoryChanged.Broadcast();
-	StagedOfferState = EAugmentOfferCommitState::Applied;
-	return true;
-}
-
-void UAugmentInventoryComponent::FinalizeStagedOfferCommit()
-{
-	if (StagedOfferState == EAugmentOfferCommitState::Applied)
-	{
-		ClearStagedOffer();
-	}
-}
-
-bool UAugmentInventoryComponent::RollbackStagedOfferCommit()
-{
-	if (StagedOfferState == EAugmentOfferCommitState::Empty)
-	{
-		return true;
-	}
-
-	if (StagedOfferState == EAugmentOfferCommitState::Selected)
-	{
-		ClearStagedOffer();
-		return true;
-	}
-
-	// 증강을 이전 상태로 되돌림
-	const bool bRestored = RestoreLineSnapshot(StagedPreviousLine);
-
-	RebuildConditionalRuleCache();
-	OnInventoryChanged.Broadcast();
-	if (bRestored)
-	{
-		ClearStagedOffer();
-	}
-	else
-	{
-		StagedOfferState = EAugmentOfferCommitState::RecoveryPending;
-	}
-	return bRestored;
-}
-
-bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCHAR* Reason)
-{
-	const AActor* Owner = GetOwner();
-	if (StagedOfferState != EAugmentOfferCommitState::Empty)
-	{
-		UE_LOG(LogAugmentInventory, Warning,
-			TEXT("[AugmentInventory] %s: 이미 선택을 완료한 상태에서 %s 요청이 들어왔습니다"),
-			*GetNameSafe(Owner), Reason);
-		return false;
-	}
 
 	if (!Offers.IsValidIndex(OfferIndex))
 	{
@@ -495,34 +338,43 @@ bool UAugmentInventoryComponent::StageOfferSelection(int32 OfferIndex, const TCH
 		return false;
 	}
 
-	StagedOffer = Offers[OfferIndex];
-	StagedOfferState = EAugmentOfferCommitState::Selected;
-	if (!CanCommitStagedOffer())
+	const FAugmentInventoryEntry Selected = Offers[OfferIndex];
+	UAugmentDefinition* Definition = ResolveDefinition(Selected.DefinitionId);
+
+	const bool bValid = IsValid(AbilitySystemComponent)
+		&& IsValid(Definition)
+		&& Definition->LineTag == Selected.LineTag
+		&& FindEntryIndexInLine(Selected.LineTag) == INDEX_NONE
+		&& CanApply(*Definition);
+
+	if (!bValid)
 	{
 		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 선택한 후보 %s를 확정할 수 없어 요청을 거부했습니다"),
-			*GetNameSafe(Owner), *StagedOffer.DefinitionId.ToString());
-		ClearStagedOffer();
+			TEXT("[AugmentInventory] %s: %s 로 고른 %s 를 부여할 수 없어 요청을 거부했습니다"),
+			*GetNameSafe(Owner), Reason, *Selected.DefinitionId.ToString());
 		return false;
 	}
 
-	ClearRoundDraftState();
-	if (IsValid(AbilitySystemComponent))
+	if (Definition->AugmentCategory == EAugmentCategory::Active
+		&& !Definition->GetActiveInputSlotTag().IsValid())
 	{
-		AbilitySystemComponent->SetLooseGameplayTagCount(
-			RogueTags::State_Gameplay_InputBlocked_AugmentDraft,
-			0,
-			EGameplayTagReplicationState::TagOnly);
+		UE_LOG(LogAugmentInventory, Error,
+			TEXT("[AugmentInventory] %s: %s 에 입력 슬롯 태그가 없어 부여하지 않습니다"),
+			*GetNameSafe(Owner), *Definition->LineTag.ToString());
+		return false;
 	}
+
+	if (!ApplyLineAugment(*Definition))
+	{
+		return false;
+	}
+
+	RebuildConditionalRuleCache();
+	OnInventoryChanged.Broadcast();
+
+	ClearRoundDraftState();
 	OnOffersChanged.Broadcast();
 	return true;
-}
-
-void UAugmentInventoryComponent::ClearStagedOffer()
-{
-	StagedOffer = FAugmentInventoryEntry();
-	StagedPreviousLine.Reset();
-	StagedOfferState = EAugmentOfferCommitState::Empty;
 }
 
 void UAugmentInventoryComponent::ClearRoundDraftState()
@@ -541,29 +393,11 @@ void UAugmentInventoryComponent::ClearOffers()
 		return;
 	}
 
-	const AActor* Owner = GetOwner();
-
-	const bool bHadPendingDraftState = !Offers.IsEmpty()
-		|| StagedOfferState != EAugmentOfferCommitState::Empty;
+	const bool bHadOffers = !Offers.IsEmpty();
 
 	ClearRoundDraftState();
 
-	if (StagedOfferState == EAugmentOfferCommitState::Applied
-		|| StagedOfferState == EAugmentOfferCommitState::RecoveryPending)
-	{
-		if (!RollbackStagedOfferCommit())
-		{
-			UE_LOG(LogAugmentInventory, Error,
-				TEXT("[AugmentInventory] %s: 취소된 드래프트 보상 롤백에 실패했습니다"),
-				*GetNameSafe(Owner));
-		}
-	}
-	else
-	{
-		ClearStagedOffer();
-	}
-
-	if (bHadPendingDraftState)
+	if (bHadOffers)
 	{
 		OnOffersChanged.Broadcast();
 	}
@@ -576,7 +410,6 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 		return;
 	}
 
-	ClearStagedOffer();
 	RemoveAllGrants();
 
 	Entries.Reset();
@@ -668,18 +501,6 @@ int32 UAugmentInventoryComponent::FindEntryIndexInLine(const FGameplayTag& LineT
 		[&LineTag](const FAugmentInventoryEntry& Entry) { return Entry.LineTag.MatchesTagExact(LineTag); });
 }
 
-FAugmentLineSnapshot UAugmentInventoryComponent::CaptureLineSnapshot(const FGameplayTag& LineTag) const
-{
-	FAugmentLineSnapshot Snapshot;
-	Snapshot.LineTag = LineTag;
-	Snapshot.EntryIndex = FindEntryIndexInLine(LineTag);
-	if (Snapshot.EntryIndex != INDEX_NONE)
-	{
-		Snapshot.Entry = Entries[Snapshot.EntryIndex];
-	}
-	return Snapshot;
-}
-
 void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 {
 	if (!IsValid(AbilitySystemComponent) || !LineTag.IsValid())
@@ -700,9 +521,7 @@ void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 	}
 }
 
-bool UAugmentInventoryComponent::ApplyLineAugment(
-	UAugmentDefinition& Definition,
-	const int32 EntryIndex)
+bool UAugmentInventoryComponent::ApplyLineAugment(UAugmentDefinition& Definition)
 {
 	if (!IsValid(AbilitySystemComponent) || !Definition.LineTag.IsValid())
 	{
@@ -726,42 +545,8 @@ bool UAugmentInventoryComponent::ApplyLineAugment(
 	}
 
 	GrantHandlesByLine.Add(Definition.LineTag, MoveTemp(NewHandles));
-	const FAugmentInventoryEntry NewEntry = FAugmentInventoryEntry::Make(Definition);
-	if (EntryIndex == INDEX_NONE)
-	{
-		Entries.Add(NewEntry);
-	}
-	else
-	{
-		Entries.Insert(NewEntry, FMath::Clamp(EntryIndex, 0, Entries.Num()));
-	}
+	Entries.Add(FAugmentInventoryEntry::Make(Definition));
 	return true;
-}
-
-bool UAugmentInventoryComponent::RestoreLineSnapshot(const FAugmentLineSnapshot& Snapshot)
-{
-	if (!IsValid(AbilitySystemComponent) || !Snapshot.LineTag.IsValid())
-	{
-		return false;
-	}
-
-	RemoveLineAugment(Snapshot.LineTag);
-	if (!Snapshot.Entry.IsSet())
-	{
-		return true;
-	}
-
-	const FAugmentInventoryEntry& PreviousEntry = Snapshot.Entry.GetValue();
-	UAugmentDefinition* PreviousDefinition = ResolveDefinition(PreviousEntry.DefinitionId);
-	if (!PreviousEntry.LineTag.MatchesTagExact(Snapshot.LineTag)
-		|| !IsValid(PreviousDefinition)
-		|| PreviousDefinition->LineTag != PreviousEntry.LineTag
-		|| !CanApply(*PreviousDefinition))
-	{
-		return false;
-	}
-
-	return ApplyLineAugment(*PreviousDefinition, Snapshot.EntryIndex);
 }
 
 void UAugmentInventoryComponent::RebuildConditionalRuleCache()

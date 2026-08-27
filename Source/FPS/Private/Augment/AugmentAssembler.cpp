@@ -50,7 +50,7 @@ namespace
 				continue;
 			}
 
-			// 각 레벨의 SetByCallerMagnitude 를 스펙에 적용. Magnitude 는 레벨마다 다르게 설정
+			// 증강 수치를 SetByCaller 로 스펙에 적용
 			for (const TPair<FGameplayTag, float>& Magnitude : Resolved.LevelData->SetByCallerMagnitudes)
 			{
 				Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
