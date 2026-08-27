@@ -276,7 +276,13 @@ bool UDominationMatchStartManager::SpawnInitialParticipants()
 			return false;
 		}
 
-		GameMode->RestartPlayer(PlayerController);
+		if (!GameMode->RestartPlayerAtObjective(
+			PlayerController,
+			EDominationPointId::C))
+		{
+			return false;
+		}
+
 		APawn* SpawnedPawn = PlayerController->GetPawn();
 		if (!IsValid(SpawnedPawn)
 			|| SpawnedPawn->GetController() != PlayerController

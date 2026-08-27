@@ -34,7 +34,7 @@ public:
 		EDominationCombatClass RequestedClass);
 	void GetInitialParticipantPlayerStates(TArray<ADominationPlayerState*>& OutPlayerStates) const;
 
-	// 외부 증강 드래프트는 이 이벤트에 연결하고 참가자 목록을 조회할 수 있다.
+	// GameMode가 초기 거점 활성화와 외부 연결 이벤트를 조율하기 위한 내부 완료 신호다.
 	FOnDominationInitialPlayersSpawned OnInitialPlayersSpawned;
 
 private:

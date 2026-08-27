@@ -385,6 +385,9 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 
 	// 충돌 설정
 	USkeletalMeshComponent* Mesh3P = GetMesh();
+	// 사망한 Pawn의 1인칭 표현은 모든 인스턴스에서 끄고, 오너에게도 3인칭 시체를 보인다.
+	Mesh1P->SetHiddenInGame(true, true);
+	Mesh3P->SetOwnerNoSee(false);
 	Mesh3P->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 	Mesh3P->SetCollisionObjectType(ECC_PhysicsBody);
 	Mesh3P->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -406,17 +409,14 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	else if (GetNetMode() != NM_DedicatedServer)
 	{
 		Mesh3P->SetAllBodiesSimulatePhysics(true);
+		Mesh3P->SetSimulatePhysics(true);
+		Mesh3P->SetAllBodiesPhysicsBlendWeight(1.0f);
+		Mesh3P->WakeAllRigidBodies();
 		Mesh3P->SetAllPhysicsLinearVelocity(DeathVelocity);
 
 		ApplyDeathImpulse(*Mesh3P, Reaction);
 	}
 
-	// 본인의 1인칭 메시를 숨기고, 3인칭 메시를 보이게
-	if (IsLocallyControlled())
-	{
-		Mesh1P->SetHiddenInGame(true, true);
-		Mesh3P->SetOwnerNoSee(false);
-	}
 }
 
 void AShooterCharacter::ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const
