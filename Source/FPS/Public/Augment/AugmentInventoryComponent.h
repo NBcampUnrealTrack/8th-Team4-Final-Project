@@ -17,6 +17,10 @@ struct FAugmentDraftEligibility;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentOffersChanged);
 
+// 증강 선택 후, 대기열 보상 처리 완료 시점에 호출. 서버 전용
+// 남은 증강 대기열이 있다면 다음 증강 처리를 위해 신호를 보냄
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAugmentOfferCommitted, UAugmentInventoryComponent*);
+
 UCLASS(ClassGroup = (Rogue), meta = (BlueprintSpawnableComponent))
 class FPS_API UAugmentInventoryComponent : public UActorComponent
 {
@@ -192,4 +196,7 @@ public:
 	// 후보가 바뀔 때. 서버는 변경 시점에, 소유 클라이언트는 복제 도착 시점에 발신
 	UPROPERTY(BlueprintAssignable, Category = "Rogue|Augment")
 	FOnAugmentOffersChanged OnOffersChanged;
+
+	// 부여와 대기열 소진이 끝난 뒤. 매니저가 다음 보상을 이어 제시하는 지점
+	FOnAugmentOfferCommitted OnOfferCommitted;
 };

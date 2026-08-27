@@ -10,30 +10,37 @@ class AShooterPlayerState;
 class UAugmentInventoryComponent;
 class UAugmentRegistrySubsystem;
 struct FAugmentDraftContext;
+struct FAugmentPendingReward;
 
 DECLARE_MULTICAST_DELEGATE(FOnAugmentDraftDependenciesReady);
 
-/**
- * 서버 전용 증강 드래프트 관리자.
- * GameMode에는 Prepare/Open/Complete/Cancel 네 동작만 노출한다.
- */
 UCLASS()
 class FPS_API UAugmentDraftManager : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	void Initialize(ABaseRoundGameMode* InOwnerGameMode, bool bInDraftEnabled);
+	void Initialize(ABaseRoundGameMode* InOwnerGameMode, bool bInDraftEnabled,
+		int32 InOfferCount, float InSelectionTimeout);
 	void Shutdown();
 
 	bool HasRequiredDependencies() const;
 	bool AreDependenciesReady() const;
 
-	bool PrepareDraft(int32 RoundNumber, int32 OfferCount, const TArray<AShooterPlayerState*>& Participants);
-	bool OpenDraft();
-	bool CompleteDraft();
+	// 미선택 후보 제거
 	void CancelDraft();
-	bool IsParticipant(const AShooterPlayerState* PlayerState) const;
+
+	// 모든 플레이어의 대기열에 등록
+	// bPerTeamTiers 면 팀별로 증강 등급 선택 및 패배팀 보정 적용
+	// ActiveSlot 은 Pool 이 Active 일 때만 사용
+	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, bool bPerTeamTiers,
+		FGameplayTag ActiveSlot = FGameplayTag());
+
+	// 대기열 첫 항목의 카드를 제시, 제시할 것이 없으면 false
+	bool ServeNextReward(AShooterPlayerState* PlayerState);
+
+	// 남은 후보를 자동 선택으로 정리
+	void ForceResolveOffers(AShooterPlayerState* PlayerState);
 
 	void ResetForNewMatch();
 	void ResetPlayerForNewMatch(AShooterPlayerState* PlayerState) const;
@@ -54,12 +61,11 @@ private:
 	// 각 플레이어의 드래프트 시드 생성
 	static int32 MakeDraftSeed(const AShooterPlayerState* PlayerState, const FAugmentDraftContext& DraftContext);
 
-	// 팀 단위 증강 등급 뽑기
-	void ResolveTeamTiers(
+	// 이번 증강의 등급, bPerTeamTiers 가 false 면 1회만 굴려 양 팀 공통
+	void ResolveRewardTiers(
 		int32 RoundNumber,
 		int32 RoundSeed,
-		int32 TeamAScore,
-		int32 TeamBScore,
+		bool bPerTeamTiers,
 		EAugmentTier& OutTeamATier,
 		EAugmentTier& OutTeamBTier) const;
 
@@ -71,20 +77,26 @@ private:
 		EAugmentRewardPool Pool,
 		EAugmentTier Tier,
 		FGameplayTag RequiredActiveSlot,
-		int32 OfferCount) const;
+		int32 InOfferCount) const;
 
-	bool SetSelectionGate(bool bEnabled) const;
+	// 선택 확정 통보를 받아 남은 대기열을 이어서 제시
+	void HandleOfferCommitted(UAugmentInventoryComponent* Inventory);
+	void StopListeningForCommit(AShooterPlayerState* PlayerState) const;
+
 	void ClearPlayerGameplayInputBlock(AShooterPlayerState* PlayerState) const;
 	UAugmentInventoryComponent* GetInventory(AShooterPlayerState* PlayerState) const;
 	void GetCurrentPlayerStates(TArray<AShooterPlayerState*>& OutPlayerStates) const;
 
 	TWeakObjectPtr<ABaseRoundGameMode> OwnerGameMode;
 	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
-	TArray<TWeakObjectPtr<AShooterPlayerState>> DraftParticipants;
 
 	// 프로젝트 설정에서 온 추첨 규칙
 	FAugmentDraftRules DraftRules;
 
 	int32 MatchSeed = 1;
 	bool bDraftEnabled = false;
+
+	// Initialize 에서 받은 제시 설정
+	int32 OfferCount = 0;
+	float SelectionTimeout = 0.f;
 };

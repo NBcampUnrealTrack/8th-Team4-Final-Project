@@ -376,9 +376,15 @@ bool UAugmentInventoryComponent::SelectAndApplyOffer(const int32 OfferIndex, con
 	RebuildConditionalRuleCache();
 	OnInventoryChanged.Broadcast();
 
+	// 대기열에 있던 증강 보상을 제거
+	PopPendingReward();
+
 	ClearSelectionTimeout();
 	ClearRoundDraftState();
 	OnOffersChanged.Broadcast();
+
+	// 증강 선택 완료를 알림
+	OnOfferCommitted.Broadcast(this);
 	return true;
 }
 
