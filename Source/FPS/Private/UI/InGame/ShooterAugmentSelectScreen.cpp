@@ -108,7 +108,7 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		
 		for (int32 i = 0; i < CompareCount; ++i)
 		{
-			if (LastDisplayedOffers[i].DefinitionId != Offers[i].DefinitionId || LastDisplayedOffers[i].Level != Offers[i].Level)
+			if (LastDisplayedOffers[i].DefinitionId != Offers[i].DefinitionId)
 			{
 				ChangedSlots.Add(i);
 			}
@@ -125,7 +125,7 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		
 		if (CachedCards.IsValidIndex(i))
 		{
-			CachedCards[i]->SetData(Def, Offers[i].Level, i);
+			CachedCards[i]->SetData(Def, i);
 		}
 		if (CachedRerollButtons.IsValidIndex(i))
 		{

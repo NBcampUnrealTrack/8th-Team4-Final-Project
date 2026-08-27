@@ -176,14 +176,10 @@ void ABaseRoundGameMode::OpenNextRound()
 	UAugmentDraftManager* DraftManager = nullptr;
 	if (bEnableAugmentDraft)
 	{
-		TArray<AShooterPlayerState*> Participants;
-		PlayerManager->GetRoundParticipants(Participants);
-
 		DraftManager = GetAugmentDraftManager();
-		if (!IsValid(DraftManager)
-			|| !DraftManager->PrepareDraft(RoundContext.RoundNumber, AugmentOfferCount, Participants))
+		if (!IsValid(DraftManager))
 		{
-			SuspendRoundOpening(TEXT("Augment draft preparation failed."));
+			SuspendRoundOpening(TEXT("The augment draft manager is missing."));
 			return;
 		}
 	}
@@ -192,15 +188,20 @@ void ABaseRoundGameMode::OpenNextRound()
 	RoundGameState->SetRoundContext(RoundContext);
 	if (bEnableAugmentDraft)
 	{
-		// 서버 페이즈를 먼저 전환한 뒤 선택 RPC 게이트를 연다.
+		// 서버 페이즈를 먼저 전환한 뒤 후보를 제시
 		RoundGameState->SetGameFlowPhase(
 			EGameFlowPhase::AugmentSelecting,
 			AugmentSelectionDuration);
 
-		if (!DraftManager->OpenDraft())
+		// 모든 플레이어에게 후보 등록, 폭탄 모드는 모든 증강 풀 적용
+		DraftManager->GrantToAll(EAugmentRewardPool::Any, RoundContext.RoundNumber);
+
+		// 등록된 후보를 모든 참가자에게 제공
+		TArray<AShooterPlayerState*> Participants;
+		PlayerManager->GetRoundParticipants(Participants);
+		for (AShooterPlayerState* Participant : Participants)
 		{
-			SuspendRoundOpening(TEXT("Augment draft activation failed."));
-			return;
+			DraftManager->ServeNextReward(Participant);
 		}
 
 		// 증강 선택 페이즈에도 참가자의 이동과 액션 입력을 허용한다.
@@ -295,9 +296,21 @@ bool ABaseRoundGameMode::TryStartRoundCombat()
 	if (bEnableAugmentDraft)
 	{
 		UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
-		if (!IsValid(DraftManager) || !DraftManager->CompleteDraft())
+		if (!IsValid(DraftManager))
 		{
 			return false;
+		}
+
+		// 선택하지 않은 플레이어는 강제로 선택
+		TArray<AShooterPlayerState*> Participants;
+		if (IsValid(PlayerManager))
+		{
+			PlayerManager->GetRoundParticipants(Participants);
+		}
+
+		for (AShooterPlayerState* Participant : Participants)
+		{
+			DraftManager->ForceResolveOffers(Participant);
 		}
 	}
 

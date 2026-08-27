@@ -1,5 +1,6 @@
 ﻿#include "GameMode/BaseRoundGameMode.h"
 
+#include "Augment/AugmentInventoryComponent.h"
 #include "Economy/CreditEconomyManager.h"
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
@@ -72,12 +73,15 @@ void ABaseRoundGameMode::Logout(AController* Exiting)
 	// 한 팀이 모두 나간 경우에는 라운드 승점으로 돌리지 않고 상대 팀의 매치 승리로 종료한다.
 	const bool bMatchFinishedByDeparture = TryFinishMatchForPlayerDeparture(ExitingTeam);
 
+	// PlayerState와 ASC가 유효할 때 드래프트를 먼저 정리한다.
 	if (!bMatchFinishedByDeparture && Phase == EGameFlowPhase::AugmentSelecting)
 	{
-		const UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
-		if (IsValid(DraftManager) && DraftManager->IsParticipant(ExitingPlayerState))
+		const UAugmentInventoryComponent* Inventory = IsValid(ExitingPlayerState)
+			? ExitingPlayerState->GetAugmentInventory()
+			: nullptr;
+
+		if (IsValid(Inventory) && !Inventory->GetOffers().IsEmpty())
 		{
-			// PlayerState와 ASC가 유효할 때 드래프트를 먼저 정리한다.
 			EnterWaitingForPlayers();
 		}
 	}
@@ -835,6 +839,7 @@ void ABaseRoundGameMode::InitializeGameFlow()
 	UAugmentDraftManager* DraftManager = GetAugmentDraftManager();
 	if (IsValid(DraftManager))
 	{
+		// 증강 드래프트 초기화, 제시 설정은 추첨 프로필이 정한다
 		DraftManager->Initialize(this, bEnableAugmentDraft);
 		DraftManager->OnDependenciesReady.AddUObject(this, &ABaseRoundGameMode::HandleDraftDependenciesReady);
 	}

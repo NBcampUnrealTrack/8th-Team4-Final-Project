@@ -6,7 +6,6 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/AugmentDefinition.h"
 #include "Augment/Abilities/RogueGameplayAbility.h"
-#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAssembler, Log, All);
 
@@ -51,7 +50,7 @@ namespace
 				continue;
 			}
 
-			// 각 레벨의 SetByCallerMagnitude 를 스펙에 적용. Magnitude 는 레벨마다 다르게 설정
+			// 증강 수치를 SetByCaller 로 스펙에 적용
 			for (const TPair<FGameplayTag, float>& Magnitude : Resolved.LevelData->SetByCallerMagnitudes)
 			{
 				Spec.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
@@ -87,8 +86,7 @@ namespace
 			// 어느 증강이 준 어빌리티인지
 			UObject* SourceObject = const_cast<UAugmentDefinition*>(&Definition);
 
-			// 어빌리티 레벨 = 증강 레벨로 스펙 생성
-			FGameplayAbilitySpec Spec(Ability.AbilityClass, Resolved.Level, INDEX_NONE, SourceObject);
+			FGameplayAbilitySpec Spec(Ability.AbilityClass, 1, INDEX_NONE, SourceObject);
 
 			if (Ability.InputTag.IsValid())
 			{
@@ -115,24 +113,20 @@ namespace
 // 증강 정의 해석, GE/GA 로드
 bool RogueAugmentAssembler::ResolveAugment(
 	const UAugmentDefinition& Definition,
-	int32 Level,
-	FAugmentResolvedGrant& OutResolved,
-	FGameplayTag SlotOverride)
+	FAugmentResolvedGrant& OutResolved)
 {
 	OutResolved = FAugmentResolvedGrant();
 
-	// 레벨 데이터 검사
-	const FAugmentLevelData* LevelData = Definition.FindLevel(Level);
+	// 수치 데이터 검사
+	const FAugmentLevelData* LevelData = Definition.GetLevelData();
 	if (!LevelData)
 	{
 		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] %s 에 %d레벨이 없습니다 (최고 %d레벨)"),
-			*Definition.GetName(), Level, Definition.GetMaxLevel());
+			TEXT("[AugmentAssembler] %s 에 Levels 가 비어 있습니다"), *Definition.GetName());
 		return false;
 	}
 
 	OutResolved.Definition = &Definition;
-	OutResolved.Level      = Level;
 
 	bool bResolved = true;
 
@@ -167,10 +161,7 @@ bool RogueAugmentAssembler::ResolveAugment(
 			continue;
 		}
 
-		// 인풋 태그가 RogueTags::InputTag_Ability_AugmentSlot 이면 SlotOverride 로 교체
-		const bool bTakesSlot = Granted.InputTag == RogueTags::InputTag_Ability_AugmentSlot;
-
-		OutResolved.Abilities.Add({ AbilityClass, bTakesSlot ? SlotOverride : Granted.InputTag });
+		OutResolved.Abilities.Add({ AbilityClass, Granted.InputTag });
 	}
 
 	// 하나라도 실패하면 해석 자체를 실패

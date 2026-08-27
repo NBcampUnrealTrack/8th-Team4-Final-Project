@@ -41,9 +41,7 @@ struct FAugmentResolvedAbility
 // 검증, 로드를 마친 증강
 struct FAugmentResolvedGrant
 {
-	// 증강의 정의와 레벨
 	const UAugmentDefinition* Definition = nullptr;
-	int32                     Level = 0;
 
 	// 증강 수치와 조건부 규칙
 	const FAugmentLevelData* LevelData = nullptr;
@@ -58,8 +56,7 @@ struct FAugmentResolvedGrant
 namespace RogueAugmentAssembler
 {
 	// 증강 정의 해석, GE/GA 로드
-	FPS_API bool ResolveAugment(const UAugmentDefinition& Definition, int32 Level, FAugmentResolvedGrant& OutResolved,
-		FGameplayTag SlotOverride = FGameplayTag());
+	FPS_API bool ResolveAugment(const UAugmentDefinition& Definition, FAugmentResolvedGrant& OutResolved);
 
 	// 해석된 증강을 ASC에 적용
 	FPS_API FAugmentGrantHandles ApplyResolved(UAbilitySystemComponent& ASC, const FAugmentResolvedGrant& Resolved);
