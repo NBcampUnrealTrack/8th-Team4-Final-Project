@@ -2,6 +2,7 @@
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameMode/DominationGameState.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/UITags.h"
@@ -59,10 +60,8 @@ void UDominationUIInitComponent::BeginPlay()
 
 void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
-	}
+	ClearInitializationRetry();
+	UnbindFromGameState();
 
 	if (IsValid(InitialWidgetInstance))
 	{
@@ -83,10 +82,31 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 		return;
 	}
 
+	ADominationGameState* DominationGameState = GetWorld()
+		? GetWorld()->GetGameState<ADominationGameState>()
+		: nullptr;
+	if (!IsValid(DominationGameState))
+	{
+		ScheduleInitializationRetry();
+		return;
+	}
+
+	BindToGameState(DominationGameState);
+	if (DominationGameState->GetDominationPhase()
+		== EDominationMatchPhase::WaitingForPlayers)
+	{
+		// 초기 참가자 확정 후 발생하는 GameState 이벤트에서 다시 시도한다.
+		ClearInitializationRetry();
+		return;
+	}
+
 	ADominationPlayerController* PlayerController =
 		Cast<ADominationPlayerController>(GetOwner());
-	if (!IsValid(PlayerController)
-		|| !IsValid(PlayerController->GetPlayerState<ADominationPlayerState>()))
+	const ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	if (!IsValid(PlayerState)
+		|| PlayerState->GetTeam() == EGameTeam::None)
 	{
 		ScheduleInitializationRetry();
 		return;
@@ -95,10 +115,8 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
 	if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
 	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
-		}
+		ClearInitializationRetry();
+		UnbindFromGameState();
 		UE_LOG(LogDominationUIInit, Error,
 			TEXT("Domination root layout became unavailable before HUD initialization."));
 		return;
@@ -108,10 +126,8 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 		UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass));
 	if (!IsValid(InitialWidgetInstance))
 	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
-		}
+		ClearInitializationRetry();
+		UnbindFromGameState();
 		UE_LOG(LogDominationUIInit, Error,
 			TEXT("Failed to create the Domination player HUD. Layer=%s WidgetClass=%s"),
 			*InitialWidgetLayer.ToString(),
@@ -119,10 +135,13 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 		return;
 	}
 
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
-	}
+	ClearInitializationRetry();
+	UnbindFromGameState();
+}
+
+void UDominationUIInitComponent::HandleDominationFlowStateChanged()
+{
+	TryInitializePlayerHUD();
 }
 
 void UDominationUIInitComponent::ScheduleInitializationRetry()
@@ -140,6 +159,38 @@ void UDominationUIInitComponent::ScheduleInitializationRetry()
 		&ThisClass::TryInitializePlayerHUD,
 		0.1f,
 		true);
+}
+
+void UDominationUIInitComponent::ClearInitializationRetry()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
+	}
+}
+
+void UDominationUIInitComponent::BindToGameState(
+	ADominationGameState* DominationGameState)
+{
+	if (BoundGameState.Get() == DominationGameState)
+	{
+		return;
+	}
+
+	UnbindFromGameState();
+	BoundGameState = DominationGameState;
+	DominationGameState->OnDominationFlowStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleDominationFlowStateChanged);
+}
+
+void UDominationUIInitComponent::UnbindFromGameState()
+{
+	if (BoundGameState.IsValid())
+	{
+		BoundGameState->OnDominationFlowStateChanged.RemoveAll(this);
+	}
+	BoundGameState.Reset();
 }
 
 UShooterUIManagerSubsystem* UDominationUIInitComponent::GetUIManager() const

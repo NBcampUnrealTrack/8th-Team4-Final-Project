@@ -8,6 +8,7 @@
 
 class AController;
 class ADominationGameMode;
+class ADominationGameState;
 class ADominationSpawnVolume;
 class UDominationObjectiveManager;
 
@@ -33,11 +34,21 @@ public:
 
 private:
 	bool CacheSpawnVolumes();
+	bool UpdateTeamSpawnVolumes(EDominationPointId ActivePointId);
+	ADominationSpawnVolume* GetTeamSpawnVolume(EGameTeam Team) const;
+
+	UFUNCTION()
+	void HandleActivePointChanged(EDominationPointId ActivePointId);
+
 	void HandleRespawnTimer(TWeakObjectPtr<AController> EliminatedController);
 
 	TWeakObjectPtr<ADominationGameMode> OwnerGameMode;
+	TWeakObjectPtr<ADominationGameState> DominationGameState;
 	TWeakObjectPtr<UDominationObjectiveManager> ObjectiveManager;
 	TArray<TWeakObjectPtr<ADominationSpawnVolume>> SpawnVolumes;
+	TWeakObjectPtr<ADominationSpawnVolume> TeamASpawnVolume;
+	TWeakObjectPtr<ADominationSpawnVolume> TeamBSpawnVolume;
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> PendingRespawnTimers;
+	EDominationPointId SpawnObjectivePointId = EDominationPointId::None;
 	float RespawnDelay = 5.0f;
 };

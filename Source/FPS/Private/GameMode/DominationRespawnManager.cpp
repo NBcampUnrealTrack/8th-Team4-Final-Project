@@ -5,6 +5,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
 #include "GameMode/DominationGameMode.h"
+#include "GameMode/DominationGameState.h"
 #include "GameMode/DominationObjectiveManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
@@ -17,13 +18,45 @@ bool UDominationRespawnManager::Initialize(
 	OwnerGameMode = InOwnerGameMode;
 	ObjectiveManager = InObjectiveManager;
 	RespawnDelay = InRespawnDelay;
-	return CacheSpawnVolumes();
+	if (!CacheSpawnVolumes())
+	{
+		return false;
+	}
+
+	ADominationGameState* GameState = InOwnerGameMode->GetGameState<ADominationGameState>();
+	if (!IsValid(GameState))
+	{
+		return false;
+	}
+
+	// 최초 참가자는 활성 거점 공개 전에 중앙 C를 기준으로 스폰한다.
+	if (!UpdateTeamSpawnVolumes(EDominationPointId::C))
+	{
+		return false;
+	}
+
+	DominationGameState = GameState;
+	GameState->OnActivePointChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleActivePointChanged);
+	return true;
 }
 
 void UDominationRespawnManager::Shutdown()
 {
 	CancelPendingRespawns();
+	if (ADominationGameState* GameState = DominationGameState.Get())
+	{
+		GameState->OnActivePointChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleActivePointChanged);
+	}
+
+	TeamASpawnVolume.Reset();
+	TeamBSpawnVolume.Reset();
+	SpawnObjectivePointId = EDominationPointId::None;
 	SpawnVolumes.Reset();
+	DominationGameState.Reset();
 	ObjectiveManager.Reset();
 	OwnerGameMode.Reset();
 }
@@ -68,16 +101,7 @@ bool UDominationRespawnManager::TryGetSpawnTransform(
 	const EDominationPointId ActivePointId,
 	FTransform& OutSpawnTransform)
 {
-	const int32 ActivePointIndex = DominationRules::GetPointIndex(ActivePointId);
-	const int32 SpawnVolumeIndex = DominationRules::GetSpawnBoundaryIndex(
-		Team,
-		ActivePointIndex);
-	if (!SpawnVolumes.IsValidIndex(SpawnVolumeIndex))
-	{
-		return false;
-	}
-
-	ADominationSpawnVolume* SpawnVolume = SpawnVolumes[SpawnVolumeIndex].Get();
+	ADominationSpawnVolume* SpawnVolume = GetTeamSpawnVolume(Team);
 	UDominationObjectiveManager* Manager = ObjectiveManager.Get();
 	ADominationCapturePoint* ActiveCapturePoint = IsValid(Manager)
 		? Manager->GetCapturePoint(ActivePointId)
@@ -92,6 +116,78 @@ bool UDominationRespawnManager::TryGetSpawnTransform(
 	FacingDirection.Z = 0.0;
 	OutSpawnTransform.SetRotation(FacingDirection.Rotation().Quaternion());
 	return true;
+}
+
+bool UDominationRespawnManager::UpdateTeamSpawnVolumes(
+	const EDominationPointId ActivePointId)
+{
+	if (SpawnObjectivePointId == ActivePointId
+		&& TeamASpawnVolume.IsValid()
+		&& TeamBSpawnVolume.IsValid())
+	{
+		return true;
+	}
+
+	const int32 ActivePointIndex = DominationRules::GetPointIndex(ActivePointId);
+	const int32 TeamAVolumeIndex = DominationRules::GetSpawnBoundaryIndex(
+		EGameTeam::TeamA,
+		ActivePointIndex);
+	const int32 TeamBVolumeIndex = DominationRules::GetSpawnBoundaryIndex(
+		EGameTeam::TeamB,
+		ActivePointIndex);
+	if (!SpawnVolumes.IsValidIndex(TeamAVolumeIndex)
+		|| !SpawnVolumes.IsValidIndex(TeamBVolumeIndex))
+	{
+		return false;
+	}
+
+	TeamASpawnVolume = SpawnVolumes[TeamAVolumeIndex];
+	TeamBSpawnVolume = SpawnVolumes[TeamBVolumeIndex];
+	SpawnObjectivePointId = ActivePointId;
+
+	UE_LOG(
+		LogDominationRespawn,
+		Log,
+		TEXT("Updated spawn volumes for active point %d: TeamA boundary %d, TeamB boundary %d."),
+		static_cast<uint8>(ActivePointId),
+		TeamAVolumeIndex,
+		TeamBVolumeIndex);
+	return true;
+}
+
+ADominationSpawnVolume* UDominationRespawnManager::GetTeamSpawnVolume(
+	const EGameTeam Team) const
+{
+	switch (Team)
+	{
+	case EGameTeam::TeamA:
+		return TeamASpawnVolume.Get();
+	case EGameTeam::TeamB:
+		return TeamBSpawnVolume.Get();
+	default:
+		return nullptr;
+	}
+}
+
+void UDominationRespawnManager::HandleActivePointChanged(
+	const EDominationPointId ActivePointId)
+{
+	if (ActivePointId == EDominationPointId::None)
+	{
+		TeamASpawnVolume.Reset();
+		TeamBSpawnVolume.Reset();
+		SpawnObjectivePointId = EDominationPointId::None;
+		return;
+	}
+
+	if (!UpdateTeamSpawnVolumes(ActivePointId))
+	{
+		UE_LOG(
+			LogDominationRespawn,
+			Error,
+			TEXT("Could not update team spawn volumes for active point %d."),
+			static_cast<uint8>(ActivePointId));
+	}
 }
 
 bool UDominationRespawnManager::CacheSpawnVolumes()
