@@ -23,7 +23,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogFieldPickup, Log, All);
 
 AFieldPickup::AFieldPickup()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bAllowTickOnDedicatedServer = false;
 
 	bReplicates = true;
 	SetReplicateMovement(false);
@@ -35,11 +37,20 @@ AFieldPickup::AFieldPickup()
 	PresentationRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PresentationRoot"));
 	PresentationRoot->SetupAttachment(SceneRoot);
 
+	PickupVisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("PickupVisualRoot"));
+	PickupVisualRoot->SetupAttachment(PresentationRoot);
+
 	PickupMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PickupMesh"));
-	PickupMesh->SetupAttachment(PresentationRoot);
+	PickupMesh->SetupAttachment(PickupVisualRoot);
 	PickupMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PickupMesh->SetGenerateOverlapEvents(false);
 	PickupMesh->SetCanEverAffectNavigation(false);
+
+	PedestalMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("PedestalMesh"));
+	PedestalMesh->SetupAttachment(PresentationRoot);
+	PedestalMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PedestalMesh->SetGenerateOverlapEvents(false);
+	PedestalMesh->SetCanEverAffectNavigation(false);
 
 	AmbientNiagara = CreateDefaultSubobject<UNiagaraComponent>(TEXT("AmbientNiagara"));
 	AmbientNiagara->SetupAttachment(PresentationRoot);
@@ -60,6 +71,13 @@ AFieldPickup::AFieldPickup()
 		&ThisClass::HandlePickupTriggerBeginOverlap);
 }
 
+void AFieldPickup::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UpdatePresentationAnimation(DeltaSeconds);
+}
+
 void AFieldPickup::GetLifetimeReplicatedProps(
 	TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -71,6 +89,12 @@ void AFieldPickup::GetLifetimeReplicatedProps(
 void AFieldPickup::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (IsValid(PickupMesh))
+	{
+		PickupMeshBaseLocation = PickupMesh->GetRelativeLocation();
+		PickupMeshBaseRotation = PickupMesh->GetRelativeRotation();
+	}
 
 	if (HasAuthority() && !HasValidConfiguration())
 	{
@@ -127,8 +151,9 @@ void AFieldPickup::MulticastPlayPickupEffects_Implementation()
 		return;
 	}
 
-	const FTransform EffectTransform = IsValid(PresentationRoot)
-		? PresentationRoot->GetComponentTransform()
+	// 부유 중인 실제 픽업 위치에서 획득 연출이 재생되도록 한다.
+	const FTransform EffectTransform = IsValid(PickupMesh)
+		? PickupMesh->GetComponentTransform()
 		: GetActorTransform();
 
 	if (IsValid(PickupSound))
@@ -294,21 +319,26 @@ void AFieldPickup::SetAvailable(const bool bNewAvailable)
 
 void AFieldPickup::ApplyAvailabilityState()
 {
-	const bool bShowPresentation = bIsAvailable
-		&& GetNetMode() != NM_DedicatedServer;
+	const bool bCanRenderPresentation = GetNetMode() != NM_DedicatedServer;
+	const bool bShowPickupVisual = bCanRenderPresentation && bIsAvailable;
 	const bool bEnableServerPickup = HasAuthority()
 		&& bIsAvailable
 		&& HasValidConfiguration();
 
-	// BP에서 PresentationRoot 아래에 추가한 시각 컴포넌트도 같은 상태를 따른다.
-	if (IsValid(PresentationRoot))
+	// 소비/리스폰 상태는 실제 아이템 Mesh에만 적용한다.
+	// 새 중간 SceneComponent의 부착 상태에 의존하지 않으므로 기존 BP도 그대로 동작한다.
+	// PedestalMesh와 PresentationRoot 아래의 발판 연출은 항상 남아 있어야 한다.
+	if (IsValid(PickupMesh))
 	{
-		PresentationRoot->SetHiddenInGame(!bShowPresentation, true);
+		PickupMesh->SetVisibility(bShowPickupVisual, true);
+		PickupMesh->SetHiddenInGame(!bShowPickupVisual, true);
 	}
 
+	// 기존 AmbientNiagara는 픽업 본체의 가용 상태 연출로 유지한다.
+	// 쿨타임에도 남길 발판 이펙트가 필요하면 BP에서 PresentationRoot 아래에 별도로 둔다.
 	if (IsValid(AmbientNiagara))
 	{
-		if (bShowPresentation)
+		if (bShowPickupVisual)
 		{
 			AmbientNiagara->Activate(true);
 		}
@@ -326,4 +356,65 @@ void AFieldPickup::ApplyAvailabilityState()
 				? ECollisionEnabled::QueryOnly
 				: ECollisionEnabled::NoCollision);
 	}
+
+	if (bShowPickupVisual)
+	{
+		ResetPresentationAnimation();
+	}
+
+	// 부유/자전이 실제로 필요한 클라이언트에서만 Tick을 켠다.
+	// 쿨타임, Dedicated Server, 모션 값이 0인 경우에는 Tick 비용이 없다.
+	SetActorTickEnabled(ShouldAnimatePickup());
+}
+
+bool AFieldPickup::ShouldAnimatePickup() const
+{
+	if (!bIsAvailable
+		|| GetNetMode() == NM_DedicatedServer
+		|| !IsValid(PickupMesh))
+	{
+		return false;
+	}
+
+	const bool bHasHoverMotion = HoverAmplitude > KINDA_SMALL_NUMBER
+		&& HoverFrequency > KINDA_SMALL_NUMBER;
+	const bool bHasRotationMotion = !FMath::IsNearlyZero(RotationSpeed);
+
+	return bHasHoverMotion || bHasRotationMotion;
+}
+
+void AFieldPickup::ResetPresentationAnimation()
+{
+	PresentationAnimationTime = 0.0f;
+
+	if (!IsValid(PickupMesh))
+	{
+		return;
+	}
+
+	PickupMesh->SetRelativeLocation(PickupMeshBaseLocation);
+	PickupMesh->SetRelativeRotation(PickupMeshBaseRotation);
+}
+
+void AFieldPickup::UpdatePresentationAnimation(const float DeltaSeconds)
+{
+	if (!bIsAvailable
+		|| GetNetMode() == NM_DedicatedServer
+		|| !IsValid(PickupMesh))
+	{
+		return;
+	}
+
+	PresentationAnimationTime += DeltaSeconds;
+
+	const float HoverOffset = HoverAmplitude > 0.0f && HoverFrequency > 0.0f
+		? FMath::Sin(PresentationAnimationTime * UE_TWO_PI * HoverFrequency) * HoverAmplitude
+		: 0.0f;
+
+	PickupMesh->SetRelativeLocation(
+		PickupMeshBaseLocation + FVector(0.0f, 0.0f, HoverOffset));
+
+	FRotator AnimatedRotation = PickupMeshBaseRotation;
+	AnimatedRotation.Yaw += RotationSpeed * PresentationAnimationTime;
+	PickupMesh->SetRelativeRotation(AnimatedRotation);
 }

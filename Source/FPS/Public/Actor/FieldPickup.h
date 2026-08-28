@@ -29,6 +29,8 @@ class FPS_API AFieldPickup : public AActor
 public:
 	AFieldPickup();
 
+	virtual void Tick(float DeltaSeconds) override;
+
 	virtual void GetLifetimeReplicatedProps(
 		TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -64,18 +66,34 @@ private:
 	void EvaluateOverlappingPawns();
 	void SetAvailable(bool bNewAvailable);
 	void ApplyAvailabilityState();
+	bool ShouldAnimatePickup() const;
+	void ResetPresentationAnimation();
+	void UpdatePresentationAnimation(float DeltaSeconds);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> SceneRoot;
 
+	// 쿨타임 중에도 유지되는 발판 및 생성 지점 연출의 공용 루트다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USceneComponent> PresentationRoot;
 
+	// 기존 BP 호환성을 위해 유지하는 시각 루트다.
+	// 실제 가용 상태와 부유/자전은 PickupMesh 자체에 적용하여
+	// 기존 BP의 컴포넌트 재부모화 여부에 의존하지 않는다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USceneComponent> PickupVisualRoot;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> PickupMesh;
+
+	// PickupVisualRoot 밖에 두어 픽업 애니메이션의 영향을 받지 않는다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> PedestalMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Pickup|Components",
 		meta = (AllowPrivateAccess = "true"))
@@ -105,11 +123,28 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNiagaraSystem> PickupNiagara;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Presentation|Motion",
+		meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float HoverAmplitude = 12.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Presentation|Motion",
+		meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "Hz"))
+	float HoverFrequency = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Presentation|Motion",
+		meta = (AllowPrivateAccess = "true", Units = "deg/s"))
+	float RotationSpeed = 45.0f;
+
 	UPROPERTY(ReplicatedUsing = OnRep_IsAvailable, VisibleInstanceOnly, BlueprintReadOnly,
 		Category = "Field Pickup|Runtime", meta = (AllowPrivateAccess = "true"))
 	bool bIsAvailable = true;
 
 	// 같은 프레임의 중복 오버랩과 GE 적용 중 재진입을 막는 서버 로컬 가드다.
 	bool bConsumeInProgress = false;
+
+	FVector PickupMeshBaseLocation = FVector::ZeroVector;
+	FRotator PickupMeshBaseRotation = FRotator::ZeroRotator;
+	float PresentationAnimationTime = 0.0f;
+
 	FTimerHandle RespawnTimerHandle;
 };
