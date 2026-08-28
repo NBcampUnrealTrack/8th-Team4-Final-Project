@@ -43,7 +43,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경 (m)");
 
 	// 게임플레이 입력 차단/행동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked, "State.Gameplay.InputBlocked", "게임플레이 입력 차단 부모 태그");
@@ -132,12 +132,8 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");
 
 	// 액티브 증강 쿨타임
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_FirstAidKit, "Cooldown.Augment.FirstAidKit", "응급 처치 키트 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Stimpack,       "Cooldown.Augment.Stimpack",       "전투 자극제 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_RallyingAura,   "Cooldown.Augment.RallyingAura",   "격려의 오라 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Prayer,         "Cooldown.Augment.Prayer",         "기원 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_SystemOverload, "Cooldown.Augment.SystemOverload", "시스템 오버로드 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_PhaseShift,     "Cooldown.Augment.PhaseShift",     "지나갑니다 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot1, "Cooldown.Augment.Slot1", "Q 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot2, "Cooldown.Augment.Slot2", "E 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot3, "Cooldown.Augment.Slot3", "V 슬롯 액티브 쿨타임");
+
 }

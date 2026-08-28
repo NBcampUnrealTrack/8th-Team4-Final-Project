@@ -17,7 +17,7 @@ URogueReconDroneAbility::URogueReconDroneAbility()
 
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	CooldownTag = RogueTags::Cooldown_Augment_ReconDrone;
+	CooldownTag = RogueTags::Cooldown_Augment_Slot1;
 	BaseCooldown = 25.f;
 
 	// 액티브 스킬 시전 시 Event.Skill.Used 발신
