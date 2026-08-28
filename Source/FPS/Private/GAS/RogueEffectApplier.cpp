@@ -37,6 +37,13 @@ void URogueEffectApplier::ResolveTargets(const FRogueEffectPayload& Payload, TAr
 		return;
 	}
 
+	if (Payload.Scope == ERogueTargetScope::AimSweep)
+	{
+		URogueTargetFilter::GatherInAimSweep(Instigator, Payload.Origin, Payload.Direction,
+			Payload.Length, Payload.Radius, Query, OutTargets);
+		return;
+	}
+
 	URogueTargetFilter::GatherInRadius(Instigator, Payload.Origin, Payload.Radius, Query, OutTargets);
 }
 

@@ -24,6 +24,7 @@ enum class ERogueTargetScope : uint8
 	Single   UMETA(DisplayName = "단일 대상"),
 	Radius   UMETA(DisplayName = "원점 중심 범위"),
 	TeamWide UMETA(DisplayName = "팀 전체"),
+	AimSweep UMETA(DisplayName = "조준 방향 스윕"),
 };
 
 // 범위 안에서 대상 수집 시 쿼리 조건
@@ -70,6 +71,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Target")
 	static void GatherInRadius(AActor* Source, FVector Origin, float Radius,
 	                           const FRogueTargetQuery& Query, TArray<AActor*>& OutTargets);
+
+	// 조준 방향으로 구를 쓸어 수집
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Target")
+	static void GatherInAimSweep(AActor* Source, FVector Origin, FVector Direction,
+	                             float Length, float Radius,
+	                             const FRogueTargetQuery& Query, TArray<AActor*>& OutTargets);
 
 	// 거리와 무관하게 접속한 플레이어 전원에서 수집
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Target")

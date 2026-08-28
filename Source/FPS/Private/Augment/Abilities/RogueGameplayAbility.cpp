@@ -356,6 +356,34 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 		}
 	}
 
+	if (Entry.TargetScope == ERogueTargetScope::AimSweep)
+	{
+		if (!IsValid(Avatar))
+		{
+			return false;
+		}
+
+		FVector EyeLocation;
+		FRotator EyeRotation;
+		Avatar->GetActorEyesViewPoint(EyeLocation, EyeRotation);
+
+		OutPayload.Origin    = EyeLocation;
+		OutPayload.Direction = EyeRotation.Vector();
+		OutPayload.Length    = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Range) * 100.f;
+		OutPayload.Radius    = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Radius) * 100.f;
+
+		if (OutPayload.Length <= 0.f || OutPayload.Radius <= 0.f)
+		{
+			UE_LOG(LogAugmentAbility, Warning,
+				TEXT("[AugmentAbility] %s 가 조준 스윕이지만 레벨 수치에 %s 나 %s 가 없습니다"),
+				*GetName(), *RogueTags::Data_Magnitude_Range.GetTag().ToString(),
+				*RogueTags::Data_Magnitude_Radius.GetTag().ToString());
+			return false;
+		}
+
+		return true;
+	}
+
 	if (Entry.TargetScope != ERogueTargetScope::Radius)
 	{
 		return true;

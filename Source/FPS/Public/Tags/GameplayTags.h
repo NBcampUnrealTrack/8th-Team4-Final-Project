@@ -49,6 +49,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Duration);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Radius);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Range);
 
 	// 게임플레이 입력 차단/행동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked);

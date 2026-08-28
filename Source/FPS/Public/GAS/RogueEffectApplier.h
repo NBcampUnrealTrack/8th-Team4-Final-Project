@@ -34,6 +34,13 @@ struct FRogueEffectPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	float Radius = 0.f;
 
+	// Scope 가 AimSweep 일 때 쓸어갈 방향과 사거리
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	FVector Direction = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	float Length = 0.f;
+
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	TArray<TSubclassOf<UGameplayEffect>> EffectClasses;
 

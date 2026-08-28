@@ -44,6 +44,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경 (m)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Range,     "Data.Magnitude.Range",     "증강 사거리 (m)");
 
 	// 게임플레이 입력 차단/행동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked, "State.Gameplay.InputBlocked", "게임플레이 입력 차단 부모 태그");
