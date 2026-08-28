@@ -138,6 +138,8 @@ namespace RogueTags
 	// 액티브 증강 쿨타임
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_FirstAidKit);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Stimpack);
 
 	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
 	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)

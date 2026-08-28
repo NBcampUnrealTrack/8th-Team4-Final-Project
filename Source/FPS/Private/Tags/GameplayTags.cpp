@@ -132,4 +132,6 @@ namespace RogueTags
 	// 액티브 증강 쿨타임
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_FirstAidKit, "Cooldown.Augment.FirstAidKit", "응급 처치 키트 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Stimpack,    "Cooldown.Augment.Stimpack",    "스팀팩 쿨타임");
 }
