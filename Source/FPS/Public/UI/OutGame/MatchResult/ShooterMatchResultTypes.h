@@ -5,6 +5,13 @@
 #include "GameMode/TeamTypes.h"
 #include "ShooterMatchResultTypes.generated.h"
 
+UENUM(BlueprintType)
+enum class EShooterResultRowSide : uint8
+{
+	LocalTeam,
+	EnemyTeam
+};
+
 // 결과화면 플레이어 Row
 USTRUCT()
 struct FShooterMatchResultRow

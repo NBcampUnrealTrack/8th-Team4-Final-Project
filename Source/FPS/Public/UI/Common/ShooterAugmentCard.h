@@ -32,17 +32,22 @@ public:
 	
 	FOnAugmentCardClicked OnAugmentCardClicked;
 	
+
+	// 등급 확정 직후 한 번, 색 데이터만 넘긴다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "UI|Accent")
+	void BP_OnAccentChanged(FLinearColor Accent);
+	
 protected:
 	virtual void NativeOnClicked() override;
 	
 	// Widget 구성 요소
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UImage> Image_Icon;
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Name;
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Description;
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_TierLabel;
 	// 강조표시할 애니메이션이 필요한 곳에서 킨다 ex) Legendary 등장 연출
 	UPROPERTY(meta = (BindWidgetOptional))
