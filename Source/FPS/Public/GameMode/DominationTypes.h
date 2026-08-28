@@ -121,16 +121,27 @@ struct FPS_API FDominationCaptureRules
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (ClampMin = "0.1", Units = "s"))
-	float OnePlayerCaptureTime = 25.0f;
+	float OnePlayerCaptureTime = 30.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (ClampMin = "0.1", Units = "s"))
-	float TwoPlayerCaptureTime = 20.0f;
+	float TwoPlayerCaptureTime = 22.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (ClampMin = "0.1", Units = "s"))
 	float ThreeOrMorePlayerCaptureTime = 15.0f;
 
-	float GetCaptureTime(const int32 PlayerCount) const
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (ClampMin = "0.1", Units = "s"))
+	float SuddenDeathDelay = 600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (ClampMin = "0.1", Units = "s"))
+	float SuddenDeathCaptureTime = 10.0f;
+
+	float GetCaptureTime(const int32 PlayerCount, const bool bSuddenDeath) const
 	{
+		if (bSuddenDeath)
+		{
+			return SuddenDeathCaptureTime;
+		}
+
 		if (PlayerCount >= 3)
 		{
 			return ThreeOrMorePlayerCaptureTime;

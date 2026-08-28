@@ -46,6 +46,7 @@ private:
 	void StopCaptureTracking();
 	void HandleCapturePointPawnChanged(APawn* Pawn);
 	void HandleCaptureUpdateTimer();
+	void HandleSuddenDeathTimerExpired();
 	void BeginPointTransition(EDominationPointId CapturedPointId, EGameTeam CaptureTeam);
 	void HandlePointTransitionComplete();
 	void UpdateCaptureState(float DeltaSeconds);
@@ -60,12 +61,14 @@ private:
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
 	FDominationCaptureRules CaptureRules;
 	FTimerHandle CaptureUpdateTimerHandle;
+	FTimerHandle SuddenDeathTimerHandle;
 	FTimerHandle PointTransitionTimerHandle;
 	EDominationPointId TransitionTargetPointId = EDominationPointId::None;
 	EGameTeam CapturingTeam = EGameTeam::None;
 	float CaptureProgress = 0.0f;
 	float PointTransitionDuration = 30.0f;
 	bool bCaptureCompleted = false;
+	bool bSuddenDeathActive = false;
 	double LastCaptureUpdateTime = 0.0;
 
 	static constexpr float CaptureUpdateInterval = 0.1f;

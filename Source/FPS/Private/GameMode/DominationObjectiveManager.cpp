@@ -161,6 +161,12 @@ void UDominationObjectiveManager::StartCaptureTracking(
 		&ThisClass::HandleCaptureUpdateTimer,
 		CaptureUpdateInterval,
 		true);
+	GameMode->GetWorldTimerManager().SetTimer(
+		SuddenDeathTimerHandle,
+		this,
+		&ThisClass::HandleSuddenDeathTimerExpired,
+		CaptureRules.SuddenDeathDelay,
+		false);
 }
 
 void UDominationObjectiveManager::StopCaptureTracking()
@@ -168,6 +174,7 @@ void UDominationObjectiveManager::StopCaptureTracking()
 	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
 	{
 		GameMode->GetWorldTimerManager().ClearTimer(CaptureUpdateTimerHandle);
+		GameMode->GetWorldTimerManager().ClearTimer(SuddenDeathTimerHandle);
 	}
 
 	if (ADominationCapturePoint* CapturePoint = ActiveCapturePoint.Get())
@@ -178,6 +185,7 @@ void UDominationObjectiveManager::StopCaptureTracking()
 	}
 
 	ActiveCapturePoint.Reset();
+	bSuddenDeathActive = false;
 	LastCaptureUpdateTime = 0.0;
 }
 
@@ -207,6 +215,17 @@ void UDominationObjectiveManager::HandleCaptureUpdateTimer()
 	const float DeltaSeconds = static_cast<float>(CurrentTime - LastCaptureUpdateTime);
 	LastCaptureUpdateTime = CurrentTime;
 	UpdateCaptureState(DeltaSeconds);
+}
+
+void UDominationObjectiveManager::HandleSuddenDeathTimerExpired()
+{
+	bSuddenDeathActive = true;
+	UE_LOG(
+		LogDominationObjective,
+		Log,
+		TEXT("Domination capture point %d entered sudden death. Capture time is now %.1f seconds."),
+		static_cast<uint8>(ActiveCapturePoint->GetPointId()),
+		CaptureRules.SuddenDeathCaptureTime);
 }
 
 void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
@@ -254,7 +273,9 @@ void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 	const bool bWasComplete = CaptureProgress >= 1.0f;
 	if (!bWasComplete && DeltaSeconds > 0.0f)
 	{
-		const float CaptureTime = CaptureRules.GetCaptureTime(PresentPlayerCount);
+		const float CaptureTime = CaptureRules.GetCaptureTime(
+			PresentPlayerCount,
+			bSuddenDeathActive);
 		CaptureProgress = FMath::Min(1.0f, CaptureProgress + DeltaSeconds / CaptureTime);
 	}
 
