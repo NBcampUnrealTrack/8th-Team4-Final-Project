@@ -51,7 +51,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown")
 	FScalableFloat BaseCooldown = FScalableFloat(0.f);
 
-	// 최대 충전 수. 커브를 안 걸면 전 레벨 1충전
+	// 최대 충전 수
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Cooldown")
 	FScalableFloat MaxCharges = FScalableFloat(1.f);
 

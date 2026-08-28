@@ -37,6 +37,20 @@ enum class EAugmentCategory : uint8
     Weapon_Knife    = 9 UMETA(DisplayName = "전술칼")
 };
 
+// 후보를 어느 풀에서 뽑는지
+UENUM(BlueprintType)
+enum class EAugmentRewardPool : uint8
+{
+    // 액티브, 패시브 둘 다 추첨
+    Any     UMETA(DisplayName = "전체"),
+
+    // 패시브만, 등급을 기준으로 추첨
+    Passive UMETA(DisplayName = "패시브"),
+
+    // 액티브만, 입력 슬롯으로 추첨
+    Active  UMETA(DisplayName = "액티브")
+};
+
 // 조건부 대미지 규칙이 걸리는 방향
 UENUM(BlueprintType)
 enum class EAugmentDamageRuleSide : uint8
@@ -147,9 +161,9 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment")
     TSoftClassPtr<URogueGameplayAbility> AbilityClass;
 
-	// 액티브 증강이면 입력 표시
+	// 액티브 증강이 쓸 슬롯. Slot1(Q) / Slot2(E) / Slot3(V)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
-        meta = (Categories = "InputTag.Ability.AugmentSlot"))
+        meta = (Categories = "InputTag.Ability"))
     FGameplayTag InputTag;
 
     // 이벤트가 왔을 때 적용할 GE
@@ -189,21 +203,21 @@ struct FAugmentGrantedAbility
     bool bDistanceScalesWithRangeBonus = false;
 };
 
-// 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1
+// 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지
 USTRUCT(BlueprintType)
 struct FAugmentLevelData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level", meta = (MultiLine = "true"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value", meta = (MultiLine = "true"))
     FText Description;
 
-	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller. Magnitude 는 레벨마다 다르게 설정
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
+	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value",
         meta = (Categories = "Data.Magnitude", ForceInlineRow))
     TMap<FGameplayTag, float> SetByCallerMagnitudes;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value")
     TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
 };
 
@@ -235,13 +249,6 @@ struct FAugmentDraftContext
     // 0 이면 서버가 만들어 로그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
     int32 RoundSeed = 0;
-
-	// 팀 점수, 패배팅 보정, 현재 적용 X
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 TeamScore = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 OpponentScore = 0;
 };
 
 // 보유 증강 한 칸
@@ -258,13 +265,28 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "Augment.Line"))
     FGameplayTag LineTag;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
-    int32 Level = 1;
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition);
+};
 
-    // 배정된 입력 슬롯, 액티브 전용
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
-    FGameplayTag InputSlotTag;
+// 적립된 증강 보상 후보
+USTRUCT(BlueprintType)
+struct FAugmentPendingReward
+{
+    GENERATED_BODY()
 
-    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level,
-                                       FGameplayTag InputSlotTag = FGameplayTag());
+    // 패시브, 액티브 여부
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentRewardPool Pool = EAugmentRewardPool::Passive;
+
+	// 증강 등급, 액티브는 슬롯으로 추첨하므로 무시
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentTier Tier = EAugmentTier::Common;
+
+    // 액티브 증강 슬롯
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
+    FGameplayTag ActiveSlot;
+
+    // 시드와 로그용
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RoundNumber = 0;
 };

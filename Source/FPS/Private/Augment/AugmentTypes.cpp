@@ -5,14 +5,11 @@
 
 #include "Augment/AugmentDefinition.h"
 
-FAugmentInventoryEntry FAugmentInventoryEntry::Make(
-	const UAugmentDefinition& Definition, int32 Level, FGameplayTag InputSlotTag)
+FAugmentInventoryEntry FAugmentInventoryEntry::Make(const UAugmentDefinition& Definition)
 {
 	FAugmentInventoryEntry Entry;
 	Entry.DefinitionId = Definition.GetPrimaryAssetId();
 	Entry.LineTag      = Definition.LineTag;
-	Entry.Level        = Level;
-	Entry.InputSlotTag = InputSlotTag;
 
 	return Entry;
 }

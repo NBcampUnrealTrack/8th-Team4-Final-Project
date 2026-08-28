@@ -22,11 +22,11 @@ protected:
 	                             const FGameplayAbilityActivationInfo ActivationInfo,
 	                             const FGameplayEventData* TriggerEventData) override;
 
-	// 이동 거리(cm). 레벨 스케일은 Curve
+	// 이동 거리(cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash")
 	FScalableFloat DashDistance = FScalableFloat(500.f);
 
-	// 대시 시간(초). 레벨 스케일은 Curve
+	// 대시 시간(초)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash")
 	FScalableFloat DashDuration = FScalableFloat(0.15f);
 

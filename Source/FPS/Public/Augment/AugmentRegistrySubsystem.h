@@ -35,6 +35,9 @@ public:
 	// 등급별로 미리 걸러둔 목록. 드래프트 후보 스캔 비용 절감용
 	const TArray<UAugmentDefinition*>& GetDefinitionsByTier(EAugmentTier Tier) const;
 
+	// 액티브 증강만 걸러둔 목록
+	const TArray<UAugmentDefinition*>& GetActiveDefinitions() const { return ActiveDefinitions; }
+
 private:
 	void StartAsyncLoad();
 	void OnCatalogLoaded();
@@ -48,6 +51,9 @@ private:
 
 	// AllDefinitions 를 등급별로 나눈 색인
 	TMap<EAugmentTier, TArray<UAugmentDefinition*>> DefinitionsByTier;
+
+	// AllDefinitions 중 액티브만
+	TArray<UAugmentDefinition*> ActiveDefinitions;
 
 	TSharedPtr<FStreamableHandle> LoadHandle;
 

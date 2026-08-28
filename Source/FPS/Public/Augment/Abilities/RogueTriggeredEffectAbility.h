@@ -46,7 +46,7 @@ private:
 	AActor* ResolveTarget(AActor* Avatar, const FGameplayEventData* TriggerEventData,
 	                      const FAugmentGrantedAbility& Entry) const;
 
-	// 증강 정의의 해당 레벨 SetByCaller 수치를 스펙에 옮긴다
+	// 증강 정의의 SetByCaller 수치를 스펙에 옮김
 	void InjectLevelMagnitudes(const FGameplayEffectSpecHandle& SpecHandle,
 	                           FGameplayAbilitySpecHandle Handle,
 	                           const FGameplayAbilityActorInfo* ActorInfo) const;

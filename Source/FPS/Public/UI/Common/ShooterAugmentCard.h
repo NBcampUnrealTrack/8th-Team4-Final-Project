@@ -22,9 +22,8 @@ class FPS_API UShooterAugmentCard : public UCommonButtonBase{
 	GENERATED_BODY()
 	
 public:
-	// 카드에 그릴 내용을 넣기위해선 Level이 필요하다.
 	// OfferIndex는 서버가 준 배열에서의 위치로 클릭했을때 전달함
-	void SetData(const UAugmentDefinition* InDefinition, int32 InLevel, int32 InOfferIndex);
+	void SetData(const UAugmentDefinition* InDefinition, int32 InOfferIndex);
 	
 	// TODO: 리롤을 실제 교체 연출로 확장 시
 	// FadeOut -> SetData -> FadeIn 구조로 변경한다.
