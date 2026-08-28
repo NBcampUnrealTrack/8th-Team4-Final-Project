@@ -78,6 +78,37 @@ void URogueGameplayAbility::CommitExecute(const FGameplayAbilitySpecHandle Handl
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, RogueTags::Event_Skill_Used, Payload);
 }
 
+bool URogueGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+                                               const FGameplayAbilityActorInfo* ActorInfo,
+                                               const FGameplayTagContainer* SourceTags,
+                                               const FGameplayTagContainer* TargetTags,
+                                               FGameplayTagContainer* OptionalRelevantTags) const
+{
+	if (!Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags))
+	{
+		return false;
+	}
+
+	// 이벤트 기반 발동은 액션 블록 상태를 무시
+	if (!bBroadcastSkillUsed || bIgnoreActionBlock)
+	{
+		return true;
+	}
+
+	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (ASC && ASC->HasMatchingGameplayTag(RogueTags::State_Combat_ActionBlocked))
+	{
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(RogueTags::State_Combat_ActionBlocked);
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
 void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                             const FGameplayAbilityActorInfo* ActorInfo,
                                             const FGameplayAbilityActivationInfo ActivationInfo,

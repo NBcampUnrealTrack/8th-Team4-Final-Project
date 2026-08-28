@@ -27,6 +27,13 @@ public:
 	                           const FGameplayAbilityActorInfo* ActorInfo,
 	                           OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
+	// 액티브 스킬은 State.Combat.ActionBlocked 태그가 존재하면 차단
+	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+	                                const FGameplayAbilityActorInfo* ActorInfo,
+	                                const FGameplayTagContainer* SourceTags = nullptr,
+	                                const FGameplayTagContainer* TargetTags = nullptr,
+	                                OUT FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
 	// Event.Skill.Used 발신
 	virtual void CommitExecute(const FGameplayAbilitySpecHandle Handle,
 	                           const FGameplayAbilityActorInfo* ActorInfo,
@@ -84,6 +91,11 @@ protected:
 	// 액티브 증강만 활성화, 이벤트로 발동하는 증강은 액티브 스킬이 아님
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
 	bool bBroadcastSkillUsed = false;
+
+	// 켜면 행동 차단 상태에서도 발동한다. 탈출기처럼 예외가 필요한 액티브에만 사용
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "bBroadcastSkillUsed"))
+	bool bIgnoreActionBlock = false;
 
 	// 어빌리티 레벨에 해당하는 최대 충전 수
 	int32 GetMaxCharges(int32 Level) const;

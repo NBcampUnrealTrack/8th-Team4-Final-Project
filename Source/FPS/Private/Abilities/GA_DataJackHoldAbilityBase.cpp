@@ -20,6 +20,7 @@ UGA_DataJackHoldAbilityBase::UGA_DataJackHoldAbilityBase()
 
 	ActivationBlockedTags.AddTag(RogueTags::State_Gameplay_InputBlocked);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_ActionBlocked);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Dropping);
 }
