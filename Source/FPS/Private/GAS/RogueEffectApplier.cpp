@@ -5,7 +5,10 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Engine/World.h"
 #include "GameplayEffect.h"
+#include "GAS/Damage/RogueDamageSubsystem.h"
+#include "GAS/Damage/RogueDamageTypes.h"
 #include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogEffectApplier, Log, All);
@@ -51,10 +54,15 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 {
 	AActor* Instigator = Payload.Instigator.Get();
 
-	UAbilitySystemComponent* SourceASC =
-		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Instigator);
+	// 폰이 파괴돼도 효과 적용되어야 함
+	UAbilitySystemComponent* SourceASC = Payload.InstigatorASC.Get();
+	if (!SourceASC)
+	{
+		SourceASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Instigator);
+	}
 
-	if (!SourceASC || Payload.EffectClasses.IsEmpty())
+	const bool bHasDamage = Payload.FlatDamage > 0.f;
+	if (!SourceASC || (Payload.EffectClasses.IsEmpty() && !bHasDamage))
 	{
 		return;
 	}
@@ -104,7 +112,49 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 
 			SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data, TargetASC);
 		}
+
+		if (bHasDamage)
+		{
+			ApplyDamage(Payload, Instigator, TargetActor);
+		}
 	}
+}
+
+void URogueEffectApplier::ApplyDamage(const FRogueEffectPayload& Payload,
+                                      AActor* Instigator, AActor* TargetActor)
+{
+	const UWorld* World = IsValid(TargetActor) ? TargetActor->GetWorld() : nullptr;
+	URogueDamageSubsystem* Subsystem = World ? World->GetSubsystem<URogueDamageSubsystem>() : nullptr;
+	if (!Subsystem)
+	{
+		UE_LOG(LogEffectApplier, Error, TEXT("[EffectApplier] RogueDamageSubsystem 을 얻지 못했습니다"));
+		return;
+	}
+
+	// 원점에서 멀수록 감쇄. 범위가 아니면 전부 원본 대미지
+	float Scale = 1.f;
+	if (Payload.Scope == ERogueTargetScope::Radius && Payload.Radius > 0.f)
+	{
+		const float Distance = FVector::Dist(Payload.Origin, TargetActor->GetActorLocation());
+		const float Alpha = FMath::Clamp(Distance / Payload.Radius, 0.f, 1.f);
+
+		Scale = FMath::Lerp(1.f, FMath::Clamp(Payload.FalloffAtEdge, 0.f, 1.f), Alpha);
+	}
+
+	const float Damage = Payload.FlatDamage * Scale;
+	if (Damage <= 0.f)
+	{
+		return;
+	}
+
+	FRogueDamageParams Params;
+	Params.Instigator = Instigator;
+	Params.Causer     = Instigator;
+	Params.SourceTag  = Payload.DamageSourceTag.IsValid()
+		? Payload.DamageSourceTag
+		: RogueTags::Damage_Source_Skill;
+
+	Subsystem->ApplyFlatDamage(Params, TargetActor, Damage);
 }
 
 void URogueEffectApplier::SplitIntoIntegerTicks(const FGameplayEffectSpecHandle& SpecHandle,

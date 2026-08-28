@@ -3,6 +3,8 @@
 
 #include "Augment/AugmentDefinition.h"
 
+#include "Tags/GameplayTags.h"
+
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
 #endif
@@ -107,10 +109,14 @@ namespace
 		return bValid;
 	}
 
-	// 레벨 공통으로 부여하는 GE / GA
+	// 레벨 공통으로 부여하는 GE / GA / 대미지
 	bool AreSharedEffectsValid(const UAugmentDefinition& Definition, FDataValidationContext& Context)
 	{
 		bool bValid = true;
+
+		const FAugmentLevelData* LevelData = Definition.GetLevelData();
+		const bool bHasDamage = LevelData
+			&& LevelData->SetByCallerMagnitudes.FindRef(RogueTags::Data_Magnitude_Damage) > 0.f;
 
 		for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
 		{
@@ -182,13 +188,14 @@ namespace
 						"이 설정은 무시됩니다"), Index));
 			}
 
-			// 입력, GE가 둘 다 없는 경우
-			if (!Granted.InputTag.IsValid() && Granted.EffectsToApply.IsEmpty())
+			// 입력, GE, 대미지가 전부 없는 경우
+			if (!Granted.InputTag.IsValid() && Granted.EffectsToApply.IsEmpty() && !bHasDamage)
 			{
 				Context.AddWarning(FText::Format(
 					LOCTEXT("TriggerWithoutEffects",
 						"GrantedAbilities[{0}] 에 입력 슬롯도 EffectsToApply 도 없습니다. "
-						"이벤트 트리거 증강이라면 EffectsToApply 를 채우세요"), Index));
+						"이벤트 트리거 증강이라면 EffectsToApply 나 {1} 을 채우세요"),
+					Index, FText::FromString(RogueTags::Data_Magnitude_Damage.GetTag().ToString())));
 			}
 
 			for (int32 EffectIndex = 0; EffectIndex < Granted.EffectsToApply.Num(); ++EffectIndex)

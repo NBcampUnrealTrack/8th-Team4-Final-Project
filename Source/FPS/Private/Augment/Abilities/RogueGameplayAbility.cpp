@@ -301,13 +301,6 @@ const FAugmentGrantedAbility* URogueGameplayAbility::FindGrantedEntry(
 bool URogueGameplayAbility::LoadEffectClasses(const FAugmentGrantedAbility& Entry,
                                               TArray<TSubclassOf<UGameplayEffect>>& OutClasses) const
 {
-	if (Entry.EffectsToApply.IsEmpty())
-	{
-		UE_LOG(LogAugmentAbility, Error,
-			TEXT("[AugmentAbility] %s 를 부여한 계열의 EffectsToApply 가 비어 있습니다"), *GetName());
-		return false;
-	}
-
 	OutClasses.Reserve(Entry.EffectsToApply.Num());
 
 	for (int32 Index = 0; Index < Entry.EffectsToApply.Num(); ++Index)
@@ -341,12 +334,15 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 		return false;
 	}
 
-	OutPayload.Scope        = Entry.TargetScope;
-	OutPayload.Query        = Entry.TargetQuery;
-	OutPayload.Instigator   = Avatar;
-	OutPayload.Level        = GetAbilityLevel(Handle, ActorInfo);
-	OutPayload.SingleTarget = (Entry.bApplyToEventTarget && EventTarget) ? EventTarget : Avatar;
+	OutPayload.Scope         = Entry.TargetScope;
+	OutPayload.Query         = Entry.TargetQuery;
+	OutPayload.Instigator    = Avatar;
+	OutPayload.InstigatorASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	OutPayload.Level         = GetAbilityLevel(Handle, ActorInfo);
+	OutPayload.SingleTarget  = (Entry.bApplyToEventTarget && EventTarget) ? EventTarget : Avatar;
 	OutPayload.bSplitIntoIntegerTicks = Entry.bSplitIntoIntegerTicks;
+	OutPayload.FalloffAtEdge    = Entry.DamageFalloffAtEdge;
+	OutPayload.DamageSourceTag  = RogueTags::Damage_Source_Skill;
 
 	if (const UAugmentDefinition* Definition = Cast<UAugmentDefinition>(GetSourceObject(Handle, ActorInfo)))
 	{
@@ -354,6 +350,17 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 		{
 			OutPayload.Magnitudes = LevelData->SetByCallerMagnitudes;
 		}
+	}
+
+	OutPayload.FlatDamage = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Damage);
+
+	// GE, 대미지가 둘 다 없으면 효과가 없는 것
+	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f)
+	{
+		UE_LOG(LogAugmentAbility, Error,
+			TEXT("[AugmentAbility] %s 를 부여한 계열에 EffectsToApply 도 %s 도 없습니다"),
+			*GetName(), *RogueTags::Data_Magnitude_Damage.GetTag().ToString());
+		return false;
 	}
 
 	if (Entry.TargetScope == ERogueTargetScope::AimSweep)

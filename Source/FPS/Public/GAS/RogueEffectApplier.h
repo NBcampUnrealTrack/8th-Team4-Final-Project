@@ -9,6 +9,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "RogueEffectApplier.generated.h"
 
+class UAbilitySystemComponent;
 class UGameplayEffect;
 
 // 페이로드를 통해 GE 를 적용할 대상과 범위, 효과 클래스, Magnitude 를 지정
@@ -52,8 +53,23 @@ struct FRogueEffectPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	bool bSplitIntoIntegerTicks = false;
 
+	// 대상당 고정 대미지
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	float FlatDamage = 0.f;
+
+	// 범위 가장자리에서의 대미지 배율. 1 이면 감쇄 없음. Radius 일 때만 적용
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	float FalloffAtEdge = 1.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	FGameplayTag DamageSourceTag;
+
+	// 이벤트 수신자와 히트마커 대상. 폰
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	TWeakObjectPtr<AActor> Instigator;
+
+	// 효과를 거는 주체. PlayerState 에 있어 폰이 죽어도 존재
+	TWeakObjectPtr<UAbilitySystemComponent> InstigatorASC;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	int32 Level = 1;
@@ -74,6 +90,9 @@ public:
 	static void ResolveTargets(const FRogueEffectPayload& Payload, TArray<AActor*>& OutTargets);
 
 private:
+	// 거리 감쇄를 적용해 대미지 서브시스템에 전달
+	static void ApplyDamage(const FRogueEffectPayload& Payload, AActor* Instigator, AActor* TargetActor);
+
 	// 주기 GE 의 Primary 를 틱당 정수로, Duration 을 그 틱 수에 맞춰 수정
 	static void SplitIntoIntegerTicks(const FGameplayEffectSpecHandle& SpecHandle,
 	                                  UClass* EffectClass, int32 Level);

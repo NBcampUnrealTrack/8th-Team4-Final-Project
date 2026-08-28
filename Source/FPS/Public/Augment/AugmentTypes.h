@@ -220,6 +220,11 @@ struct FAugmentGrantedAbility
     // 주기 GE 의 Primary 를 틱당 정수로 나눌지 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     bool bSplitIntoIntegerTicks = false;
+
+    // 범위 가장자리에서의 대미지 배율. 1 이면 감쇄 없음. 대미지는 Data.Magnitude.Damage
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", ClampMin = "0.0", ClampMax = "1.0"))
+    float DamageFalloffAtEdge = 1.f;
 };
 
 // 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지
