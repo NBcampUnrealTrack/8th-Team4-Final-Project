@@ -71,7 +71,7 @@ struct FAugmentDraftEligibility
 	// ASC 가 보유한 해금 태그
 	FGameplayTagContainer UnlockTags;
 
-	// 프로필이 매치 이력 재등장을 막을 때 제외할 후보
+	// 매치 전체 등장 이력
 	TSet<FPrimaryAssetId> SeenDefinitions;
 
 	// 슬롯마다 뽑을 카드 수
@@ -120,13 +120,4 @@ namespace RogueAugmentDraft
 		int32 CardCount,
 		int32 Seed,
 		int32 CardsPerSlot = 1);
-
-	// 요청한 슬롯과 리롤 예비를 전부 채울 수 있을 때만 추첨한다.
-	// 실패하면 Bucket과 OutResult를 변경하지 않는다.
-	FPS_API bool TryPickCompleteOffers(
-		TArray<FAugmentInventoryEntry>& Bucket,
-		int32 CardCount,
-		int32 Seed,
-		int32 CardsPerSlot,
-		FAugmentOfferResult& OutResult);
 }

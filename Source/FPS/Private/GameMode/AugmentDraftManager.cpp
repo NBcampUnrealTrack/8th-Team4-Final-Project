@@ -35,10 +35,6 @@ void UAugmentDraftManager::Initialize(
 
 	OfferCount = Profile->GetOfferCount();
 	SelectionTimeout = Profile->GetSelectionTimeout();
-	RerollsPerSlot = Profile->GetRerollsPerSlot();
-	bIncludeBonusRerolls = Profile->ShouldIncludeBonusRerolls();
-	bRequireCompleteOfferSet = Profile->RequiresCompleteOfferSet();
-	bExcludePreviouslyOfferedDefinitions = Profile->ExcludesPreviouslyOfferedDefinitions();
 
 	RegenerateMatchSeed();
 	BuildDraftRules(InDraftProfile);
@@ -94,8 +90,6 @@ bool UAugmentDraftManager::AreDependenciesReady() const
 
 void UAugmentDraftManager::CancelDraft()
 {
-	RemainingBatchRewards.Reset();
-
 	TArray<AShooterPlayerState*> PlayerStates;
 	GetCurrentPlayerStates(PlayerStates);
 
@@ -129,13 +123,10 @@ void UAugmentDraftManager::GrantToAll(
 		return;
 	}
 
-	// 패시브 등급 선택. 액티브는 증강 정의의 입력 슬롯으로 후보를 구분한다.
+	// 등급 선택, 동점이거나 규칙이 팀별 등급을 끄면 동일한 등급
 	EAugmentTier TeamATier = EAugmentTier::Common;
 	EAugmentTier TeamBTier = EAugmentTier::Common;
-	if (Pool != EAugmentRewardPool::Active)
-	{
-		ResolveRewardTiers(RoundNumber, MakeRoundSeed(RoundNumber), TeamATier, TeamBTier);
-	}
+	ResolveRewardTiers(RoundNumber, MakeRoundSeed(RoundNumber), TeamATier, TeamBTier);
 
 	// 증강 풀 등록
 	FAugmentPendingReward Reward;
@@ -192,36 +183,12 @@ bool UAugmentDraftManager::ServeNextReward(AShooterPlayerState* PlayerState)
 		return false;
 	}
 
-	const int32 PendingRewardCount = Inventory->GetPendingRewardCount();
-	if (PendingRewardCount <= 0)
-	{
-		return false;
-	}
-
-	RemainingBatchRewards.Add(
-		TWeakObjectPtr<UAugmentInventoryComponent>(Inventory),
-		PendingRewardCount);
-
-	return ServeNextRewardInBatch(PlayerState, Inventory);
-}
-
-bool UAugmentDraftManager::ServeNextRewardInBatch(
-	AShooterPlayerState* PlayerState,
-	UAugmentInventoryComponent* Inventory)
-{
-	const TWeakObjectPtr<UAugmentInventoryComponent> InventoryKey(Inventory);
-	int32* RemainingRewards = RemainingBatchRewards.Find(InventoryKey);
-	if (!RemainingRewards)
-	{
-		return false;
-	}
-
-	while (*RemainingRewards > 0)
+	for (;;)
 	{
 		const FAugmentPendingReward* Pending = Inventory->PeekPendingReward();
 		if (!Pending)
 		{
-			break;
+			return false;
 		}
 
 		FAugmentDraftContext DraftContext;
@@ -232,11 +199,10 @@ bool UAugmentDraftManager::ServeNextRewardInBatch(
 			Pending->Pool, Pending->Tier, Pending->ActiveSlot, OfferCount))
 		{
 			UE_LOG(LogAugmentDraftManager, Warning,
-				TEXT("%s cannot build the pending augment reward. Discarding it and continuing."),
+				TEXT("%s has no candidates for the pending reward. Skipping it."),
 				*GetNameSafe(PlayerState));
 
 			Inventory->PopPendingReward();
-			--(*RemainingRewards);
 			continue;
 		}
 
@@ -250,9 +216,6 @@ bool UAugmentDraftManager::ServeNextRewardInBatch(
 		Inventory->StartSelectionTimeout(SelectionTimeout);
 		return true;
 	}
-
-	StopListeningForCommit(PlayerState);
-	return false;
 }
 
 // 플레이어의 대기열에서 증강을 강제로 선택
@@ -278,30 +241,15 @@ void UAugmentDraftManager::HandleOfferCommitted(UAugmentInventoryComponent* Inve
 		return;
 	}
 	
-	const TWeakObjectPtr<UAugmentInventoryComponent> InventoryKey(Inventory);
-	int32* RemainingRewards = RemainingBatchRewards.Find(InventoryKey);
-	if (!RemainingRewards)
-	{
-		return;
-	}
-
-	--(*RemainingRewards);
-	AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(Inventory->GetOwner());
-	if (*RemainingRewards > 0)
-	{
-		ServeNextRewardInBatch(PlayerState, Inventory);
-		return;
-	}
-
-	StopListeningForCommit(PlayerState);
+	// 대기열이 남아있으면 다음 보상 제시
+	ServeNextReward(Cast<AShooterPlayerState>(Inventory->GetOwner()));
 }
 
-void UAugmentDraftManager::StopListeningForCommit(AShooterPlayerState* PlayerState)
+void UAugmentDraftManager::StopListeningForCommit(AShooterPlayerState* PlayerState) const
 {
 	if (UAugmentInventoryComponent* Inventory = GetInventory(PlayerState))
 	{
 		Inventory->OnOfferCommitted.RemoveAll(this);
-		RemainingBatchRewards.Remove(TWeakObjectPtr<UAugmentInventoryComponent>(Inventory));
 	}
 }
 
@@ -319,7 +267,7 @@ void UAugmentDraftManager::ResetForNewMatch()
 	RegenerateMatchSeed();
 }
 
-void UAugmentDraftManager::ResetPlayerForNewMatch(AShooterPlayerState* PlayerState)
+void UAugmentDraftManager::ResetPlayerForNewMatch(AShooterPlayerState* PlayerState) const
 {
 	if (!IsValid(PlayerState))
 	{
@@ -474,11 +422,7 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 
 	// 플레이어의 인벤토리 상태와 이번 보상의 풀
 	FAugmentDraftEligibility State;
-	Inventory->FillDraftEligibility(
-		State,
-		RerollsPerSlot,
-		bIncludeBonusRerolls,
-		bExcludePreviouslyOfferedDefinitions);
+	Inventory->FillDraftEligibility(State);
 	State.Pool = Pool;
 	State.Tier = Tier;
 	State.RequiredActiveSlot = RequiredActiveSlot;
@@ -501,27 +445,8 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 	}
 
 	// 버킷에서 랜덤으로 후보와 리롤 예비를 선택
-	FAugmentOfferResult Offer;
-	if (bRequireCompleteOfferSet)
-	{
-		const int32 CandidateCount = Bucket.Num();
-		if (!RogueAugmentDraft::TryPickCompleteOffers(
-			Bucket, InOfferCount, Seed, State.CardsPerSlot, Offer))
-		{
-			UE_LOG(LogAugmentDraftManager, Error,
-				TEXT("%s needs %d eligible augments to build %d complete offers with %d reroll(s), but found %d."),
-				*GetNameSafe(PlayerState),
-				InOfferCount * State.CardsPerSlot,
-				InOfferCount,
-				State.CardsPerSlot - 1,
-				CandidateCount);
-			return false;
-		}
-	}
-	else
-	{
-		Offer = RogueAugmentDraft::PickOffers(Bucket, InOfferCount, Seed, State.CardsPerSlot);
-	}
+	const FAugmentOfferResult Offer =
+		RogueAugmentDraft::PickOffers(Bucket, InOfferCount, Seed, State.CardsPerSlot);
 
 	// 버킷의 증강이 부족해 요청한 수량보다 적게 선택된 경우, 로그를 남김
 	if (Offer.UnfilledSlots > 0)
@@ -538,6 +463,7 @@ bool UAugmentDraftManager::RollOffersForParticipant(
 		return false;
 	}
 
+	// 등장한 증강은 다시 등장하지 못하도록 저장
 	Inventory->MarkOffersSeen(Inventory->GetOffers());
 
 	return true;

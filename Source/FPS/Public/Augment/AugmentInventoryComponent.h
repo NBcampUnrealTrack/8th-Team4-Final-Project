@@ -47,13 +47,9 @@ public:
 	bool SetOffers(const TArray<TArray<FAugmentInventoryEntry>>& SlotCards, int32 DraftSeed);
 
 	// 후보 판정에 필요한 인벤토리 상태를 채워 반환, 서버 전용
-	void FillDraftEligibility(
-		FAugmentDraftEligibility& OutState,
-		int32 RerollsPerSlot,
-		bool bIncludeBonusRerolls,
-		bool bExcludePreviouslyOfferedDefinitions) const;
+	void FillDraftEligibility(FAugmentDraftEligibility& OutState) const;
 
-	// 프로필이 매치 단위 재등장 금지를 사용할 때 후보 이력을 남긴다. 서버 전용
+	// 제시된 후보를 매치 등장 이력에 남긴다. 서버 전용
 	void MarkOffersSeen(const TArray<FAugmentInventoryEntry>& InOffers);
 
 	// 카드 선택. 소유 클라이언트가 호출. 액티브 슬롯은 서버가 배정
@@ -87,7 +83,6 @@ public:
 
 	// 대기열 첫 항목. 비어 있으면 nullptr
 	const FAugmentPendingReward* PeekPendingReward() const;
-	int32 GetPendingRewardCount() const { return PendingRewards.Num(); }
 
 	// 첫 항목을 버린다. 서버 전용
 	void PopPendingReward();
@@ -176,7 +171,8 @@ private:
 
 	TArray<FAugmentConditionalDamageRule> CachedConditionalRules;
 
-	// 매치 단위 재등장 금지를 사용하는 프로필의 후보 이력
+	// 이 매치에서 한 번이라도 후보로 제시된 증강, 서버 전용
+	// 한번 등장한 증강은 재등장하지 않음
 	TSet<FPrimaryAssetId> SeenDefinitions;
 
 	// 서버 전용. 매니저가 이번 라운드 추첨에 쓴 시드.

@@ -245,6 +245,7 @@ bool RogueAugmentDraft::IsCandidateEligible(
 		}
 	}
 
+	// 재등장 금지는 매치 전체
 	if (State.SeenDefinitions.Contains(Definition.GetPrimaryAssetId()))
 	{
 		return false;
@@ -323,21 +324,4 @@ FAugmentOfferResult RogueAugmentDraft::PickOffers(
 	Result.UnfilledSlots = CardCount - Result.SlotCards.Num();
 
 	return Result;
-}
-
-bool RogueAugmentDraft::TryPickCompleteOffers(
-	TArray<FAugmentInventoryEntry>& Bucket,
-	const int32 CardCount,
-	const int32 Seed,
-	const int32 CardsPerSlot,
-	FAugmentOfferResult& OutResult)
-{
-	if (CardCount <= 0 || CardsPerSlot <= 0
-		|| Bucket.Num() < CardCount * CardsPerSlot)
-	{
-		return false;
-	}
-
-	OutResult = PickOffers(Bucket, CardCount, Seed, CardsPerSlot);
-	return true;
 }

@@ -127,13 +127,15 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		UAugmentDefinition* Def = Registry->FindDefinition(Offers[i].DefinitionId);
 		if (IsValid(Def) == false)
 		{
+			CachedCards[i]->SetVisibility(ESlateVisibility::Collapsed);
+			if (CachedRerollButtons.IsValidIndex(i))
+			{
+				CachedRerollButtons[i]->SetVisibility(ESlateVisibility::Collapsed);
+			}
 			continue;
 		}
 		
-		if (CachedCards.IsValidIndex(i))
-		{
-			CachedCards[i]->SetData(Def, i);
-		}
+		CachedCards[i]->SetData(Def, i);
 		if (CachedRerollButtons.IsValidIndex(i))
 		{
 			CachedRerollButtons[i]->SetSlotData(i, 
