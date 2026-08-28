@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "GAS/RogueTargetFilter.h"
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
@@ -201,6 +202,24 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
         meta = (EditCondition = "bUseDistanceRange"))
     bool bDistanceScalesWithRangeBonus = false;
+
+    // 효과를 받을 대상 범위. Single 이면 bApplyToEventTarget 이 결정
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area")
+    ERogueTargetScope TargetScope = ERogueTargetScope::Single;
+
+    // 반경은 레벨 수치의 Data.Magnitude.Radius
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
+        meta = (EditCondition = "TargetScope != ERogueTargetScope::Single"))
+    FRogueTargetQuery TargetQuery;
+
+    // 범위의 중심을 이벤트 대상에 둘지 여부, 끄면 시전자 위치
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius"))
+    bool bAreaCentersOnEventTarget = true;
+
+    // 주기 GE 의 Primary 를 틱당 정수로 나눌지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bSplitIntoIntegerTicks = false;
 };
 
 // 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지

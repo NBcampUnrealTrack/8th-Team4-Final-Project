@@ -90,7 +90,7 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 				SpecHandle.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value);
 			}
 
-			if (Payload.bSplitHealIntoIntegerTicks)
+			if (Payload.bSplitIntoIntegerTicks)
 			{
 				SplitIntoIntegerTicks(SpecHandle, EffectClass, Payload.Level);
 			}

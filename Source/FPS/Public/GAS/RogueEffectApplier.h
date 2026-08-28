@@ -41,9 +41,9 @@ struct FRogueEffectPayload
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	TMap<FGameplayTag, float> Magnitudes;
 
-	// 켜면 주기 GE 의 Primary 를 틱당 정수로 나눈다. 총량은 그대로 유지
+	// 켜면 주기 GE 의 Primary 를 틱당 정수로 나눔
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
-	bool bSplitHealIntoIntegerTicks = false;
+	bool bSplitIntoIntegerTicks = false;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	TWeakObjectPtr<AActor> Instigator;
