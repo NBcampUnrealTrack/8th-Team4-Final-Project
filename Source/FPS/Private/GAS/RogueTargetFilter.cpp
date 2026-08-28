@@ -5,6 +5,11 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "CollisionQueryParams.h"
+#include "Engine/OverlapResult.h"
+#include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
+#include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
@@ -82,4 +87,99 @@ bool URogueTargetFilter::IsAlive(const AActor* Target)
 		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Target));
 
 	return TargetASC && !TargetASC->HasMatchingGameplayTag(RogueTags::State_Combat_IsDead);
+}
+
+bool URogueTargetFilter::PassesQuery(const AActor* Source, const AActor* Target, const FRogueTargetQuery& Query)
+{
+	if (!IsAlive(Target))
+	{
+		return false;
+	}
+
+	// 조건에 맞는 관계인지 확인
+	switch (GetRelation(Source, Target))
+	{
+	case ERogueTargetRelation::Self:     return Query.bIncludeSelf;
+	case ERogueTargetRelation::Friendly: return Query.bIncludeFriendly;
+	case ERogueTargetRelation::Hostile:  return Query.bIncludeHostile;
+	default:                             return false;
+	}
+}
+
+void URogueTargetFilter::GatherInRadius(AActor* Source, const FVector Origin, const float Radius,
+                                        const FRogueTargetQuery& Query, TArray<AActor*>& OutTargets)
+{
+	const UWorld* World = IsValid(Source) ? Source->GetWorld() : nullptr;
+	if (!World || Radius <= 0.f)
+	{
+		return;
+	}
+
+	FCollisionQueryParams Params(FName(TEXT("RogueGatherInRadius")), false, Source);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(
+		Overlaps,
+		Origin,
+		FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn),
+		FCollisionShape::MakeSphere(Radius),
+		Params);
+
+	int32 Added = 0;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Candidate = Overlap.GetActor();
+		if (!PassesQuery(Source, Candidate, Query))
+		{
+			continue;
+		}
+
+		const int32 CountBefore = OutTargets.Num();
+		OutTargets.AddUnique(Candidate);
+
+		if (OutTargets.Num() == CountBefore)
+		{
+			continue;
+		}
+
+		if (Query.MaxTargets > 0 && ++Added >= Query.MaxTargets)
+		{
+			break;
+		}
+	}
+}
+
+void URogueTargetFilter::GatherTeamWide(AActor* Source, const FRogueTargetQuery& Query,
+                                        TArray<AActor*>& OutTargets)
+{
+	const UWorld* World = IsValid(Source) ? Source->GetWorld() : nullptr;
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (!GameState)
+	{
+		return;
+	}
+
+	int32 Added = 0;
+	for (const APlayerState* PlayerState : GameState->PlayerArray)
+	{
+		AActor* Candidate = PlayerState ? PlayerState->GetPawn() : nullptr;
+		if (!PassesQuery(Source, Candidate, Query))
+		{
+			continue;
+		}
+
+		const int32 CountBefore = OutTargets.Num();
+		OutTargets.AddUnique(Candidate);
+
+		if (OutTargets.Num() == CountBefore)
+		{
+			continue;
+		}
+
+		if (Query.MaxTargets > 0 && ++Added >= Query.MaxTargets)
+		{
+			break;
+		}
+	}
 }
