@@ -338,6 +338,7 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 	OutPayload.Query         = Entry.TargetQuery;
 	OutPayload.Instigator    = Avatar;
 	OutPayload.InstigatorASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	OutPayload.Causer        = Avatar;
 	OutPayload.Level         = GetAbilityLevel(Handle, ActorInfo);
 	OutPayload.SingleTarget  = (Entry.bApplyToEventTarget && EventTarget) ? EventTarget : Avatar;
 	OutPayload.bSplitIntoIntegerTicks = Entry.bSplitIntoIntegerTicks;

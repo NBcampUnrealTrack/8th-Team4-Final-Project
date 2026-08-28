@@ -71,6 +71,10 @@ struct FRogueEffectPayload
 	// 효과를 거는 주체. PlayerState 에 있어 폰이 죽어도 존재
 	TWeakObjectPtr<UAbilitySystemComponent> InstigatorASC;
 
+	// 효과를 실제로 일으킨 액터. 투척물, 드론이면 그 액터, 아니면 시전자
+	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
+	TWeakObjectPtr<AActor> Causer;
+
 	UPROPERTY(BlueprintReadWrite, Category = "Rogue|Effect")
 	int32 Level = 1;
 };

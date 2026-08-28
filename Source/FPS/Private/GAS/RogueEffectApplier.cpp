@@ -34,20 +34,24 @@ void URogueEffectApplier::ResolveTargets(const FRogueEffectPayload& Payload, TAr
 	FRogueTargetQuery Query = Payload.Query;
 	Query.bIncludeSelf = false;
 
+	// 팀 판정은 ASC를 갖고있는 액터 기준
+	UAbilitySystemComponent* SourceASC = Payload.InstigatorASC.Get();
+	AActor* Source = SourceASC ? SourceASC->GetOwnerActor() : Instigator;
+
 	if (Payload.Scope == ERogueTargetScope::TeamWide)
 	{
-		URogueTargetFilter::GatherTeamWide(Instigator, Query, OutTargets);
+		URogueTargetFilter::GatherTeamWide(Source, Query, OutTargets);
 		return;
 	}
 
 	if (Payload.Scope == ERogueTargetScope::AimSweep)
 	{
-		URogueTargetFilter::GatherInAimSweep(Instigator, Payload.Origin, Payload.Direction,
+		URogueTargetFilter::GatherInAimSweep(Source, Payload.Origin, Payload.Direction,
 			Payload.Length, Payload.Radius, Query, OutTargets);
 		return;
 	}
 
-	URogueTargetFilter::GatherInRadius(Instigator, Payload.Origin, Payload.Radius, Query, OutTargets);
+	URogueTargetFilter::GatherInRadius(Source, Payload.Origin, Payload.Radius, Query, OutTargets);
 }
 
 void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
@@ -87,8 +91,10 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 				continue;
 			}
 
+			AActor* Causer = Payload.Causer.IsValid() ? Payload.Causer.Get() : Instigator;
+
 			FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
-			Context.AddInstigator(Instigator, Instigator);
+			Context.AddInstigator(Instigator, Causer);
 
 			const FGameplayEffectSpecHandle SpecHandle =
 				SourceASC->MakeOutgoingSpec(EffectClass, Payload.Level, Context);
@@ -149,7 +155,7 @@ void URogueEffectApplier::ApplyDamage(const FRogueEffectPayload& Payload,
 
 	FRogueDamageParams Params;
 	Params.Instigator = Instigator;
-	Params.Causer     = Instigator;
+	Params.Causer     = Payload.Causer.IsValid() ? Payload.Causer.Get() : Instigator;
 	Params.SourceTag  = Payload.DamageSourceTag.IsValid()
 		? Payload.DamageSourceTag
 		: RogueTags::Damage_Source_Skill;
