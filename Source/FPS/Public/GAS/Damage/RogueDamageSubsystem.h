@@ -33,6 +33,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyFlatDamage(const FRogueDamageParams& Params, AActor* Target, float Damage);
 
+	// 자기 체력을 대가로 지불, 남는 체력이 최소 1이 되도록 클램핑, 감소한 체력만큼 반환 
+	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
+	float ApplyHealthCost(AActor* Payer, float Amount, float MinHealthRemaining = 1.f);
+
 private:
 	// 두 진입점의 공통 흐름
 	FRogueDamageResult ApplyDamageInternal(const FRogueDamageParams& Params,
