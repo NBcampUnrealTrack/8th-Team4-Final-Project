@@ -92,9 +92,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
 	bool bBroadcastSkillUsed = false;
 
-	// 켜면 행동 차단 상태에서도 발동한다. 탈출기처럼 예외가 필요한 액티브에만 사용
+	// 행동 차단 상태 발동 여부, 이동기 및 탈출기와 같은 예외 용
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
-		meta = (EditCondition = "bBroadcastSkillUsed"))
+		meta = (EditCondition = "bBroadcastSkillUsed", EditConditionHides))
 	bool bIgnoreActionBlock = false;
 
 	// 어빌리티 레벨에 해당하는 최대 충전 수

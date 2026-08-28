@@ -86,16 +86,16 @@ struct FAugmentConditionalDamageRule
     bool bUseDistanceRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MinDistanceMeters = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MaxDistanceMeters = 0.f;
 
 	// 증강이 거리 조건에 따라 스케일링되는지 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseDistanceRange"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
     bool bDistanceScalesWithRangeBonus = false;
 
     // 피해자 체력 조건 (%)
@@ -103,11 +103,11 @@ struct FAugmentConditionalDamageRule
     bool bUseTargetHealthRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseTargetHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseTargetHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float TargetHealthMinPct = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseTargetHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseTargetHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float TargetHealthMaxPct = 100.f;
 
     // 가해자 체력 조건 (%)
@@ -115,11 +115,11 @@ struct FAugmentConditionalDamageRule
     bool bUseSourceHealthRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseSourceHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseSourceHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float SourceHealthMinPct = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseSourceHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseSourceHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float SourceHealthMaxPct = 100.f;
 
     // 탄창 내 발사 인덱스 조건 ("탄창 첫 3발 대미지 증가")
@@ -127,11 +127,11 @@ struct FAugmentConditionalDamageRule
     bool bUseShotIndexRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MinShotIndexInMagazine = 0;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
 
     // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
@@ -177,7 +177,7 @@ struct FAugmentGrantedAbility
 
     // 대상에게 걸 때 적만 허용. 아군 오폭 방지
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
-        meta = (EditCondition = "bApplyToEventTarget"))
+        meta = (EditCondition = "bApplyToEventTarget", EditConditionHides))
     bool bHostileTargetOnly = true;
 
     // 이 무기로 발생한 이벤트만 발동. 비어 있으면 무기 조건 없음.
@@ -191,16 +191,16 @@ struct FAugmentGrantedAbility
     bool bUseDistanceRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MinDistanceMeters = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MaxDistanceMeters = 0.f;
 
     // 증강이 거리 조건에 따라 스케일링되는지 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
-        meta = (EditCondition = "bUseDistanceRange"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
     bool bDistanceScalesWithRangeBonus = false;
 
     // 효과를 받을 대상 범위. Single 이면 bApplyToEventTarget 이 결정
@@ -209,12 +209,12 @@ struct FAugmentGrantedAbility
 
     // 반경은 레벨 수치의 Data.Magnitude.Radius
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
-        meta = (EditCondition = "TargetScope != ERogueTargetScope::Single"))
+        meta = (EditCondition = "TargetScope != ERogueTargetScope::Single", EditConditionHides))
     FRogueTargetQuery TargetQuery;
 
     // 범위의 중심을 이벤트 대상에 둘지 여부, 끄면 시전자 위치
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
-        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius"))
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", EditConditionHides))
     bool bAreaCentersOnEventTarget = true;
 
     // 주기 GE 의 Primary 를 틱당 정수로 나눌지 여부
@@ -223,7 +223,7 @@ struct FAugmentGrantedAbility
 
     // 범위 가장자리에서의 대미지 배율. 1 이면 감쇄 없음. 대미지는 Data.Magnitude.Damage
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
-        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", ClampMin = "0.0", ClampMax = "1.0"))
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", EditConditionHides, ClampMin = "0.0", ClampMax = "1.0"))
     float DamageFalloffAtEdge = 1.f;
 };
 
