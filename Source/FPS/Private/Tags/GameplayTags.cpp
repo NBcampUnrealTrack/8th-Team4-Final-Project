@@ -65,6 +65,8 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Revealed,    "State.Combat.Revealed",    "발각됨");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Invulnerable, "State.Combat.Invulnerable", "무적. 외부에서 오는 피해를 전부 무시");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_ActionBlocked, "State.Combat.ActionBlocked", "이동을 제외한 행동 불가. 사격/조준/재장전/무기 교체 차단");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_SystemOverload, "State.Combat.SystemOverload", "시스템 오버로드 지속 중. 처치 시 재적용 조건");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -133,5 +135,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_FirstAidKit, "Cooldown.Augment.FirstAidKit", "응급 처치 키트 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Stimpack,    "Cooldown.Augment.Stimpack",    "스팀팩 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Stimpack,       "Cooldown.Augment.Stimpack",       "전투 자극제 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_RallyingAura,   "Cooldown.Augment.RallyingAura",   "격려의 오라 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Prayer,         "Cooldown.Augment.Prayer",         "기원 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_SystemOverload, "Cooldown.Augment.SystemOverload", "시스템 오버로드 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_PhaseShift,     "Cooldown.Augment.PhaseShift",     "지나갑니다 쿨타임");
 }

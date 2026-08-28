@@ -70,6 +70,8 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsDead);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Revealed);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Invulnerable);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_ActionBlocked);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_SystemOverload);
 
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
@@ -140,6 +142,10 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_FirstAidKit);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Stimpack);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_RallyingAura);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Prayer);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_SystemOverload);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_PhaseShift);
 
 	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
 	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)
