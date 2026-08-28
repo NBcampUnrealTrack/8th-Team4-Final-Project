@@ -370,7 +370,7 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 	}
 
 	OutPayload.Origin = Center->GetActorLocation();
-	OutPayload.Radius = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Radius);
+	OutPayload.Radius = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Radius) * 100.f;
 
 	if (OutPayload.Radius <= 0.f)
 	{
