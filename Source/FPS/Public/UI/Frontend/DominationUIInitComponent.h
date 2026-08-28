@@ -6,6 +6,7 @@
 #include "DominationUIInitComponent.generated.h"
 
 class ADominationGameState;
+class UDominationClassSelectScreen;
 class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
 class UShooterPlayerHUD;
@@ -46,7 +47,10 @@ private:
 	UFUNCTION()
 	void HandleMatchStateChanged();
 
-	void TryInitializePlayerHUD();
+	void RefreshDominationUI();
+	void RefreshClassSelectionPresentation(ADominationGameState* DominationGameState);
+	void PresentClassSelectionScreen();
+	void RemoveClassSelectionScreen();
 	void TryCaptureMatchResult();
 	void ScheduleInitializationRetry();
 	void ClearInitializationRetry();
@@ -62,6 +66,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true", Categories = "UI.Layer"))
 	FGameplayTag InitialWidgetLayer;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|Class Selection", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UDominationClassSelectScreen> ClassSelectionWidgetClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|System Menu", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UShooterInGameMenuScreen> InGameMenuClass;
 
@@ -73,6 +80,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterPlayerHUD> InitialWidgetInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDominationClassSelectScreen> ClassSelectionWidgetInstance;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterInGameMenuScreen> InGameMenuInstance;

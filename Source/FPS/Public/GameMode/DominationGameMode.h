@@ -69,6 +69,7 @@ protected:
 	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
 
 private:
+	bool HasValidCombatClassConfiguration() const;
 	bool AreAugmentDraftDependenciesReady() const;
 	void HandleAugmentDraftDependenciesReady();
 	void GrantAugmentRewardsForRound(int32 RewardRoundNumber);

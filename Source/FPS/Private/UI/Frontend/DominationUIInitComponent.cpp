@@ -8,6 +8,7 @@
 #include "Player/DominationPlayerState.h"
 #include "Tags/UITags.h"
 #include "TimerManager.h"
+#include "UI/InGame/Domination/DominationClassSelectScreen.h"
 #include "UI/InGame/HUD/ShooterPlayerHUD.h"
 #include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
@@ -34,10 +35,13 @@ void UDominationUIInitComponent::BeginPlay()
 		return;
 	}
 
-	if (!RootLayoutClass || !InitialWidgetClass || !InitialWidgetLayer.IsValid())
+	if (!RootLayoutClass
+		|| !InitialWidgetClass
+		|| !InitialWidgetLayer.IsValid()
+		|| !ClassSelectionWidgetClass)
 	{
 		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Domination HUD configuration is incomplete on %s."),
+			TEXT("Domination UI configuration is incomplete on %s."),
 			*GetNameSafe(PlayerController));
 		return;
 	}
@@ -60,7 +64,7 @@ void UDominationUIInitComponent::BeginPlay()
 		return;
 	}
 
-	TryInitializePlayerHUD();
+	RefreshDominationUI();
 }
 
 void UDominationUIInitComponent::EndPlay(
@@ -68,6 +72,7 @@ void UDominationUIInitComponent::EndPlay(
 {
 	ClearInitializationRetry();
 	UnbindFromGameState();
+	RemoveClassSelectionScreen();
 
 	if (IsValid(InitialWidgetInstance))
 	{
@@ -83,13 +88,8 @@ void UDominationUIInitComponent::EndPlay(
 	Super::EndPlay(EndPlayReason);
 }
 
-void UDominationUIInitComponent::TryInitializePlayerHUD()
+void UDominationUIInitComponent::RefreshDominationUI()
 {
-	if (IsValid(InitialWidgetInstance) && IsTeamMatchUIReady())
-	{
-		return;
-	}
-
 	ADominationGameState* DominationGameState = GetWorld()
 		? GetWorld()->GetGameState<ADominationGameState>()
 		: nullptr;
@@ -100,8 +100,17 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 	}
 
 	BindToGameState(DominationGameState);
-	if (DominationGameState->GetDominationPhase()
-		== EDominationMatchPhase::WaitingForPlayers)
+	RefreshClassSelectionPresentation(DominationGameState);
+
+	const EDominationMatchPhase Phase = DominationGameState->GetDominationPhase();
+	if (Phase != EDominationMatchPhase::InProgress
+		&& Phase != EDominationMatchPhase::MatchEnded)
+	{
+		ClearInitializationRetry();
+		return;
+	}
+
+	if (IsValid(InitialWidgetInstance) && IsTeamMatchUIReady())
 	{
 		ClearInitializationRetry();
 		return;
@@ -155,9 +164,61 @@ void UDominationUIInitComponent::TryInitializePlayerHUD()
 	ClearInitializationRetry();
 }
 
+void UDominationUIInitComponent::RefreshClassSelectionPresentation(
+	ADominationGameState* DominationGameState)
+{
+	if (IsValid(DominationGameState)
+		&& DominationGameState->GetDominationPhase()
+			== EDominationMatchPhase::ClassSelecting)
+	{
+		PresentClassSelectionScreen();
+		return;
+	}
+
+	RemoveClassSelectionScreen();
+}
+
+void UDominationUIInitComponent::PresentClassSelectionScreen()
+{
+	if (IsValid(ClassSelectionWidgetInstance))
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!IsValid(UIManager) || !ClassSelectionWidgetClass)
+	{
+		return;
+	}
+
+	ClassSelectionWidgetInstance = Cast<UDominationClassSelectScreen>(
+		UIManager->PushWidgetToLayer(
+			UITags::UI_Layer_Menu,
+			ClassSelectionWidgetClass));
+	if (!IsValid(ClassSelectionWidgetInstance))
+	{
+		UE_LOG(LogDominationUIInit, Error,
+			TEXT("Failed to create the Domination class selection screen. WidgetClass=%s"),
+			*GetNameSafe(ClassSelectionWidgetClass));
+	}
+}
+
+void UDominationUIInitComponent::RemoveClassSelectionScreen()
+{
+	if (!IsValid(ClassSelectionWidgetInstance))
+	{
+		return;
+	}
+
+	RemoveScreenFromLayer(
+		UITags::UI_Layer_Menu,
+		ClassSelectionWidgetInstance);
+	ClassSelectionWidgetInstance = nullptr;
+}
+
 void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 {
-	TryInitializePlayerHUD();
+	RefreshDominationUI();
 	TryCaptureMatchResult();
 
 	if (IsTeamMatchUIReady())
@@ -202,7 +263,7 @@ void UDominationUIInitComponent::ScheduleInitializationRetry()
 	World->GetTimerManager().SetTimer(
 		InitializationRetryTimerHandle,
 		this,
-		&ThisClass::TryInitializePlayerHUD,
+		&ThisClass::RefreshDominationUI,
 		0.1f,
 		true);
 }

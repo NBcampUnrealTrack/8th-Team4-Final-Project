@@ -16,6 +16,8 @@ class FPS_API UDominationLoadoutManager : public UObject
 	GENERATED_BODY()
 
 public:
+	bool HasRequiredWeaponRegistryEntries() const;
+
 	// 최초 스폰 전에 클래스 무기를 보유·해금 상태로 확정한다.
 	bool InitializeCombatClassInventory(ADominationPlayerState* PlayerState) const;
 

@@ -4,8 +4,19 @@
 #include "GameFramework/Pawn.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/RogueWeaponSettings.h"
+#include "Weapon/WeaponBase.h"
 #include "Weapon/WeaponInventoryComponent.h"
 #include "Weapon/WeaponLoadoutService.h"
+
+bool UDominationLoadoutManager::HasRequiredWeaponRegistryEntries() const
+{
+	const URogueWeaponSettings* WeaponSettings = GetDefault<URogueWeaponSettings>();
+	return IsValid(WeaponSettings)
+		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Rifle)
+		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Sniper)
+		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Shotgun);
+}
 
 bool UDominationLoadoutManager::InitializeCombatClassInventory(
 	ADominationPlayerState* PlayerState) const

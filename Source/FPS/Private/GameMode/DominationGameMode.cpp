@@ -39,6 +39,13 @@ ADominationGameMode::ADominationGameMode()
 void ADominationGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!HasValidCombatClassConfiguration())
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination match start stopped because combat class Pawn or weapon settings are incomplete."));
+		return;
+	}
+
 	if (!IsValid(ObjectiveManager)
 		|| !ObjectiveManager->Initialize(this, CaptureRules, PointTransitionDuration))
 	{
@@ -266,6 +273,22 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 	}
 
 	ServeNextAugmentReward(PlayerState);
+}
+
+bool ADominationGameMode::HasValidCombatClassConfiguration() const
+{
+	const auto HasPawnClass = [this](const EDominationCombatClass CombatClass)
+	{
+		const TSubclassOf<AShooterCharacter>* PawnClass =
+			CombatClassPawnClasses.Find(CombatClass);
+		return PawnClass != nullptr && PawnClass->Get() != nullptr;
+	};
+
+	return HasPawnClass(EDominationCombatClass::Trooper)
+		&& HasPawnClass(EDominationCombatClass::Ranger)
+		&& HasPawnClass(EDominationCombatClass::Vanguard)
+		&& IsValid(LoadoutManager)
+		&& LoadoutManager->HasRequiredWeaponRegistryEntries();
 }
 
 bool ADominationGameMode::AreAugmentDraftDependenciesReady() const
