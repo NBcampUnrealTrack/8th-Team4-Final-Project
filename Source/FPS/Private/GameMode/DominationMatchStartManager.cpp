@@ -14,11 +14,13 @@ DEFINE_LOG_CATEGORY_STATIC(LogDominationMatchStart, Log, All);
 
 void UDominationMatchStartManager::Initialize(
 	ADominationGameMode* InOwnerGameMode,
-	const int32 InRequiredPlayersPerTeam,
+	const int32 InMinimumPlayersToStart,
+	const int32 InMinimumPlayersPerTeam,
 	const float InClassSelectionDuration)
 {
 	OwnerGameMode = InOwnerGameMode;
-	RequiredPlayersPerTeam = InRequiredPlayersPerTeam;
+	MinimumPlayersToStart = FMath::Max(2, InMinimumPlayersToStart);
+	MinimumPlayersPerTeam = FMath::Max(1, InMinimumPlayersPerTeam);
 	ClassSelectionDuration = InClassSelectionDuration;
 
 	if (ADominationGameState* DominationGameState = GetDominationGameState())
@@ -131,13 +133,15 @@ bool UDominationMatchStartManager::CaptureInitialParticipants()
 		}
 	}
 
-	if (TeamAPlayers.Num() != RequiredPlayersPerTeam
-		|| TeamBPlayers.Num() != RequiredPlayersPerTeam)
+	const int32 TotalPlayerCount = TeamAPlayers.Num() + TeamBPlayers.Num();
+	if (TotalPlayerCount < MinimumPlayersToStart
+		|| TeamAPlayers.Num() < MinimumPlayersPerTeam
+		|| TeamBPlayers.Num() < MinimumPlayersPerTeam)
 	{
 		return false;
 	}
 
-	InitialParticipants.Reset(RequiredPlayersPerTeam * 2);
+	InitialParticipants.Reset(TotalPlayerCount);
 	for (ADominationPlayerController* PlayerController : TeamAPlayers)
 	{
 		InitialParticipants.Add(PlayerController);

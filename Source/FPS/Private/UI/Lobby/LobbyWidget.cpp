@@ -75,6 +75,49 @@ void ULobbyWidget::SelectTeam(const EGameTeam RequestedTeam)
 	// 	: FText::FromString(TEXT("Requested Team B.")));
 }
 
+void ULobbyWidget::SelectGameMode(const ELobbyMatchMode RequestedMatchMode)
+{
+	if (!IsLocalPlayerHost())
+	{
+		SetStatusMessage(FText::FromString(TEXT("Only the host can select the game mode.")));
+		return;
+	}
+
+	ALobbyGameMode* LobbyGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ALobbyGameMode>()
+		: nullptr;
+
+	APlayerController* RequestingPlayer = GetOwningPlayer();
+	if (!IsValid(RequestingPlayer) && GetGameInstance())
+	{
+		RequestingPlayer = GetGameInstance()->GetFirstLocalPlayerController();
+	}
+
+	if (!IsValid(LobbyGameMode)
+		|| !IsValid(RequestingPlayer)
+		|| !LobbyGameMode->RequestLobbyMatchMode(RequestingPlayer, RequestedMatchMode))
+	{
+		SetStatusMessage(FText::FromString(TEXT("Failed to select the game mode.")));
+		return;
+	}
+
+	SetStatusMessage(RequestedMatchMode == ELobbyMatchMode::Domination
+		? FText::FromString(TEXT("Domination selected."))
+		: FText::FromString(TEXT("Bomb selected.")));
+	UpdateGameModeSelection();
+}
+
+ELobbyMatchMode ULobbyWidget::GetSelectedGameMode() const
+{
+	const ALobbyGameState* LobbyGameState = IsValid(BoundLobbyGameState)
+		? BoundLobbyGameState.Get()
+		: (GetWorld() ? GetWorld()->GetGameState<ALobbyGameState>() : nullptr);
+
+	return IsValid(LobbyGameState)
+		? LobbyGameState->GetSelectedMatchMode()
+		: ELobbyMatchMode::Bomb;
+}
+
 void ULobbyWidget::StartRoomGame()
 {
 	ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
@@ -99,9 +142,12 @@ void ULobbyWidget::StartRoomGame()
 	}
 
 	SetStatusMessage(FText::FromString(TEXT("Starting game...")));
-	if (!LobbyGameMode->RequestStartRoomGame(RequestingPlayer, MapName))
+
+	// LobbyGameState is the single source of truth for the selected mode/map.
+	if (!LobbyGameMode->RequestStartRoomGame(RequestingPlayer))
 	{
-		SetStatusMessage(FText::FromString(TEXT("Cannot start until every client is ready.")));
+		SetStatusMessage(FText::FromString(
+			TEXT("Cannot start: check Ready status and minimum team players.")));
 		OnStartRoomGameResult(false);
 		UpdateLobbyButtons();
 	}
@@ -134,6 +180,18 @@ bool ULobbyWidget::Initialize()
 		TeamBButton->OnClicked.AddDynamic(this, &ThisClass::TeamBButtonClicked);
 	}
 
+	if (BombModeButton)
+	{
+		BombModeButton->OnClicked.AddDynamic(this, &ThisClass::BombModeButtonClicked);
+	}
+
+	if (DominationModeButton)
+	{
+		DominationModeButton->OnClicked.AddDynamic(
+			this,
+			&ThisClass::DominationModeButtonClicked);
+	}
+
 	BindSessionDelegates();
 	return true;
 }
@@ -145,6 +203,7 @@ void ULobbyWidget::NativeConstruct()
 	InitialLobbyRefreshRetryCount = 0;
 	BindLobbyGameState();
 	RefreshLobbyPlayerList();
+	UpdateGameModeSelection();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -185,11 +244,22 @@ void ULobbyWidget::TeamBButtonClicked()
 	SelectTeam(EGameTeam::TeamB);
 }
 
+void ULobbyWidget::BombModeButtonClicked()
+{
+	SelectGameMode(ELobbyMatchMode::Bomb);
+}
+
+void ULobbyWidget::DominationModeButtonClicked()
+{
+	SelectGameMode(ELobbyMatchMode::Domination);
+}
+
 void ULobbyWidget::HandleStartRoomGameComplete(bool bWasSuccessful)
 {
 	if (!bWasSuccessful)
 	{
-		SetStatusMessage(FText::FromString(TEXT("Cannot start until every client is ready.")));
+		SetStatusMessage(FText::FromString(
+			TEXT("Could not start the selected game mode.")));
 	}
 
 	OnStartRoomGameResult(bWasSuccessful);
@@ -236,14 +306,24 @@ void ULobbyWidget::BindLobbyGameState()
 	}
 
 	BoundLobbyGameState = LobbyGameState;
-	BoundLobbyGameState->OnLobbyPlayerListChanged.AddUniqueDynamic(this, &ThisClass::HandleLobbyPlayerListChanged);
+	BoundLobbyGameState->OnLobbyPlayerListChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleLobbyPlayerListChanged);
+	BoundLobbyGameState->OnLobbyMatchModeChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleLobbyMatchModeChanged);
 }
 
 void ULobbyWidget::UnbindLobbyGameState()
 {
 	if (IsValid(BoundLobbyGameState))
 	{
-		BoundLobbyGameState->OnLobbyPlayerListChanged.RemoveDynamic(this, &ThisClass::HandleLobbyPlayerListChanged);
+		BoundLobbyGameState->OnLobbyPlayerListChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleLobbyPlayerListChanged);
+		BoundLobbyGameState->OnLobbyMatchModeChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleLobbyMatchModeChanged);
 	}
 
 	BoundLobbyGameState = nullptr;
@@ -362,12 +442,14 @@ void ULobbyWidget::UpdateLobbyButtons()
 	}
 
 	// 이미 속한 팀 버튼은 비활성화해 현재 선택을 알 수 있게 함
-	const EGameTeam LocalTeam = IsValid(LocalPlayerState) ? LocalPlayerState->GetTeam() : EGameTeam::None;
+	const EGameTeam LocalTeam = IsValid(LocalPlayerState)
+		? LocalPlayerState->GetTeam()
+		: EGameTeam::None;
 	if (TeamAButton)
 	{
 		TeamAButton->SetIsEnabled(LocalTeam != EGameTeam::TeamA);
 		TeamAButton->SetBackgroundColor(LocalTeam == EGameTeam::TeamA
-			? FLinearColor(1.0f, 0.15f, 0.15f )
+			? FLinearColor(1.0f, 0.15f, 0.15f)
 			: FLinearColor(0.5f, 0.15f, 0.15f));
 	}
 
@@ -382,9 +464,42 @@ void ULobbyWidget::UpdateLobbyButtons()
 	if (StartButton)
 	{
 		StartButton->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		const ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
-		StartButton->SetIsEnabled(LobbyGameMode && LobbyGameMode->CanStartRoomGame());
+		const ALobbyGameMode* LobbyGameMode = GetWorld()
+			? GetWorld()->GetAuthGameMode<ALobbyGameMode>()
+			: nullptr;
+		StartButton->SetIsEnabled(
+			LobbyGameMode && LobbyGameMode->CanStartRoomGame());
 	}
+
+	UpdateGameModeSelection();
+}
+
+void ULobbyWidget::UpdateGameModeSelection()
+{
+	const bool bCanEditSelection = IsLocalPlayerHost();
+	const ELobbyMatchMode SelectedMatchMode = GetSelectedGameMode();
+
+	if (BombModeButton)
+	{
+		BombModeButton->SetIsEnabled(
+			bCanEditSelection && SelectedMatchMode != ELobbyMatchMode::Bomb);
+	}
+
+	if (DominationModeButton)
+	{
+		DominationModeButton->SetIsEnabled(
+			bCanEditSelection && SelectedMatchMode != ELobbyMatchMode::Domination);
+	}
+
+	if (SelectedGameModeText)
+	{
+		SelectedGameModeText->SetText(FText::FromString(
+			SelectedMatchMode == ELobbyMatchMode::Domination
+				? TEXT("DOMINATION")
+				: TEXT("BOMB")));
+	}
+
+	OnLobbyGameModeSelectionChanged(SelectedMatchMode, bCanEditSelection);
 }
 
 bool ULobbyWidget::IsLocalPlayerHost() const
@@ -439,4 +554,9 @@ FString ULobbyWidget::BuildLobbyListSignature() const
 void ULobbyWidget::HandleLobbyPlayerListChanged()
 {
 	RefreshLobbyPlayerList();
+}
+
+void ULobbyWidget::HandleLobbyMatchModeChanged(const ELobbyMatchMode)
+{
+	UpdateGameModeSelection();
 }

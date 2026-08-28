@@ -24,7 +24,8 @@ class FPS_API UDominationMatchStartManager : public UObject
 public:
 	void Initialize(
 		ADominationGameMode* InOwnerGameMode,
-		int32 InRequiredPlayersPerTeam,
+		int32 InMinimumPlayersToStart,
+		int32 InMinimumPlayersPerTeam,
 		float InClassSelectionDuration);
 	void Shutdown();
 
@@ -50,6 +51,7 @@ private:
 	TWeakObjectPtr<ADominationGameMode> OwnerGameMode;
 	TArray<TWeakObjectPtr<ADominationPlayerController>> InitialParticipants;
 	FTimerHandle ClassSelectionTimerHandle;
-	int32 RequiredPlayersPerTeam = 4;
+	int32 MinimumPlayersToStart = 2;
+	int32 MinimumPlayersPerTeam = 1;
 	float ClassSelectionDuration = 15.0f;
 };

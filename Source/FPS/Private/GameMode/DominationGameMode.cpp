@@ -93,7 +93,11 @@ void ADominationGameMode::BeginPlay()
 		MatchStartManager->OnInitialPlayersSpawned.AddUObject(
 			this,
 			&ThisClass::HandleInitialPlayersSpawned);
-		MatchStartManager->Initialize(this, RequiredPlayersPerTeam, ClassSelectionDuration);
+		MatchStartManager->Initialize(
+			this,
+			MinimumPlayersToStart,
+			MinimumPlayersPerTeam,
+			ClassSelectionDuration);
 	}
 }
 

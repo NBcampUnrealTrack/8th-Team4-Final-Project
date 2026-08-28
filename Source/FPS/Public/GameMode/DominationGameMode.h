@@ -84,8 +84,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Class Pawn", meta = (AllowPrivateAccess = "true"))
 	TMap<EDominationCombatClass, TSubclassOf<AShooterCharacter>> CombatClassPawnClasses;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "8"))
+	int32 MinimumPlayersToStart = 2;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "1", ClampMax = "4"))
-	int32 RequiredPlayersPerTeam = 4;
+	int32 MinimumPlayersPerTeam = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "1.0"))
 	float ClassSelectionDuration = 15.0f;
