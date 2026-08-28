@@ -34,6 +34,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective UI")
 	bool IsCaptureContested() const;
 
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective UI")
+	bool ShouldShowCaptureProgress() const;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -45,6 +48,9 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Objective UI", meta = (DisplayName = "로컬 점령 UI 표시 상태 변경"))
 	void BP_OnLocalCaptureZoneChanged(bool bShouldShow);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Objective UI", meta = (DisplayName = "점령 게이지 표시 상태 변경"))
+	void BP_OnCaptureProgressVisibilityChanged(bool bShouldShow);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Round UI", meta = (DisplayName = "라운드 상태 갱신"))
 	void BP_OnRoundStateChanged(
@@ -72,12 +78,15 @@ private:
 	void RefreshRoundBlueprint();
 	void RefreshActiveCapturePoint();
 	void RefreshLocalCaptureZoneState();
+	void RefreshCaptureProgressVisibility();
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
 	FTimerHandle LocalCaptureZoneTimerHandle;
 	bool bHasLocalCaptureZoneState = false;
 	bool bLocalPlayerInsideActivePoint = false;
+	bool bHasCaptureProgressVisibilityState = false;
+	bool bCaptureProgressVisible = false;
 
 	static constexpr float LocalCaptureZoneUpdateInterval = 0.1f;
 };

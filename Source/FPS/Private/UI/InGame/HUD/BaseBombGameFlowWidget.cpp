@@ -482,6 +482,18 @@ void UBaseBombGameFlowWidget::NotifyGameFlowChanged()
 {
 	RefreshResult();
 	BP_OnGameFlowChanged();
+	RefreshBombOnlyVisibility();
+}
+
+void UBaseBombGameFlowWidget::RefreshBombOnlyVisibility()
+{
+	// 팀 점수는 모든 팀 모드가 공유하지만, 라운드 번호는 Bomb GameState에서만 유효하다.
+	if (BoundTeamGameState.IsValid()
+		&& !BoundBombGameState.IsValid()
+		&& IsValid(Text_Round))
+	{
+		Text_Round->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UBaseBombGameFlowWidget::RefreshResult()

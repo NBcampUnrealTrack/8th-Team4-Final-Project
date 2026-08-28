@@ -208,6 +208,7 @@ private:
 	bool IsLocalPlayerAttacker() const;
 	void NotifyGameFlowChanged();
 	void RefreshResult();
+	void RefreshBombOnlyVisibility();
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Match Result", meta = (BindWidget))
@@ -218,6 +219,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Match Result", meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_MatchResult;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Round", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Text_Round;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Match Result")
 	FText RoundEndTitleText;

@@ -38,6 +38,7 @@ void UDominationCaptureProgressWidget::NativeConstruct()
 	RefreshActiveCapturePoint();
 	RefreshBlueprint();
 	RefreshRoundBlueprint();
+	RefreshCaptureProgressVisibility();
 	RefreshLocalCaptureZoneState();
 	GetWorld()->GetTimerManager().SetTimer(
 		LocalCaptureZoneTimerHandle,
@@ -108,11 +109,25 @@ bool UDominationCaptureProgressWidget::IsCaptureContested() const
 	return GetCaptureState().bContested;
 }
 
+bool UDominationCaptureProgressWidget::ShouldShowCaptureProgress() const
+{
+	const ADominationGameState* DominationGameState = BoundGameState.Get();
+	if (!IsValid(DominationGameState)
+		|| !DominationGameState->IsObjectiveCaptureEnabled())
+	{
+		return false;
+	}
+
+	const FDominationCaptureState CaptureState = DominationGameState->GetCaptureState();
+	return CaptureState.TeamAPlayerCount > 0 || CaptureState.TeamBPlayerCount > 0;
+}
+
 void UDominationCaptureProgressWidget::HandleActivePointChanged(
 	const EDominationPointId)
 {
 	RefreshActiveCapturePoint();
 	RefreshBlueprint();
+	RefreshCaptureProgressVisibility();
 	RefreshLocalCaptureZoneState();
 }
 
@@ -120,10 +135,12 @@ void UDominationCaptureProgressWidget::HandleCaptureStateChanged(
 	const FDominationCaptureState)
 {
 	RefreshBlueprint();
+	RefreshCaptureProgressVisibility();
 }
 
 void UDominationCaptureProgressWidget::HandleObjectiveFlowStateChanged()
 {
+	RefreshCaptureProgressVisibility();
 	RefreshLocalCaptureZoneState();
 }
 
@@ -210,4 +227,18 @@ void UDominationCaptureProgressWidget::RefreshLocalCaptureZoneState()
 	bHasLocalCaptureZoneState = true;
 	bLocalPlayerInsideActivePoint = bShouldShow;
 	BP_OnLocalCaptureZoneChanged(bShouldShow);
+}
+
+void UDominationCaptureProgressWidget::RefreshCaptureProgressVisibility()
+{
+	const bool bShouldShow = ShouldShowCaptureProgress();
+	if (bHasCaptureProgressVisibilityState
+		&& bCaptureProgressVisible == bShouldShow)
+	{
+		return;
+	}
+
+	bHasCaptureProgressVisibilityState = true;
+	bCaptureProgressVisible = bShouldShow;
+	BP_OnCaptureProgressVisibilityChanged(bShouldShow);
 }
