@@ -59,7 +59,11 @@ void ADominationGameMode::BeginPlay()
 		&ThisClass::HandleCaptureCompleted);
 
 	if (!IsValid(RespawnManager)
-		|| !RespawnManager->Initialize(this, ObjectiveManager, RespawnDelay))
+		|| !RespawnManager->Initialize(
+			this,
+			ObjectiveManager,
+			RespawnDelay,
+			RespawnProtectionDuration))
 	{
 		UE_LOG(LogDominationGameMode, Error,
 			TEXT("Domination match start stopped because the spawn volumes are not configured correctly."));
@@ -263,6 +267,7 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 
 	APawn* SpawnedPawn = PlayerController->GetPawn();
 	PlayerState->ServerRespawnReset();
+	RespawnManager->BeginRespawnProtection(PlayerState);
 	if (!IsValid(LoadoutManager)
 		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
 	{
@@ -440,6 +445,7 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 	if (IsValid(RespawnManager))
 	{
 		RespawnManager->CancelPendingRespawns();
+		RespawnManager->ClearAllRespawnProtections();
 	}
 	AugmentDraftManager->CancelDraft();
 

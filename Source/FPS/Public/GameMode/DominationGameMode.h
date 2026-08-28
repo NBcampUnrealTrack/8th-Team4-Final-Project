@@ -99,6 +99,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
 	float RespawnDelay = 5.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
+	float RespawnProtectionDuration = 2.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match End", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", Units = "s"))
 	float MatchEndDelay = 3.0f;
 

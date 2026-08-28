@@ -1,5 +1,7 @@
 #include "GameMode/DominationRespawnManager.h"
 
+#include "Abilities/GameplayAbilityTypes.h"
+#include "AbilitySystemComponent.h"
 #include "Actor/DominationCapturePoint.h"
 #include "Actor/DominationSpawnVolume.h"
 #include "EngineUtils.h"
@@ -7,17 +9,21 @@
 #include "GameMode/DominationGameMode.h"
 #include "GameMode/DominationGameState.h"
 #include "GameMode/DominationObjectiveManager.h"
+#include "Player/ShooterPlayerState.h"
+#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
 
 bool UDominationRespawnManager::Initialize(
 	ADominationGameMode* InOwnerGameMode,
 	UDominationObjectiveManager* InObjectiveManager,
-	const float InRespawnDelay)
+	const float InRespawnDelay,
+	const float InRespawnProtectionDuration)
 {
 	OwnerGameMode = InOwnerGameMode;
 	ObjectiveManager = InObjectiveManager;
 	RespawnDelay = InRespawnDelay;
+	RespawnProtectionDuration = InRespawnProtectionDuration;
 	if (!CacheSpawnVolumes())
 	{
 		return false;
@@ -45,6 +51,7 @@ bool UDominationRespawnManager::Initialize(
 void UDominationRespawnManager::Shutdown()
 {
 	CancelPendingRespawns();
+	ClearAllRespawnProtections();
 	if (ADominationGameState* GameState = DominationGameState.Get())
 	{
 		GameState->OnActivePointChanged.RemoveDynamic(
@@ -74,10 +81,27 @@ void UDominationRespawnManager::CancelPendingRespawns()
 	PendingRespawnTimers.Reset();
 }
 
+void UDominationRespawnManager::ClearAllRespawnProtections()
+{
+	for (TPair<TWeakObjectPtr<AShooterPlayerState>, FActiveRespawnProtection>& Entry
+		: ActiveRespawnProtections)
+	{
+		ReleaseRespawnProtection(Entry.Value);
+	}
+
+	ActiveRespawnProtections.Reset();
+}
+
 void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedController)
 {
 	ADominationGameMode* GameMode = OwnerGameMode.Get();
 	const TWeakObjectPtr<AController> ControllerKey(EliminatedController);
+	if (IsValid(EliminatedController))
+	{
+		EndRespawnProtection(
+			EliminatedController->GetPlayerState<AShooterPlayerState>());
+	}
+
 	if (!IsValid(GameMode)
 		|| !IsValid(EliminatedController)
 		|| PendingRespawnTimers.Contains(ControllerKey))
@@ -93,6 +117,51 @@ void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedControlle
 			&ThisClass::HandleRespawnTimer,
 			ControllerKey),
 		RespawnDelay,
+		false);
+}
+
+void UDominationRespawnManager::BeginRespawnProtection(
+	AShooterPlayerState* PlayerState)
+{
+	ADominationGameMode* GameMode = OwnerGameMode.Get();
+	if (!IsValid(GameMode)
+		|| !IsValid(PlayerState)
+		|| !PlayerState->HasAuthority()
+		|| RespawnProtectionDuration <= 0.0f)
+	{
+		return;
+	}
+
+	EndRespawnProtection(PlayerState);
+
+	UAbilitySystemComponent* AbilitySystem =
+		PlayerState->GetAbilitySystemComponent();
+	if (!IsValid(AbilitySystem))
+	{
+		return;
+	}
+
+	FActiveRespawnProtection& Protection =
+		ActiveRespawnProtections.Add(PlayerState);
+	Protection.AbilitySystem = AbilitySystem;
+	Protection.WeaponFiredEventTags.AddTag(RogueTags::Event_Weapon_Fired);
+	Protection.WeaponFiredDelegate =
+		AbilitySystem->AddGameplayEventTagContainerDelegate(
+			Protection.WeaponFiredEventTags,
+			FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
+				this,
+				&ThisClass::HandleProtectedPlayerWeaponFired,
+				TWeakObjectPtr<AShooterPlayerState>(PlayerState)));
+
+	AbilitySystem->AddLooseGameplayTag(
+		RogueTags::State_Combat_Invulnerable);
+	GameMode->GetWorldTimerManager().SetTimer(
+		Protection.ExpirationTimer,
+		FTimerDelegate::CreateUObject(
+			this,
+			&ThisClass::HandleRespawnProtectionExpired,
+			TWeakObjectPtr<AShooterPlayerState>(PlayerState)),
+		RespawnProtectionDuration,
 		false);
 }
 
@@ -253,5 +322,52 @@ void UDominationRespawnManager::HandleRespawnTimer(
 	if (IsValid(GameMode) && EliminatedController.IsValid())
 	{
 		GameMode->RespawnEliminatedPlayer(EliminatedController.Get());
+	}
+}
+
+void UDominationRespawnManager::HandleRespawnProtectionExpired(
+	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
+{
+	EndRespawnProtection(PlayerState.Get());
+}
+
+void UDominationRespawnManager::HandleProtectedPlayerWeaponFired(
+	const FGameplayTag,
+	const FGameplayEventData*,
+	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
+{
+	EndRespawnProtection(PlayerState.Get());
+}
+
+void UDominationRespawnManager::EndRespawnProtection(
+	AShooterPlayerState* PlayerState)
+{
+	FActiveRespawnProtection Protection;
+	if (!ActiveRespawnProtections.RemoveAndCopyValue(
+		TWeakObjectPtr<AShooterPlayerState>(PlayerState),
+		Protection))
+	{
+		return;
+	}
+
+	ReleaseRespawnProtection(Protection);
+}
+
+void UDominationRespawnManager::ReleaseRespawnProtection(
+	FActiveRespawnProtection& Protection)
+{
+	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	{
+		GameMode->GetWorldTimerManager().ClearTimer(
+			Protection.ExpirationTimer);
+	}
+
+	if (UAbilitySystemComponent* AbilitySystem = Protection.AbilitySystem.Get())
+	{
+		AbilitySystem->RemoveGameplayEventTagContainerDelegate(
+			Protection.WeaponFiredEventTags,
+			Protection.WeaponFiredDelegate);
+		AbilitySystem->RemoveLooseGameplayTag(
+			RogueTags::State_Combat_Invulnerable);
 	}
 }
