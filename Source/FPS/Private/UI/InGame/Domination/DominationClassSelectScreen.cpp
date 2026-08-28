@@ -126,16 +126,12 @@ void UDominationClassSelectScreen::RebuildClassCards()
 
 		UHorizontalBoxSlot* ClassCardSlot =
 			Panel_ClassCards->AddChildToHorizontalBox(ClassCard);
+
 		if (IsValid(ClassCardSlot))
 		{
-			FSlateChildSize FillSize;
-			FillSize.SizeRule = ESlateSizeRule::Fill;
-			FillSize.Value = 1.0f;
-
-			ClassCardSlot->SetSize(FillSize);
 			ClassCardSlot->SetPadding(ClassCardPadding);
-			ClassCardSlot->SetHorizontalAlignment(HAlign_Fill);
-			ClassCardSlot->SetVerticalAlignment(VAlign_Fill);
+			ClassCardSlot->SetHorizontalAlignment(HAlign_Center);
+			ClassCardSlot->SetVerticalAlignment(VAlign_Center);
 		}
 
 		ClassCards.Add(ClassCard);
