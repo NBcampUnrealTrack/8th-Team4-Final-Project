@@ -3,6 +3,7 @@
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
+#include "GameMode/BaseTeamGameState.h"
 #include "GameMode/BombGameState.h"
 #include "Actor/DataJack.h"
 #include "Player/BaseTeamPlayerState.h"
@@ -215,14 +216,14 @@ int32 UBaseBombGameFlowWidget::GetMaxRounds() const
 
 int32 UBaseBombGameFlowWidget::GetTeamAScore() const
 {
-	const ABombGameState* BombGameState = GetBombGameState();
-	return IsValid(BombGameState) ? BombGameState->GetTeamAScore() : 0;
+	const ABaseTeamGameState* TeamGameState = GetTeamGameState();
+	return IsValid(TeamGameState) ? TeamGameState->GetTeamAScore() : 0;
 }
 
 int32 UBaseBombGameFlowWidget::GetTeamBScore() const
 {
-	const ABombGameState* BombGameState = GetBombGameState();
-	return IsValid(BombGameState) ? BombGameState->GetTeamBScore() : 0;
+	const ABaseTeamGameState* TeamGameState = GetTeamGameState();
+	return IsValid(TeamGameState) ? TeamGameState->GetTeamBScore() : 0;
 }
 
 int32 UBaseBombGameFlowWidget::GetLocalTeamScore() const
@@ -426,8 +427,8 @@ void UBaseBombGameFlowWidget::BindToReplicatedState()
 		return;
 	}
 
-	ABombGameState* BombGameState = World->GetGameState<ABombGameState>();
-	if (!IsValid(BombGameState))
+	ABaseTeamGameState* TeamGameState = World->GetGameState<ABaseTeamGameState>();
+	if (!IsValid(TeamGameState))
 	{
 		if (!World->GetTimerManager().IsTimerActive(StateBindingTimerHandle))
 		{
@@ -436,15 +437,27 @@ void UBaseBombGameFlowWidget::BindToReplicatedState()
 		return;
 	}
 
-	const bool bBindingChanged = BoundGameState.Get() != BombGameState;
+	ABombGameState* BombGameState = Cast<ABombGameState>(TeamGameState);
+	const bool bBindingChanged = BoundTeamGameState.Get() != TeamGameState
+		|| BoundBombGameState.Get() != BombGameState;
 	if (bBindingChanged)
 	{
 		UnbindFromGameState();
-		BoundGameState = BombGameState;
-		BombGameState->OnRoundStateChanged.AddDynamic(this, &UBaseBombGameFlowWidget::HandleRoundStateChanged);
-		BombGameState->OnTeamScoreChanged.AddDynamic(this, &UBaseBombGameFlowWidget::HandleTeamScoreChanged);
-		BombGameState->OnActiveDataJackChanged.AddDynamic(this, &UBaseBombGameFlowWidget::HandleActiveDataJackChanged);
-		BindToActiveDataJack(BombGameState->GetActiveDataJack());
+		BoundTeamGameState = TeamGameState;
+		TeamGameState->OnTeamScoreChanged.AddDynamic(
+			this,
+			&ThisClass::HandleTeamScoreChanged);
+		BoundBombGameState = BombGameState;
+		if (IsValid(BombGameState))
+		{
+			BombGameState->OnRoundStateChanged.AddDynamic(
+				this,
+				&ThisClass::HandleRoundStateChanged);
+			BombGameState->OnActiveDataJackChanged.AddDynamic(
+				this,
+				&ThisClass::HandleActiveDataJackChanged);
+			BindToActiveDataJack(BombGameState->GetActiveDataJack());
+		}
 	}
 
 	ABaseTeamPlayerState* LocalPlayerState = GetLocalTeamPlayerState();
@@ -469,6 +482,18 @@ void UBaseBombGameFlowWidget::NotifyGameFlowChanged()
 {
 	RefreshResult();
 	BP_OnGameFlowChanged();
+	RefreshBombOnlyVisibility();
+}
+
+void UBaseBombGameFlowWidget::RefreshBombOnlyVisibility()
+{
+	// 팀 점수는 모든 팀 모드가 공유하지만, 라운드 번호는 Bomb GameState에서만 유효하다.
+	if (BoundTeamGameState.IsValid()
+		&& !BoundBombGameState.IsValid()
+		&& IsValid(Text_Round))
+	{
+		Text_Round->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UBaseBombGameFlowWidget::RefreshResult()
@@ -560,14 +585,20 @@ void UBaseBombGameFlowWidget::UnbindFromGameState()
 	UnbindFromDataJack();
 	UnbindFromLocalPlayerState();
 
-	if (ABombGameState* BombGameState = BoundGameState.Get())
+	if (ABombGameState* BombGameState = BoundBombGameState.Get())
 	{
 		BombGameState->OnRoundStateChanged.RemoveDynamic(this, &UBaseBombGameFlowWidget::HandleRoundStateChanged);
-		BombGameState->OnTeamScoreChanged.RemoveDynamic(this, &UBaseBombGameFlowWidget::HandleTeamScoreChanged);
 		BombGameState->OnActiveDataJackChanged.RemoveDynamic(this, &UBaseBombGameFlowWidget::HandleActiveDataJackChanged);
 	}
+	if (ABaseTeamGameState* TeamGameState = BoundTeamGameState.Get())
+	{
+		TeamGameState->OnTeamScoreChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleTeamScoreChanged);
+	}
 
-	BoundGameState.Reset();
+	BoundBombGameState.Reset();
+	BoundTeamGameState.Reset();
 }
 
 void UBaseBombGameFlowWidget::UnbindFromDataJack()
@@ -598,11 +629,23 @@ FText UBaseBombGameFlowWidget::FormatTime(const float TimeSeconds) const
 	return FText::FromString(FString::Printf(TEXT("%02d:%02d"), Minutes, Seconds));
 }
 
+ABaseTeamGameState* UBaseBombGameFlowWidget::GetTeamGameState() const
+{
+	if (BoundTeamGameState.IsValid())
+	{
+		return BoundTeamGameState.Get();
+	}
+
+	return GetWorld() != nullptr
+		? GetWorld()->GetGameState<ABaseTeamGameState>()
+		: nullptr;
+}
+
 ABombGameState* UBaseBombGameFlowWidget::GetBombGameState() const
 {
-	if (BoundGameState.IsValid())
+	if (BoundBombGameState.IsValid())
 	{
-		return BoundGameState.Get();
+		return BoundBombGameState.Get();
 	}
 
 	return GetWorld() != nullptr ? GetWorld()->GetGameState<ABombGameState>() : nullptr;

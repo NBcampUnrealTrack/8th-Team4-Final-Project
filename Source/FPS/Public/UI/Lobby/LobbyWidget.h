@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/LobbyTypes.h"
 #include "GameMode/TeamTypes.h"
 #include "TimerManager.h"
 #include "UI/Session/SessionWidgetBase.h"
@@ -33,6 +34,13 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SelectTeam(EGameTeam RequestedTeam);
 
+	// Host-only selection. Clients receive the replicated result from LobbyGameState.
+	UFUNCTION(BlueprintCallable, Category = "Lobby|Game Mode")
+	void SelectGameMode(ELobbyMatchMode RequestedMatchMode);
+
+	UFUNCTION(BlueprintPure, Category = "Lobby|Game Mode")
+	ELobbyMatchMode GetSelectedGameMode() const;
+
 	UFUNCTION(BlueprintCallable)
 	void StartRoomGame();
 
@@ -43,6 +51,10 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnStartRoomGameResult(bool bWasSuccessful);
+
+	// Optional Blueprint styling hook for selected/unselected mode presentation.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby|Game Mode")
+	void OnLobbyGameModeSelectionChanged(ELobbyMatchMode SelectedMatchMode, bool bCanEditSelection);
 
 private:
 	UFUNCTION()
@@ -58,6 +70,12 @@ private:
 	void TeamBButtonClicked();
 
 	UFUNCTION()
+	void BombModeButtonClicked();
+
+	UFUNCTION()
+	void DominationModeButtonClicked();
+
+	UFUNCTION()
 	void HandleStartRoomGameComplete(bool bWasSuccessful);
 
 	void BindSessionDelegates();
@@ -68,6 +86,7 @@ private:
 	void RetryInitialLobbyRefresh();
 	void StopInitialLobbyRefreshRetry();
 	void UpdateLobbyButtons();
+	void UpdateGameModeSelection();
 	bool IsLocalPlayerHost() const;
 	AShooterPlayerState* GetLocalShooterPlayerState() const;
 	AShooterPlayerController* GetLocalShooterPlayerController() const;
@@ -75,6 +94,9 @@ private:
 
 	UFUNCTION()
 	void HandleLobbyPlayerListChanged();
+
+	UFUNCTION()
+	void HandleLobbyMatchModeChanged(ELobbyMatchMode SelectedMatchMode);
 
 private:
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -89,6 +111,16 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> TeamBButton;
+
+	// Exact WBP names auto-bind these controls; no Blueprint OnClicked wiring is required.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> BombModeButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> DominationModeButton;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SelectedGameModeText;
 
 	// 레디 버튼 라벨을 C++ 에서 직접 토글하기 위한 선택 바인딩.
 	UPROPERTY(meta = (BindWidgetOptional))

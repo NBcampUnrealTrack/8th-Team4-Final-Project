@@ -41,25 +41,13 @@ void ALobbyGameMode::Logout(AController* Exiting)
 	NotifyLobbyPlayerListChanged();
 }
 
-bool ALobbyGameMode::RequestStartRoomGame(APlayerController* RequestingPlayer, const FString& GameMapName)
+bool ALobbyGameMode::RequestStartRoomGame(
+	APlayerController* RequestingPlayer,
+	const FString& GameMapName)
 {
 	if (!IsHostPlayerState(RequestingPlayer ? RequestingPlayer->PlayerState : nullptr))
 	{
 		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: requester is not the host."));
-		return false;
-	}
-
-	if (!CanStartRoomGame())
-	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: not every client is ready."));
-		return false;
-	}
-
-	UGameInstance* GameInstance = GetGameInstance();
-	USessionSubSystem* SessionSubsystem = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
-	if (!SessionSubsystem)
-	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: SessionSubsystem is unavailable."));
 		return false;
 	}
 
@@ -68,20 +56,131 @@ bool ALobbyGameMode::RequestStartRoomGame(APlayerController* RequestingPlayer, c
 		return false;
 	}
 
-	// 게임 시작이 확정된 시점에만 팀을 확정
-	// 로비에서 실시간으로 강제 이동시키면 직접 고른 팀이 예고 없이 바뀌므로 여기서 한 번만 정리
-	BalanceTeamsForMatchStart();
+	// Preserve existing callers that still provide a map string, then use GameState
+	// as the single source of truth for the rest of the start sequence.
+	if (!GameMapName.IsEmpty())
+	{
+		ELobbyMatchMode RequestedMatchMode = ELobbyMatchMode::Bomb;
+		if (!TryResolveMatchModeFromMapName(GameMapName, RequestedMatchMode)
+			|| !RequestLobbyMatchMode(RequestingPlayer, RequestedMatchMode))
+		{
+			UE_LOG(LogLobbyGameMode, Warning,
+				TEXT("Start room game blocked: unsupported map was requested. Map=%s"),
+				*GameMapName);
+			return false;
+		}
+	}
 
-	PendingGameMapPath = ResolveMapPathFromName(GameMapName.IsEmpty() ? TEXT("BombMap") : GameMapName);
+	if (!CanStartRoomGame())
+	{
+		int32 TeamACount = 0;
+		int32 TeamBCount = 0;
+		int32 UnassignedCount = 0;
+		GetTeamAssignmentCounts(TeamACount, TeamBCount, UnassignedCount);
+
+		UE_LOG(LogLobbyGameMode, Warning,
+			TEXT("Start room game blocked: readiness or minimum-player rule failed. TeamA=%d TeamB=%d Unassigned=%d MinimumTotal=%d MinimumPerTeam=%d"),
+			TeamACount,
+			TeamBCount,
+			UnassignedCount,
+			MinimumPlayersToStart,
+			MinimumPlayersPerTeam);
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	USessionSubSystem* SessionSubsystem = GameInstance
+		? GameInstance->GetSubsystem<USessionSubSystem>()
+		: nullptr;
+	if (!SessionSubsystem)
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: SessionSubsystem is unavailable."));
+		return false;
+	}
+
+	const ELobbyMatchMode SelectedMatchMode = GetSelectedMatchMode();
+	const FString SelectedMapName = GetMapNameForMatchMode(SelectedMatchMode);
+	const FString SelectedMatchType = GetMatchTypeForMatchMode(SelectedMatchMode);
+	if (SelectedMapName.IsEmpty() || SelectedMatchType.IsEmpty())
+	{
+		UE_LOG(LogLobbyGameMode, Error,
+			TEXT("Start room game blocked: selected mode has no valid map configuration. Mode=%d"),
+			static_cast<uint8>(SelectedMatchMode));
+		return false;
+	}
+
+	// Start-time finalization only fills players who did not select a team.
+	// Explicit 2v3, 4v3, and other asymmetric selections are not rebalanced.
+	if (!FinalizeTeamsForMatchStart())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: teams could not be finalized."));
+		return false;
+	}
+
+	PendingGameMapPath = ResolveMapPathFromName(SelectedMapName);
 	bStartRoomGamePending = true;
-	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(this, &ThisClass::HandleStartRoomGameComplete);
-	SessionSubsystem->StartRoomGame(GameMapName);
+	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleStartRoomGameComplete);
+	SessionSubsystem->StartRoomGameWithSettings(SelectedMapName, SelectedMatchType);
 	return true;
 }
 
 bool ALobbyGameMode::CanStartRoomGame() const
 {
-	return AreAllClientsReady();
+	return IsSupportedMatchMode(GetSelectedMatchMode())
+		&& AreAllClientsReady()
+		&& HasMinimumPlayersToStart()
+		&& CanFinalizeTeamsForMatchStart();
+}
+
+bool ALobbyGameMode::RequestLobbyMatchMode(
+	APlayerController* RequestingPlayer,
+	const ELobbyMatchMode RequestedMatchMode)
+{
+	if (!IsHostPlayerState(RequestingPlayer ? RequestingPlayer->PlayerState : nullptr))
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Game mode selection blocked: requester is not the host."));
+		return false;
+	}
+
+	if (bStartRoomGamePending
+		|| bTravelingToGameMap
+		|| !IsSupportedMatchMode(RequestedMatchMode))
+	{
+		return false;
+	}
+
+	ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
+	if (!IsValid(LobbyGameState))
+	{
+		return false;
+	}
+
+	LobbyGameState->SetSelectedMatchMode(RequestedMatchMode);
+
+	// Session advertising is secondary to replicated lobby state. Failure here
+	// must not roll back a valid host selection.
+	if (!UpdateSessionAdvertisementForMatchMode(RequestedMatchMode))
+	{
+		UE_LOG(LogLobbyGameMode, Verbose,
+			TEXT("Lobby mode changed, but room advertisement was not updated."));
+	}
+
+	return true;
+}
+
+ELobbyMatchMode ALobbyGameMode::GetSelectedMatchMode() const
+{
+	const ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
+	return IsValid(LobbyGameState)
+		? LobbyGameState->GetSelectedMatchMode()
+		: ELobbyMatchMode::Bomb;
+}
+
+FString ALobbyGameMode::GetSelectedGameMapName() const
+{
+	return GetMapNameForMatchMode(GetSelectedMatchMode());
 }
 
 void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
@@ -92,6 +191,9 @@ void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
 	}
 
 	HostPlayerState = NewPlayer->PlayerState;
+
+	// Keep the initial room advertisement aligned with the default Bomb selection.
+	UpdateSessionAdvertisementForMatchMode(GetSelectedMatchMode());
 }
 
 void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
@@ -116,7 +218,7 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 			continue;
 		}
 
-		// 새 로비 사이클의 Ready/Load 상태는 이전 매치 값을 이어받지 않는다.
+		// A new lobby cycle must not inherit ready/load state from the prior match.
 		ShooterPlayerState->SetLobbyReady(false);
 		ShooterPlayerState->SetLoadedIntoMatch(false);
 
@@ -125,14 +227,15 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 			FallbackHostPlayerState = ShooterPlayerState;
 		}
 
-		// 리슨 서버의 로컬 컨트롤러가 실제 방장이다.
+		// The local controller on a listen server is the room host.
 		if (PlayerController->IsLocalController())
 		{
 			HostPlayerState = ShooterPlayerState;
 		}
 	}
 
-	// Dedicated Server 등 로컬 컨트롤러가 없는 환경에서는 기존 정책처럼 첫 플레이어를 사용한다.
+	// Dedicated servers do not have a local controller, so retain the existing
+	// fallback policy and use the first valid player.
 	if (!HostPlayerState.IsValid() && IsValid(FallbackHostPlayerState))
 	{
 		HostPlayerState = FallbackHostPlayerState;
@@ -141,6 +244,10 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 	if (!HostPlayerState.IsValid())
 	{
 		UE_LOG(LogLobbyGameMode, Warning, TEXT("Lobby seamless travel completed without a valid host player."));
+	}
+	else
+	{
+		UpdateSessionAdvertisementForMatchMode(GetSelectedMatchMode());
 	}
 
 	NotifyLobbyPlayerListChanged();
@@ -171,21 +278,30 @@ void ALobbyGameMode::ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlaye
 	}
 }
 
-bool ALobbyGameMode::RequestLobbyTeam(APlayerController* RequestingPlayer, const EGameTeam RequestedTeam)
+bool ALobbyGameMode::RequestLobbyTeam(
+	APlayerController* RequestingPlayer,
+	const EGameTeam RequestedTeam)
 {
+	if (bStartRoomGamePending || bTravelingToGameMap)
+	{
+		return false;
+	}
+
 	AShooterPlayerState* ShooterPlayerState = IsValid(RequestingPlayer)
 		? RequestingPlayer->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
 	if (!IsValid(ShooterPlayerState))
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: %s has no ShooterPlayerState."), *GetNameSafe(RequestingPlayer));
+		UE_LOG(LogLobbyGameMode, Warning,
+			TEXT("Team change blocked: %s has no ShooterPlayerState."),
+			*GetNameSafe(RequestingPlayer));
 		return false;
 	}
 
-	// None 은 "아직 고르지 않음"을 뜻하는 내부 상태이므로 선택 대상이 아님
-	if (RequestedTeam == EGameTeam::None)
+	// None and invalid enum values are internal/invalid states, not player-facing choices.
+	if (RequestedTeam != EGameTeam::TeamA && RequestedTeam != EGameTeam::TeamB)
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: None is not selectable."));
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: only TeamA or TeamB is selectable."));
 		return false;
 	}
 
@@ -211,7 +327,7 @@ bool ALobbyGameMode::RequestLobbyTeam(APlayerController* RequestingPlayer, const
 int32 ALobbyGameMode::CountTeamPlayers(const EGameTeam Team) const
 {
 	const AGameStateBase* CurrentGameState = GameState;
-	if (!CurrentGameState)
+	if (!IsValid(CurrentGameState))
 	{
 		return 0;
 	}
@@ -229,13 +345,17 @@ int32 ALobbyGameMode::CountTeamPlayers(const EGameTeam Team) const
 	return PlayerCount;
 }
 
-void ALobbyGameMode::BalanceTeamsForMatchStart()
+bool ALobbyGameMode::FinalizeTeamsForMatchStart()
 {
-	const AGameStateBase* CurrentGameState = GameState;
-	if (!CurrentGameState)
+	if (!CanFinalizeTeamsForMatchStart())
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team balancing skipped: GameState is invalid."));
-		return;
+		return false;
+	}
+
+	const AGameStateBase* CurrentGameState = GameState;
+	if (!IsValid(CurrentGameState))
+	{
+		return false;
 	}
 
 	TArray<AShooterPlayerState*> TeamAPlayers;
@@ -264,42 +384,68 @@ void ALobbyGameMode::BalanceTeamsForMatchStart()
 		}
 	}
 
-	// 팀을 고르지 않은 플레이어는 무작위 순서로 인원이 적은 팀에 한 명씩 채움
 	Algo::RandomShuffle(UnassignedPlayers);
 	for (AShooterPlayerState* PlayerState : UnassignedPlayers)
 	{
-		const bool bJoinTeamA = TeamAPlayers.Num() == TeamBPlayers.Num()
-			? FMath::RandBool()
-			: TeamAPlayers.Num() < TeamBPlayers.Num();
+		const bool bCanJoinTeamA = TeamAPlayers.Num() < MaxPlayersPerTeam;
+		const bool bCanJoinTeamB = TeamBPlayers.Num() < MaxPlayersPerTeam;
+		if (!bCanJoinTeamA && !bCanJoinTeamB)
+		{
+			return false;
+		}
 
-		TArray<AShooterPlayerState*>& TargetTeam = bJoinTeamA ? TeamAPlayers : TeamBPlayers;
+		const bool bTeamANeedsMinimum = TeamAPlayers.Num() < MinimumPlayersPerTeam;
+		const bool bTeamBNeedsMinimum = TeamBPlayers.Num() < MinimumPlayersPerTeam;
+
+		bool bJoinTeamA = false;
+		if (bTeamANeedsMinimum != bTeamBNeedsMinimum)
+		{
+			bJoinTeamA = bTeamANeedsMinimum;
+		}
+		else if (!bCanJoinTeamB)
+		{
+			bJoinTeamA = true;
+		}
+		else if (!bCanJoinTeamA)
+		{
+			bJoinTeamA = false;
+		}
+		else
+		{
+			bJoinTeamA = TeamAPlayers.Num() == TeamBPlayers.Num()
+				? FMath::RandBool()
+				: TeamAPlayers.Num() < TeamBPlayers.Num();
+		}
+
+		TArray<AShooterPlayerState*>& TargetTeam = bJoinTeamA
+			? TeamAPlayers
+			: TeamBPlayers;
 		TargetTeam.Add(PlayerState);
 		PlayerState->SetTeam(bJoinTeamA ? EGameTeam::TeamA : EGameTeam::TeamB);
 	}
 
-	// 직접 고른 인원이 한쪽에 쏠려 2명 이상 차이나면 마지막에 합류한 순서대로 반대 팀으로 옮김
-	while (FMath::Abs(TeamAPlayers.Num() - TeamBPlayers.Num()) > 1)
+	const int32 TotalPlayerCount = TeamAPlayers.Num() + TeamBPlayers.Num();
+	const bool bTeamsAreValid = TotalPlayerCount >= MinimumPlayersToStart
+		&& TeamAPlayers.Num() >= MinimumPlayersPerTeam
+		&& TeamBPlayers.Num() >= MinimumPlayersPerTeam
+		&& TeamAPlayers.Num() <= MaxPlayersPerTeam
+		&& TeamBPlayers.Num() <= MaxPlayersPerTeam;
+	if (!bTeamsAreValid)
 	{
-		const bool bMoveFromTeamA = TeamAPlayers.Num() > TeamBPlayers.Num();
-		TArray<AShooterPlayerState*>& SourceTeam = bMoveFromTeamA ? TeamAPlayers : TeamBPlayers;
-		TArray<AShooterPlayerState*>& TargetTeam = bMoveFromTeamA ? TeamBPlayers : TeamAPlayers;
-		const EGameTeam TargetTeamId = bMoveFromTeamA ? EGameTeam::TeamB : EGameTeam::TeamA;
-
-		AShooterPlayerState* MovedPlayerState = SourceTeam.Pop();
-		TargetTeam.Add(MovedPlayerState);
-		MovedPlayerState->SetTeam(TargetTeamId);
-
-		UE_LOG(LogLobbyGameMode, Log,
-			TEXT("Team balancing moved %s to the other team."),
-			*GetNameSafe(MovedPlayerState));
+		return false;
 	}
 
 	UE_LOG(LogLobbyGameMode, Log,
-		TEXT("Team balancing finished. TeamA=%d TeamB=%d"),
+		TEXT("Team finalization preserved selected teams. TeamA=%d TeamB=%d"),
 		TeamAPlayers.Num(),
 		TeamBPlayers.Num());
 
-	NotifyLobbyPlayerListChanged();
+	if (!UnassignedPlayers.IsEmpty())
+	{
+		NotifyLobbyPlayerListChanged();
+	}
+
+	return true;
 }
 
 void ALobbyGameMode::NotifyLobbyPlayerListChanged()
@@ -313,13 +459,12 @@ void ALobbyGameMode::NotifyLobbyPlayerListChanged()
 bool ALobbyGameMode::AreAllClientsReady() const
 {
 	const AGameStateBase* CurrentGameState = GameState;
-	if (!CurrentGameState)
+	if (!IsValid(CurrentGameState))
 	{
 		UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check failed: GameState is invalid."));
 		return false;
 	}
 
-	bool bHasClientPlayer = false;
 	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
 	{
 		if (!IsValid(PlayerState))
@@ -328,26 +473,190 @@ bool ALobbyGameMode::AreAllClientsReady() const
 			continue;
 		}
 
+		// Pressing Start is the host's readiness confirmation.
 		if (IsHostPlayerState(PlayerState))
 		{
 			continue;
 		}
 
-		bHasClientPlayer = true;
 		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
 		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
 		{
-			UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check failed: Player=%s Ready=false"), *GetNameSafe(PlayerState));
+			UE_LOG(LogLobbyGameMode, Warning,
+				TEXT("Ready check failed: Player=%s Ready=false"),
+				*GetNameSafe(PlayerState));
 			return false;
 		}
 	}
 
-	return bHasClientPlayer;
+	return true;
+}
+
+bool ALobbyGameMode::HasMinimumPlayersToStart() const
+{
+	int32 TeamACount = 0;
+	int32 TeamBCount = 0;
+	int32 UnassignedCount = 0;
+	GetTeamAssignmentCounts(TeamACount, TeamBCount, UnassignedCount);
+
+	return TeamACount + TeamBCount + UnassignedCount >= MinimumPlayersToStart;
+}
+
+bool ALobbyGameMode::CanFinalizeTeamsForMatchStart() const
+{
+	if (MinimumPlayersToStart < 2
+		|| MinimumPlayersPerTeam < 1
+		|| MinimumPlayersPerTeam > MaxPlayersPerTeam)
+	{
+		return false;
+	}
+
+	int32 TeamACount = 0;
+	int32 TeamBCount = 0;
+	int32 UnassignedCount = 0;
+	GetTeamAssignmentCounts(TeamACount, TeamBCount, UnassignedCount);
+
+	const int32 TotalPlayerCount = TeamACount + TeamBCount + UnassignedCount;
+	if (TotalPlayerCount < MinimumPlayersToStart
+		|| TotalPlayerCount > MaxPlayersPerTeam * 2
+		|| TeamACount > MaxPlayersPerTeam
+		|| TeamBCount > MaxPlayersPerTeam)
+	{
+		return false;
+	}
+
+	const int32 AvailableSlots = (MaxPlayersPerTeam - TeamACount)
+		+ (MaxPlayersPerTeam - TeamBCount);
+	if (UnassignedCount > AvailableSlots)
+	{
+		return false;
+	}
+
+	const int32 PlayersNeededForTeamMinimum =
+		FMath::Max(0, MinimumPlayersPerTeam - TeamACount)
+		+ FMath::Max(0, MinimumPlayersPerTeam - TeamBCount);
+
+	return PlayersNeededForTeamMinimum <= UnassignedCount;
 }
 
 bool ALobbyGameMode::IsHostPlayerState(const APlayerState* PlayerState) const
 {
-	return IsValid(PlayerState) && HostPlayerState.IsValid() && HostPlayerState.Get() == PlayerState;
+	return IsValid(PlayerState)
+		&& HostPlayerState.IsValid()
+		&& HostPlayerState.Get() == PlayerState;
+}
+
+bool ALobbyGameMode::IsSupportedMatchMode(const ELobbyMatchMode MatchMode) const
+{
+	return !GetMapNameForMatchMode(MatchMode).IsEmpty()
+		&& !GetMatchTypeForMatchMode(MatchMode).IsEmpty();
+}
+
+bool ALobbyGameMode::TryResolveMatchModeFromMapName(
+	const FString& MapName,
+	ELobbyMatchMode& OutMatchMode) const
+{
+	const FString RequestedPath = ResolveMapPathFromName(MapName);
+	if (RequestedPath.Equals(
+		ResolveMapPathFromName(BombMapName),
+		ESearchCase::IgnoreCase))
+	{
+		OutMatchMode = ELobbyMatchMode::Bomb;
+		return true;
+	}
+
+	if (RequestedPath.Equals(
+		ResolveMapPathFromName(DominationMapName),
+		ESearchCase::IgnoreCase))
+	{
+		OutMatchMode = ELobbyMatchMode::Domination;
+		return true;
+	}
+
+	return false;
+}
+
+void ALobbyGameMode::GetTeamAssignmentCounts(
+	int32& OutTeamA,
+	int32& OutTeamB,
+	int32& OutUnassigned) const
+{
+	OutTeamA = 0;
+	OutTeamB = 0;
+	OutUnassigned = 0;
+
+	const AGameStateBase* CurrentGameState = GameState;
+	if (!IsValid(CurrentGameState))
+	{
+		return;
+	}
+
+	for (const APlayerState* PlayerState : CurrentGameState->PlayerArray)
+	{
+		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(ShooterPlayerState))
+		{
+			continue;
+		}
+
+		switch (ShooterPlayerState->GetTeam())
+		{
+		case EGameTeam::TeamA:
+			++OutTeamA;
+			break;
+		case EGameTeam::TeamB:
+			++OutTeamB;
+			break;
+		default:
+			++OutUnassigned;
+			break;
+		}
+	}
+}
+
+FString ALobbyGameMode::GetMapNameForMatchMode(const ELobbyMatchMode MatchMode) const
+{
+	switch (MatchMode)
+	{
+	case ELobbyMatchMode::Bomb:
+		return BombMapName;
+	case ELobbyMatchMode::Domination:
+		return DominationMapName;
+	default:
+		return TEXT("");
+	}
+}
+
+FString ALobbyGameMode::GetMatchTypeForMatchMode(const ELobbyMatchMode MatchMode) const
+{
+	switch (MatchMode)
+	{
+	case ELobbyMatchMode::Bomb:
+		return TEXT("Bomb");
+	case ELobbyMatchMode::Domination:
+		return TEXT("Domination");
+	default:
+		return TEXT("");
+	}
+}
+
+bool ALobbyGameMode::UpdateSessionAdvertisementForMatchMode(
+	const ELobbyMatchMode MatchMode)
+{
+	const FString MapName = GetMapNameForMatchMode(MatchMode);
+	const FString MatchType = GetMatchTypeForMatchMode(MatchMode);
+	if (MapName.IsEmpty() || MatchType.IsEmpty())
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	USessionSubSystem* SessionSubsystem = GameInstance
+		? GameInstance->GetSubsystem<USessionSubSystem>()
+		: nullptr;
+
+	return SessionSubsystem
+		&& SessionSubsystem->UpdateRoomGameMode(MapName, MatchType);
 }
 
 FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
@@ -359,7 +668,9 @@ FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
 
 	if (MapName.IsEmpty())
 	{
-		return TEXT("/Game/Maps/BombMap");
+		return BombMapName.IsEmpty()
+			? TEXT("/Game/Maps/BombMap")
+			: FString::Printf(TEXT("/Game/Maps/%s"), *BombMapName);
 	}
 
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);
@@ -377,7 +688,8 @@ void ALobbyGameMode::TravelToPendingGameMap()
 
 	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
-		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(Iterator->Get()))
+		if (AShooterPlayerController* ShooterPlayerController =
+			Cast<AShooterPlayerController>(Iterator->Get()))
 		{
 			ShooterPlayerController->ClientShowLoadingScreen(0.2f);
 		}
@@ -387,13 +699,17 @@ void ALobbyGameMode::TravelToPendingGameMap()
 	World->ServerTravel(PendingGameMapPath + TEXT("?listen"));
 }
 
-void ALobbyGameMode::HandleStartRoomGameComplete(bool bWasSuccessful)
+void ALobbyGameMode::HandleStartRoomGameComplete(const bool bWasSuccessful)
 {
 	UGameInstance* GameInstance = GetGameInstance();
-	USessionSubSystem* SessionSubsystem = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
+	USessionSubSystem* SessionSubsystem = GameInstance
+		? GameInstance->GetSubsystem<USessionSubSystem>()
+		: nullptr;
 	if (SessionSubsystem)
 	{
-		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
+		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(
+			this,
+			&ThisClass::HandleStartRoomGameComplete);
 	}
 
 	bStartRoomGamePending = false;

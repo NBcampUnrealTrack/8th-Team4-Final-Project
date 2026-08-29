@@ -8,6 +8,7 @@
 #include "BaseBombGameFlowWidget.generated.h"
 
 class ABaseTeamPlayerState;
+class ABaseTeamGameState;
 class ABombGameState;
 class ADataJack;
 class UTextBlock;
@@ -201,11 +202,13 @@ private:
 	void UnbindFromDataJack();
 	void UnbindFromLocalPlayerState();
 	FText FormatTime(float TimeSeconds) const;
+	ABaseTeamGameState* GetTeamGameState() const;
 	ABombGameState* GetBombGameState() const;
 	ABaseTeamPlayerState* GetLocalTeamPlayerState() const;
 	bool IsLocalPlayerAttacker() const;
 	void NotifyGameFlowChanged();
 	void RefreshResult();
+	void RefreshBombOnlyVisibility();
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Match Result", meta = (BindWidget))
@@ -216,6 +219,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Match Result", meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_MatchResult;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Round", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Text_Round;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Match Result")
 	FText RoundEndTitleText;
@@ -230,7 +236,8 @@ protected:
 	FText DefeatText;
 
 private:
-	TWeakObjectPtr<ABombGameState> BoundGameState;
+	TWeakObjectPtr<ABaseTeamGameState> BoundTeamGameState;
+	TWeakObjectPtr<ABombGameState> BoundBombGameState;
 	TWeakObjectPtr<ADataJack> BoundDataJack;
 	TWeakObjectPtr<ABaseTeamPlayerState> BoundLocalPlayerState;
 	bool bHasInitializedBindings = false;

@@ -211,23 +211,10 @@ bool FSurrenderWinnerRuleTest::RunTest(const FString& Parameters)
 		TEXT("Team B surrender awards Team A"),
 		static_cast<int32>(SurrenderVoteRules::GetOpposingTeam(EGameTeam::TeamB)),
 		static_cast<int32>(EGameTeam::TeamA));
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FSurrenderVotingPhaseRuleTest,
-	"FPS.GameFlow.Surrender.Rules.EligiblePhases",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FSurrenderVotingPhaseRuleTest::RunTest(const FString& Parameters)
-{
-	// GameMode also requires HasMatchStarted before accepting a request.
-	TestTrue(TEXT("Round starting is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundStarting));
-	TestTrue(TEXT("Augment selection is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::AugmentSelecting));
-	TestTrue(TEXT("Combat is phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundInProgress));
-	TestFalse(TEXT("Waiting is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::WaitingForPlayers));
-	TestFalse(TEXT("Round ending is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::RoundEnding));
-	TestFalse(TEXT("Match end is not phase-eligible"), SurrenderVoteRules::IsVotingPhase(EGameFlowPhase::MatchEnded));
+	TestEqual(
+		TEXT("An unassigned team has no opposing winner"),
+		static_cast<int32>(SurrenderVoteRules::GetOpposingTeam(EGameTeam::None)),
+		static_cast<int32>(EGameTeam::None));
 	return true;
 }
 

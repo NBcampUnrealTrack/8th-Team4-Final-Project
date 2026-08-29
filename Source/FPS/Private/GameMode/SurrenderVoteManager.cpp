@@ -1,12 +1,12 @@
 #include "GameMode/SurrenderVoteManager.h"
 
 #include "Engine/World.h"
-#include "GameMode/BaseRoundGameMode.h"
+#include "GameMode/BaseTeamGameMode.h"
 #include "GameFramework/PlayerState.h"
-#include "Player/BaseRoundPlayerController.h"
+#include "Player/ShooterPlayerController.h"
 
 void USurrenderVoteManager::Initialize(
-	ABaseRoundGameMode* InOwnerGameMode,
+	ABaseTeamGameMode* InOwnerGameMode,
 	const float InVoteDuration,
 	const float InVoteCooldown)
 {
@@ -27,7 +27,7 @@ void USurrenderVoteManager::Shutdown()
 
 ESurrenderVoteStartResult USurrenderVoteManager::TryStartVote(
 	const EGameTeam Team,
-	const TArray<ABaseRoundPlayerController*>& Voters)
+	const TArray<AShooterPlayerController*>& Voters)
 {
 	if (ActiveVotes.Contains(Team))
 	{
@@ -49,7 +49,7 @@ ESurrenderVoteStartResult USurrenderVoteManager::TryStartVote(
 	Vote.State.Voters.Reserve(Voters.Num());
 	Vote.Voters.Reserve(Voters.Num());
 
-	for (ABaseRoundPlayerController* Voter : Voters)
+	for (AShooterPlayerController* Voter : Voters)
 	{
 		const APlayerState* PlayerState = Voter->GetPlayerState<APlayerState>();
 
@@ -79,7 +79,7 @@ ESurrenderVoteStartResult USurrenderVoteManager::TryStartVote(
 
 EGameTeam USurrenderVoteManager::SubmitVote(
 	const EGameTeam Team,
-	ABaseRoundPlayerController* Voter,
+	AShooterPlayerController* Voter,
 	const int32 VoteId,
 	const bool bApprove)
 {
@@ -90,7 +90,7 @@ EGameTeam USurrenderVoteManager::SubmitVote(
 	}
 
 	const int32 VoterIndex = Vote->Voters.IndexOfByPredicate(
-		[Voter](const TWeakObjectPtr<ABaseRoundPlayerController>& Candidate)
+		[Voter](const TWeakObjectPtr<AShooterPlayerController>& Candidate)
 		{
 			return Candidate.Get() == Voter;
 		});
@@ -129,7 +129,7 @@ EGameTeam USurrenderVoteManager::SubmitVote(
 	return EGameTeam::None;
 }
 
-void USurrenderVoteManager::HandleVoterLeaving(ABaseRoundPlayerController* Voter)
+void USurrenderVoteManager::HandleVoterLeaving(AShooterPlayerController* Voter)
 {
 	const EGameTeam Teams[] = {EGameTeam::TeamA, EGameTeam::TeamB};
 	for (const EGameTeam Team : Teams)
@@ -137,7 +137,7 @@ void USurrenderVoteManager::HandleVoterLeaving(ABaseRoundPlayerController* Voter
 		const FTeamVoteRuntime* Vote = ActiveVotes.Find(Team);
 		const bool bBelongsToVote = Vote != nullptr
 			&& Vote->Voters.ContainsByPredicate(
-				[Voter](const TWeakObjectPtr<ABaseRoundPlayerController>& Candidate)
+				[Voter](const TWeakObjectPtr<AShooterPlayerController>& Candidate)
 				{
 					return Candidate.Get() == Voter;
 				});
@@ -167,7 +167,7 @@ void USurrenderVoteManager::PublishVoteState(const FTeamVoteRuntime& Vote) const
 {
 	for (int32 VoterIndex = 0; VoterIndex < Vote.Voters.Num(); ++VoterIndex)
 	{
-		ABaseRoundPlayerController* Voter = Vote.Voters[VoterIndex].Get();
+		AShooterPlayerController* Voter = Vote.Voters[VoterIndex].Get();
 		if (!IsValid(Voter))
 		{
 			continue;
@@ -194,9 +194,9 @@ void USurrenderVoteManager::CloseVote(const EGameTeam Team, const bool bStartCoo
 		NextVoteAllowedTimes.Add(Team, GetServerTime() + VoteCooldown);
 	}
 
-	for (const TWeakObjectPtr<ABaseRoundPlayerController>& VoterPtr : Vote->Voters)
+	for (const TWeakObjectPtr<AShooterPlayerController>& VoterPtr : Vote->Voters)
 	{
-		if (ABaseRoundPlayerController* Voter = VoterPtr.Get())
+		if (AShooterPlayerController* Voter = VoterPtr.Get())
 		{
 			Voter->SetSurrenderVoteState(FSurrenderVoteState());
 		}

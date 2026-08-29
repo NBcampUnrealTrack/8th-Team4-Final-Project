@@ -52,6 +52,7 @@ void UShooterReticle::NativeOnInitialized()
 	SetSlotPosition(Image_Center, FVector2D::ZeroVector);
 
 	// 히트마커 기능
+	bHitMarkerActive = false;
 	if (Text_HitMarker)
 	{
 		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
@@ -62,7 +63,7 @@ void UShooterReticle::NativeOnInitialized()
 		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
 	}
 
-	// 페이드 애니메이션이 끝나는 시점에 크로스헤어를 복원
+	// 페이드 애니메이션이 끝나는 시점에 히트마커 상태를 종료한다.
 	if (Anim_HitMarker)
 	{
 		FWidgetAnimationDynamicEvent FinishedEvent;
@@ -78,6 +79,12 @@ void UShooterReticle::NativeDestruct()
 	{
 		PC->OnHitMarker.RemoveAll(this);
 	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
+	}
+	bHitMarkerActive = false;
 
 	Super::NativeDestruct();
 }
@@ -134,6 +141,11 @@ FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
 	return IsValid(Weapon) ? Weapon->GetWeaponTag() : FGameplayTag();
 }
 
+bool UShooterReticle::IsHitMarkerActive() const
+{
+	return bHitMarkerActive;
+}
+
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
@@ -160,17 +172,6 @@ float UShooterReticle::GetSpreadDegrees() const
 }
 
 // 히트마커
-void UShooterReticle::SetCrosshairArmsVisible(const bool bVisible)
-{
-	const ESlateVisibility NewVisibility = bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden;
-
-	if (Image_Top)    { Image_Top->SetVisibility(NewVisibility); }
-	if (Image_Bottom) { Image_Bottom->SetVisibility(NewVisibility); }
-	if (Image_Left)   { Image_Left->SetVisibility(NewVisibility); }
-	if (Image_Right)  { Image_Right->SetVisibility(NewVisibility); }
-	if (Image_Center) { Image_Center->SetVisibility(NewVisibility); }
-}
-
 void UShooterReticle::HandleHitMarker(const bool bRed)
 {
 	if (!Text_HitMarker)
@@ -178,10 +179,16 @@ void UShooterReticle::HandleHitMarker(const bool bRed)
 		return;
 	}
 
-	SetCrosshairArmsVisible(false);
+	bHitMarkerActive = true;
 
 	Text_HitMarker->SetColorAndOpacity(bRed ? FLinearColor::Red : FLinearColor::White);
 	Text_HitMarker->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	// 이전 타이머가 새 히트마커를 조기에 숨기지 않도록 갱신한다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
+	}
 
 	// 애니메이션이 있으면 그걸로 페이드, 없으면 즉시 켜고 HitMarkerDuration 뒤에 끈다.
 	if (Anim_HitMarker)
@@ -195,15 +202,15 @@ void UShooterReticle::HandleHitMarker(const bool bRed)
 	}
 }
 
-// 히트마커 제거 - 크로스헤어 복원
+// 히트마커 자체만 제거한다. 기본 크로스헤어 Visibility는 Blueprint가 결정한다.
 void UShooterReticle::HideHitMarker()
 {
+	bHitMarkerActive = false;
+
 	if (Text_HitMarker)
 	{
 		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
 	}
-
-	SetCrosshairArmsVisible(true);
 }
 
 // Anim_HitMarker 재생 종료 시 호출

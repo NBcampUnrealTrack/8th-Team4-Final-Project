@@ -10,7 +10,6 @@ void ABaseRoundGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(ABaseRoundGameState, GameFlowPhase);
 	DOREPLIFETIME(ABaseRoundGameState, RoundWinner);
 	DOREPLIFETIME(ABaseRoundGameState, RoundEndReason);
-	DOREPLIFETIME(ABaseRoundGameState, MatchWinner);
 	DOREPLIFETIME(ABaseRoundGameState, TeamARole);
 	DOREPLIFETIME(ABaseRoundGameState, TeamBRole);
 	DOREPLIFETIME(ABaseRoundGameState, RoundEndServerTime);
@@ -41,11 +40,6 @@ EGameTeam ABaseRoundGameState::GetRoundWinner() const
 ERoundEndReason ABaseRoundGameState::GetRoundEndReason() const
 {
 	return RoundEndReason;
-}
-
-EGameTeam ABaseRoundGameState::GetMatchWinner() const
-{
-	return MatchWinner;
 }
 
 ETeamRole ABaseRoundGameState::GetTeamRole(const EGameTeam Team) const
@@ -228,17 +222,6 @@ void ABaseRoundGameState::ClearRoundResult()
 	BroadcastRoundStateChanged();
 }
 
-void ABaseRoundGameState::SetMatchWinner(const EGameTeam WinningTeam)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-
-	MatchWinner = WinningTeam;
-	BroadcastRoundStateChanged();
-}
-
 void ABaseRoundGameState::SetTeamRoles(const ETeamRole NewTeamARole, const ETeamRole NewTeamBRole)
 {
 	if (!HasAuthority())
@@ -270,6 +253,12 @@ void ABaseRoundGameState::SetLoadingStatus(const int32 NewLoadedPlayerCount, con
 void ABaseRoundGameState::ClearLoadingStatus()
 {
 	SetLoadingStatus(0, 0);
+}
+
+void ABaseRoundGameState::HandleMatchStateChanged()
+{
+	Super::HandleMatchStateChanged();
+	OnRoundStateChanged.Broadcast();
 }
 
 void ABaseRoundGameState::OnRep_RoundState()

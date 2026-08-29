@@ -5,7 +5,7 @@
 #include "Augment/AugmentDraft.h"
 #include "AugmentDraftManager.generated.h"
 
-class ABaseRoundGameMode;
+class ABaseTeamGameMode;
 class AShooterPlayerState;
 class UAugmentDraftProfile;
 class UAugmentInventoryComponent;
@@ -21,7 +21,7 @@ class FPS_API UAugmentDraftManager : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(ABaseRoundGameMode* InOwnerGameMode, bool bInDraftEnabled,
+	void Initialize(ABaseTeamGameMode* InOwnerGameMode, bool bInDraftEnabled,
 		const UAugmentDraftProfile* InDraftProfile = nullptr);
 	void Shutdown();
 
@@ -35,7 +35,7 @@ public:
 	// ActiveSlot 은 Pool 이 Active 일 때만 사용
 	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
 
-	// 대기열 첫 항목의 카드를 제시, 제시할 것이 없으면 false
+	// 후보가 없는 항목은 건너뛰고 다음 보상을 제시, 제시할 것이 없으면 false
 	bool ServeNextReward(AShooterPlayerState* PlayerState);
 
 	// 남은 후보를 자동 선택으로 정리
@@ -85,7 +85,7 @@ private:
 	UAugmentInventoryComponent* GetInventory(AShooterPlayerState* PlayerState) const;
 	void GetCurrentPlayerStates(TArray<AShooterPlayerState*>& OutPlayerStates) const;
 
-	TWeakObjectPtr<ABaseRoundGameMode> OwnerGameMode;
+	TWeakObjectPtr<ABaseTeamGameMode> OwnerGameMode;
 	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 프로젝트 설정에서 온 추첨 규칙
