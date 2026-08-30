@@ -30,19 +30,26 @@ ADominationSpawnVolume::ADominationSpawnVolume()
 	SpawnArea->SetCanEverAffectNavigation(false);
 }
 
-FTransform ADominationSpawnVolume::GetNextSpawnTransform()
+void ADominationSpawnVolume::GetSpawnCandidateTransforms(
+	TArray<FTransform>& OutCandidateTransforms) const
 {
-	const FVector2D& SlotDirection = SpawnSlotDirections[NextSpawnPointIndex];
-	NextSpawnPointIndex = (NextSpawnPointIndex + 1) % UE_ARRAY_COUNT(SpawnSlotDirections);
+	OutCandidateTransforms.Reset(UE_ARRAY_COUNT(SpawnSlotDirections));
+	if (!IsValid(SpawnArea))
+	{
+		return;
+	}
 
 	const FVector BoxExtent = SpawnArea->GetUnscaledBoxExtent();
-	const FVector LocalSpawnLocation(
-		BoxExtent.X * SpawnSlotExtentRatio * SlotDirection.X,
-		BoxExtent.Y * SpawnSlotExtentRatio * SlotDirection.Y,
-		0.0f);
 	const FTransform& SpawnAreaTransform = SpawnArea->GetComponentTransform();
-	return FTransform(
-		SpawnAreaTransform.GetRotation(),
-		SpawnAreaTransform.TransformPosition(LocalSpawnLocation),
-		FVector::OneVector);
+	for (const FVector2D& SlotDirection : SpawnSlotDirections)
+	{
+		const FVector LocalSpawnLocation(
+			BoxExtent.X * SpawnSlotExtentRatio * SlotDirection.X,
+			BoxExtent.Y * SpawnSlotExtentRatio * SlotDirection.Y,
+			0.0f);
+		OutCandidateTransforms.Emplace(
+			SpawnAreaTransform.GetRotation(),
+			SpawnAreaTransform.TransformPosition(LocalSpawnLocation),
+			FVector::OneVector);
+	}
 }

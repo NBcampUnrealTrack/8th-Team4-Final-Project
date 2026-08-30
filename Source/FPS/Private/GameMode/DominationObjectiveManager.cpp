@@ -20,18 +20,16 @@ bool UDominationObjectiveManager::Initialize(
 	const FDominationCaptureRules& InCaptureRules,
 	const float InPointTransitionDuration)
 {
-	OwnerGameMode = InOwnerGameMode;
-	CaptureRules = InCaptureRules;
-	PointTransitionDuration = InPointTransitionDuration;
-	if (!IsValid(InOwnerGameMode) || !InOwnerGameMode->HasAuthority())
+	if (!InitializeManager(InOwnerGameMode))
 	{
 		return false;
 	}
 
+	CaptureRules = InCaptureRules;
+	PointTransitionDuration = InPointTransitionDuration;
 	if (!CacheCapturePoints())
 	{
-		CapturePoints.Reset();
-		OwnerGameMode.Reset();
+		Shutdown();
 		return false;
 	}
 
@@ -48,8 +46,7 @@ bool UDominationObjectiveManager::Initialize(
 	{
 		UE_LOG(LogDominationObjective, Error,
 			TEXT("DominationGameState is unavailable; capture points cannot be published."));
-		CapturePoints.Reset();
-		OwnerGameMode.Reset();
+		Shutdown();
 		return false;
 	}
 
@@ -82,15 +79,15 @@ void UDominationObjectiveManager::Shutdown()
 	}
 
 	CapturePoints.Reset();
-	OwnerGameMode.Reset();
 	OnCaptureCompleted.Clear();
+	Super::Shutdown();
 }
 
 void UDominationObjectiveManager::StopObjectiveFlow()
 {
-	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	if (FTimerManager* TimerManager = GetTimerManager())
 	{
-		GameMode->GetWorldTimerManager().ClearTimer(PointTransitionTimerHandle);
+		TimerManager->ClearTimer(PointTransitionTimerHandle);
 	}
 
 	StopCaptureTracking();
@@ -112,31 +109,55 @@ bool UDominationObjectiveManager::ActivateInitialPoint()
 {
 	ADominationCapturePoint* CenterPoint = GetCapturePoint(EDominationPointId::C);
 	ADominationGameState* DominationGameState = GetDominationGameState();
-	if (!IsValid(CenterPoint) || !IsValid(DominationGameState))
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!IsValid(CenterPoint)
+		|| !IsValid(DominationGameState)
+		|| TimerManager == nullptr)
 	{
 		return false;
 	}
 
+	StopCaptureTracking();
+	TimerManager->ClearTimer(PointTransitionTimerHandle);
+	TransitionTargetPointId = EDominationPointId::C;
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
 	bCaptureCompleted = false;
+	DominationGameState->SetCaptureState(FDominationCaptureState());
+
+	if (PointTransitionDuration <= 0.0f)
+	{
+		HandlePointTransitionComplete();
+		return ActiveCapturePoint.Get() == CenterPoint;
+	}
+
 	DominationGameState->SetObjectiveState(
 		EDominationPointId::C,
-		EDominationObjectivePhase::CaptureEnabled);
-	StartCaptureTracking(CenterPoint);
-	UE_LOG(LogDominationObjective, Log, TEXT("Domination capture point C is now active."));
+		EDominationObjectivePhase::Repositioning,
+		PointTransitionDuration);
+	TimerManager->SetTimer(
+		PointTransitionTimerHandle,
+		this,
+		&ThisClass::HandlePointTransitionComplete,
+		PointTransitionDuration,
+		false);
+	UE_LOG(LogDominationObjective, Log,
+		TEXT("Domination capture point C unlocks in %.1f seconds."),
+		PointTransitionDuration);
 	return true;
 }
 
 void UDominationObjectiveManager::StartCaptureTracking(
 	ADominationCapturePoint* CapturePoint)
 {
-	StopCaptureTracking();
-	if (!IsValid(CapturePoint))
+	UWorld* World = GetWorld();
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!IsValid(CapturePoint) || !IsValid(World) || TimerManager == nullptr)
 	{
 		return;
 	}
 
+	StopCaptureTracking();
 	ActiveCapturePoint = CapturePoint;
 	CapturePoint->OnPawnEntered.AddUObject(
 		this,
@@ -146,22 +167,15 @@ void UDominationObjectiveManager::StartCaptureTracking(
 		&ThisClass::HandleCapturePointPawnChanged);
 	CapturePoint->SetObjectiveActive(true);
 
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
-	if (!IsValid(World))
-	{
-		return;
-	}
-
 	LastCaptureUpdateTime = World->GetTimeSeconds();
 	UpdateCaptureState(0.0f);
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		CaptureUpdateTimerHandle,
 		this,
 		&ThisClass::HandleCaptureUpdateTimer,
 		CaptureUpdateInterval,
 		true);
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		SuddenDeathTimerHandle,
 		this,
 		&ThisClass::HandleSuddenDeathTimerExpired,
@@ -171,10 +185,10 @@ void UDominationObjectiveManager::StartCaptureTracking(
 
 void UDominationObjectiveManager::StopCaptureTracking()
 {
-	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	if (FTimerManager* TimerManager = GetTimerManager())
 	{
-		GameMode->GetWorldTimerManager().ClearTimer(CaptureUpdateTimerHandle);
-		GameMode->GetWorldTimerManager().ClearTimer(SuddenDeathTimerHandle);
+		TimerManager->ClearTimer(CaptureUpdateTimerHandle);
+		TimerManager->ClearTimer(SuddenDeathTimerHandle);
 	}
 
 	if (ADominationCapturePoint* CapturePoint = ActiveCapturePoint.Get())
@@ -191,8 +205,7 @@ void UDominationObjectiveManager::StopCaptureTracking()
 
 void UDominationObjectiveManager::HandleCapturePointPawnChanged(APawn*)
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
+	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
 		return;
@@ -204,8 +217,7 @@ void UDominationObjectiveManager::HandleCapturePointPawnChanged(APawn*)
 
 void UDominationObjectiveManager::HandleCaptureUpdateTimer()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
+	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
 		return;
@@ -306,9 +318,9 @@ void UDominationObjectiveManager::BeginPointTransition(
 	const EDominationPointId CapturedPointId,
 	const EGameTeam CaptureTeam)
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
 	ADominationGameState* DominationGameState = GetDominationGameState();
-	if (!IsValid(GameMode) || !IsValid(DominationGameState))
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!IsValid(DominationGameState) || TimerManager == nullptr)
 	{
 		return;
 	}
@@ -344,7 +356,7 @@ void UDominationObjectiveManager::BeginPointTransition(
 		TransitionTargetPointId,
 		EDominationObjectivePhase::Repositioning,
 		PointTransitionDuration);
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		PointTransitionTimerHandle,
 		this,
 		&ThisClass::HandlePointTransitionComplete,
@@ -446,8 +458,7 @@ void UDominationObjectiveManager::PublishCaptureState(
 
 bool UDominationObjectiveManager::CacheCapturePoints()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
+	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
 		return false;
@@ -514,10 +525,4 @@ ADominationCapturePoint* UDominationObjectiveManager::GetCapturePoint(
 {
 	const int32 PointIndex = DominationRules::GetPointIndex(PointId);
 	return CapturePoints.IsValidIndex(PointIndex) ? CapturePoints[PointIndex].Get() : nullptr;
-}
-
-ADominationGameState* UDominationObjectiveManager::GetDominationGameState() const
-{
-	const ADominationGameMode* GameMode = OwnerGameMode.Get();
-	return IsValid(GameMode) ? GameMode->GetGameState<ADominationGameState>() : nullptr;
 }

@@ -12,33 +12,43 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationMatchStart, Log, All);
 
-void UDominationMatchStartManager::Initialize(
+bool UDominationMatchStartManager::Initialize(
 	ADominationGameMode* InOwnerGameMode,
 	const int32 InMinimumPlayersToStart,
 	const int32 InMinimumPlayersPerTeam,
 	const float InClassSelectionDuration)
 {
-	OwnerGameMode = InOwnerGameMode;
+	if (!InitializeManager(InOwnerGameMode))
+	{
+		return false;
+	}
+
 	MinimumPlayersToStart = FMath::Max(2, InMinimumPlayersToStart);
 	MinimumPlayersPerTeam = FMath::Max(1, InMinimumPlayersPerTeam);
 	ClassSelectionDuration = InClassSelectionDuration;
 
-	if (ADominationGameState* DominationGameState = GetDominationGameState())
+	ADominationGameState* DominationGameState = GetDominationGameState();
+	if (!IsValid(DominationGameState))
 	{
-		DominationGameState->SetDominationPhase(EDominationMatchPhase::WaitingForPlayers);
+		Shutdown();
+		return false;
 	}
+
+	DominationGameState->SetDominationPhase(
+		EDominationMatchPhase::WaitingForPlayers);
+	return true;
 }
 
 void UDominationMatchStartManager::Shutdown()
 {
-	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	if (FTimerManager* TimerManager = GetTimerManager())
 	{
-		GameMode->GetWorldTimerManager().ClearTimer(ClassSelectionTimerHandle);
+		TimerManager->ClearTimer(ClassSelectionTimerHandle);
 	}
 
 	InitialParticipants.Reset();
-	OwnerGameMode.Reset();
 	OnInitialPlayersSpawned.Clear();
+	Super::Shutdown();
 }
 
 void UDominationMatchStartManager::NotifyPlayerLoaded()
@@ -99,8 +109,7 @@ void UDominationMatchStartManager::GetInitialParticipantPlayerStates(
 
 bool UDominationMatchStartManager::CaptureInitialParticipants()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
+	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
 		return false;
@@ -192,9 +201,9 @@ bool UDominationMatchStartManager::AreAllParticipantsClassSelected() const
 
 void UDominationMatchStartManager::BeginClassSelection()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
 	ADominationGameState* DominationGameState = GetDominationGameState();
-	if (!IsValid(GameMode) || !IsValid(DominationGameState))
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!IsValid(DominationGameState) || TimerManager == nullptr)
 	{
 		return;
 	}
@@ -211,7 +220,7 @@ void UDominationMatchStartManager::BeginClassSelection()
 		}
 	}
 
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		ClassSelectionTimerHandle,
 		this,
 		&ThisClass::HandleClassSelectionTimeout,
@@ -238,14 +247,17 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 
 void UDominationMatchStartManager::CompleteClassSelection()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
+	ADominationGameMode* GameMode = GetOwnerGameMode();
 	ADominationGameState* DominationGameState = GetDominationGameState();
-	if (!IsValid(GameMode) || !IsValid(DominationGameState))
+	FTimerManager* TimerManager = GetTimerManager();
+	if (!IsValid(GameMode)
+		|| !IsValid(DominationGameState)
+		|| TimerManager == nullptr)
 	{
 		return;
 	}
 
-	GameMode->GetWorldTimerManager().ClearTimer(ClassSelectionTimerHandle);
+	TimerManager->ClearTimer(ClassSelectionTimerHandle);
 	if (!SpawnInitialParticipants())
 	{
 		UE_LOG(LogDominationMatchStart, Error,
@@ -260,7 +272,7 @@ void UDominationMatchStartManager::CompleteClassSelection()
 
 bool UDominationMatchStartManager::SpawnInitialParticipants()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
+	ADominationGameMode* GameMode = GetOwnerGameMode();
 	UDominationLoadoutManager* LoadoutManager = IsValid(GameMode)
 		? GameMode->GetLoadoutManager()
 		: nullptr;
@@ -298,10 +310,4 @@ bool UDominationMatchStartManager::SpawnInitialParticipants()
 	}
 
 	return true;
-}
-
-ADominationGameState* UDominationMatchStartManager::GetDominationGameState() const
-{
-	const ADominationGameMode* GameMode = OwnerGameMode.Get();
-	return IsValid(GameMode) ? GameMode->GetGameState<ADominationGameState>() : nullptr;
 }

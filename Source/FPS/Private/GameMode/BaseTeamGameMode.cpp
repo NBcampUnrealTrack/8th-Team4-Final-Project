@@ -38,6 +38,21 @@ int32 ABaseTeamGameMode::GetTeamPlayerCount(const EGameTeam Team) const
 	return IsValid(PlayerManager) ? PlayerManager->GetTeamPlayerCount(Team) : 0;
 }
 
+bool ABaseTeamGameMode::TrySelectAvailableSpawnTransform(
+	const TArray<FTransform>& CandidateTransforms,
+	const int32 PreferredStartIndex,
+	FTransform& OutSpawnTransform,
+	int32& OutSelectedIndex) const
+{
+	const UTeamPlayerManager* PlayerManager = GetTeamPlayerManager();
+	return IsValid(PlayerManager)
+		&& PlayerManager->SelectAvailableSpawnTransform(
+			CandidateTransforms,
+			PreferredStartIndex,
+			OutSpawnTransform,
+			OutSelectedIndex);
+}
+
 void ABaseTeamGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	Super::InitGame(MapName, Options, ErrorMessage);

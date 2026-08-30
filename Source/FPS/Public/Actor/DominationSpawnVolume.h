@@ -9,7 +9,7 @@ class USceneComponent;
 
 /**
  * A~E 전선의 경계에 배치하는 중립 Domination 스폰 구역이다.
- * Box 범위 안의 네 위치를 순서대로 사용한다.
+ * 공간 후보만 제공하며 실제 후보 선택과 점유 검사는 공용 TeamPlayerManager가 담당한다.
  */
 UCLASS(Blueprintable)
 class FPS_API ADominationSpawnVolume : public AActor
@@ -19,7 +19,7 @@ class FPS_API ADominationSpawnVolume : public AActor
 public:
 	ADominationSpawnVolume();
 
-	FTransform GetNextSpawnTransform();
+	void GetSpawnCandidateTransforms(TArray<FTransform>& OutCandidateTransforms) const;
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|Spawn", meta = (AllowPrivateAccess = "true"))
@@ -27,6 +27,4 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|Spawn", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBoxComponent> SpawnArea;
-
-	int32 NextSpawnPointIndex = 0;
 };

@@ -27,7 +27,12 @@ DECLARE_MULTICAST_DELEGATE_FourParams(
 	int32,
 	bool);
 
-// Domination의 시작, 거점, 리스폰을 연결하고 라운드 점수와 최종 승리를 판정한다.
+/**
+ * Domination의 점령 라운드는 점수 단위이며, 점령마다 Pawn과 라운드 자원을
+ * 일괄 재생성하는 수명주기 경계가 아니다.
+ * ABaseRoundGameMode의 라운드 재준비 모델과 수명주기가 다르므로
+ * 의도적으로 ABaseTeamGameMode에서 직접 파생한다.
+ */
 UCLASS()
 class FPS_API ADominationGameMode : public ABaseTeamGameMode
 {
@@ -54,7 +59,7 @@ public:
 		EDominationPointId ObjectivePointId);
 	void RespawnEliminatedPlayer(AController* EliminatedController);
 
-	// 초기 참가자 스폰과 중앙 거점 활성화가 끝난 뒤 발생한다.
+	// 초기 참가자 스폰이 끝나고 중앙 거점 활성화 대기가 시작된 뒤 발생한다.
 	// 외부 증강 시스템은 Manager 내부가 아니라 이 GameMode 경계에 연결한다.
 	FOnDominationMatchStarted OnDominationMatchStarted;
 
@@ -96,6 +101,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true"))
 	FDominationCaptureRules CaptureRules;
 
+	// 최초 C 거점과 이후 전선 이동 모두 이 시간 동안 Repositioning 상태를 유지한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
 	float PointTransitionDuration = 30.0f;
 

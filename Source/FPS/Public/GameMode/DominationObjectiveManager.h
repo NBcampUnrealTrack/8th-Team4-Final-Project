@@ -1,9 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/DominationManagerBase.h"
 #include "GameMode/DominationTypes.h"
 #include "TimerManager.h"
-#include "UObject/Object.h"
 #include "DominationObjectiveManager.generated.h"
 
 class ADominationCapturePoint;
@@ -21,7 +21,7 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(
  * 거점 Actor는 공간 감지만 하고 복제 가능한 표시 상태는 GameState에 게시한다.
  */
 UCLASS()
-class FPS_API UDominationObjectiveManager : public UObject
+class FPS_API UDominationObjectiveManager : public UDominationManagerBase
 {
 	GENERATED_BODY()
 
@@ -30,9 +30,10 @@ public:
 		ADominationGameMode* InOwnerGameMode,
 		const FDominationCaptureRules& InCaptureRules,
 		float InPointTransitionDuration);
-	void Shutdown();
+	virtual void Shutdown() override;
 	// 매치 종료 시 점령·전환 타이머와 활성 거점만 정지한다.
 	void StopObjectiveFlow();
+	// 중앙 C를 Repositioning으로 공개하고 전환 시간이 끝나면 점령을 활성화한다.
 	bool ActivateInitialPoint();
 	ADominationCapturePoint* GetCapturePoint(EDominationPointId PointId) const;
 
@@ -41,7 +42,6 @@ public:
 
 private:
 	bool CacheCapturePoints();
-	ADominationGameState* GetDominationGameState() const;
 	void StartCaptureTracking(ADominationCapturePoint* CapturePoint);
 	void StopCaptureTracking();
 	void HandleCapturePointPawnChanged(APawn* Pawn);
@@ -56,7 +56,6 @@ private:
 		int32 TeamBPlayerCount,
 		bool bContested) const;
 
-	TWeakObjectPtr<ADominationGameMode> OwnerGameMode;
 	TArray<TWeakObjectPtr<ADominationCapturePoint>> CapturePoints;
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
 	FDominationCaptureRules CaptureRules;

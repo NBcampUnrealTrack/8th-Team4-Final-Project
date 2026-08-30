@@ -1,9 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/DominationManagerBase.h"
 #include "GameMode/DominationTypes.h"
 #include "TimerManager.h"
-#include "UObject/Object.h"
 #include "DominationMatchStartManager.generated.h"
 
 class ADominationGameMode;
@@ -17,17 +17,17 @@ DECLARE_MULTICAST_DELEGATE(FOnDominationInitialPlayersSpawned);
  * 이후 리스폰과 점령 흐름은 이 관리자에 포함하지 않는다.
  */
 UCLASS()
-class FPS_API UDominationMatchStartManager : public UObject
+class FPS_API UDominationMatchStartManager : public UDominationManagerBase
 {
 	GENERATED_BODY()
 
 public:
-	void Initialize(
+	bool Initialize(
 		ADominationGameMode* InOwnerGameMode,
 		int32 InMinimumPlayersToStart,
 		int32 InMinimumPlayersPerTeam,
 		float InClassSelectionDuration);
-	void Shutdown();
+	virtual void Shutdown() override;
 
 	void NotifyPlayerLoaded();
 	void RequestCombatClass(
@@ -46,9 +46,7 @@ private:
 	void HandleClassSelectionTimeout();
 	void CompleteClassSelection();
 	bool SpawnInitialParticipants();
-	class ADominationGameState* GetDominationGameState() const;
 
-	TWeakObjectPtr<ADominationGameMode> OwnerGameMode;
 	TArray<TWeakObjectPtr<ADominationPlayerController>> InitialParticipants;
 	FTimerHandle ClassSelectionTimerHandle;
 	int32 MinimumPlayersToStart = 2;
