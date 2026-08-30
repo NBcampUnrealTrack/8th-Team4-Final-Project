@@ -88,17 +88,21 @@ void ADominationGameMode::BeginPlay()
 		return;
 	}
 
-	if (IsValid(MatchStartManager))
-	{
-		MatchStartManager->OnInitialPlayersSpawned.AddUObject(
-			this,
-			&ThisClass::HandleInitialPlayersSpawned);
-		MatchStartManager->Initialize(
+	if (!IsValid(MatchStartManager)
+		|| !MatchStartManager->Initialize(
 			this,
 			MinimumPlayersToStart,
 			MinimumPlayersPerTeam,
-			ClassSelectionDuration);
+			ClassSelectionDuration))
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination match start stopped because the match-start manager could not be initialized."));
+		return;
 	}
+
+	MatchStartManager->OnInitialPlayersSpawned.AddUObject(
+		this,
+		&ThisClass::HandleInitialPlayersSpawned);
 }
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)

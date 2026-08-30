@@ -20,28 +20,41 @@ bool UDominationRespawnManager::Initialize(
 	const float InRespawnDelay,
 	const float InRespawnProtectionDuration)
 {
-	OwnerGameMode = InOwnerGameMode;
+	if (!InitializeManager(InOwnerGameMode))
+	{
+		return false;
+	}
+
+	if (!IsValid(InObjectiveManager))
+	{
+		Shutdown();
+		return false;
+	}
+
 	ObjectiveManager = InObjectiveManager;
 	RespawnDelay = InRespawnDelay;
 	RespawnProtectionDuration = InRespawnProtectionDuration;
 	if (!CacheSpawnVolumes())
 	{
+		Shutdown();
 		return false;
 	}
 
-	ADominationGameState* GameState = InOwnerGameMode->GetGameState<ADominationGameState>();
+	ADominationGameState* GameState = GetDominationGameState();
 	if (!IsValid(GameState))
 	{
+		Shutdown();
 		return false;
 	}
 
 	// 최초 참가자는 활성 거점 공개 전에 중앙 C를 기준으로 스폰한다.
 	if (!UpdateTeamSpawnVolumes(EDominationPointId::C))
 	{
+		Shutdown();
 		return false;
 	}
 
-	DominationGameState = GameState;
+	BoundGameState = GameState;
 	GameState->OnActivePointChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleActivePointChanged);
@@ -52,7 +65,7 @@ void UDominationRespawnManager::Shutdown()
 {
 	CancelPendingRespawns();
 	ClearAllRespawnProtections();
-	if (ADominationGameState* GameState = DominationGameState.Get())
+	if (ADominationGameState* GameState = BoundGameState.Get())
 	{
 		GameState->OnActivePointChanged.RemoveDynamic(
 			this,
@@ -62,19 +75,20 @@ void UDominationRespawnManager::Shutdown()
 	TeamASpawnVolume.Reset();
 	TeamBSpawnVolume.Reset();
 	SpawnObjectivePointId = EDominationPointId::None;
+	NextSpawnCandidateIndices.Reset();
 	SpawnVolumes.Reset();
-	DominationGameState.Reset();
+	BoundGameState.Reset();
 	ObjectiveManager.Reset();
-	OwnerGameMode.Reset();
+	Super::Shutdown();
 }
 
 void UDominationRespawnManager::CancelPendingRespawns()
 {
-	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	if (FTimerManager* TimerManager = GetTimerManager())
 	{
 		for (TPair<TWeakObjectPtr<AController>, FTimerHandle>& PendingRespawn : PendingRespawnTimers)
 		{
-			GameMode->GetWorldTimerManager().ClearTimer(PendingRespawn.Value);
+			TimerManager->ClearTimer(PendingRespawn.Value);
 		}
 	}
 
@@ -94,7 +108,6 @@ void UDominationRespawnManager::ClearAllRespawnProtections()
 
 void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedController)
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
 	const TWeakObjectPtr<AController> ControllerKey(EliminatedController);
 	if (IsValid(EliminatedController))
 	{
@@ -102,7 +115,8 @@ void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedControlle
 			EliminatedController->GetPlayerState<AShooterPlayerState>());
 	}
 
-	if (!IsValid(GameMode)
+	FTimerManager* TimerManager = GetTimerManager();
+	if (TimerManager == nullptr
 		|| !IsValid(EliminatedController)
 		|| PendingRespawnTimers.Contains(ControllerKey))
 	{
@@ -110,7 +124,7 @@ void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedControlle
 	}
 
 	FTimerHandle& RespawnTimer = PendingRespawnTimers.Add(ControllerKey);
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		RespawnTimer,
 		FTimerDelegate::CreateUObject(
 			this,
@@ -123,8 +137,8 @@ void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedControlle
 void UDominationRespawnManager::BeginRespawnProtection(
 	AShooterPlayerState* PlayerState)
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
-	if (!IsValid(GameMode)
+	FTimerManager* TimerManager = GetTimerManager();
+	if (TimerManager == nullptr
 		|| !IsValid(PlayerState)
 		|| !PlayerState->HasAuthority()
 		|| RespawnProtectionDuration <= 0.0f)
@@ -155,7 +169,7 @@ void UDominationRespawnManager::BeginRespawnProtection(
 
 	AbilitySystem->AddLooseGameplayTag(
 		RogueTags::State_Combat_Invulnerable);
-	GameMode->GetWorldTimerManager().SetTimer(
+	TimerManager->SetTimer(
 		Protection.ExpirationTimer,
 		FTimerDelegate::CreateUObject(
 			this,
@@ -175,12 +189,29 @@ bool UDominationRespawnManager::TryGetSpawnTransform(
 	ADominationCapturePoint* ActiveCapturePoint = IsValid(Manager)
 		? Manager->GetCapturePoint(ActivePointId)
 		: nullptr;
-	if (!IsValid(SpawnVolume) || !IsValid(ActiveCapturePoint))
+	ADominationGameMode* GameMode = GetOwnerGameMode();
+	if (!IsValid(SpawnVolume)
+		|| !IsValid(ActiveCapturePoint)
+		|| !IsValid(GameMode))
 	{
 		return false;
 	}
 
-	OutSpawnTransform = SpawnVolume->GetNextSpawnTransform();
+	TArray<FTransform> CandidateTransforms;
+	SpawnVolume->GetSpawnCandidateTransforms(CandidateTransforms);
+	const TWeakObjectPtr<ADominationSpawnVolume> SpawnVolumeKey(SpawnVolume);
+	int32& NextCandidateIndex = NextSpawnCandidateIndices.FindOrAdd(SpawnVolumeKey);
+	int32 SelectedCandidateIndex = INDEX_NONE;
+	if (!GameMode->TrySelectAvailableSpawnTransform(
+		CandidateTransforms,
+		NextCandidateIndex,
+		OutSpawnTransform,
+		SelectedCandidateIndex))
+	{
+		return false;
+	}
+
+	NextCandidateIndex = (SelectedCandidateIndex + 1) % CandidateTransforms.Num();
 	FVector FacingDirection = ActiveCapturePoint->GetActorLocation() - OutSpawnTransform.GetLocation();
 	FacingDirection.Z = 0.0;
 	OutSpawnTransform.SetRotation(FacingDirection.Rotation().Quaternion());
@@ -261,15 +292,16 @@ void UDominationRespawnManager::HandleActivePointChanged(
 
 bool UDominationRespawnManager::CacheSpawnVolumes()
 {
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
+	UWorld* World = GetWorld();
 	UDominationObjectiveManager* Manager = ObjectiveManager.Get();
-	if (!IsValid(GameMode) || !IsValid(Manager))
+	if (!IsValid(World) || !IsValid(Manager))
 	{
 		return false;
 	}
 
 	SpawnVolumes.Reset();
-	for (TActorIterator<ADominationSpawnVolume> Iterator(GameMode->GetWorld()); Iterator; ++Iterator)
+	NextSpawnCandidateIndices.Reset();
+	for (TActorIterator<ADominationSpawnVolume> Iterator(World); Iterator; ++Iterator)
 	{
 		SpawnVolumes.Add(*Iterator);
 	}
@@ -318,7 +350,7 @@ void UDominationRespawnManager::HandleRespawnTimer(
 {
 	PendingRespawnTimers.Remove(EliminatedController);
 
-	ADominationGameMode* GameMode = OwnerGameMode.Get();
+	ADominationGameMode* GameMode = GetOwnerGameMode();
 	if (IsValid(GameMode) && EliminatedController.IsValid())
 	{
 		GameMode->RespawnEliminatedPlayer(EliminatedController.Get());
@@ -356,10 +388,9 @@ void UDominationRespawnManager::EndRespawnProtection(
 void UDominationRespawnManager::ReleaseRespawnProtection(
 	FActiveRespawnProtection& Protection)
 {
-	if (ADominationGameMode* GameMode = OwnerGameMode.Get())
+	if (FTimerManager* TimerManager = GetTimerManager())
 	{
-		GameMode->GetWorldTimerManager().ClearTimer(
-			Protection.ExpirationTimer);
+		TimerManager->ClearTimer(Protection.ExpirationTimer);
 	}
 
 	if (UAbilitySystemComponent* AbilitySystem = Protection.AbilitySystem.Get())

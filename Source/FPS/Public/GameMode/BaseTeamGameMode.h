@@ -22,6 +22,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Team")
 	int32 GetTeamPlayerCount(EGameTeam Team) const;
+	bool TrySelectAvailableSpawnTransform(
+		const TArray<FTransform>& CandidateTransforms,
+		int32 PreferredStartIndex,
+		FTransform& OutSpawnTransform,
+		int32& OutSelectedIndex) const;
 
 	ESurrenderVoteStartResult RequestStartSurrenderVote(AShooterPlayerController* Requester);
 	void SubmitSurrenderVote(
