@@ -5,12 +5,14 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "TimerManager.h"
 #include "Augment/AugmentAssembler.h"
 #include "Augment/AugmentTypes.h"
 #include "AugmentInventoryComponent.generated.h"
 
 class UAbilitySystemComponent;
 class UAugmentDefinition;
+class UAugmentInventoryComponent;
 class UAugmentRegistrySubsystem;
 struct FAugmentDraftEligibility;
 

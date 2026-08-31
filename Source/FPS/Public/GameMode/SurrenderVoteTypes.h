@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/RoundTypes.h"
 #include "GameMode/TeamTypes.h"
 #include "SurrenderVoteTypes.generated.h"
 
@@ -96,10 +95,4 @@ namespace SurrenderVoteRules
 		}
 	}
 
-	inline bool IsVotingPhase(const EGameFlowPhase Phase)
-	{
-		return Phase == EGameFlowPhase::RoundStarting
-			|| Phase == EGameFlowPhase::AugmentSelecting
-			|| Phase == EGameFlowPhase::RoundInProgress;
-	}
 }

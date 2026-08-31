@@ -2,9 +2,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "ShooterUIInitComponent.generated.h"
 
 class ABaseRoundGameState;
@@ -15,32 +15,17 @@ class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
 class UShooterShopScreen;
 class UShooterSurrenderVoteScreen;
-class UShooterUIManagerSubsystem;
-enum class ESurrenderVoteStartResult : uint8;
-struct FAugmentInventoryEntry;
 
 /**
  * 로컬 PlayerController의 인게임 화면 수명주기를 조정한다.
  * 화면은 표시와 입력만 맡고, 게임 규칙은 Controller와 GameMode에 전달한다.
  */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class FPS_API UShooterUIInitComponent : public UActorComponent
+class FPS_API UShooterUIInitComponent : public UTeamMatchUIInitComponent
 {
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
-	void ToggleInGameMenu();
-
-	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
-	void ShowInGameMenu();
-
-	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
-	void HideInGameMenu();
-
-	UFUNCTION(BlueprintPure, Category = "UI|System Menu")
-	bool IsInGameMenuOpen() const;
-
 	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
 	void ToggleShop();
 
@@ -53,57 +38,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "UI|Shop")
 	bool IsShopOpen() const;
 
-	UFUNCTION(BlueprintCallable, Category = "UI")
-	void ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers);
-
-	UFUNCTION(BlueprintCallable, Category = "UI")
-	void HideAugmentSelect();
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual bool IsAugmentPresentationAllowed() const override;
+	virtual bool IsSurrenderRequestAllowed() const override;
+	virtual void CloseModeSpecificScreensForModal() override;
+
+	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const override;
+	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const override;
+	virtual TSubclassOf<UShooterAugmentSelectScreen> GetAugmentSelectWidgetClass() const override;
+	virtual UShooterInGameMenuScreen* GetInGameMenuInstance() const override;
+	virtual void SetInGameMenuInstance(UShooterInGameMenuScreen* Instance) override;
+	virtual UShooterSurrenderVoteScreen* GetSurrenderVoteInstance() const override;
+	virtual void SetSurrenderVoteInstance(UShooterSurrenderVoteScreen* Instance) override;
+	virtual UShooterAugmentSelectScreen* GetAugmentSelectInstance() const override;
+	virtual void SetAugmentSelectInstance(UShooterAugmentSelectScreen* Instance) override;
 
 private:
 	void TryStartInGameUI();
-
-	void ShowSurrenderVote();
-	void HideSurrenderVote();
-
-	void HandleResumeRequested();
-	void HandleReturnToLobbyRequested();
-	void HandleQuitGameRequested();
-	void HandleSurrenderRequested();
-	void HandleSurrenderVoteSubmitted(bool bApprove);
-	void HandleSurrenderMenuRequested();
-	void HandleSurrenderVoteStateChanged();
-	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
-	
-  UFUNCTION()
-  void HandleAugmentSelected(int32 OfferIndex);
-
-  UFUNCTION()
-  void HandleAugmentOffersChanged();
 
   UFUNCTION()
   void HandleRoundStateChanged();
 
   UFUNCTION()
-  void HandleAugmentRerollRequested(int32 SlotIndex);
-
-  UFUNCTION()
   void HandleShopCloseRequested();
 
-	void ScheduleModalRefresh();
-	void RefreshModalPresentation();
-	void RefreshAugmentSelection();
-	bool CanRequestSurrender() const;
 	bool CanShowShop() const;
 	void ScheduleInGameUIRetry();
 	void UnbindRuntimeDelegates();
-	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
 
 	ABaseRoundPlayerController* GetRoundPlayerController() const;
-	UShooterUIManagerSubsystem* GetUIManager() const;
 
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
@@ -138,18 +103,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
 
-  TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
   TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
-  TWeakObjectPtr<ABaseRoundPlayerController> BoundRoundPlayerController;
 
   FTimerHandle PlayerStateWaitTimerHandle;
-  FTimerHandle ModalRefreshTimerHandle;
 
-  bool bInGameUIReady = false;
-  bool bInGameMenuRequested = false;
-  bool bLastObservedVoteActive = false;
-  bool bModalRefreshPending = false;
   bool bLoggedInitialWidgetPushFailure = false;
-
-  TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 };

@@ -7,6 +7,7 @@ void ALobbyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ALobbyGameState, LobbyRevision);
+	DOREPLIFETIME(ALobbyGameState, SelectedMatchMode);
 }
 
 void ALobbyGameState::NotifyLobbyPlayerListChanged()
@@ -21,7 +22,24 @@ void ALobbyGameState::NotifyLobbyPlayerListChanged()
 	ForceNetUpdate();
 }
 
+void ALobbyGameState::SetSelectedMatchMode(const ELobbyMatchMode NewMatchMode)
+{
+	if (!HasAuthority() || SelectedMatchMode == NewMatchMode)
+	{
+		return;
+	}
+
+	SelectedMatchMode = NewMatchMode;
+	OnRep_SelectedMatchMode();
+	ForceNetUpdate();
+}
+
 void ALobbyGameState::OnRep_LobbyRevision()
 {
 	OnLobbyPlayerListChanged.Broadcast();
+}
+
+void ALobbyGameState::OnRep_SelectedMatchMode()
+{
+	OnLobbyMatchModeChanged.Broadcast(SelectedMatchMode);
 }

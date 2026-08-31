@@ -1,0 +1,122 @@
+#pragma once
+
+#include "Augment/AugmentTypes.h"
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
+#include "TeamMatchUIInitComponent.generated.h"
+
+class AShooterPlayerController;
+class UAugmentInventoryComponent;
+class UCommonActivatableWidget;
+class UShooterAugmentSelectScreen;
+class UShooterInGameMenuScreen;
+class UShooterSurrenderVoteScreen;
+class UShooterUIManagerSubsystem;
+enum class ESurrenderVoteStartResult : uint8;
+
+/**
+ * 팀 기반 매치에서 공통으로 사용하는 메뉴, 항복 투표, 증강 선택 화면을 조정한다.
+ * 각 게임모드는 화면 클래스와 현재 페이즈에서 허용할지 여부만 제공한다.
+ */
+UCLASS(Abstract, ClassGroup = (UI))
+class FPS_API UTeamMatchUIInitComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
+	void ToggleInGameMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
+	void ShowInGameMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|System Menu")
+	void HideInGameMenu();
+
+	UFUNCTION(BlueprintPure, Category = "UI|System Menu")
+	bool IsInGameMenuOpen() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers);
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void HideAugmentSelect();
+
+protected:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	void InitializeTeamMatchUI(
+		AShooterPlayerController* PlayerController,
+		UAugmentInventoryComponent* Inventory);
+	void ShutdownTeamMatchUI();
+	void NotifyModeUIStateChanged();
+
+	bool IsTeamMatchUIReady() const;
+	bool IsSurrenderVoteOpen() const;
+	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
+	UShooterUIManagerSubsystem* GetUIManager() const;
+	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
+
+	virtual bool IsAugmentPresentationAllowed() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsAugmentPresentationAllowed, return false;);
+	virtual bool IsSurrenderRequestAllowed() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsSurrenderRequestAllowed, return false;);
+	virtual void CloseModeSpecificScreensForModal() {}
+
+	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetInGameMenuWidgetClass, return nullptr;);
+	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetSurrenderVoteWidgetClass, return nullptr;);
+	virtual TSubclassOf<UShooterAugmentSelectScreen> GetAugmentSelectWidgetClass() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetAugmentSelectWidgetClass, return nullptr;);
+
+	virtual UShooterInGameMenuScreen* GetInGameMenuInstance() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetInGameMenuInstance, return nullptr;);
+	virtual void SetInGameMenuInstance(UShooterInGameMenuScreen* Instance)
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::SetInGameMenuInstance, );
+	virtual UShooterSurrenderVoteScreen* GetSurrenderVoteInstance() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetSurrenderVoteInstance, return nullptr;);
+	virtual void SetSurrenderVoteInstance(UShooterSurrenderVoteScreen* Instance)
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::SetSurrenderVoteInstance, );
+	virtual UShooterAugmentSelectScreen* GetAugmentSelectInstance() const
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::GetAugmentSelectInstance, return nullptr;);
+	virtual void SetAugmentSelectInstance(UShooterAugmentSelectScreen* Instance)
+		PURE_VIRTUAL(UTeamMatchUIInitComponent::SetAugmentSelectInstance, );
+
+private:
+	void PresentInGameMenu();
+	void RemoveInGameMenu();
+	void PresentSurrenderVote();
+	void RemoveSurrenderVote();
+	void ScheduleModalRefresh();
+	void RefreshModalPresentation();
+	bool CanRequestSurrender() const;
+	TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
+
+	void HandleResumeRequested();
+	void HandleReturnToLobbyRequested();
+	void HandleQuitGameRequested();
+	void HandleSurrenderRequested();
+	void HandleSurrenderVoteSubmitted(bool bApprove);
+	void HandleSurrenderMenuRequested();
+	void HandleSurrenderVoteStateChanged();
+	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
+
+	UFUNCTION()
+	void HandleAugmentSelected(int32 OfferIndex);
+
+	UFUNCTION()
+	void HandleAugmentOffersChanged();
+
+	UFUNCTION()
+	void HandleAugmentRerollRequested(int32 SlotIndex);
+
+	TWeakObjectPtr<AShooterPlayerController> BoundPlayerController;
+	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
+	FTimerHandle ModalRefreshTimerHandle;
+	bool bTeamMatchUIReady = false;
+	bool bInGameMenuRequested = false;
+	bool bLastObservedVoteActive = false;
+	bool bModalRefreshPending = false;
+};

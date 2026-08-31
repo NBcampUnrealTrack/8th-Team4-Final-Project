@@ -5,7 +5,6 @@
 #include "GameMode/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
 #include "GameMode/BaseRoundGameState.h"
-#include "GameMode/SurrenderVoteManager.h"
 #include "GameMode/TeamPlayerManager.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
@@ -376,11 +375,6 @@ void ABaseRoundGameMode::FinishMatch(const EGameTeam WinningTeam)
 	{
 		Economy->CancelActiveRound();
 	}
-	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
-	{
-		VoteManager->CancelAllActiveVotes();
-	}
-
 	RoundGameState->SetMatchWinner(WinningTeam);
 	RoundGameState->SetGameFlowPhase(EGameFlowPhase::MatchEnded);
 	EndMatch();
@@ -435,11 +429,6 @@ void ABaseRoundGameMode::EnterWaitingForPlayers()
 	{
 		DraftManager->CancelDraft();
 	}
-	if (USurrenderVoteManager* VoteManager = GetSurrenderVoteManager())
-	{
-		VoteManager->CancelAllActiveVotes();
-	}
-
 	ResetModeState();
 	if (UTeamPlayerManager* PlayerManager = GetTeamPlayerManager())
 	{

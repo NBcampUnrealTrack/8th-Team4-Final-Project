@@ -35,6 +35,11 @@ public:
 	// 현재 장착 무기의 태그를 UI에 전달한다.
 	UFUNCTION(BlueprintPure, Category = "UI|Reticle")
 	FGameplayTag GetEquippedWeaponTag() const;
+
+	// 히트마커 표시 중인지 UI에 전달한다.
+	// 기본 크로스헤어 Visibility는 Blueprint의 단일 바인딩에서 결정한다.
+	UFUNCTION(BlueprintPure, Category = "UI|Reticle")
+	bool IsHitMarkerActive() const;
 	
 protected:
 	virtual void NativeOnInitialized() override;
@@ -46,8 +51,8 @@ protected:
 
 	AWeaponBase* FindEquippedWeapon() const;
 
-	// 히트마커: 크로스헤어 팔을 숨기고 X 표시
-	void SetCrosshairArmsVisible(const bool bVisible);
+	// 히트마커 자체의 표시 상태만 관리한다.
+	// 기본 크로스헤어의 Visibility는 Blueprint 바인딩이 전담한다.
 	void HandleHitMarker(const bool bRed);
 	void HideHitMarker();
 
@@ -85,4 +90,5 @@ protected:
 
 private:
 	FTimerHandle HitMarkerTimerHandle;
+	bool bHitMarkerActive = false;
 };

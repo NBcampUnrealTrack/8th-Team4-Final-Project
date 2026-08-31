@@ -98,11 +98,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 	LastSessionSettings->bUseLobbiesIfAvailable = true;
 	LastSessionSettings->BuildUniqueId = 1;
 
-	LastSessionSettings->Set(SessionSettingKeys::RoomName, CachedRoomName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	LastSessionSettings->Set(SessionSettingKeys::MapName, CachedMapName, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	LastSessionSettings->Set(SessionSettingKeys::MapPath, CachedMapPath, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	LastSessionSettings->Set(SessionSettingKeys::MatchType, CachedMatchType, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	LastSessionSettings->Set(SessionSettingKeys::Joinable, true, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	ApplyCachedRoomSettings(*LastSessionSettings, true);
 
 	const ULocalPlayer* LocalPlayer = GetWorld() ? GetWorld()->GetFirstLocalPlayerFromController() : nullptr;
 	if (!LocalPlayer || !LocalPlayer->GetPreferredUniqueNetId().IsValid())
@@ -291,7 +287,67 @@ bool USessionSubSystem::ReturnRoomToLobby()
 	return false;
 }
 
+bool USessionSubSystem::UpdateRoomGameMode(
+	const FString& GameMapName,
+	const FString& GameMatchType)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World)
+		|| World->GetNetMode() == NM_Client
+		|| GameMapName.IsEmpty()
+		|| GameMatchType.IsEmpty()
+		|| !EnsureSessionInterface())
+	{
+		return false;
+	}
+
+	FNamedOnlineSession* NamedSession =
+		SessionInterface->GetNamedSession(NAME_GameSession);
+	if (NamedSession == nullptr
+		|| bStartRoomGamePending
+		|| bReturnRoomToLobbyPending)
+	{
+		return false;
+	}
+
+	CachedMapName = GameMapName;
+	CachedMapPath = ResolveMapPathFromName(CachedMapName);
+	CachedMatchType = GameMatchType;
+
+	bool bIsJoinable = NamedSession->SessionSettings.bShouldAdvertise;
+	NamedSession->SessionSettings.Get(
+		SessionSettingKeys::Joinable,
+		bIsJoinable);
+
+	ApplyCachedRoomSettings(NamedSession->SessionSettings, bIsJoinable);
+	if (LastSessionSettings.IsValid())
+	{
+		ApplyCachedRoomSettings(*LastSessionSettings, bIsJoinable);
+	}
+
+	if (!SessionInterface->UpdateSession(
+		NAME_GameSession,
+		NamedSession->SessionSettings,
+		true))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] Failed to advertise game mode. Map=%s MatchType=%s"),
+			*CachedMapName,
+			*CachedMatchType);
+		return false;
+	}
+
+	return true;
+}
+
 void USessionSubSystem::StartRoomGame(const FString& GameMapName)
+{
+	StartRoomGameWithSettings(GameMapName, TEXT(""));
+}
+
+void USessionSubSystem::StartRoomGameWithSettings(
+	const FString& GameMapName,
+	const FString& GameMatchType)
 {
 	UWorld* World = GetWorld();
 	if (!World || World->GetNetMode() == NM_Client)
@@ -322,25 +378,37 @@ void USessionSubSystem::StartRoomGame(const FString& GameMapName)
 		CachedMapPath = ResolveMapPathFromName(CachedMapName);
 	}
 
+	if (!GameMatchType.IsEmpty())
+	{
+		CachedMatchType = GameMatchType;
+	}
+
 	SetRoomJoinable(false);
 
-	UE_LOG(LogTemp, Log, TEXT("[SessionSubSystem] StartRoomGame: StartSession before travel. Target=%s"), *CachedMapPath);
+	UE_LOG(LogTemp, Log,
+		TEXT("[SessionSubSystem] StartRoomGame: StartSession before travel. Target=%s MatchType=%s"),
+		*CachedMapPath,
+		*CachedMatchType);
 
 	bStartRoomGamePending = true;
-	StartSessionCompleteDelegateHandle = SessionInterface->AddOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegate);
+	StartSessionCompleteDelegateHandle =
+		SessionInterface->AddOnStartSessionCompleteDelegate_Handle(
+			StartSessionCompleteDelegate);
+
 	if (!SessionInterface->StartSession(NAME_GameSession))
 	{
-		const EOnlineSessionState::Type SessionState = SessionInterface->GetSessionState(NAME_GameSession);
+		const EOnlineSessionState::Type SessionState =
+			SessionInterface->GetSessionState(NAME_GameSession);
 		UE_LOG(LogTemp, Warning,
 			TEXT("[SessionSubSystem] StartSession returned false. State=%s Target=%s"),
 			SessionStateToString(SessionState),
 			*CachedMapPath);
 
 		bStartRoomGamePending = false;
-		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
+		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(
+			StartSessionCompleteDelegateHandle);
 
-		// InProgress를 성공으로 우회하면 두 번째 매치가 이전 세션 상태를 재사용한다.
-		// 새 게임은 Pending/Ended 상태에서 StartSession이 실제로 성공해야만 이동한다.
+		// A new match must successfully transition Pending/Ended -> InProgress.
 		SetRoomJoinable(true);
 		OnStartRoomGameComplete.Broadcast(false);
 	}
@@ -438,35 +506,63 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 	return Rooms;
 }
 
-bool USessionSubSystem::SetRoomJoinable(bool bIsJoinable)
+void USessionSubSystem::ApplyCachedRoomSettings(
+	FOnlineSessionSettings& SessionSettings,
+	const bool bIsJoinable) const
+{
+	SessionSettings.bAllowJoinInProgress = bIsJoinable;
+	SessionSettings.bAllowJoinViaPresence = bIsJoinable;
+	SessionSettings.bShouldAdvertise = bIsJoinable;
+	SessionSettings.Set(
+		SessionSettingKeys::RoomName,
+		CachedRoomName,
+		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	SessionSettings.Set(
+		SessionSettingKeys::MapName,
+		CachedMapName,
+		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	SessionSettings.Set(
+		SessionSettingKeys::MapPath,
+		CachedMapPath,
+		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	SessionSettings.Set(
+		SessionSettingKeys::MatchType,
+		CachedMatchType,
+		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	SessionSettings.Set(
+		SessionSettingKeys::Joinable,
+		bIsJoinable,
+		EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+}
+
+bool USessionSubSystem::SetRoomJoinable(const bool bIsJoinable)
 {
 	if (!EnsureSessionInterface())
 	{
 		return false;
 	}
 
-	FNamedOnlineSession* NamedSession = SessionInterface->GetNamedSession(NAME_GameSession);
+	FNamedOnlineSession* NamedSession =
+		SessionInterface->GetNamedSession(NAME_GameSession);
 	if (!NamedSession)
 	{
 		return false;
 	}
 
-	NamedSession->SessionSettings.bAllowJoinInProgress = bIsJoinable;
-	NamedSession->SessionSettings.bAllowJoinViaPresence = bIsJoinable;
-	NamedSession->SessionSettings.bShouldAdvertise = bIsJoinable;
-	NamedSession->SessionSettings.Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-
+	ApplyCachedRoomSettings(NamedSession->SessionSettings, bIsJoinable);
 	if (LastSessionSettings.IsValid())
 	{
-		LastSessionSettings->bAllowJoinInProgress = bIsJoinable;
-		LastSessionSettings->bAllowJoinViaPresence = bIsJoinable;
-		LastSessionSettings->bShouldAdvertise = bIsJoinable;
-		LastSessionSettings->Set(SessionSettingKeys::Joinable, bIsJoinable, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+		ApplyCachedRoomSettings(*LastSessionSettings, bIsJoinable);
 	}
 
-	if (!SessionInterface->UpdateSession(NAME_GameSession, NamedSession->SessionSettings, true))
+	if (!SessionInterface->UpdateSession(
+		NAME_GameSession,
+		NamedSession->SessionSettings,
+		true))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[SessionSubSystem] Failed to update room joinability. Joinable=%s"), bIsJoinable ? TEXT("true") : TEXT("false"));
+		UE_LOG(LogTemp, Warning,
+			TEXT("[SessionSubSystem] Failed to update room joinability. Joinable=%s"),
+			bIsJoinable ? TEXT("true") : TEXT("false"));
 		return false;
 	}
 

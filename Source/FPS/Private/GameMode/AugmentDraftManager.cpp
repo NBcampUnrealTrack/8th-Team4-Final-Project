@@ -8,8 +8,8 @@
 #include "Augment/RogueAugmentSettings.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameMode/BaseRoundGameMode.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/BaseTeamGameMode.h"
+#include "GameMode/BaseTeamGameState.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameplayEffectTypes.h"
 #include "GameFramework/PlayerState.h"
@@ -19,7 +19,7 @@
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentDraftManager, Log, All);
 
 void UAugmentDraftManager::Initialize(
-	ABaseRoundGameMode* InOwnerGameMode,
+	ABaseTeamGameMode* InOwnerGameMode,
 	const bool bInDraftEnabled,
 	const UAugmentDraftProfile* InDraftProfile)
 {
@@ -183,36 +183,39 @@ bool UAugmentDraftManager::ServeNextReward(AShooterPlayerState* PlayerState)
 		return false;
 	}
 
-	const FAugmentPendingReward* Pending = Inventory->PeekPendingReward();
-	if (!Pending)
+	for (;;)
 	{
-		return false;
+		const FAugmentPendingReward* Pending = Inventory->PeekPendingReward();
+		if (!Pending)
+		{
+			return false;
+		}
+
+		FAugmentDraftContext DraftContext;
+		DraftContext.RoundNumber = Pending->RoundNumber;
+		DraftContext.RoundSeed = MakeRoundSeed(Pending->RoundNumber);
+
+		if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext,
+			Pending->Pool, Pending->Tier, Pending->ActiveSlot, OfferCount))
+		{
+			UE_LOG(LogAugmentDraftManager, Warning,
+				TEXT("%s has no candidates for the pending reward. Skipping it."),
+				*GetNameSafe(PlayerState));
+
+			Inventory->PopPendingReward();
+			continue;
+		}
+
+		// 대기열이 남아있으면 다음 보상도 제시하도록 이벤트 연결
+		if (!Inventory->OnOfferCommitted.IsBoundToObject(this))
+		{
+			Inventory->OnOfferCommitted.AddUObject(this, &UAugmentDraftManager::HandleOfferCommitted);
+		}
+
+		Inventory->SetOfferSelectionEnabled(true);
+		Inventory->StartSelectionTimeout(SelectionTimeout);
+		return true;
 	}
-
-	FAugmentDraftContext DraftContext;
-	DraftContext.RoundNumber = Pending->RoundNumber;
-	DraftContext.RoundSeed = MakeRoundSeed(Pending->RoundNumber);
-
-	if (!RollOffersForParticipant(PlayerState, Inventory, DraftContext,
-		Pending->Pool, Pending->Tier, Pending->ActiveSlot, OfferCount))
-	{
-		UE_LOG(LogAugmentDraftManager, Warning,
-			TEXT("%s has no candidates for the pending reward. Discarding it."),
-			*GetNameSafe(PlayerState));
-
-		Inventory->PopPendingReward();
-		return false;
-	}
-
-	// 대기열이 남아있으면 다음 보상도 제시하도록 이벤트 연결
-	if (!Inventory->OnOfferCommitted.IsBoundToObject(this))
-	{
-		Inventory->OnOfferCommitted.AddUObject(this, &UAugmentDraftManager::HandleOfferCommitted);
-	}
-
-	Inventory->SetOfferSelectionEnabled(true);
-	Inventory->StartSelectionTimeout(SelectionTimeout);
-	return true;
 }
 
 // 플레이어의 대기열에서 증강을 강제로 선택
@@ -359,13 +362,13 @@ void UAugmentDraftManager::ResolveRewardTiers(
 	// 팀별로 굴릴 때만 점수를 가져옴
 	if (DraftRules.bPerTeamTiers)
 	{
-		const ABaseRoundGameMode* GameMode = OwnerGameMode.Get();
-		if (const ABaseRoundGameState* RoundGameState = IsValid(GameMode)
-			? GameMode->GetGameState<ABaseRoundGameState>()
+		const ABaseTeamGameMode* GameMode = OwnerGameMode.Get();
+		if (const ABaseTeamGameState* TeamGameState = IsValid(GameMode)
+			? GameMode->GetGameState<ABaseTeamGameState>()
 			: nullptr)
 		{
-			TeamAScore = RoundGameState->GetTeamAScore();
-			TeamBScore = RoundGameState->GetTeamBScore();
+			TeamAScore = TeamGameState->GetTeamAScore();
+			TeamBScore = TeamGameState->GetTeamBScore();
 		}
 	}
 
@@ -491,16 +494,16 @@ void UAugmentDraftManager::GetCurrentPlayerStates(TArray<AShooterPlayerState*>& 
 {
 	OutPlayerStates.Reset();
 
-	const ABaseRoundGameMode* GameMode = OwnerGameMode.Get();
-	const ABaseRoundGameState* RoundGameState = IsValid(GameMode)
-		? GameMode->GetGameState<ABaseRoundGameState>()
+	const ABaseTeamGameMode* GameMode = OwnerGameMode.Get();
+	const ABaseTeamGameState* TeamGameState = IsValid(GameMode)
+		? GameMode->GetGameState<ABaseTeamGameState>()
 		: nullptr;
-	if (!IsValid(RoundGameState))
+	if (!IsValid(TeamGameState))
 	{
 		return;
 	}
 
-	for (APlayerState* PlayerState : RoundGameState->PlayerArray)
+	for (APlayerState* PlayerState : TeamGameState->PlayerArray)
 	{
 		if (AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState))
 		{

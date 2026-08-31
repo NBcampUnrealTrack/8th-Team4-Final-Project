@@ -7,7 +7,7 @@
 #include "ShooterMatchResultSubsystem.generated.h"
 
 class UShooterMatchResultScreen;
-class ABaseRoundGameState;
+class ABaseTeamMatchGameState;
 
 /**
  * 매치 결과 보관하고 로비 도착시 결과 화면 띄움
@@ -23,7 +23,7 @@ public:
 	
 	// 매치 종료 시점의 결과를 보존한다.
 	// 로컬팀이 없거나 승자가 없으면 아무것도 하지않음
-	void CaptureSnapshot(const ABaseRoundGameState* RoundGameState);
+	void CaptureSnapshot(const ABaseTeamMatchGameState* MatchGameState);
 	
 	const FShooterMatchResultSnapshot& GetSnapshot() const;
 	

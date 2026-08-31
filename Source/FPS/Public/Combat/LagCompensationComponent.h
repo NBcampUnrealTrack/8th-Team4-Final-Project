@@ -55,13 +55,13 @@ struct FLagCompensationBoxRestoreState
 struct FLagCompensationPrimitiveRestoreState
 {
 	TWeakObjectPtr<UPrimitiveComponent> PrimitiveComponent;
-	ECollisionEnabled::Type CollisionEnabled = ECollisionEnabled::NoCollision;
+	FCollisionResponseContainer CollisionResponses;
 };
 
 struct FLagCompensationRewindRestoreState
 {
 	TArray<FLagCompensationBoxRestoreState> HitBoxes;
-	TArray<FLagCompensationPrimitiveRestoreState> DisabledPrimitives;
+	TArray<FLagCompensationPrimitiveRestoreState> SuppressedPrimitives;
 };
 
 UCLASS(ClassGroup = (Combat), meta = (BlueprintSpawnableComponent))
