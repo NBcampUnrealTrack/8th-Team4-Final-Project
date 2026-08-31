@@ -19,12 +19,18 @@ public:
 	// 스폰 직후 어빌리티가 서버에서 한 번 호출
 	void InitializePayload(const FRogueEffectPayload& InPayload);
 
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	// 페이로드를 자기 위치에서 적용. 신관 만료나 원격 기폭에서 호출
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment|Actor")
 	void Detonate();
 
 protected:
 	virtual void BeginPlay() override;
+
+	// 페이로드의 적용 반경(cm), 범위는 클라이언트에게도 보여야하므로 복제
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Rogue|Augment|Actor")
+	float EffectRadius = 0.f;
 
 	// 자동 기폭 시작
 	void StartFuse();
@@ -58,8 +64,16 @@ protected:
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
 	bool bDestroyOnDetonate = true;
 
+	// 터진 위치에 남길 액터
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
+	TSoftClassPtr<ARogueAugmentActor> SpawnOnDetonateClass;
+
 private:
-	UFUNCTION(NetMulticast, Unreliable)
+	// 터진 위치에 남길 액터 스폰
+	void SpawnFollowUpActor();
+
+	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_Detonated();
 
 	// 서버 전용

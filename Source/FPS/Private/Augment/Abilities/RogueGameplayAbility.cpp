@@ -366,8 +366,9 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 
 	OutPayload.FlatDamage = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Damage);
 
-	// GE, 대미지가 둘 다 없으면 효과가 없는 것
-	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f)
+	// GE, 대미지가 둘 다 없으면 효과가 없는 것. 액터를 남기는 계열은 액터가 목적이다
+	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f
+		&& Entry.SpawnActorClass.IsNull())
 	{
 		UE_LOG(LogAugmentAbility, Error,
 			TEXT("[AugmentAbility] %s 를 부여한 계열에 EffectsToApply 도 %s 도 없습니다"),
