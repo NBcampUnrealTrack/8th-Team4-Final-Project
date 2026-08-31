@@ -154,6 +154,8 @@ void UShooterSkillSlot::FinalizeFullCharge()
 
 void UShooterSkillSlot::HandleReadyAnimFinished()
 {
+	PlayReadyGlow();
+	
 	if (LastAvailabilityVisual == EAvailabilityVisual::Available)
 	{
 		if (UMaterialInstanceDynamic* MID = GetIconMID())
