@@ -70,6 +70,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetMovementSpreadMultiplier(float NewMultiplier);
 
+	// 공중(점프/낙하) 여부. ADS 중이어도 공중이면 탄퍼짐이 강제로 붙도록 Aim 컴포넌트에 위임한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetIsAirborne(bool bNewIsAirborne);
+
 	// 아래 SetEffective* 계열은 전부 같은 규칙: 증강/스탯 보정을 반영해 "지금 이 무기에 실제로
 	// 적용할 값"을 외부(GA_RangedAttack/GA_MeleeAttack/GA_Reload)가 URogueAugmentStatResolver로
 	// 계산해서 꽂아주는 Setter다. AWeaponBase는 누가 어떻게 계산했는지 몰라도 된다.

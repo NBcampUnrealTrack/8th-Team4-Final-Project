@@ -13,6 +13,7 @@
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class URogueHealthComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
@@ -65,6 +66,12 @@ public:
 	// 그 위에 얹은 토글 편의 기능일 뿐이다.
 	UFUNCTION(Exec)
 	void ToggleDynamicCrosshair();
+
+	// TEMP 디버그: 데미지 파이프라인을 거치지 않고 피격 방향 인디케이터만 강제로 발동시킨다.
+	// 콘솔(~)에서 "TestHitIndicator" 입력 - 인디케이터 UI(회전/페이드)만 따로 검증할 때 쓴다.
+	// 실제 데미지 파이프라인이 정상화되면 이 함수는 지워도 된다.
+	UFUNCTION(Exec)
+	void TestHitIndicator();
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);

@@ -86,8 +86,14 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 		return;
 	}
 
+	// ADS 중에도 공중에서는 탄퍼짐이 강제로 붙어야 해서(WeaponAimComponent::InAirSpreadPenaltyDegrees)
+	// IsFalling() 결과를 별도로 무기에 전달한다 - Sprinting은 배율에는 같이 묶이지만 "공중 페널티"
+	// 대상은 아니다(스프린트는 지상이라 ADS 자체가 대부분 불가능/취소되므로 별개로 취급).
+	const bool bIsFalling = Movement->IsFalling();
+	Weapon->SetIsAirborne(bIsFalling);
+
 	float Multiplier;
-	if (Movement->IsFalling() || Movement->IsSprinting())
+	if (bIsFalling || Movement->IsSprinting())
 	{
 		Multiplier = SpreadMultiplierAirOrSprint;
 	}
