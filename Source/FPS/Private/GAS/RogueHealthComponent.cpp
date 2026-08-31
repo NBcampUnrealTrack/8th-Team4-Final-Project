@@ -22,6 +22,9 @@ void URogueHealthComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 	DOREPLIFETIME(URogueHealthComponent, bIsDead);
 	DOREPLIFETIME(URogueHealthComponent, DeathReaction);
+
+	// 피격 방향 인디케이터는 본인 화면에만 필요하므로 소유 클라이언트에만 복제한다.
+	DOREPLIFETIME_CONDITION(URogueHealthComponent, HitReaction, COND_OwnerOnly);
 }
 
 void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent* InASC)
@@ -58,6 +61,10 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 	if (InASC->IsOwnerActorAuthoritative())
 	{
 		OutOfHealthHandle = VitalSet->OnOutOfHealth.AddUObject(this, &URogueHealthComponent::HandleOutOfHealth);
+
+		DamageTakenEventHandle = InASC->AddGameplayEventTagContainerDelegate(
+			FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
+			FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(this, &URogueHealthComponent::HandleDamageTakenEvent));
 	}
 
 	// 이미 사망 상태면 연출 재생
@@ -74,7 +81,14 @@ void URogueHealthComponent::UninitializeFromAbilitySystem()
 		VitalSet->OnOutOfHealth.Remove(OutOfHealthHandle);
 	}
 
+	if (AbilitySystemComponent && DamageTakenEventHandle.IsValid())
+	{
+		AbilitySystemComponent->RemoveGameplayEventTagContainerDelegate(
+			FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken), DamageTakenEventHandle);
+	}
+
 	OutOfHealthHandle.Reset();
+	DamageTakenEventHandle.Reset();
 	VitalSet               = nullptr;
 	AbilitySystemComponent = nullptr;
 }
@@ -116,6 +130,60 @@ void URogueHealthComponent::OnRep_bIsDead()
 {
 	ApplyDeathStateLocally(bIsDead);
 	OnDeathStateChanged.Broadcast(bIsDead);
+}
+
+void URogueHealthComponent::OnRep_HitReaction()
+{
+	OnHitReactionReceived.Broadcast(HitReaction.Direction);
+}
+
+FVector URogueHealthComponent::ComputeHitDirection(const FGameplayEffectContextHandle& ContextHandle, const AActor* InstigatorActor) const
+{
+	const AActor* Victim = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
+	if (!Victim)
+	{
+		return FVector::ZeroVector;
+	}
+
+	// ServerBuildDeathReaction의 방향(가해자->피격자, 랙돌 임펄스용)과 반대 부호다 - 인디케이터는
+	// "피격자 -> 가해자" 방향(어느 쪽을 가리켜야 하는지)이 필요하다.
+	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
+	{
+		const FVector ShotDirection = Ctx->HitShotDirection.GetSafeNormal2D();
+		if (!ShotDirection.IsZero())
+		{
+			return -ShotDirection;
+		}
+	}
+
+	if (IsValid(InstigatorActor) && InstigatorActor != Victim)
+	{
+		return (InstigatorActor->GetActorLocation() - Victim->GetActorLocation()).GetSafeNormal2D();
+	}
+
+	return FVector::ZeroVector;
+}
+
+void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, const FGameplayEventData* Payload)
+{
+	if (!Payload)
+	{
+		return;
+	}
+
+	const AActor* InstigatorActor = Payload->Instigator;
+	const FVector Direction = ComputeHitDirection(Payload->ContextHandle, InstigatorActor);
+	if (Direction.IsZero())
+	{
+		return;
+	}
+
+	HitReaction.Direction = Direction;
+	HitReaction.HitSequence++;
+
+	// 서버(리슨서버 로컬 플레이어) 자신에게는 OnRep이 호출되지 않으므로 직접 브로드캐스트한다 -
+	// ApplyDeathStateLocally + OnDeathStateChanged.Broadcast 조합과 같은 이유.
+	OnHitReactionReceived.Broadcast(Direction);
 }
 
 void URogueHealthComponent::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,

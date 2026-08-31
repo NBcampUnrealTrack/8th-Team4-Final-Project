@@ -35,6 +35,10 @@ public:
 
 	// --- 탄퍼짐 ---
 	void SetMovementSpreadMultiplier(float NewMultiplier);
+	// 공중(점프/낙하) 여부. ADS 중엔 탄퍼짐이 0으로 고정되지만, 공중에서는 그 고정을 뚫고
+	// InAirSpreadPenaltyDegrees만큼 탄퍼짐이 강제로 붙는다 - 조준해도 공중에서는 정확도가 떨어져야
+	// 하기 때문(0 * 배율은 항상 0이라 곱셈만으로는 표현할 수 없어 덧셈 페널티로 분리했다).
+	void SetIsAirborne(bool bNewIsAirborne);
 	void SetEffectiveSpreadDegrees(float NewSpreadDegrees);
 	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
 	// 지금 이 순간 실제로 적용 중인 탄퍼짐 각도(도). ADS/연사 블룸/이동 배율/증강까지 전부 반영된 최종값.
@@ -130,6 +134,15 @@ protected:
 	// 이동 상태 탄퍼짐 배율. SetMovementSpreadMultiplier로만 갱신된다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float MovementSpreadMultiplier = 1.f;
+
+	// 공중일 때 ADS 여부와 무관하게 추가로 붙는 탄퍼짐(도). SetIsAirborne로만 갱신되는
+	// bIsAirborne이 true일 때 CalculateCurrentSpreadDegrees에 더해진다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	float InAirSpreadPenaltyDegrees = 3.f;
+
+	// SetIsAirborne으로만 갱신된다.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	bool bIsAirborne = false;
 
 	// 연속 사격 횟수. 탄퍼짐 블룸 계산에 사용.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
