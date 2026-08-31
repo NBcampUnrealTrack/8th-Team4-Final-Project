@@ -24,3 +24,5 @@ Logs and temp
 *.log
 *.tmp
 service/
+Docs/
+dev/

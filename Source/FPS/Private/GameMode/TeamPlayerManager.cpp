@@ -414,6 +414,7 @@ ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 			CleanupFailedPreparation(Players);
 			return ERoundPlayerPreparationResult::InvalidState;
 		}
+		PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 
 		// Pawn is recreated every round, so project the confirmed PlayerState loadout onto the new runtime pawn.
 		if (!RogueWeaponLoadout::RestoreConfirmedPrimary(PlayerState, SpawnedPawn))

@@ -389,11 +389,15 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		return;
 	}
 
+	const EPlayerParticipationState NewPlayerParticipationState = ResolveParticipationStateForNewPlayer(NewPlayer);
+
 	// 의도적으로 Super를 호출하지 않는다. 라운드 모드는 입장 시 즉시 스폰하지 않고,
 	// 팀 초기화 후 다음 라운드 준비 단계에서 참가자를 한 번에 스폰한다.
 	AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>();
 	if (IsValid(PlayerState))
 	{
+		PlayerState->SetParticipationState(NewPlayerParticipationState);
+
 		UCreditEconomyManager* Economy = GetCreditEconomyManager();
 		if (!IsValid(Economy) || !Economy->InitializePlayerForMatch(PlayerState))
 		{
@@ -404,14 +408,7 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		PlayerState->SetAlive(false);
 		if (UAugmentDraftManager* DraftManager = GetAugmentDraftManager())
 		{
-			const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
-			const EGameFlowPhase Phase = IsValid(RoundGameState)
-				? RoundGameState->GetGameFlowPhase()
-				: EGameFlowPhase::WaitingForPlayers;
-			const bool bJoinedBeforeFirstRound = LastCompletedRoundNumber == 0
-				&& (Phase == EGameFlowPhase::WaitingForPlayers
-					|| Phase == EGameFlowPhase::WaitingForPlayersReady);
-			if (bJoinedBeforeFirstRound)
+			if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForMatchStart)
 			{
 				DraftManager->ResetPlayerForNewMatch(PlayerState);
 			}
@@ -424,6 +421,10 @@ void ABaseRoundGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 		PlayerManager->RemovePlayerPawn(NewPlayer);
 	}
 	SetPlayerRoundInputEnabled(NewPlayer, false);
+	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
+	{
+		MovePlayerToSpectator(NewPlayer);
+	}
 	UpdateInitialLoadingStatus();
 	HandlePlayerRosterChanged();
 }

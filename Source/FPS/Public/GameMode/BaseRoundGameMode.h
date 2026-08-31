@@ -53,6 +53,7 @@ protected:
 	virtual bool ReadyToStartMatch_Implementation() override;
 	virtual bool ReadyToEndMatch_Implementation() override;
 	virtual bool ShouldSpawnAtStartSpot(AController* Player) override;
+	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const override;
 
 	// 파생 모드는 목표물 수명주기와 승패 규칙만 구현한다.
 	virtual void ResetModeState();
@@ -116,6 +117,7 @@ private:
 	void EnterWaitingForPlayers();
 	void EnterWaitingForPlayersReady();
 	void HandleInitialReadyTimeout();
+	bool IsInitialJoinPhase(EGameFlowPhase Phase) const;
 	void ScheduleSpawnPreparationRetry(const TCHAR* Reason);
 	void SuspendRoundOpening(const TCHAR* Reason);
 	FRoundContext MakeRoundContext(int32 RoundNumber) const;

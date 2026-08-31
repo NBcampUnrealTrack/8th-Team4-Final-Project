@@ -508,6 +508,7 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 
 	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
+		PlayerState->SetParticipationState(ResolveParticipationStateForNewPlayer(NewPlayer));
 		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
 	}
 }

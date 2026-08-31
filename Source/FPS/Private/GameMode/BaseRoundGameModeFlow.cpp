@@ -495,6 +495,28 @@ void ABaseRoundGameMode::HandleInitialReadyTimeout()
 	TryBeginNextRound();
 }
 
+bool ABaseRoundGameMode::IsInitialJoinPhase(const EGameFlowPhase Phase) const
+{
+	return LastCompletedRoundNumber == 0
+		&& (Phase == EGameFlowPhase::WaitingForPlayers
+			|| Phase == EGameFlowPhase::WaitingForPlayersReady);
+}
+
+EPlayerParticipationState ABaseRoundGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	const EGameFlowPhase Phase = IsValid(RoundGameState)
+		? RoundGameState->GetGameFlowPhase()
+		: EGameFlowPhase::WaitingForPlayers;
+
+	if (IsInitialJoinPhase(Phase))
+	{
+		return EPlayerParticipationState::WaitingForMatchStart;
+	}
+
+	return EPlayerParticipationState::WaitingForNextSpawn;
+}
+
 void ABaseRoundGameMode::ScheduleSpawnPreparationRetry(const TCHAR* Reason)
 {
 	if (UTeamPlayerManager* PlayerManager = GetTeamPlayerManager())

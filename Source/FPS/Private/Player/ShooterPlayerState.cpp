@@ -46,6 +46,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+	DOREPLIFETIME(AShooterPlayerState, ParticipationState);
 	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
 }
 
@@ -231,6 +232,22 @@ void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
 }
 
 void AShooterPlayerState::OnRep_LoadedIntoMatch()
+{
+}
+
+void AShooterPlayerState::SetParticipationState(const EPlayerParticipationState NewParticipationState)
+{
+	if (!HasAuthority() || ParticipationState == NewParticipationState)
+	{
+		return;
+	}
+
+	ParticipationState = NewParticipationState;
+	OnRep_ParticipationState();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_ParticipationState()
 {
 }
 
