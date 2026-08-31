@@ -104,17 +104,15 @@ void UShooterSkillSlot::ApplyAvailabilityVisual(bool bAvailable, bool bFullyChar
 		Anim_Ready &&
 		IsAnimationPlaying(Anim_Ready);
 	
+	const float InputReadiness = bFullyCharged ? 1.f : 0.f;
+	
 	if (!bReadyAnimationOwnsIcon)
 	{
-		const float IconReadiness = bFullyCharged ? 1.f : 0.f;
-		
 		if (UMaterialInstanceDynamic* MID = GetIconMID())
 		{
-			MID->SetScalarParameterValue(TEXT("Readiness"), IconReadiness);
+			MID->SetScalarParameterValue(TEXT("Readiness"), InputReadiness);
 		}
 	}
-	
-	const float InputReadiness = bAvailable ? 1.f : 0.f;
 
 	if (UMaterialInstanceDynamic* MID = GetKeyFillMID())
 	{
