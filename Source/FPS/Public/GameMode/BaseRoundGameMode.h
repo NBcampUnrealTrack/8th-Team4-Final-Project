@@ -1,9 +1,9 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/InitialPlayerReadinessTracker.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Manager/InitialPlayerReadinessTracker.h"
+#include "GameMode/Types/RoundTypes.h"
 #include "BaseRoundGameMode.generated.h"
 
 class ABaseRoundGameState;

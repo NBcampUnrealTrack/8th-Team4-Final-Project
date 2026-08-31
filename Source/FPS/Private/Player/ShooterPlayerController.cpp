@@ -8,7 +8,7 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/BaseTeamGameState.h"
+#include "GameMode/State/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 

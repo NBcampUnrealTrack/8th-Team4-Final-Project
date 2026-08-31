@@ -4,7 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Components/SlateWrapperTypes.h"
 #include "Actor/DataJackTypes.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Types/RoundTypes.h"
 #include "BaseBombGameFlowWidget.generated.h"
 
 class ABaseTeamPlayerState;

@@ -1,9 +1,9 @@
-﻿// ShooterMatchResultSubsystem.cpp
+// ShooterMatchResultSubsystem.cpp
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 
 #include "GameFramework/PlayerState.h"
-#include "GameMode/BaseTeamMatchGameState.h"
-#include "GameMode/LobbyGameState.h"
+#include "GameMode/State/BaseTeamMatchGameState.h"
+#include "GameMode/State/LobbyGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSetting.h"

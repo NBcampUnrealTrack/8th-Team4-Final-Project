@@ -1,8 +1,8 @@
-﻿// ShooterMatchResulTypes.h
+// ShooterMatchResulTypes.h
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "ShooterMatchResultTypes.generated.h"
 
 // 결과화면 플레이어 Row

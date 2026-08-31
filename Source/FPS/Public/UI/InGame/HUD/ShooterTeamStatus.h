@@ -1,9 +1,9 @@
-﻿// ShooterTeamStatus.h
+// ShooterTeamStatus.h
 #pragma once
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "ShooterTeamStatus.generated.h"
 
 class ABaseRoundGameState;

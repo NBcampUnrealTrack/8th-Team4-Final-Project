@@ -3,7 +3,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/DominationGameMode.h"
-#include "GameMode/DominationGameState.h"
+#include "GameMode/State/DominationGameState.h"
 #include "Player/DominationPlayerState.h"
 #include "UI/Frontend/DominationUIInitComponent.h"
 

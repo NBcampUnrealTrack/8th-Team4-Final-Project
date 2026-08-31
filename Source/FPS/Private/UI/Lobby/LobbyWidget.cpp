@@ -9,7 +9,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameMode/LobbyGameMode.h"
-#include "GameMode/LobbyGameState.h"
+#include "GameMode/State/LobbyGameState.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"

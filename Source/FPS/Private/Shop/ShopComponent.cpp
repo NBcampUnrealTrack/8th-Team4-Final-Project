@@ -1,9 +1,9 @@
-﻿#include "Shop/ShopComponent.h"
+#include "Shop/ShopComponent.h"
 
 #include "Economy/CreditWalletComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
 #include "Shop/ShopCatalogDataAsset.h"

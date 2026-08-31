@@ -2,7 +2,7 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Net/UnrealNetwork.h"
 
 AAugmentPhaseBarrier::AAugmentPhaseBarrier()

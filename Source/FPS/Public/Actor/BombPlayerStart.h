@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Types/RoundTypes.h"
 #include "GameFramework/PlayerStart.h"
 #include "BombPlayerStart.generated.h"
 
