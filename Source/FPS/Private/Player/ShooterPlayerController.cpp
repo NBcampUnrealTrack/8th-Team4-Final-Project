@@ -26,6 +26,7 @@
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
+#include "Player/ShooterSpectatorPawn.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -687,6 +688,17 @@ void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 	ShooterGameMode->NotifyPlayerReadyForGameFlow(this);
 }
 
+void AShooterPlayerController::ServerCycleSpectatorTarget_Implementation()
+{
+	AShooterGameMode* ShooterGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<AShooterGameMode>()
+		: nullptr;
+	if (IsValid(ShooterGameMode))
+	{
+		ShooterGameMode->CycleSpectatorTarget(this);
+	}
+}
+
 void AShooterPlayerController::StartMatchLoadReadyCheck()
 {
 	if (!IsLocalController() || bNotifiedLoadedIntoMatch)
@@ -933,6 +945,19 @@ void AShooterPlayerController::Input_PushToTalkReleased()
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
+	{
+		if (HasAuthority())
+		{
+			ServerCycleSpectatorTarget_Implementation();
+		}
+		else
+		{
+			ServerCycleSpectatorTarget();
+		}
+		return;
+	}
+
 	if (!CanProcessActionInput())
 	{
 		return;
@@ -946,10 +971,35 @@ void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, co
 
 void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
+	{
+		return;
+	}
+
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagReleased(InputTag);
 	}
+}
+
+bool AShooterPlayerController::IsSpectatorCycleInput(const FGameplayTag InputTag) const
+{
+	const FGameplayTag PrimaryInputTag = FGameplayTag::RequestGameplayTag(
+		TEXT("InputTag.Ability.Primary"),
+		false);
+	return PrimaryInputTag.IsValid() && InputTag.MatchesTagExact(PrimaryInputTag);
+}
+
+bool AShooterPlayerController::IsInSpectatorFlow() const
+{
+	if (GetPawn<AShooterSpectatorPawn>())
+	{
+		return true;
+	}
+
+	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
+	return IsValid(ShooterPlayerState)
+		&& ShooterPlayerState->GetParticipationState() != EPlayerParticipationState::Active;
 }
 
 URogueAbilitySystemComponent* AShooterPlayerController::GetRogueAbilitySystemComponent() const

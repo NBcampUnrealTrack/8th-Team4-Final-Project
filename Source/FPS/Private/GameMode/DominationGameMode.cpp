@@ -151,6 +151,7 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 	}
 
 	RespawnManager->ScheduleRespawn(EliminatedController);
+	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
 }
 
 void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -274,7 +275,10 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 	}
 
 	APawn* SpawnedPawn = PlayerController->GetPawn();
+	PlayerController->ChangeState(NAME_Playing);
+	PlayerController->ClientGotoState(NAME_Playing);
 	PlayerState->ServerRespawnReset();
+	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 	RespawnManager->BeginRespawnProtection(PlayerState);
 	if (!IsValid(LoadoutManager)
 		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
@@ -506,11 +510,33 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 		return;
 	}
 
+	const EPlayerParticipationState NewPlayerParticipationState = ResolveParticipationStateForNewPlayer(NewPlayer);
 	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
-		PlayerState->SetParticipationState(ResolveParticipationStateForNewPlayer(NewPlayer));
+		PlayerState->SetParticipationState(NewPlayerParticipationState);
 		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
 	}
+
+	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
+	{
+		MovePlayerToSpectator(NewPlayer);
+	}
+}
+
+EPlayerParticipationState ADominationGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const
+{
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	const EDominationMatchPhase Phase = IsValid(DominationGameState)
+		? DominationGameState->GetDominationPhase()
+		: EDominationMatchPhase::WaitingForPlayers;
+
+	if (Phase == EDominationMatchPhase::WaitingForPlayers
+		|| Phase == EDominationMatchPhase::ClassSelecting)
+	{
+		return EPlayerParticipationState::WaitingForMatchStart;
+	}
+
+	return EPlayerParticipationState::WaitingForNextSpawn;
 }
 
 UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)

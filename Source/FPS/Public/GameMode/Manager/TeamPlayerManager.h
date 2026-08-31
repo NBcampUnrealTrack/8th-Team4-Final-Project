@@ -83,6 +83,7 @@ public:
 private:
 	void ResetRoundTracking();
 	bool GatherEligiblePlayers(TArray<APlayerController*>& OutPlayers) const;
+	bool IsEligibleForRoundPreparation(const AShooterPlayerState* PlayerState) const;
 	void CleanupFailedPreparation(const TArray<APlayerController*>& AttemptedPlayers);
 	bool TryBuildStartReservation(
 		const TArray<FPlayerStartGroup>& StartGroups,

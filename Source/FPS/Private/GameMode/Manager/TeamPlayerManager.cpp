@@ -373,6 +373,8 @@ ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 		}
 
 		GameMode->RestartPlayer(PlayerController);
+		PlayerController->ChangeState(NAME_Playing);
+		PlayerController->ClientGotoState(NAME_Playing);
 
 		APawn* SpawnedPawn = PlayerController->GetPawn();
 		if (!IsValid(SpawnedPawn))
@@ -575,7 +577,9 @@ bool UTeamPlayerManager::GatherEligiblePlayers(TArray<APlayerController*>& OutPl
 		}
 
 		const AShooterPlayerState* PlayerState = PlayerController->GetPlayerState<AShooterPlayerState>();
-		if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
+		if (!IsValid(PlayerState)
+			|| PlayerState->GetTeam() == EGameTeam::None
+			|| !IsEligibleForRoundPreparation(PlayerState))
 		{
 			UE_LOG(LogTeamPlayerManager, Error,
 				TEXT("%s cannot enter the round because its ShooterPlayerState or team assignment is invalid."),
@@ -587,6 +591,24 @@ bool UTeamPlayerManager::GatherEligiblePlayers(TArray<APlayerController*>& OutPl
 	}
 
 	return !OutPlayers.IsEmpty();
+}
+
+bool UTeamPlayerManager::IsEligibleForRoundPreparation(const AShooterPlayerState* PlayerState) const
+{
+	if (!IsValid(PlayerState))
+	{
+		return false;
+	}
+
+	switch (PlayerState->GetParticipationState())
+	{
+	case EPlayerParticipationState::WaitingForMatchStart:
+	case EPlayerParticipationState::WaitingForNextSpawn:
+	case EPlayerParticipationState::Active:
+		return true;
+	default:
+		return false;
+	}
 }
 
 void UTeamPlayerManager::CleanupFailedPreparation(const TArray<APlayerController*>& AttemptedPlayers)

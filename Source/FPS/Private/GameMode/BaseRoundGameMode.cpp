@@ -189,6 +189,7 @@ void ABaseRoundGameMode::NotifyPlayerEliminatedBy(
 	}
 
 	SetPlayerRoundInputEnabled(Cast<APlayerController>(EliminatedController), false);
+	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
 	HandleModePlayerEliminated(EliminatedPlayerState);
 }
 

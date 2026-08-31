@@ -4,6 +4,7 @@
 #include "GameMode/ShooterGameMode.h"
 
 #include "EngineUtils.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpectatorPawn.h"
@@ -71,6 +72,25 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 	PlayerController->ChangeState(NAME_Spectating);
 	PlayerController->ClientGotoState(NAME_Spectating);
 	PlayerController->Possess(SpectatorPawn);
+	CycleSpectatorTarget(PlayerController);
+}
+
+void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorController)
+{
+	if (!HasAuthority() || !IsValid(SpectatorController))
+	{
+		return;
+	}
+
+	APawn* TargetPawn = FindNextSpectatorTarget(SpectatorController);
+	if (!IsValid(TargetPawn))
+	{
+		return;
+	}
+
+	FViewTargetTransitionParams TransitionParams;
+	TransitionParams.BlendTime = 0.15f;
+	SpectatorController->ClientSetViewTarget(TargetPawn, TransitionParams);
 }
 
 ASpectatorPawn* AShooterGameMode::SpawnSpectatorPawnFor(
@@ -99,6 +119,52 @@ ASpectatorPawn* AShooterGameMode::SpawnSpectatorPawnFor(
 		SpawnTransform.GetLocation(),
 		SpawnTransform.Rotator(),
 		SpawnParameters);
+}
+
+APawn* AShooterGameMode::FindNextSpectatorTarget(APlayerController* SpectatorController) const
+{
+	const AGameStateBase* CurrentGameState = GameState;
+	const AShooterPlayerState* SpectatorPlayerState = IsValid(SpectatorController)
+		? SpectatorController->GetPlayerState<AShooterPlayerState>()
+		: nullptr;
+	if (!IsValid(CurrentGameState) || !IsValid(SpectatorPlayerState) || SpectatorPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return nullptr;
+	}
+
+	TArray<APawn*> CandidatePawns;
+	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
+	{
+		const AShooterPlayerState* CandidatePlayerState = Cast<AShooterPlayerState>(PlayerState);
+		if (!IsValid(CandidatePlayerState)
+			|| CandidatePlayerState == SpectatorPlayerState
+			|| CandidatePlayerState->GetTeam() != SpectatorPlayerState->GetTeam()
+			|| !CandidatePlayerState->IsAlive()
+			|| CandidatePlayerState->GetParticipationState() != EPlayerParticipationState::Active)
+		{
+			continue;
+		}
+
+		APawn* CandidatePawn = CandidatePlayerState->GetPawn();
+		if (IsValid(CandidatePawn))
+		{
+			CandidatePawns.Add(CandidatePawn);
+		}
+	}
+
+	if (CandidatePawns.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	const AActor* CurrentViewTarget = SpectatorController->GetViewTarget();
+	const int32 CurrentIndex = CandidatePawns.IndexOfByKey(CurrentViewTarget);
+	if (CurrentIndex == INDEX_NONE)
+	{
+		return CandidatePawns[0];
+	}
+
+	return CandidatePawns[(CurrentIndex + 1) % CandidatePawns.Num()];
 }
 
 FTransform AShooterGameMode::ResolveSpectatorSpawnTransform(APlayerController* PlayerController) const

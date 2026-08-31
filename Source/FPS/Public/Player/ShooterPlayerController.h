@@ -160,6 +160,9 @@ protected:
 	void ServerNotifyLoadedIntoMatch();
 
 	UFUNCTION(Server, Reliable)
+	void ServerCycleSpectatorTarget();
+
+	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
 
 	UFUNCTION(Server, Reliable)
@@ -207,6 +210,8 @@ private:
 	void Input_ToggleInGameMenu();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
+	bool IsInSpectatorFlow() const;
 	void SetSystemMappingContextEnabled(bool bEnabled);
 	UTeamMatchUIInitComponent* GetTeamMatchUIInitComponent() const;
 
