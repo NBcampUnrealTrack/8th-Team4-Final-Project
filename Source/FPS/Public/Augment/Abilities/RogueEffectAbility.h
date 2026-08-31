@@ -22,7 +22,8 @@ public:
 #endif
 
 protected:
-	virtual void Deliver(const FRogueEffectPayload& Payload,
+	virtual void Deliver(const FAugmentGrantedAbility& Entry,
+	                     const FRogueEffectPayload& Payload,
 	                     FGameplayAbilitySpecHandle Handle,
 	                     const FGameplayAbilityActorInfo* ActorInfo,
 	                     const FGameplayAbilityActivationInfo ActivationInfo,

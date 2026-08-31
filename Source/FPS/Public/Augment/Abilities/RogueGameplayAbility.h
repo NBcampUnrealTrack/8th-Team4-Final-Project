@@ -47,8 +47,9 @@ protected:
 	                             const FGameplayAbilityActivationInfo ActivationInfo,
 	                             const FGameplayEventData* TriggerEventData) override;
 
-	// 조립된 페이로드를 전달하는 지점. 자식이 어빌리티가 구현
-	virtual void Deliver(const FRogueEffectPayload& Payload,
+	// 조립된 페이로드를 전달하는 지점. 자식 어빌리티가 구현
+	virtual void Deliver(const FAugmentGrantedAbility& Entry,
+	                     const FRogueEffectPayload& Payload,
 	                     FGameplayAbilitySpecHandle Handle,
 	                     const FGameplayAbilityActorInfo* ActorInfo,
 	                     const FGameplayAbilityActivationInfo ActivationInfo,
@@ -96,6 +97,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "bBroadcastSkillUsed", EditConditionHides))
 	bool bIgnoreActionBlock = false;
+
+	// 시전 확정 시 실행할 GameplayCue. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag ActivationCueTag;
 
 	// 어빌리티 레벨에 해당하는 최대 충전 수
 	int32 GetMaxCharges(int32 Level) const;

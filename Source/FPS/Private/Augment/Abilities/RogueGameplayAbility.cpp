@@ -176,11 +176,22 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		return;
 	}
 
-	// 실제로 효과를 걸기 직전에만 쿨타임/코스트를 소모
+	// 조건을 다 통과한 뒤에만 쿨타임/코스트를 소모
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	// 발동 시점에만 실행되는 CUE
+	if (ActivationCueTag.IsValid())
+	{
+		FGameplayCueParameters CueParams;
+		CueParams.Instigator    = Avatar;
+		CueParams.EffectCauser  = Avatar;
+		CueParams.SourceObject  = this;
+
+		K2_ExecuteGameplayCueWithParams(ActivationCueTag, CueParams);
 	}
 
 	// 대상 탐색과 효과 적용은 서버에서만
@@ -192,7 +203,7 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 
 	PayHealthCost(ActorInfo, Payload.Level);
 
-	Deliver(Payload, Handle, ActorInfo, ActivationInfo, TriggerEventData);
+	Deliver(*Entry, Payload, Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }

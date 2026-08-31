@@ -6,6 +6,7 @@
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
+class ARogueAugmentActor;
 class UAugmentDefinition;
 class UGameplayEffect;
 class URogueGameplayAbility;
@@ -225,6 +226,10 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
         meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", EditConditionHides, ClampMin = "0.0", ClampMax = "1.0"))
     float DamageFalloffAtEdge = 1.f;
+
+    // 페이로드를 들고 갈 액터. 투척물/설치물 증강만 사용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Spawn")
+    TSoftClassPtr<ARogueAugmentActor> SpawnActorClass;
 };
 
 // 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지
