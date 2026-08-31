@@ -8,6 +8,8 @@
 
 class USphereComponent;
 class UProjectileMovementComponent;
+class URotatingMovementComponent;
+class USoundBase;
 
 // 던져지는 증강 액터
 UCLASS(Abstract)
@@ -21,7 +23,21 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	// 회전 속도를 현재 속도에 비례
+	virtual void Tick(float DeltaSeconds) override;
+
 	virtual bool ShouldStartFuseOnBeginPlay() const override;
+
+	// 튕길 때 재생할 소리. 볼륨은 충돌 속도에 비례
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable")
+	TObjectPtr<USoundBase> BounceSound;
+
+	// 소리 재생 최소 속도. 이보다 느리면 소리 안 남
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable", meta = (ClampMin = "0.0"))
+	float MinBounceSoundSpeed = 250.f;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Throwable")
+	void OnBounced(const FHitResult& Hit, float ImpactSpeed);
 
 	// 켜면 착탄 이후 신관 시작
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable")
@@ -37,6 +53,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rogue|Throwable")
 	TObjectPtr<UProjectileMovementComponent> Movement;
 
+	// 비행 중 회전, 부딪히면 멈춤
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rogue|Throwable")
+	TObjectPtr<URotatingMovementComponent> Spin;
+
 private:
 	UFUNCTION()
 	void HandleBounce(const FHitResult& ImpactResult, const FVector& ImpactVelocity);
@@ -45,6 +65,9 @@ private:
 	void HandleStop(const FHitResult& ImpactResult);
 
 	void HandleImpact();
+
+	// BP에서 정한 회전 속도
+	FRotator BaseSpinRate = FRotator::ZeroRotator;
 
 	bool bImpacted = false;
 };
