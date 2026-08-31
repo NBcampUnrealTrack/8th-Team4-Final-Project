@@ -4,18 +4,15 @@
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/InitialPlayerReadinessTracker.h"
 #include "GameMode/RoundTypes.h"
-#include "GameMode/SurrenderVoteTypes.h"
 #include "BaseRoundGameMode.generated.h"
 
 class ABaseRoundGameState;
-class ABaseRoundPlayerController;
 class ABaseTeamPlayerState;
 class APlayerController;
 class AShooterPlayerState;
 class UAugmentDraftManager;
 class UCreditEconomyManager;
 class UShopPurchaseComponent;
-class USurrenderVoteManager;
 enum class EPlayerStartReservationResult : uint8;
 
 /**
@@ -48,10 +45,6 @@ public:
 	// 각 로컬 플레이어의 인게임 UI가 준비되면 첫 라운드 시작 조건을 다시 평가한다.
 	virtual void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController) override;
 
-	// PlayerController RPC의 서버 진입점이다. 팀과 유권자는 서버 상태로 다시 결정한다.
-	ESurrenderVoteStartResult RequestStartSurrenderVote(ABaseRoundPlayerController* Requester);
-	void SubmitSurrenderVote(ABaseRoundPlayerController* Voter, int32 VoteId, bool bApprove);
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -72,6 +65,8 @@ protected:
 	virtual EGameTeam ResolveModeMatchWinnerAfterPlayerDeparture(EGameTeam DepartingTeam) const;
 	virtual bool HasModeRequiredPlayers() const;
 	virtual bool IsModeConfigurationValid() const;
+	virtual bool IsSurrenderVoteAllowedNow() const override;
+	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
 
 	void EndRound(EGameTeam WinningTeam, ERoundEndReason EndReason);
 	void FreezeRoundTimer();
@@ -117,11 +112,6 @@ private:
 	void AdvanceToNextRound();      // RoundEnding -> Waiting
 	void FinishMatch(EGameTeam WinningTeam);
 	void ReturnToLobbyAfterMatch();
-	bool BuildSurrenderVoteRequest(
-		ABaseRoundPlayerController* Requester,
-		EGameTeam& OutTeam,
-		TArray<ABaseRoundPlayerController*>& OutVoters) const;
-	void FinishMatchBySurrender(EGameTeam SurrenderingTeam);
 
 	void EnterWaitingForPlayers();
 	void EnterWaitingForPlayersReady();
@@ -149,7 +139,6 @@ private:
 	void SetPlayerRoundInputEnabled(APlayerController* PlayerController, bool bEnabled) const;
 	UAugmentDraftManager* GetAugmentDraftManager() const;
 	UCreditEconomyManager* GetCreditEconomyManager() const;
-	USurrenderVoteManager* GetSurrenderVoteManager() const;
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Players", meta = (ClampMin = "1"))
@@ -204,21 +193,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Rules")
 	ETeamRole StartingTeamBRole = ETeamRole::Defenders;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Surrender", meta = (ClampMin = "1.0"))
-	float SurrenderVoteDuration = 20.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Game Flow|Surrender", meta = (ClampMin = "0.0"))
-	float SurrenderVoteCooldown = 30.0f;
-
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCreditEconomyManager> CreditEconomyManager;
-
-	UPROPERTY(Transient)
-	TObjectPtr<USurrenderVoteManager> SurrenderVoteManager;
 
 	FTimerHandle PhaseTimerHandle;
 	FTimerHandle RoundTimerHandle;

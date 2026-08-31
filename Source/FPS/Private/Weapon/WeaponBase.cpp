@@ -4,11 +4,13 @@
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
+#include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Weapon/WeaponAimComponent.h"
@@ -147,6 +149,14 @@ void AWeaponBase::SetMovementSpreadMultiplier(float NewMultiplier)
 	if (Aim)
 	{
 		Aim->SetMovementSpreadMultiplier(NewMultiplier);
+	}
+}
+
+void AWeaponBase::SetIsAirborne(bool bNewIsAirborne)
+{
+	if (Aim)
+	{
+		Aim->SetIsAirborne(bNewIsAirborne);
 	}
 }
 
@@ -445,12 +455,24 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
 
+	// 표면별 임팩트 사운드(사람/벽 등)는 FireEffects BP 그래프와 무관하게 여기서 직접 재생한다 -
+	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.
+	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
+
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
 		LastImpactPoint = ImpactEffect.ImpactPoint;
 		LastImpactNormal = ImpactEffect.ImpactNormal;
 		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
 		LastImpactPelletIndex = ImpactEffect.PelletIndex;
+
+		if (SurfaceDefinition)
+		{
+			if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+			{
+				UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+			}
+		}
 
 		FireEffects(
 			ImpactEffect.ImpactPoint,
@@ -508,12 +530,11 @@ bool AWeaponBase::GetTraceOrigin(FVector& OutStart) const
 
 FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 {
-	if (Aim && Aim->IsADS())
-	{
-		// ADS 중에는 탄퍼짐이 없으므로 조준선 정중앙으로 발사한다.
-		return AimDirection;
-	}
-
+	// GetCurrentSpreadDegrees()가 ADS/지상 중엔 이미 0을 반환하므로(RandomUnitVectorInConeInDegrees에
+	// 0도를 넘기면 AimDirection 그대로 나온다), 여기서 ADS를 따로 조기 반환하지 않는다 - 예전엔
+	// "ADS면 무조건 정중앙"으로 지름길을 탔는데, 그러면 공중에서 ADS 중에도 붙어야 하는
+	// InAirSpreadPenaltyDegrees(Aim->SetIsAirborne)가 무시돼 버그가 됐다.
+	//
 	// 펠릿마다 독립적으로 호출되므로, 샷건처럼 PelletCountPerShot > 1인 무기는
 	// 매 펠릿이 콘 안에서 각각 다른 방향으로 무작위 샘플링된다.
 	const float SpreadDegrees = Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;

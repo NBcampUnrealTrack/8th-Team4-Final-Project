@@ -263,6 +263,41 @@ AActor* UTeamPlayerManager::SelectAvailablePlayerStart(
 	return nullptr;
 }
 
+bool UTeamPlayerManager::SelectAvailableSpawnTransform(
+	const TArray<FTransform>& CandidateTransforms,
+	const int32 PreferredStartIndex,
+	FTransform& OutSpawnTransform,
+	int32& OutSelectedIndex) const
+{
+	OutSelectedIndex = INDEX_NONE;
+	if (CandidateTransforms.IsEmpty())
+	{
+		UE_LOG(LogTeamPlayerManager, Error,
+			TEXT("No transform candidate was provided for the requested spawn group."));
+		return false;
+	}
+
+	const int32 StartIndex = CandidateTransforms.IsValidIndex(PreferredStartIndex)
+		? PreferredStartIndex
+		: 0;
+	for (int32 Offset = 0; Offset < CandidateTransforms.Num(); ++Offset)
+	{
+		const int32 CandidateIndex = (StartIndex + Offset) % CandidateTransforms.Num();
+		const FTransform& CandidateTransform = CandidateTransforms[CandidateIndex];
+		if (!CandidateTransform.GetLocation().ContainsNaN()
+			&& IsSpawnLocationClear(CandidateTransform.GetLocation()))
+		{
+			OutSpawnTransform = CandidateTransform;
+			OutSelectedIndex = CandidateIndex;
+			return true;
+		}
+	}
+
+	UE_LOG(LogTeamPlayerManager, Warning,
+		TEXT("No clear transform candidate is currently available for the requested spawn group."));
+	return false;
+}
+
 void UTeamPlayerManager::RemovePlayerPawn(APlayerController* PlayerController) const
 {
 	if (!IsValid(PlayerController))
@@ -649,9 +684,15 @@ bool UTeamPlayerManager::IsCompatibleWithSelectedStarts(
 
 bool UTeamPlayerManager::IsPlayerStartClear(const AActor* PlayerStart) const
 {
+	return !IsValid(PlayerStart)
+		|| IsSpawnLocationClear(PlayerStart->GetActorLocation());
+}
+
+bool UTeamPlayerManager::IsSpawnLocationClear(const FVector& SpawnLocation) const
+{
 	const ABaseTeamGameMode* GameMode = GetOwnerGameMode();
 	UWorld* World = IsValid(GameMode) ? GameMode->GetWorld() : nullptr;
-	if (!IsValid(PlayerStart) || !IsValid(World) || SpawnClearanceRadius <= 0.0f)
+	if (!IsValid(World) || SpawnClearanceRadius <= 0.0f)
 	{
 		return true;
 	}
@@ -661,7 +702,7 @@ bool UTeamPlayerManager::IsPlayerStartClear(const AActor* PlayerStart) const
 	{
 		const APawn* ExistingPawn = *Iterator;
 		if (IsValid(ExistingPawn)
-			&& FVector::DistSquared(ExistingPawn->GetActorLocation(), PlayerStart->GetActorLocation()) < ClearanceRadiusSquared)
+			&& FVector::DistSquared(ExistingPawn->GetActorLocation(), SpawnLocation) < ClearanceRadiusSquared)
 		{
 			return false;
 		}

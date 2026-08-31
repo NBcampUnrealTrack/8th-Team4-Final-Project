@@ -4,20 +4,26 @@
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GAS/RogueHealthComponent.h"
+#include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
+#include "InputMappingContext.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Loading/LoadingScreenSubsystem.h"
+#include "Net/UnrealNetwork.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
+#include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
 
@@ -25,6 +31,18 @@ AShooterPlayerController::AShooterPlayerController()
 {
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
+}
+
+void AShooterPlayerController::GetLifetimeReplicatedProps(
+	TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION_NOTIFY(
+		AShooterPlayerController,
+		SurrenderVoteState,
+		COND_OwnerOnly,
+		REPNOTIFY_Always);
 }
 
 void AShooterPlayerController::BeginPlay()
@@ -36,10 +54,17 @@ void AShooterPlayerController::BeginPlay()
 		return;
 	}
 
+	if (GetTeamMatchUIInitComponent())
+	{
+		SetSystemMappingContextEnabled(true);
+	}
+
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 	}
+
+	StartMatchLoadReadyCheck();
 
 	if (!InputConfig || !InputConfig->DefaultMappingContext)
 	{
@@ -71,6 +96,10 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		if (GetTeamMatchUIInitComponent())
+		{
+			SetSystemMappingContextEnabled(false);
+		}
 		StopMatchLoadReadyCheck();
 
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
@@ -150,6 +179,14 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Completed, this, &ThisClass::Input_PushToTalkReleased);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Canceled, this, &ThisClass::Input_PushToTalkReleased);
+	}
+	if (InputConfig->ToggleInGameMenuAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ToggleInGameMenuAction,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::Input_ToggleInGameMenu);
 	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
@@ -283,6 +320,28 @@ void AShooterPlayerController::ToggleDynamicCrosshair()
 	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
+void AShooterPlayerController::TestHitIndicator()
+{
+	AShooterPlayerState* ShooterPS = GetPlayerState<AShooterPlayerState>();
+	URogueHealthComponent* HealthComponent = ShooterPS ? ShooterPS->GetHealthComponent() : nullptr;
+	if (!HealthComponent)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] PlayerState=%s HealthComponent=%s - 둘 중 하나가 없어서 중단."),
+			*GetNameSafe(ShooterPS), *GetNameSafe(HealthComponent));
+		return;
+	}
+
+	// 데미지 파이프라인을 거치지 않고, 실제로 오른쪽에서 맞은 것처럼 방향만 흉내내서
+	// 인디케이터 UI(회전/페이드)가 직접 잘 동작하는지만 검증한다.
+	const APawn* ControlledPawn = GetPawn();
+	const FVector TestDirection = IsValid(ControlledPawn) ? ControlledPawn->GetActorRightVector() : FVector::RightVector;
+
+	UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] 브로드캐스트 시도. 구독자 있음=%s"),
+		HealthComponent->OnHitReactionReceived.IsBound() ? TEXT("true") : TEXT("false"));
+
+	HealthComponent->OnHitReactionReceived.Broadcast(TestDirection);
+}
+
 void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
 {
 	if (HasAuthority())
@@ -403,6 +462,81 @@ void AShooterPlayerController::RequestQuitGame()
 	if (IsLocalController())
 	{
 		UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
+	}
+}
+
+const FSurrenderVoteState& AShooterPlayerController::GetSurrenderVoteState() const
+{
+	return SurrenderVoteState;
+}
+
+void AShooterPlayerController::RequestStartSurrenderVote()
+{
+	if (IsLocalController())
+	{
+		ServerRequestStartSurrenderVote();
+	}
+}
+
+void AShooterPlayerController::SubmitSurrenderVote(const bool bApprove)
+{
+	if (IsLocalController() && SurrenderVoteState.IsActive())
+	{
+		ServerSubmitSurrenderVote(SurrenderVoteState.VoteId, bApprove);
+	}
+}
+
+void AShooterPlayerController::ServerRequestStartSurrenderVote_Implementation()
+{
+	ABaseTeamGameMode* TeamGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ABaseTeamGameMode>()
+		: nullptr;
+	const ESurrenderVoteStartResult Result = IsValid(TeamGameMode)
+		? TeamGameMode->RequestStartSurrenderVote(this)
+		: ESurrenderVoteStartResult::NotAllowed;
+
+	if (IsLocalController())
+	{
+		OnSurrenderVoteStartResult.Broadcast(Result);
+	}
+	else
+	{
+		ClientNotifySurrenderVoteStartResult(Result);
+	}
+}
+
+void AShooterPlayerController::ServerSubmitSurrenderVote_Implementation(
+	const int32 VoteId,
+	const bool bApprove)
+{
+	if (ABaseTeamGameMode* TeamGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ABaseTeamGameMode>()
+		: nullptr)
+	{
+		TeamGameMode->SubmitSurrenderVote(this, VoteId, bApprove);
+	}
+}
+
+void AShooterPlayerController::ClientNotifySurrenderVoteStartResult_Implementation(
+	const ESurrenderVoteStartResult Result)
+{
+	OnSurrenderVoteStartResult.Broadcast(Result);
+}
+
+void AShooterPlayerController::OnRep_SurrenderVoteState()
+{
+	OnSurrenderVoteStateChanged.Broadcast();
+}
+
+void AShooterPlayerController::SetSurrenderVoteState(
+	const FSurrenderVoteState& NewState)
+{
+	SurrenderVoteState = NewState;
+	ForceNetUpdate();
+
+	if (IsLocalController())
+	{
+		OnRep_SurrenderVoteState();
 	}
 }
 
@@ -636,6 +770,70 @@ bool AShooterPlayerController::CanProcessGameplayInput() const
 	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
 	return !IsValid(AbilitySystem)
 		|| !AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked);
+}
+
+void AShooterPlayerController::Input_ToggleInGameMenu()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->ToggleInGameMenu();
+	}
+}
+
+void AShooterPlayerController::SetSystemMappingContextEnabled(const bool bEnabled)
+{
+	if (!IsValid(InputConfig))
+	{
+		return;
+	}
+
+	SetMappingContextEnabled(
+		InputConfig->SystemMappingContext,
+		InputConfig->SystemMappingPriority,
+		bEnabled);
+}
+
+void AShooterPlayerController::SetMappingContextEnabled(
+	UInputMappingContext* MappingContext,
+	const int32 Priority,
+	const bool bEnabled)
+{
+	if (!IsLocalController() || !IsValid(MappingContext))
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!IsValid(LocalPlayer))
+	{
+		return;
+	}
+
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+		LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
+	if (!IsValid(InputSubsystem))
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		InputSubsystem->AddMappingContext(MappingContext, Priority);
+	}
+	else
+	{
+		InputSubsystem->RemoveMappingContext(MappingContext);
+	}
+}
+
+UTeamMatchUIInitComponent* AShooterPlayerController::GetTeamMatchUIInitComponent() const
+{
+	return FindComponentByClass<UTeamMatchUIInitComponent>();
 }
 
 bool AShooterPlayerController::CanProcessMovementInput() const

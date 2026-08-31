@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/LobbyTypes.h"
 #include "GameMode/TeamTypes.h"
 #include "GameFramework/GameModeBase.h"
 #include "LobbyGameMode.generated.h"
@@ -20,13 +21,24 @@ public:
 	virtual void PostSeamlessTravel() override;
 	virtual void Logout(AController* Exiting) override;
 
+	// GameMapName remains for existing Blueprint/C++ callers.
+	// When empty, the replicated lobby selection is used.
 	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	bool RequestStartRoomGame(APlayerController* RequestingPlayer, const FString& GameMapName = TEXT(""));
 
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	bool CanStartRoomGame() const;
 
-	// 로비에서 플레이어가 직접 팀을 고를 수 있도록 추가. 정원이 찬 팀은 거부
+	UFUNCTION(BlueprintCallable, Category = "Lobby|Game Mode")
+	bool RequestLobbyMatchMode(APlayerController* RequestingPlayer, ELobbyMatchMode RequestedMatchMode);
+
+	UFUNCTION(BlueprintPure, Category = "Lobby|Game Mode")
+	ELobbyMatchMode GetSelectedMatchMode() const;
+
+	UFUNCTION(BlueprintPure, Category = "Lobby|Game Mode")
+	FString GetSelectedGameMapName() const;
+
+	// Allows players to select a team. Requests for a full team are rejected.
 	UFUNCTION(BlueprintCallable, Category = "Lobby|Team")
 	bool RequestLobbyTeam(APlayerController* RequestingPlayer, EGameTeam RequestedTeam);
 
@@ -37,9 +49,21 @@ public:
 	int32 GetMaxPlayersPerTeam() const { return MaxPlayersPerTeam; }
 
 protected:
-	// 팀당 정원
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Team", meta = (ClampMin = "1"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Match Start", meta = (ClampMin = "2", ClampMax = "8"))
+	int32 MinimumPlayersToStart = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Match Start", meta = (ClampMin = "1", ClampMax = "4"))
+	int32 MinimumPlayersPerTeam = 1;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Team", meta = (ClampMin = "1", ClampMax = "4"))
 	int32 MaxPlayersPerTeam = 4;
+
+	// Short map names are resolved below /Game/Maps. Full /Game/... paths are also supported.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Game Mode")
+	FString BombMapName = TEXT("BombMap");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Game Mode")
+	FString DominationMapName = TEXT("DominationMap");
 
 private:
 	void AssignHostPlayerIfNeeded(APlayerController* NewPlayer);
@@ -47,12 +71,20 @@ private:
 	void ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState);
 	void NotifyLobbyPlayerListChanged();
 	bool AreAllClientsReady() const;
+	bool HasMinimumPlayersToStart() const;
+	bool CanFinalizeTeamsForMatchStart() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;
+	bool IsSupportedMatchMode(ELobbyMatchMode MatchMode) const;
+	bool TryResolveMatchModeFromMapName(const FString& MapName, ELobbyMatchMode& OutMatchMode) const;
+	void GetTeamAssignmentCounts(int32& OutTeamA, int32& OutTeamB, int32& OutUnassigned) const;
+	FString GetMapNameForMatchMode(ELobbyMatchMode MatchMode) const;
+	FString GetMatchTypeForMatchMode(ELobbyMatchMode MatchMode) const;
+	bool UpdateSessionAdvertisementForMatchMode(ELobbyMatchMode MatchMode);
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	void TravelToPendingGameMap();
 
-	// 미선택 플레이어 무작위 배정 + 양 팀 인원 차이를 1명 이하로 조정
-	void BalanceTeamsForMatchStart();
+	// Only unassigned players are auto-filled. Explicit team choices are preserved.
+	bool FinalizeTeamsForMatchStart();
 
 	UFUNCTION()
 	void HandleStartRoomGameComplete(bool bWasSuccessful);

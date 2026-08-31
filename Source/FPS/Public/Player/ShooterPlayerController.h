@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/SurrenderVoteTypes.h"
 #include "GameMode/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
@@ -12,16 +13,22 @@
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class URogueHealthComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
 class UShooterInputConfig;
 class USteamVoiceComponent;
+class USurrenderVoteManager;
+class UTeamMatchUIInitComponent;
+class UInputMappingContext;
 class APlayerState;
 struct FInputActionValue;
 
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bRed면 빨간 X(헤드샷 또는 처치), 아니면 기본 X.
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnHitMarker, bool /*bRed*/);
+DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteStartResult, ESurrenderVoteStartResult);
 
 UCLASS()
 class FPS_API AShooterPlayerController : public APlayerController
@@ -30,6 +37,7 @@ class FPS_API AShooterPlayerController : public APlayerController
 
 public:
 	AShooterPlayerController();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
 	FOnHitMarker OnHitMarker;
@@ -59,6 +67,12 @@ public:
 	UFUNCTION(Exec)
 	void ToggleDynamicCrosshair();
 
+	// TEMP 디버그: 데미지 파이프라인을 거치지 않고 피격 방향 인디케이터만 강제로 발동시킨다.
+	// 콘솔(~)에서 "TestHitIndicator" 입력 - 인디케이터 UI(회전/페이드)만 따로 검증할 때 쓴다.
+	// 실제 데미지 파이프라인이 정상화되면 이 함수는 지워도 된다.
+	UFUNCTION(Exec)
+	void TestHitIndicator();
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
 
@@ -79,6 +93,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
 	void RequestQuitGame();
+
+	const FSurrenderVoteState& GetSurrenderVoteState() const;
+	void RequestStartSurrenderVote();
+	void SubmitSurrenderVote(bool bApprove);
+
+	FOnSurrenderVoteStateChanged OnSurrenderVoteStateChanged;
+	FOnSurrenderVoteStartResult OnSurrenderVoteStartResult;
 
 	UFUNCTION(Client, Reliable)
 	void ClientShowLoadingScreen(float InitialProgress);
@@ -141,6 +162,15 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
 
+	UFUNCTION(Server, Reliable)
+	void ServerRequestStartSurrenderVote();
+
+	UFUNCTION(Server, Reliable)
+	void ServerSubmitSurrenderVote(int32 VoteId, bool bApprove);
+
+	UFUNCTION(Client, Reliable)
+	void ClientNotifySurrenderVoteStartResult(ESurrenderVoteStartResult Result);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
@@ -148,8 +178,18 @@ protected:
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
+	void SetMappingContextEnabled(
+		UInputMappingContext* MappingContext,
+		int32 Priority,
+		bool bEnabled);
 
 private:
+	friend class USurrenderVoteManager;
+
+	UFUNCTION()
+	void OnRep_SurrenderVoteState();
+
+	void SetSurrenderVoteState(const FSurrenderVoteState& NewState);
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();
@@ -164,14 +204,20 @@ private:
 	void Input_SprintReleased();
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
+	void Input_ToggleInGameMenu();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	void SetSystemMappingContextEnabled(bool bEnabled);
+	UTeamMatchUIInitComponent* GetTeamMatchUIInitComponent() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Network", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNetworkTimeSyncComponent> NetworkTimeSyncComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	UPROPERTY(ReplicatedUsing = OnRep_SurrenderVoteState)
+	FSurrenderVoteState SurrenderVoteState;
 
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;

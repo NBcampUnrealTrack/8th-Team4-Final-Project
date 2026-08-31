@@ -43,8 +43,16 @@ public:
 	// 일반 클라이언트에서는 호출할 수 없다.
 	bool ReturnRoomToLobby();
 
+	// Keeps room search metadata aligned with the host's lobby selection.
+	// Selection authority itself is validated by LobbyGameMode.
+	UFUNCTION(BlueprintCallable)
+	bool UpdateRoomGameMode(const FString& GameMapName, const FString& GameMatchType);
+
 	UFUNCTION(BlueprintCallable)
 	void StartRoomGame(const FString& GameMapName = TEXT(""));
+
+	// LobbyGameMode uses this path to commit map and match type together.
+	void StartRoomGameWithSettings(const FString& GameMapName, const FString& GameMatchType);
 
 	UPROPERTY(BlueprintAssignable)
 	FOnCreateRoomComplete OnCreateRoomComplete;
@@ -70,6 +78,7 @@ private:
 	FString BuildDefaultRoomName() const;
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
+	void ApplyCachedRoomSettings(FOnlineSessionSettings& SessionSettings, bool bIsJoinable) const;
 	bool SetRoomJoinable(bool bIsJoinable);
 	void CompleteLeaveRoom(bool bWasSuccessful);
 	void ReturnToFrontendNow();

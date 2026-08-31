@@ -62,6 +62,12 @@ public:
 	EPlayerStartReservationResult ReservePlayerStarts(const TArray<FPlayerStartGroup>& StartGroups);
 	void ClearPlayerStartReservations();
 	AActor* SelectAvailablePlayerStart(const TArray<AActor*>& MatchingStarts, const TCHAR* StartDescription);
+	// 동적 스폰 모드도 PlayerStart와 같은 SpawnClearanceRadius 정책을 사용한다.
+	bool SelectAvailableSpawnTransform(
+		const TArray<FTransform>& CandidateTransforms,
+		int32 PreferredStartIndex,
+		FTransform& OutSpawnTransform,
+		int32& OutSelectedIndex) const;
 
 	void RemovePlayerPawn(APlayerController* PlayerController) const;
 	void ResetAllPlayerPawns();
@@ -87,6 +93,7 @@ private:
 		TArray<AActor*>& InOutSelectedStarts) const;
 	bool IsCompatibleWithSelectedStarts(const AActor* Candidate, const TArray<AActor*>& SelectedStarts) const;
 	bool IsPlayerStartClear(const AActor* PlayerStart) const;
+	bool IsSpawnLocationClear(const FVector& SpawnLocation) const;
 	ABaseTeamGameMode* GetOwnerGameMode() const;
 
 	TWeakObjectPtr<ABaseTeamGameMode> OwnerGameMode;
