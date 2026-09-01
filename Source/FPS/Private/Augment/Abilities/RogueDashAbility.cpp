@@ -15,7 +15,7 @@ URogueDashAbility::URogueDashAbility()
 
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	CooldownTag = RogueTags::Cooldown_Augment_Dash;
+	CooldownTag = RogueTags::Cooldown_Augment_Slot1;
 	BaseCooldown = 10.f;
 
 	// 액티브 스킬 시전 시 Event.Skill.Used 를 발신

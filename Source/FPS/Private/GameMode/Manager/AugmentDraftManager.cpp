@@ -76,6 +76,7 @@ void UAugmentDraftManager::Shutdown()
 	OwnerGameMode.Reset();
 	bDraftEnabled = false;
 	OnDependenciesReady.Clear();
+	OnPlayerDraftQueueDrained.Clear();
 }
 
 bool UAugmentDraftManager::HasRequiredDependencies() const
@@ -188,6 +189,7 @@ bool UAugmentDraftManager::ServeNextReward(AShooterPlayerState* PlayerState)
 		const FAugmentPendingReward* Pending = Inventory->PeekPendingReward();
 		if (!Pending)
 		{
+			OnPlayerDraftQueueDrained.Broadcast(PlayerState);
 			return false;
 		}
 

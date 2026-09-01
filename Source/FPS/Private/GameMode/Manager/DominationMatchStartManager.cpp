@@ -1,4 +1,4 @@
-#include "GameMode/Manager/DominationMatchStartManager.h"
+﻿#include "GameMode/Manager/DominationMatchStartManager.h"
 
 #include "Engine/World.h"
 #include "GameMode/DominationGameMode.h"
@@ -307,6 +307,14 @@ bool UDominationMatchStartManager::SpawnInitialParticipants()
 		{
 			return false;
 		}
+
+		// 초기 참가자는 입장 시 WaitingForMatchStart 상태다.
+		// 실제 Pawn/로드아웃 준비가 끝난 이 시점에만 Active로 전환해야
+		// ShooterPlayerController가 Primary 입력을 관전자 전환 입력으로 소비하지 않는다.
+		PlayerController->ChangeState(NAME_Playing);
+		PlayerController->ClientGotoState(NAME_Playing);
+		PlayerController->ClientExitSpectatorMode();
+		PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 	}
 
 	return true;

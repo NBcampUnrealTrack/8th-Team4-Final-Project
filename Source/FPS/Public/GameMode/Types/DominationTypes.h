@@ -197,4 +197,21 @@ struct FPS_API FDominationObjectiveFlowState
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective")
 	float PhaseEndServerTime = 0.0f;
+
+	// 현재 Repositioning이 시작될 때 정해진 총 전환 시간이다.
+	// UI는 남은 시간을 매초 계산하지 않고 이 규칙 값을 안내 문구에 사용할 수 있다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective", meta = (Units = "s"))
+	float TransitionDuration = 0.0f;
+
+	// 가장 최근에 완료된 점령의 도메인 정보다.
+	// 일시적인 UI RPC 대신 GameState에 남겨 클라이언트가 복제 상태만으로 피드백을 구성한다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective")
+	EDominationPointId LastCapturedPointId = EDominationPointId::None;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective")
+	EGameTeam LastCapturingTeam = EGameTeam::None;
+
+	// 같은 거점/같은 팀이 연속으로 점령하더라도 새 사건임을 식별한다.
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective")
+	int32 CaptureSerial = 0;
 };
