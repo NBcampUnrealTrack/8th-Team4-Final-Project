@@ -109,6 +109,14 @@ bool UDominationCaptureProgressWidget::IsCaptureContested() const
 	return GetCaptureState().bContested;
 }
 
+EDominationCaptureRelation UDominationCaptureProgressWidget::GetCapturingRelation() const
+{
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const EGameTeam LocalTeam = IsValid(LocalPlayerState) ? LocalPlayerState->GetTeam() : EGameTeam::None;
+
+	return DominationRules::GetCaptureRelation(GetCapturingTeam(), LocalTeam);
+}
+
 bool UDominationCaptureProgressWidget::ShouldShowCaptureProgress() const
 {
 	const ADominationGameState* DominationGameState = BoundGameState.Get();
