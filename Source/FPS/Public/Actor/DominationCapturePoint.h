@@ -6,7 +6,7 @@
 #include "DominationCapturePoint.generated.h"
 
 class USceneComponent;
-class USphereComponent;
+class UBoxComponent;
 class UPrimitiveComponent;
 class APawn;
 
@@ -30,7 +30,7 @@ public:
 	EDominationPointId GetPointId() const;
 
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
-	float GetCaptureRadius() const;
+	FVector GetCaptureBoxExtent() const;
 
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
 	bool ContainsWorldLocation(const FVector& WorldLocation) const;
@@ -62,13 +62,14 @@ private:
 	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<USphereComponent> CaptureZone;
+	TObjectPtr<UBoxComponent> CaptureZone;
 
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true"))
 	EDominationPointId PointId = EDominationPointId::None;
 
+	// 거점 점령 구역의 절반 크기(X/Y/Z). 박스 컴포넌트의 Box Extent와 동일한 의미다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", Units = "cm"))
-	float CaptureRadius = 1000.0f;
+	FVector CaptureBoxExtent = FVector(1000.0f, 1000.0f, 300.0f);
 
 	bool bObjectiveActive = false;
 };
