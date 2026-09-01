@@ -19,13 +19,9 @@ URogueSpawnActorAbility::URogueSpawnActorAbility()
 }
 
 void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
-                                        const FRogueEffectPayload& Payload,
-                                        const FGameplayAbilitySpecHandle Handle,
-                                        const FGameplayAbilityActorInfo* ActorInfo,
-                                        const FGameplayAbilityActivationInfo ActivationInfo,
-                                        const FGameplayEventData* TriggerEventData)
+                                      const FRogueEffectPayload& Payload)
 {
-	AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
 	UWorld* World = IsValid(Avatar) ? Avatar->GetWorld() : nullptr;
 	if (!World)
 	{
@@ -60,5 +56,6 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 	}
 
 	Spawned->InitializePayload(Payload);
+	Spawned->SetUsedInputTag(UsedInputTag);
 	Spawned->FinishSpawning(SpawnTransform);
 }

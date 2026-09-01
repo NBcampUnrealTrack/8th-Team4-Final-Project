@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Abilities/GA_SwitchWeapon.h"
 
@@ -7,6 +7,12 @@
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
+
+UGA_SwitchWeapon::UGA_SwitchWeapon()
+{
+	ActivationBlockedTags.RemoveTag(RogueTags::State_Combat_UtilityHeld);
+	CancelAbilitiesWithTag.AddTag(RogueTags::Augment_Ability);
+}
 
 bool UGA_SwitchWeapon::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
                                            const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,

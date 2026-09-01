@@ -28,7 +28,14 @@ void URogueEffectApplier::ResolveTargets(const FRogueEffectPayload& Payload, TAr
 
 	if (Payload.Query.bIncludeSelf && IsValid(Instigator))
 	{
-		OutTargets.Add(Instigator);
+		const bool bInRange = Payload.Scope != ERogueTargetScope::Radius
+			|| FVector::DistSquared(Instigator->GetActorLocation(), Payload.Origin)
+			   <= FMath::Square(Payload.Radius);
+
+		if (bInRange)
+		{
+			OutTargets.Add(Instigator);
+		}
 	}
 
 	FRogueTargetQuery Query = Payload.Query;
