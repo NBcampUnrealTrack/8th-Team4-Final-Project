@@ -44,7 +44,7 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 
 void ULoadingScreenSubsystem::SetLoadingProgress(const float Progress)
 {
-	CurrentProgress = FMath::Clamp(Progress, 0.0f, 1.0f);
+	CurrentProgress = FMath::Max(CurrentProgress, FMath::Clamp(Progress, 0.0f, 1.0f));
 
 	if (ActiveLoadingWidget)
 	{

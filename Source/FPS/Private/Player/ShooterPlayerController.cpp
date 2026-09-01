@@ -134,7 +134,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
-		LoadingScreenSubsystem->SetLoadingProgress(0.5f);
+		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, 0.5f);
 	}
 
 	StartMatchLoadReadyCheck();
@@ -397,6 +397,12 @@ void AShooterPlayerController::SetLoadingProgress(const float Progress)
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
+		if (Progress < 1.0f && !LoadingScreenSubsystem->IsLoadingScreenVisible())
+		{
+			LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, Progress);
+			return;
+		}
+
 		LoadingScreenSubsystem->SetLoadingProgress(Progress);
 	}
 }
