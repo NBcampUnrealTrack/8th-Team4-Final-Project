@@ -23,9 +23,5 @@ public:
 
 protected:
 	virtual void Deliver(const FAugmentGrantedAbility& Entry,
-	                     const FRogueEffectPayload& Payload,
-	                     FGameplayAbilitySpecHandle Handle,
-	                     const FGameplayAbilityActorInfo* ActorInfo,
-	                     const FGameplayAbilityActivationInfo ActivationInfo,
-	                     const FGameplayEventData* TriggerEventData) override;
+	                     const FRogueEffectPayload& Payload) override;
 };

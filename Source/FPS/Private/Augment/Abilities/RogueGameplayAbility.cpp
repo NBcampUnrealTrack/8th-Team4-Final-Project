@@ -6,6 +6,9 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "Abilities/Tasks/AbilityTask_WaitInputPress.h"
 #include "Augment/AugmentDefinition.h"
 #include "Combat/CombatComponent.h"
 #include "Engine/World.h"
@@ -35,6 +38,13 @@ namespace
 
 		return Loaded;
 	}
+}
+
+URogueGameplayAbility::URogueGameplayAbility()
+{
+	FGameplayTagContainer AssetTags;
+	AssetTags.AddTag(RogueTags::Augment_Ability);
+	SetAssetTags(AssetTags);
 }
 
 UClass* URogueGameplayAbility::GetCooldownEffectClass()
@@ -96,7 +106,12 @@ bool URogueGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle 
 	}
 
 	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (ASC && ASC->HasMatchingGameplayTag(RogueTags::State_Combat_ActionBlocked))
+	if (!ASC)
+	{
+		return true;
+	}
+
+	if (ASC->HasMatchingGameplayTag(RogueTags::State_Combat_ActionBlocked))
 	{
 		if (OptionalRelevantTags)
 		{
@@ -119,7 +134,7 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 
 	if (!Avatar || !SourceASC)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndSelf(true);
 		return;
 	}
 
@@ -130,82 +145,252 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 			TEXT("[AugmentAbility] %s 를 부여한 증강 정의에서 자기 GrantedAbilities 항목을 찾지 못했습니다. ")
 			TEXT("PDA 의 AbilityClass 가 이 클래스를 가리키는지 확인하세요"), *GetName());
 
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndSelf(true);
 		return;
 	}
 
 	// 무기 조건이 안 맞으면 발동 X
-	if (!Entry->RequiredWeaponTags.IsEmpty())
+	if (!Entry->RequiredWeaponTags.IsEmpty()
+		&& !ResolveEventWeaponTag(Avatar, TriggerEventData).MatchesAny(Entry->RequiredWeaponTags))
 	{
-		const FGameplayTag EventWeaponTag = ResolveEventWeaponTag(Avatar, TriggerEventData);
-
-		if (!EventWeaponTag.MatchesAny(Entry->RequiredWeaponTags))
-		{
-			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-			return;
-		}
+		EndSelf(false);
+		return;
 	}
 
 	if (!PassesDistanceCondition(SourceASC, TriggerEventData, *Entry))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		EndSelf(false);
 		return;
 	}
 
 	// 액티브 증강은 대상이 아직 결정되지 않음
-	AActor* EventTarget = TriggerEventData
-		? ResolveEventTarget(Avatar, TriggerEventData, *Entry)
-		: nullptr;
-
+	AActor* EventTarget = nullptr;
 	if (TriggerEventData)
 	{
+		EventTarget = ResolveEventTarget(Avatar, TriggerEventData, *Entry);
+
 		const bool bNeedsEventTarget = Entry->bApplyToEventTarget
 			|| (Entry->TargetScope == ERogueTargetScope::Radius && Entry->bAreaCentersOnEventTarget);
 
 		if (!EventTarget && bNeedsEventTarget)
 		{
-			EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+			EndSelf(false);
 			return;
 		}
 	}
 
-	FRogueEffectPayload Payload;
-	if (!BuildEffectPayload(*Entry, Avatar, EventTarget, Handle, ActorInfo, Payload))
+	ActiveEntry = Entry;
+
+	// 손에 드는 증강은 사용 입력을 기다림
+	if (bHoldToUse)
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		BeginHold();
+		return;
+	}
+
+	UsedInputTag = RogueTags::Event_Utility_Input_Primary;
+
+	ExecuteAbility(EventTarget);
+}
+
+void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
+{
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+
+	if (!Avatar || !ActiveEntry)
+	{
+		EndSelf(true);
+		return;
+	}
+
+	if (!BuildEffectPayload(*ActiveEntry, Avatar, EventTarget,
+			CurrentSpecHandle, CurrentActorInfo, ActivePayload))
+	{
+		EndSelf(true);
 		return;
 	}
 
 	// 조건을 다 통과한 뒤에만 쿨타임/코스트를 소모
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	if (!CommitAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		EndSelf(true);
 		return;
 	}
 
-	// 발동 시점에만 실행되는 CUE
-	if (ActivationCueTag.IsValid())
-	{
-		FGameplayCueParameters CueParams;
-		CueParams.Instigator    = Avatar;
-		CueParams.EffectCauser  = Avatar;
-		CueParams.SourceObject  = this;
+	ExecuteCue(ActivationCueTag);
 
-		K2_ExecuteGameplayCueWithParams(ActivationCueTag, CueParams);
+	// 시전 지연이 있으면 대기 후 발동, 없으면 바로 발동
+	if (CastDelaySeconds > 0.f)
+	{
+		if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, CastDelaySeconds))
+		{
+			if (TelegraphCueTag.IsValid())
+			{
+				K2_AddGameplayCueWithParams(TelegraphCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
+			}
+
+			Task->OnFinish.AddDynamic(this, &ThisClass::FinishDeliver);
+			Task->ReadyForActivation();
+			return;
+		}
+	}
+
+	FinishDeliver();
+}
+
+void URogueGameplayAbility::FinishDeliver()
+{
+	if (!ActiveEntry)
+	{
+		EndSelf(true);
+		return;
 	}
 
 	// 대상 탐색과 효과 적용은 서버에서만
-	if (!HasAuthority(&ActivationInfo))
+	if (HasAuthority(&CurrentActivationInfo))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		PayHealthCost(CurrentActorInfo, ActivePayload.Level);
+
+		Deliver(*ActiveEntry, ActivePayload);
+	}
+
+	// 사용 모션 시간이 있으면 대기 후 회복
+	if (bHoldToUse && RecoverySeconds > 0.f)
+	{
+		if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, RecoverySeconds))
+		{
+			Task->OnFinish.AddDynamic(this, &ThisClass::HandleRecoveryFinished);
+			Task->ReadyForActivation();
+			return;
+		}
+	}
+
+	EndSelf(false);
+}
+
+void URogueGameplayAbility::HandleRecoveryFinished()
+{
+	EndSelf(false);
+}
+
+FGameplayCueParameters URogueGameplayAbility::MakeCueParams() const
+{
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+
+	FGameplayCueParameters CueParams;
+	CueParams.Instigator   = Avatar;
+	CueParams.EffectCauser = Avatar;
+	CueParams.SourceObject = this;
+
+	CueParams.Location = ActivePayload.Origin;
+	CueParams.Normal   = ActivePayload.Direction;
+
+	return CueParams;
+}
+
+void URogueGameplayAbility::ExecuteCue(const FGameplayTag& CueTag)
+{
+	if (!CueTag.IsValid())
+	{
 		return;
 	}
 
-	PayHealthCost(ActorInfo, Payload.Level);
+	K2_ExecuteGameplayCueWithParams(CueTag, MakeCueParams());
+}
 
-	Deliver(*Entry, Payload, Handle, ActorInfo, ActivationInfo, TriggerEventData);
+void URogueGameplayAbility::BeginHold()
+{
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
-	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	UAbilityTask_WaitInputPress* WaitCancel = UAbilityTask_WaitInputPress::WaitInputPress(this);
+	if (!ASC || !WaitCancel)
+	{
+		EndSelf(true);
+		return;
+	}
+
+	// 기존의 증강 어빌리티 취소 후 장착
+	static const FGameplayTagContainer AugmentTags(RogueTags::Augment_Ability);
+	ASC->CancelAbilities(&AugmentTags, nullptr, this);
+	ASC->AddLooseGameplayTag(RogueTags::State_Combat_UtilityHeld, 1,
+		EGameplayTagReplicationState::TagOnly);
+
+	bHoldTagApplied = true;
+
+	WaitCancel->OnPress.AddDynamic(this, &ThisClass::HandleHoldCancelPress);
+	WaitCancel->ReadyForActivation();
+
+	ExecuteCue(EquipCueTag);
+
+	// 장착 모션이 있으면 대기
+	if (EquipSeconds > 0.f)
+	{
+		if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, EquipSeconds))
+		{
+			Task->OnFinish.AddDynamic(this, &ThisClass::HandleEquipFinished);
+			Task->ReadyForActivation();
+			return;
+		}
+	}
+
+	HandleEquipFinished();
+}
+
+void URogueGameplayAbility::HandleEquipFinished()
+{
+	UAbilityTask_WaitGameplayEvent* WaitUse = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this, RogueTags::Event_Utility_Input,
+		/*OptionalExternalTarget*/ nullptr,
+		/*OnlyTriggerOnce*/ true,
+		/*OnlyMatchExact*/ false);
+
+	if (!WaitUse)
+	{
+		EndSelf(true);
+		return;
+	}
+
+	WaitUse->EventReceived.AddDynamic(this, &ThisClass::HandleUseInput);
+	WaitUse->ReadyForActivation();
+}
+
+void URogueGameplayAbility::HandleUseInput(FGameplayEventData EventData)
+{
+	UsedInputTag = EventData.EventTag;
+
+	ExecuteAbility(nullptr);
+}
+
+void URogueGameplayAbility::HandleHoldCancelPress(float TimeWaited)
+{
+	CancelAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true);
+}
+
+void URogueGameplayAbility::EndSelf(bool bCancelled)
+{
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, bCancelled);
+}
+
+void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
+                                       const FGameplayAbilityActorInfo* ActorInfo,
+                                       const FGameplayAbilityActivationInfo ActivationInfo,
+                                       bool bReplicateEndAbility, bool bWasCancelled)
+{
+	if (bHoldTagApplied)
+	{
+		bHoldTagApplied = false;
+
+		if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+		{
+			ASC->RemoveLooseGameplayTag(RogueTags::State_Combat_UtilityHeld, 1,
+				EGameplayTagReplicationState::TagOnly);
+		}
+	}
+
+	ActiveEntry = nullptr;
+	ActivePayload = FRogueEffectPayload();
+
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
 FGameplayTag URogueGameplayAbility::ResolveEventWeaponTag(
@@ -366,8 +551,9 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 
 	OutPayload.FlatDamage = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Damage);
 
-	// GE, 대미지가 둘 다 없으면 효과가 없는 것
-	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f)
+	// GE, 대미지가 둘 다 없으면 효과가 없는 것. 액터를 남기는 계열은 액터가 목적이다
+	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f
+		&& Entry.SpawnActorClass.IsNull())
 	{
 		UE_LOG(LogAugmentAbility, Error,
 			TEXT("[AugmentAbility] %s 를 부여한 계열에 EffectsToApply 도 %s 도 없습니다"),

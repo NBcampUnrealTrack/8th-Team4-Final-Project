@@ -18,11 +18,7 @@ public:
 
 protected:
 	virtual void Deliver(const FAugmentGrantedAbility& Entry,
-	                     const FRogueEffectPayload& Payload,
-	                     FGameplayAbilitySpecHandle Handle,
-	                     const FGameplayAbilityActorInfo* ActorInfo,
-	                     const FGameplayAbilityActivationInfo ActivationInfo,
-	                     const FGameplayEventData* TriggerEventData) override;
+	                     const FRogueEffectPayload& Payload) override;
 
 	// 시전자의 전방으로 SpawnForwardOffset 만큼 떨어진 위치에 스폰
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn", meta = (ClampMin = "0.0"))

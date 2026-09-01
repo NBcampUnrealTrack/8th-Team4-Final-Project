@@ -44,7 +44,7 @@ enum class EDominationObjectivePhase : uint8
 namespace DominationRules
 {
 	inline constexpr int32 PointCount = 5;
-	inline constexpr int32 SpawnBoundaryCount = PointCount + 1;
+	inline constexpr int32 SpawnBoundaryCount = PointCount + 2;
 	inline constexpr int32 RoundsToWin = 3;
 	inline constexpr int32 MaxRounds = RoundsToWin * 2 - 1;
 
@@ -111,7 +111,7 @@ namespace DominationRules
 		}
 
 		// Team A uses the A-side boundary; Team B uses the E-side boundary.
-		return ActivePointIndex + (AttackDirection < 0 ? 1 : 0);
+		return ActivePointIndex + (AttackDirection < 0 ? 2 : 0);
 	}
 }
 
