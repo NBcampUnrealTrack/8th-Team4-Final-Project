@@ -224,6 +224,11 @@ void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 	{
 		if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, CastDelaySeconds))
 		{
+			if (TelegraphCueTag.IsValid())
+			{
+				K2_AddGameplayCueWithParams(TelegraphCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
+			}
+
 			Task->OnFinish.AddDynamic(this, &ThisClass::FinishDeliver);
 			Task->ReadyForActivation();
 			return;
@@ -268,13 +273,8 @@ void URogueGameplayAbility::HandleRecoveryFinished()
 	EndSelf(false);
 }
 
-void URogueGameplayAbility::ExecuteCue(const FGameplayTag& CueTag)
+FGameplayCueParameters URogueGameplayAbility::MakeCueParams() const
 {
-	if (!CueTag.IsValid())
-	{
-		return;
-	}
-
 	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
 
 	FGameplayCueParameters CueParams;
@@ -282,7 +282,20 @@ void URogueGameplayAbility::ExecuteCue(const FGameplayTag& CueTag)
 	CueParams.EffectCauser = Avatar;
 	CueParams.SourceObject = this;
 
-	K2_ExecuteGameplayCueWithParams(CueTag, CueParams);
+	CueParams.Location = ActivePayload.Origin;
+	CueParams.Normal   = ActivePayload.Direction;
+
+	return CueParams;
+}
+
+void URogueGameplayAbility::ExecuteCue(const FGameplayTag& CueTag)
+{
+	if (!CueTag.IsValid())
+	{
+		return;
+	}
+
+	K2_ExecuteGameplayCueWithParams(CueTag, MakeCueParams());
 }
 
 void URogueGameplayAbility::BeginHold()

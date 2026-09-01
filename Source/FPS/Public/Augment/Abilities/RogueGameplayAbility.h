@@ -131,6 +131,11 @@ protected:
 		meta = (ClampMin = "0.0"))
 	float CastDelaySeconds = 0.f;
 
+	// 시전 지연 동안 유지할 예고 GameplayCue. 어빌리티가 끝나면 자동 제거
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "CastDelaySeconds > 0", EditConditionHides, Categories = "GameplayCue"))
+	FGameplayTag TelegraphCueTag;
+
 	// 사용 후 유틸을 든 상태를 유지하는 시간, 사용 모션
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
@@ -164,6 +169,9 @@ protected:
 private:
 	// 손에 들기
 	void BeginHold();
+
+	// 시전자와 조립된 페이로드의 위치, 방향을 실은 큐 파라미터
+	FGameplayCueParameters MakeCueParams() const;
 
 	// 시전자 기준으로 큐 실행
 	void ExecuteCue(const FGameplayTag& CueTag);
