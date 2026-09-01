@@ -6,6 +6,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "UI/VoiceSystem/VoicePlayerEntryWidget.h"
 
 void UVoicePanelWidget::NativeOnInitialized()
@@ -71,9 +72,17 @@ void UVoicePanelWidget::RefreshVoicePanel()
 		return;
 	}
 
+	const ABaseTeamPlayerState* LocalTeamPlayerState = Cast<ABaseTeamPlayerState>(LocalPlayerState);
+	const EGameTeam LocalTeam = IsValid(LocalTeamPlayerState)
+		? LocalTeamPlayerState->GetTeam()
+		: EGameTeam::None;
+
 	for (APlayerState* PlayerState : GameState->PlayerArray)
 	{
-		if (!IsValid(PlayerState))
+		const ABaseTeamPlayerState* CandidateTeamPlayerState = Cast<ABaseTeamPlayerState>(PlayerState);
+		if (!IsValid(CandidateTeamPlayerState)
+			|| LocalTeam == EGameTeam::None
+			|| LocalTeam != CandidateTeamPlayerState->GetTeam())
 		{
 			continue;
 		}
