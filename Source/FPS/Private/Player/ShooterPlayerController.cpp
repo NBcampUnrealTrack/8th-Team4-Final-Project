@@ -24,6 +24,7 @@
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
+#include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
 #include "Player/ShooterSpectatorPawn.h"
@@ -97,6 +98,8 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		HideSpectatorWidget();
+
 		if (GetTeamMatchUIInitComponent())
 		{
 			SetSystemMappingContextEnabled(false);
@@ -561,6 +564,21 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRe
 	OnHitMarker.Broadcast(bRed);
 }
 
+void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
+{
+	ShowSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerState* ViewTargetPlayerState)
+{
+	RefreshSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
+{
+	HideSpectatorWidget();
+}
+
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -1000,6 +1018,51 @@ bool AShooterPlayerController::IsInSpectatorFlow() const
 	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
 	return IsValid(ShooterPlayerState)
 		&& ShooterPlayerState->GetParticipationState() != EPlayerParticipationState::Active;
+}
+
+void AShooterPlayerController::ShowSpectatorWidget(APlayerState* ViewTargetPlayerState)
+{
+	if (!IsLocalController() || !SpectatorWidgetClass)
+	{
+		return;
+	}
+
+	if (!SpectatorWidget)
+	{
+		SpectatorWidget = CreateWidget<UShooterSpectatorWidget>(this, SpectatorWidgetClass);
+		if (SpectatorWidget)
+		{
+			SpectatorWidget->AddToViewport(100);
+		}
+	}
+
+	RefreshSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::RefreshSpectatorWidget(APlayerState* ViewTargetPlayerState)
+{
+	if (!IsLocalController() || !SpectatorWidget)
+	{
+		return;
+	}
+
+	if (IsValid(ViewTargetPlayerState))
+	{
+		SpectatorWidget->SetSpectatorTarget(ViewTargetPlayerState);
+	}
+	else
+	{
+		SpectatorWidget->ClearSpectatorTarget();
+	}
+}
+
+void AShooterPlayerController::HideSpectatorWidget()
+{
+	if (SpectatorWidget)
+	{
+		SpectatorWidget->RemoveFromParent();
+		SpectatorWidget = nullptr;
+	}
 }
 
 URogueAbilitySystemComponent* AShooterPlayerController::GetRogueAbilitySystemComponent() const

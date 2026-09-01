@@ -14,6 +14,7 @@
 #include "GameMode/Manager/TeamPlayerManager.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "Session/SessionSubSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationGameMode, Log, All);
@@ -277,6 +278,10 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 	APawn* SpawnedPawn = PlayerController->GetPawn();
 	PlayerController->ChangeState(NAME_Playing);
 	PlayerController->ClientGotoState(NAME_Playing);
+	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
+	{
+		ShooterPlayerController->ClientExitSpectatorMode();
+	}
 	PlayerState->ServerRespawnReset();
 	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 	RespawnManager->BeginRespawnProtection(PlayerState);

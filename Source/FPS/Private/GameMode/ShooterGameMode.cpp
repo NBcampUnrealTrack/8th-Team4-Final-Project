@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpectatorPawn.h"
+#include "Player/ShooterPlayerController.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Player/ShooterPlayerState.h"
 
@@ -72,6 +73,11 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 	PlayerController->ChangeState(NAME_Spectating);
 	PlayerController->ClientGotoState(NAME_Spectating);
 	PlayerController->Possess(SpectatorPawn);
+
+	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
+	{
+		ShooterPlayerController->ClientEnterSpectatorMode(nullptr);
+	}
 	CycleSpectatorTarget(PlayerController);
 }
 
@@ -91,6 +97,11 @@ void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorControll
 	FViewTargetTransitionParams TransitionParams;
 	TransitionParams.BlendTime = 0.15f;
 	SpectatorController->ClientSetViewTarget(TargetPawn, TransitionParams);
+
+	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(SpectatorController))
+	{
+		ShooterPlayerController->ClientSetSpectatorTarget(TargetPawn->GetPlayerState());
+	}
 }
 
 ASpectatorPawn* AShooterGameMode::SpawnSpectatorPawnFor(

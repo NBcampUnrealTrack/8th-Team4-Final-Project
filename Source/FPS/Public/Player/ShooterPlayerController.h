@@ -17,6 +17,7 @@ class URogueHealthComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
+class UShooterSpectatorWidget;
 class UShooterInputConfig;
 class USteamVoiceComponent;
 class USurrenderVoteManager;
@@ -114,6 +115,15 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(bool bRed);
 
+	UFUNCTION(Client, Reliable)
+	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetSpectatorTarget(APlayerState* ViewTargetPlayerState);
+
+	UFUNCTION(Client, Reliable)
+	void ClientExitSpectatorMode();
+
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
 
@@ -177,6 +187,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator")
+	TSubclassOf<UShooterSpectatorWidget> SpectatorWidgetClass;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
@@ -212,6 +225,9 @@ private:
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
 	bool IsInSpectatorFlow() const;
+	void ShowSpectatorWidget(APlayerState* ViewTargetPlayerState);
+	void RefreshSpectatorWidget(APlayerState* ViewTargetPlayerState);
+	void HideSpectatorWidget();
 	void SetSystemMappingContextEnabled(bool bEnabled);
 	UTeamMatchUIInitComponent* GetTeamMatchUIInitComponent() const;
 
@@ -220,6 +236,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	UPROPERTY()
+	TObjectPtr<UShooterSpectatorWidget> SpectatorWidget;
 
 	UPROPERTY(ReplicatedUsing = OnRep_SurrenderVoteState)
 	FSurrenderVoteState SurrenderVoteState;

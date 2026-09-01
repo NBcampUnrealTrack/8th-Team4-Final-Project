@@ -9,6 +9,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Weapon/WeaponLoadoutService.h"
 
@@ -375,6 +376,10 @@ ERoundPlayerPreparationResult UTeamPlayerManager::PreparePlayersForRound()
 		GameMode->RestartPlayer(PlayerController);
 		PlayerController->ChangeState(NAME_Playing);
 		PlayerController->ClientGotoState(NAME_Playing);
+		if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
+		{
+			ShooterPlayerController->ClientExitSpectatorMode();
+		}
 
 		APawn* SpawnedPawn = PlayerController->GetPawn();
 		if (!IsValid(SpawnedPawn))
