@@ -4,10 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameMode.h"
+#include "Player/PlayerParticipationState.h"
 #include "ShooterGameMode.generated.h"
 
 class AController;
 class APlayerController;
+class ASpectatorPawn;
+class AShooterSpectatorPawn;
 class AShooterPlayerState;
 
 /**
@@ -28,5 +31,19 @@ public:
 
 	// 로컬 플레이어의 맵/UI 준비 완료를 모드별 시작 게이트로 전달한다.
 	virtual void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController);
+
+	void CycleSpectatorTarget(APlayerController* SpectatorController);
+
+protected:
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const;
+	void InitializePlayerParticipationState(APlayerController* NewPlayer) const;
+	void MovePlayerToSpectator(APlayerController* PlayerController);
+	ASpectatorPawn* SpawnSpectatorPawnFor(APlayerController* PlayerController, const FTransform& SpawnTransform);
+	FTransform ResolveSpectatorSpawnTransform(APlayerController* PlayerController) const;
+	APawn* FindNextSpectatorTarget(APlayerController* SpectatorController) const;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<AShooterSpectatorPawn> ShooterSpectatorPawnClass;
 	
 };

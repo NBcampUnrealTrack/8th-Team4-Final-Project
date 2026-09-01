@@ -2,10 +2,10 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "GameMode/BombRoundRules.h"
-#include "GameMode/InitialPlayerReadinessTracker.h"
-#include "GameMode/RoundTypes.h"
-#include "GameMode/SurrenderVoteTypes.h"
+#include "GameMode/Rules/BombRoundRules.h"
+#include "GameMode/Manager/InitialPlayerReadinessTracker.h"
+#include "GameMode/Types/RoundTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
 
 namespace
 {

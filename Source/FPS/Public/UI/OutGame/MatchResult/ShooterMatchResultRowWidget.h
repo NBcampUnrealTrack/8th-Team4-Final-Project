@@ -18,27 +18,22 @@ class FPS_API UShooterMatchResultRowWidget : public UUserWidget
 
 public:
 	// bStatsAvailable이 false 면 K/D/A Collum을 Collapsed 로 둔다
-	void SetRowData(
-		const FShooterMatchResultRow& InRow, 
-		bool bStatsAvailable, 
-		EShooterResultRowSide Side);
+	void SetRowData(const FShooterMatchResultRow& InRow, bool bStatsAvailable);
 
 protected:
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_PlayerName;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_Kills;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_Deaths;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_Assists;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Panel_Stats;
-	
-	UFUNCTION(BlueprintImplementableEvent, Category = "UI|Team")
-	void BP_ApplyTeamStyle(EShooterResultRowSide Side);
+
 };

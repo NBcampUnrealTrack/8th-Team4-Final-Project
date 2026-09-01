@@ -3,7 +3,7 @@
 #include "Actor/DominationCapturePoint.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
-#include "GameMode/DominationGameState.h"
+#include "GameMode/State/DominationGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Player/BaseTeamPlayerState.h"
 

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 
@@ -70,6 +70,7 @@ public:
 
 protected:
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	virtual bool IsSurrenderVoteAllowedNow() const override;
 	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;

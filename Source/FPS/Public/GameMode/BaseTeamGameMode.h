@@ -1,8 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/SurrenderVoteTypes.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "GameMode/ShooterGameMode.h"
 #include "BaseTeamGameMode.generated.h"
 

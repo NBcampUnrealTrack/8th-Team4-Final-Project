@@ -2,7 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 
 namespace

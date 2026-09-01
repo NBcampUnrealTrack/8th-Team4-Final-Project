@@ -1,7 +1,7 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/SurrenderVoteTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterSurrenderVoteScreen.generated.h"
 

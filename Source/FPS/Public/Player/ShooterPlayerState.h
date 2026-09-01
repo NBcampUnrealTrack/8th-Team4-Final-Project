@@ -6,6 +6,7 @@
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/PlayerParticipationState.h"
 
 #include "ShooterPlayerState.generated.h"
 
@@ -82,6 +83,11 @@ public:
 
 	void SetLoadedIntoMatch(bool bNewLoadedIntoMatch);
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Match")
+	EPlayerParticipationState GetParticipationState() const { return ParticipationState; }
+
+	void SetParticipationState(EPlayerParticipationState NewParticipationState);
+
 	UFUNCTION(BlueprintPure, Category = "Shooter|Voice")
 	bool IsVoiceTalking() const { return bIsVoiceTalking; }
 
@@ -108,6 +114,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_LoadedIntoMatch();
+
+	UFUNCTION()
+	void OnRep_ParticipationState();
 
 	UFUNCTION()
 	void OnRep_VoiceTalking();
@@ -173,6 +182,9 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_LoadedIntoMatch, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Loading", meta = (AllowPrivateAccess = "true"))
 	bool bLoadedIntoMatch = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_ParticipationState, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Match", meta = (AllowPrivateAccess = "true"))
+	EPlayerParticipationState ParticipationState = EPlayerParticipationState::WaitingForMatchStart;
 
 	UPROPERTY(ReplicatedUsing = OnRep_VoiceTalking, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Voice", meta = (AllowPrivateAccess = "true"))
 	bool bIsVoiceTalking = false;

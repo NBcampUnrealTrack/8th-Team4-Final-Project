@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonButtonBase.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "DominationClassSelectCard.generated.h"
 
 class UCommonTextBlock;

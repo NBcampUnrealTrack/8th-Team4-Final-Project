@@ -1,7 +1,7 @@
 #include "GameMode/BaseRoundGameMode.h"
 
-#include "GameMode/BaseRoundGameState.h"
-#include "GameMode/SurrenderVoteTypes.h"
+#include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
 
 bool ABaseRoundGameMode::IsSurrenderVoteAllowedNow() const
 {

@@ -1,9 +1,9 @@
 #include "Voice/VoiceChatSubsystem.h"
 
 #include "Engine/World.h"
-#include "GameMode/BaseRoundGameState.h"
-#include "GameMode/RoundTypes.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/Types/RoundTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 

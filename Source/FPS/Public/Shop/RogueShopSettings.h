@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Types/RoundTypes.h"
 
 #include "RogueShopSettings.generated.h"
 

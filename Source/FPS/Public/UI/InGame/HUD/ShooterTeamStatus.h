@@ -1,9 +1,9 @@
-﻿// ShooterTeamStatus.h
+// ShooterTeamStatus.h
 #pragma once
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "ShooterTeamStatus.generated.h"
 
 class ABaseRoundGameState;
@@ -38,6 +38,11 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shooter|UI")
 	bool bShowLocalTeam = true;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
+	FLinearColor AllyColor = FLinearColor(0.2f, 0.6f, 1.0f);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
+	FLinearColor EnemyColor = FLinearColor(1.0f, 0.3f, 0.3f);
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
 	TSubclassOf<UShooterPlayerSlot> SlotWidgetClass;

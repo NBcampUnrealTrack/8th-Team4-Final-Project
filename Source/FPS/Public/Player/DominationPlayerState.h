@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "DominationPlayerState.generated.h"
 

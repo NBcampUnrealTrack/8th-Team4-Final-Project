@@ -5,7 +5,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameMode/BaseRoundGameMode.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Input/ShooterInputConfig.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/BaseTeamPlayerState.h"

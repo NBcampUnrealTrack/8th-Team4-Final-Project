@@ -2,7 +2,7 @@
 #include "UI/InGame/HUD/ShooterPlayerSlot.h"
 
 #include "Components/Image.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Player/BaseTeamPlayerState.h"

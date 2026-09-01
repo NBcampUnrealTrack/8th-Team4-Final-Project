@@ -1,11 +1,11 @@
-﻿#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 
 #include "Economy/CreditWalletComponent.h"
 #include "Engine/World.h"
 #include "GameplayEffect.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Types/RoundTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "Shop/RogueShopSettings.h"
 #include "Shop/ShopCatalogDataAsset.h"

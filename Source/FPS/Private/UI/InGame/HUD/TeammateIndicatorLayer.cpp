@@ -1,17 +1,17 @@
-﻿// TeammateIndicatorLayer.cpp
+// TeammateIndicatorLayer.cpp
 #include "UI/InGame/HUD/TeammateIndicatorLayer.h"
 
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
-#include "GameMode/BaseRoundGameState.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/Types/RoundTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "UI/InGame/HUD/TeammateIndicatorEntry.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Actor/DataJack.h"
-#include "GameMode/BombGameState.h"
+#include "GameMode/State/BombGameState.h"
 
 void UTeammateIndicatorLayer::NativeConstruct()
 {

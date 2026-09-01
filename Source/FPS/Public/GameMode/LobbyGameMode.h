@@ -1,8 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/LobbyTypes.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/LobbyTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/GameModeBase.h"
 #include "LobbyGameMode.generated.h"
 

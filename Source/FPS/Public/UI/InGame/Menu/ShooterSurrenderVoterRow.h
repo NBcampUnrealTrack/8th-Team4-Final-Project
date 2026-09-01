@@ -1,8 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "GameMode/SurrenderVoteTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
 #include "ShooterSurrenderVoterRow.generated.h"
 
 class UCheckBox;
