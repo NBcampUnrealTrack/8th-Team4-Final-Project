@@ -33,11 +33,6 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	// 이전 펠릿별 Hit 이벤트와의 블루프린트 호환을 위해 유지한다.
-	// 현재 서버 판정 경로는 B의 UHitscanResolverSubsystem을 사용하며 이 이벤트는 더 이상 발신하지 않는다.
-	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon")
-	FOnWeaponHit OnWeaponHit;
-
 	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> Spread가 반영된 펠릿별 최종 방향 생성
 	// -> B Hitscan Resolver에 사격 1회 전달 -> 반동 적용 -> 연사 카운트 증가.
 	// bHeavyAttack: 전술 칼처럼 좌/우클릭 대미지가 다른 무기용. AltBaseDamage가 0이면 무시되고 BaseDamage를 쓴다.
