@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -12,6 +12,7 @@ class APlayerController;
 class ASpectatorPawn;
 class AShooterSpectatorPawn;
 class AShooterPlayerState;
+struct FRogueDeathContext;
 
 /**
  * 
@@ -24,10 +25,11 @@ class FPS_API AShooterGameMode : public AGameMode
 public:
 	AShooterGameMode();
 
-	// Character의 서버 사망 통지를 실제 게임 규칙으로 전달하는 공통 진입점이다.
-	virtual void NotifyPlayerEliminatedBy(
+	// Character의 서버 사망 통지를 받는 단일 진입점.
+	// 킬로그를 먼저 발신한 뒤 모드별 규칙으로 넘긴다.
+	void HandlePlayerEliminated(
 		AController* EliminatedController,
-		AShooterPlayerState* KillerPlayerState);
+		const FRogueDeathContext& DeathContext);
 
 	// 로컬 플레이어의 맵/UI 준비 완료를 모드별 시작 게이트로 전달한다.
 	virtual void NotifyPlayerReadyForGameFlow(APlayerController* PlayerController);
@@ -35,6 +37,14 @@ public:
 	void CycleSpectatorTarget(APlayerController* SpectatorController);
 
 protected:
+	// 사망 통지를 실제 게임 규칙으로 전달한다.
+	virtual void NotifyPlayerEliminatedBy(
+		AController* EliminatedController,
+		AShooterPlayerState* KillerPlayerState);
+
+	// 사망 컨텍스트에서 킬 크레딧을 가져갈 플레이어를 고른다.
+	static AShooterPlayerState* ResolveKillerPlayerState(const FRogueDeathContext& DeathContext);
+
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const;
 	void InitializePlayerParticipationState(APlayerController* NewPlayer) const;
