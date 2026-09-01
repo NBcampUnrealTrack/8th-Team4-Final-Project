@@ -17,6 +17,20 @@ void UShooterMatchResultScreen::NativeOnInitialized()
 	}
 }
 
+void UShooterMatchResultScreen::NativeConstruct()
+{
+	Super::NativeConstruct();
+	
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockInFullscreen);
+		
+		PC->SetInputMode(InputMode);
+		PC->SetShowMouseCursor(true);
+	}
+}
 
 void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot& InSnapshot)
 {
@@ -76,14 +90,10 @@ void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot&
 	{
 		Box_EnemyTeamRows->ClearChildren();
 	}
-
-	if (!RowWidgetClass)
+	
+	if (!ensure(RowWidgetClass))
 	{
-		UE_LOG(
-			LogTemp,
-			Error,
-			TEXT("RowWidgetClass가 지정되지 않아 플레이어 행을 생성할 수 없습니다.")
-		);
+		return;
 	}
 	else
 	{
