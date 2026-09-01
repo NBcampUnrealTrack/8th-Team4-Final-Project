@@ -31,6 +31,7 @@ void ARogueAugmentActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 	// 스폰 시점에 정해지고 그 뒤로 안 바뀐다
 	DOREPLIFETIME_CONDITION(ARogueAugmentActor, EffectRadius, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(ARogueAugmentActor, UsedInputTag, COND_InitialOnly);
 }
 
 void ARogueAugmentActor::BeginPlay()

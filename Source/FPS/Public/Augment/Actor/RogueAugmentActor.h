@@ -19,6 +19,9 @@ public:
 	// 스폰 직후 어빌리티가 서버에서 한 번 호출
 	void InitializePayload(const FRogueEffectPayload& InPayload);
 
+	// 어느 입력으로 소환됐는지. 의미는 각 액터가 정한다. FinishSpawning 전에 세팅
+	void SetUsedInputTag(const FGameplayTag& InUsedInputTag) { UsedInputTag = InUsedInputTag; }
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 페이로드를 자기 위치에서 적용. 신관 만료나 원격 기폭에서 호출
@@ -31,6 +34,11 @@ protected:
 	// 페이로드의 적용 반경(cm), 범위는 클라이언트에게도 보여야하므로 복제
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Rogue|Augment|Actor")
 	float EffectRadius = 0.f;
+
+	// 소환한 입력. 궤적이나 배치가 달라지므로 클라이언트도 알아야 한다
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (Categories = "Event.Utility.Input"))
+	FGameplayTag UsedInputTag;
 
 	// 자동 기폭 시작
 	void StartFuse();

@@ -16,6 +16,8 @@ class FPS_API URogueGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
+	URogueGameplayAbility();
+
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 
 	virtual void ApplyCooldown(const FGameplayAbilitySpecHandle Handle,
@@ -47,13 +49,20 @@ protected:
 	                             const FGameplayAbilityActivationInfo ActivationInfo,
 	                             const FGameplayEventData* TriggerEventData) override;
 
-	// 조립된 페이로드를 전달하는 지점. 자식 어빌리티가 구현
+	// 어떤 경로로 끝나도 장착 태그를 되돌린다 (사용·취소·사망·무기 교체)
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle,
+	                        const FGameplayAbilityActorInfo* ActorInfo,
+	                        const FGameplayAbilityActivationInfo ActivationInfo,
+	                        bool bReplicateEndAbility, bool bWasCancelled) override;
+
+	// 페이로드 조립 -> 커밋 -> 큐 -> 시전 대기 -> Deliver.
+	// bHoldToUse 면 사용 입력이 온 시점에 불린다
+	void ExecuteAbility(AActor* EventTarget);
+
+	// 조립된 페이로드를 전달하는 지점. 자식 어빌리티가 구현.
+	// 시전자 정보는 CurrentActorInfo 로 얻는다
 	virtual void Deliver(const FAugmentGrantedAbility& Entry,
-	                     const FRogueEffectPayload& Payload,
-	                     FGameplayAbilitySpecHandle Handle,
-	                     const FGameplayAbilityActorInfo* ActorInfo,
-	                     const FGameplayAbilityActivationInfo ActivationInfo,
-	                     const FGameplayEventData* TriggerEventData) {}
+	                     const FRogueEffectPayload& Payload) {}
 
 	// 이 이벤트를 일으킨 무기. 대미지 이벤트는 컨텍스트의 무기 태그, 그 외에는 현재 장착 무기 태그
 	FGameplayTag ResolveEventWeaponTag(AActor* Avatar, const FGameplayEventData* TriggerEventData) const;
@@ -103,6 +112,35 @@ protected:
 		meta = (Categories = "GameplayCue"))
 	FGameplayTag ActivationCueTag;
 
+	// 켜면 입력 즉시 발동하지 않고 손에 든다. 좌/우클릭으로 사용, 같은 키로 취소
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
+	bool bHoldToUse = false;
+
+	// 손에 들고부터 사용 입력을 받기까지의 시간, 장착 모션이 있는 경우
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
+	float EquipSeconds = 0.f;
+
+	// 손에 든 순간 실행할 GameplayCue
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "bHoldToUse", EditConditionHides, Categories = "GameplayCue"))
+	FGameplayTag EquipCueTag;
+
+	// 시전 확정부터 실제 발동까지의 시간
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (ClampMin = "0.0"))
+	float CastDelaySeconds = 0.f;
+
+	// 사용 후 유틸을 든 상태를 유지하는 시간, 사용 모션
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
+	float RecoverySeconds = 0.35f;
+
+	// 어느 입력으로 사용했는지. 홀드가 아니면 Primary
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (Categories = "Event.Utility.Input"))
+	FGameplayTag UsedInputTag;
+
 	// 어빌리티 레벨에 해당하는 최대 충전 수
 	int32 GetMaxCharges(int32 Level) const;
 
@@ -124,5 +162,38 @@ protected:
 	FScalableFloat MaxCharges = FScalableFloat(1.f);
 
 private:
+	// 손에 들기
+	void BeginHold();
+
+	// 시전자 기준으로 큐 실행
+	void ExecuteCue(const FGameplayTag& CueTag);
+
+	void EndSelf(bool bCancelled);
+
+	UFUNCTION()
+	void FinishDeliver();
+
+	UFUNCTION()
+	void HandleRecoveryFinished();
+
+	// 같은 키 재입력 -> 취소
+	UFUNCTION()
+	void HandleHoldCancelPress(float TimeWaited);
+
+	// 좌/우클릭 -> 사용
+	UFUNCTION()
+	void HandleUseInput(FGameplayEventData EventData);
+
+	// 장착 대기가 끝나면 사용 입력을 받기 시작
+	UFUNCTION()
+	void HandleEquipFinished();
+
+	// 내가 얹은 UtilityHeld 를 아직 안 걷었는지
+	bool bHoldTagApplied = false;
+
+	// 발동 중인 계열 항목과 조립된 페이로드
+	const FAugmentGrantedAbility* ActiveEntry = nullptr;
+	FRogueEffectPayload ActivePayload;
+
 	mutable FGameplayTagContainer CooldownTagContainer;
 };

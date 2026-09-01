@@ -47,6 +47,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable", meta = (ClampMin = "0.0"))
 	float InheritVelocityScale = 1.f;
 
+	// 보조 입력(우클릭)으로 던졌을 때. 1.0 / 0 이면 주 입력과 같아진다
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable", meta = (ClampMin = "0.0"))
+	float UnderhandSpeedScale = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Throwable")
+	float UnderhandPitchOffset = 25.f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rogue|Throwable")
 	TObjectPtr<USphereComponent> Collision;
 

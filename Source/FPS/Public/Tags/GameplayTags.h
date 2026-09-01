@@ -74,6 +74,10 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Invulnerable);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_ActionBlocked);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_SystemOverload);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_UtilityHeld);
+
+	// 증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Ability);
 
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
@@ -102,6 +106,11 @@ namespace RogueTags
 
 	// 스킬 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Skill_Used);
+
+	// 유틸리티 장착 중 사용 입력. 홀드 어빌리티 전용이므로 트리거 증강에 쓰지 말 것
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input_Primary);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input_Secondary);
 
 	// 무기 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Fired);

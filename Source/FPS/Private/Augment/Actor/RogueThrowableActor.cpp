@@ -7,6 +7,7 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/RotatingMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Tags/GameplayTags.h"
 
 ARogueThrowableActor::ARogueThrowableActor()
 {
@@ -44,6 +45,14 @@ bool ARogueThrowableActor::ShouldStartFuseOnBeginPlay() const
 
 void ARogueThrowableActor::BeginPlay()
 {
+	// 우클릭은 언더핸드로 던지기
+	if (UsedInputTag == RogueTags::Event_Utility_Input_Secondary)
+	{
+		const FRotator Lobbed = GetActorRotation() + FRotator(UnderhandPitchOffset, 0.f, 0.f);
+
+		Movement->Velocity = Lobbed.Vector() * (Movement->InitialSpeed * UnderhandSpeedScale);
+	}
+
 	if (AActor* Thrower = GetInstigator())
 	{
 		Collision->IgnoreActorWhenMoving(Thrower, true);

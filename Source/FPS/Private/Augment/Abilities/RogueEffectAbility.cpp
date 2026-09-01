@@ -20,11 +20,7 @@ URogueEffectAbility::URogueEffectAbility()
 }
 
 void URogueEffectAbility::Deliver(const FAugmentGrantedAbility& Entry,
-                                  const FRogueEffectPayload& Payload,
-                                  const FGameplayAbilitySpecHandle Handle,
-                                  const FGameplayAbilityActorInfo* ActorInfo,
-                                  const FGameplayAbilityActivationInfo ActivationInfo,
-                                  const FGameplayEventData* TriggerEventData)
+                                  const FRogueEffectPayload& Payload)
 {
 	URogueEffectApplier::Apply(Payload);
 }
