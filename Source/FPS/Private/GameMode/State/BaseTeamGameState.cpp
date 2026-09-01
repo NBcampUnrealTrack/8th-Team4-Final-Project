@@ -86,6 +86,21 @@ void ABaseTeamGameState::ResetTeamScores()
 	ForceNetUpdate();
 }
 
+void ABaseTeamGameState::BroadcastPlayerEliminated(const FShooterEliminationEvent& EliminationEvent)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	Multicast_PlayerEliminated(EliminationEvent);
+}
+
+void ABaseTeamGameState::Multicast_PlayerEliminated_Implementation(const FShooterEliminationEvent& EliminationEvent)
+{
+	OnPlayerEliminated.Broadcast(EliminationEvent);
+}
+
 void ABaseTeamGameState::OnRep_TeamAScore()
 {
 	OnTeamScoreChanged.Broadcast(EGameTeam::TeamA, TeamAScore);

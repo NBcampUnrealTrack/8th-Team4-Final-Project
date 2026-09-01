@@ -39,6 +39,10 @@ public:
 	// InAirSpreadPenaltyDegrees만큼 탄퍼짐이 강제로 붙는다 - 조준해도 공중에서는 정확도가 떨어져야
 	// 하기 때문(0 * 배율은 항상 0이라 곱셈만으로는 표현할 수 없어 덧셈 페널티로 분리했다).
 	void SetIsAirborne(bool bNewIsAirborne);
+	// 정지(또는 브레이킹 성공)로 취급되는 이동 상태인지. ADS 탄퍼짐이 0으로 고정되는 조건이
+	// "ADS 중"에서 "ADS 중 + 정지(브레이킹 성공)"로 바뀌었다 - CombatComponent::
+	// UpdateMovementSpreadMultiplier가 매 틱 갱신해서 넘겨준다.
+	void SetIsStationary(bool bNewIsStationary);
 	void SetEffectiveSpreadDegrees(float NewSpreadDegrees);
 	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
 	// 지금 이 순간 실제로 적용 중인 탄퍼짐 각도(도). ADS/연사 블룸/이동 배율/증강까지 전부 반영된 최종값.
@@ -46,6 +50,9 @@ public:
 
 	// --- 반동 ---
 	void SetEffectiveRecoilMultiplier(float NewMultiplier);
+	// RecoilCurve의 Yaw(X채널) 결과에 곱해지는 배율을 강제로 덮어쓴다. 0을 넘기면 이 무기는 좌우
+	// 반동이 완전히 사라진다(예: 스나이퍼). AWeaponBase::BeginPlay가 무기 태그를 보고 호출한다.
+	void SetRecoilYawMultiplier(float NewMultiplier);
 
 	// AWeaponBase::Tick()에서 매 프레임 호출한다. 탄퍼짐 감쇠 + ADS 반동 생성/회복을 전부 처리한다.
 	void TickAim(float DeltaTime);
@@ -144,6 +151,16 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	bool bIsAirborne = false;
 
+	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). SpreadRecoilTable 미지정 시
+	// 사용되는 기본값(=fallback).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	float MovingADSSpreadDegrees = 2.f;
+
+	// SetIsStationary로만 갱신된다. true면 ADS 탄퍼짐이 0으로 고정(브레이킹 성공), false면
+	// MovingADSSpreadDegrees가 적용된다(브레이킹 실패, 이동 중 조준).
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	bool bIsStationary = true;
+
 	// 연속 사격 횟수. 탄퍼짐 블룸 계산에 사용.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	int32 ConsecutiveShotCount = 0;
@@ -165,6 +182,11 @@ protected:
 	// 좌우 흔들림(RecoilRandomness)만 남는 상한선 역할을 한다. Yaw에는 상한이 없다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
 	float RecoilMaxPitch = 10.f;
+
+	// RecoilCurve의 Yaw(X채널) 결과에 곱해지는 배율. 0으로 두면 이 무기는 좌우 반동이 전혀 없고
+	// Pitch(상하) 반동만 남는다 - 예: 스나이퍼는 X축 반동을 없애고 싶을 때 0으로 설정.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
+	float RecoilYawMultiplier = 1.f;
 
 	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")

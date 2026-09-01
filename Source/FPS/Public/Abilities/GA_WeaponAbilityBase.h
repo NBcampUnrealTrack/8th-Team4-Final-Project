@@ -35,4 +35,9 @@ protected:
 
 	// 태그 기반으로 수정
 	void SendWeaponGameplayEvent(FGameplayTag EventTag) const;
+
+	// Fire/Reload/ADS는 스왑 애니메이션(CombatComponent::IsWeaponReady() == !bIsCycling) 중엔 막혀야
+	// 하지만, 스왑 자체는 스왑 애니메이션 도중에도 다시 스왑할 수 있어야 한다(연속 슬롯 입력을 즉시
+	// 반영). GA_SwitchWeapon만 false로 오버라이드해서 이 게이트를 건너뛴다.
+	virtual bool RequiresWeaponReady() const { return true; }
 };

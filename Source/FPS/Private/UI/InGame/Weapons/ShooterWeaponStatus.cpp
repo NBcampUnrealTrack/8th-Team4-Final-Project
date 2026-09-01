@@ -33,16 +33,18 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
 	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
-	
+	const int32 ReserveAmmo = Weapon->GetCurrentReserveAmmo();
+
 	// 값이 달라질때만 갱신
-	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo)
+	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo)
 	{
 		return;
 	}
-	
+
 	CachedAmmo = CurrentAmmo;
 	CachedMaxAmmo = MaxAmmo;
-	
+	CachedReserveAmmo = ReserveAmmo;
+
 	RefreshAmmo(Weapon);
 }
 
@@ -76,10 +78,15 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 
 	Text_Ammo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
 	Text_MaxAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
+	if (IsValid(Text_ReserveAmmo))
+	{
+		Text_ReserveAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	
 	// 무기 교체 시 탄약 개수가 같을 수도 있으므로 초기화
 	CachedAmmo = INDEX_NONE;
 	CachedMaxAmmo = INDEX_NONE;
+	CachedReserveAmmo = INDEX_NONE;
 	
 	if (!WeaponDisplaySet)
 	{
@@ -104,6 +111,10 @@ void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 {
 	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
 	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetEffectiveMagazineSize()));
+	if (IsValid(Text_ReserveAmmo))
+	{
+		Text_ReserveAmmo->SetText(FText::AsNumber(Weapon->GetCurrentReserveAmmo()));
+	}
 	
 	EShooterHUDVisualTypes Type = EShooterHUDVisualTypes::Normal;
 	

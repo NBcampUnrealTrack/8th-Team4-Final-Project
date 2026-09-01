@@ -41,6 +41,9 @@ protected:
 	TObjectPtr<UCommonTextBlock> Text_Ammo;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_MaxAmmo;
+	// 예비(보유) 탄약. 위젯 블루프린트에 아직 추가 안 됐을 수 있어 Optional로 둔다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCommonTextBlock> Text_ReserveAmmo;
 	
 	// 무기이름 없으면 비워둠
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -76,6 +79,7 @@ protected:
 	
 	int32 CachedAmmo = INDEX_NONE;
 	int32 CachedMaxAmmo = INDEX_NONE;
+	int32 CachedReserveAmmo = INDEX_NONE;
 	
 	bool bLoggedNoWeapon = false;
 };
