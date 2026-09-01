@@ -49,6 +49,8 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Duration);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Radius);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Range);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Damage);
 
 	// 게임플레이 입력 차단/행동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked);
@@ -70,6 +72,8 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsDead);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Revealed);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Invulnerable);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_ActionBlocked);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_SystemOverload);
 
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
@@ -136,8 +140,9 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 
 	// 액티브 증강 쿨타임
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot1);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot2);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot3);
 
 	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
 	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)
