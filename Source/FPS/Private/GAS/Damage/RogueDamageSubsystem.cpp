@@ -46,7 +46,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyHitscanDamage(const FRogueDamageP
 	return ApplyDamageInternal(Params, Hit.Target, &Hit, 0.f);
 }
 
-// 탄착 기하가 없는 피해, 스킬, 폭발, 자가피해
+// 탄착 기하가 없는 피해, 스킬, 폭발, 환경 피해
 FRogueDamageResult URogueDamageSubsystem::ApplyFlatDamage(const FRogueDamageParams& Params,
                                                           AActor* Target,
                                                           const float Damage)
@@ -57,6 +57,33 @@ FRogueDamageResult URogueDamageSubsystem::ApplyFlatDamage(const FRogueDamagePara
 	}
 
 	return ApplyDamageInternal(Params, Target, nullptr, Damage);
+}
+
+// 자기 체력을 대가로 지불
+float URogueDamageSubsystem::ApplyHealthCost(AActor* Payer, const float Amount, const float MinHealthRemaining)
+{
+	FRogueDamageTarget PayerTarget;
+	if (!FMath::IsFinite(Amount) || Amount <= 0.f || !ResolveDamageTarget(Payer, PayerTarget))
+	{
+		return 0.f;
+	}
+
+	// 체력이 MinHealthRemaining 이하로 떨어지지 않도록 클램핑
+	const float Payable =
+		FMath::Min(Amount, PayerTarget.Vital->GetHealth() - FMath::Max(0.f, MinHealthRemaining));
+
+	// 지불할 체력이 없으면 대미지 적용 X
+	if (Payable <= 0.f)
+	{
+		return 0.f;
+	}
+
+	FRogueDamageParams Params;
+	Params.Instigator = Payer;
+	Params.Causer     = Payer;
+	Params.SourceTag  = RogueTags::Damage_Source_SelfCost;
+
+	return ApplyDamageInternal(Params, Payer, nullptr, Payable).HealthDamage;
 }
 
 FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamageParams& Params,

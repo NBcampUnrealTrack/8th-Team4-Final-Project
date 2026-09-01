@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerStart.h"
 #include "BaseTeamPlayerStart.generated.h"
 

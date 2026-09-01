@@ -1,6 +1,6 @@
 #include "Abilities/GA_DataJackDrop.h"
 
-#include "GameMode/BombObjectiveManager.h"
+#include "GameMode/Manager/BombObjectiveManager.h"
 #include "GameFramework/PlayerController.h"
 #include "Tags/GameplayTags.h"
 

@@ -3,7 +3,7 @@
 #include "Augment/AugmentInventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameMode/SurrenderVoteTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerController.h"

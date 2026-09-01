@@ -18,6 +18,8 @@ class FPS_API UGA_SwitchWeapon : public UGA_WeaponAbilityBase
 	GENERATED_BODY()
 
 public:
+	UGA_SwitchWeapon();
+
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	                                 const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,
 	                                 FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;

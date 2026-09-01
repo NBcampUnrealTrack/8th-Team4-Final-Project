@@ -128,6 +128,21 @@ struct FRogueDeathReaction
     bool bHeadshot = false;
 };
 
+// 생사와 무관하게 매 피격마다 갱신되는 최소 정보. 피격 방향 인디케이터 UI 전용.
+USTRUCT(BlueprintType)
+struct FRogueHitReactionInfo
+{
+    GENERATED_BODY()
+
+    // 피격자 -> 가해자 수평 벡터(정규화). "어느 쪽에서 맞았는지" UI가 그대로 쓸 수 있는 방향.
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    FVector_NetQuantizeNormal Direction = FVector::ZeroVector;
+
+    // 같은 방향에서 연속으로 맞아도 OnRep가 매번 발화하도록 매 피격마다 증가시키는 카운터.
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    uint8 HitSequence = 0;
+};
+
 USTRUCT(BlueprintType)
 struct FRogueDeathContext
 {

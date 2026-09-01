@@ -5,7 +5,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Player/BaseRoundPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"

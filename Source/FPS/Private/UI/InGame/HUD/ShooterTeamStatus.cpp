@@ -1,14 +1,15 @@
-﻿// ShooterTeamStatus.cpp
+// ShooterTeamStatus.cpp
 #include "UI/InGame/HUD/ShooterTeamStatus.h"
 
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBoxSlot.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "UI/InGame/HUD/ShooterPlayerSlot.h"
-#include "GameMode/RoundTypes.h"
+#include "GameMode/Types/RoundTypes.h"
+#include "UI/ShooterUISettings.h"
 
 void UShooterTeamStatus::NativeOnInitialized()
 {
@@ -127,7 +128,9 @@ UShooterPlayerSlot* UShooterTeamStatus::GetOrCreateSlot(int32 Index)
 		return nullptr;
 	}
 	
-	NewSlot->SetSlotStyle(bShowLocalTeam, bShowLocalTeam ? AllyColor : EnemyColor);
+	NewSlot->SetSlotStyle(
+		bShowLocalTeam, 
+		bShowLocalTeam ? UShooterUISettings::GetAllyColor() : UShooterUISettings::GetEnemyColor());
 	
 	Box_Slots->AddChildToHorizontalBox(NewSlot);
 	

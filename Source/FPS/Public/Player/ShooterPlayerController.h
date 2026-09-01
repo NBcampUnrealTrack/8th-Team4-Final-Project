@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/SurrenderVoteTypes.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
@@ -13,9 +13,11 @@
 #include "ShooterPlayerController.generated.h"
 
 class URogueAbilitySystemComponent;
+class URogueHealthComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
+class UShooterSpectatorWidget;
 class UShooterInputConfig;
 class USteamVoiceComponent;
 class USurrenderVoteManager;
@@ -66,6 +68,12 @@ public:
 	UFUNCTION(Exec)
 	void ToggleDynamicCrosshair();
 
+	// TEMP 디버그: 데미지 파이프라인을 거치지 않고 피격 방향 인디케이터만 강제로 발동시킨다.
+	// 콘솔(~)에서 "TestHitIndicator" 입력 - 인디케이터 UI(회전/페이드)만 따로 검증할 때 쓴다.
+	// 실제 데미지 파이프라인이 정상화되면 이 함수는 지워도 된다.
+	UFUNCTION(Exec)
+	void TestHitIndicator();
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
 
@@ -106,6 +114,15 @@ public:
 	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커를 재생.
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(bool bRed);
+
+	UFUNCTION(Client, Reliable)
+	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
+
+	UFUNCTION(Client, Reliable)
+	void ClientSetSpectatorTarget(APlayerState* ViewTargetPlayerState);
+
+	UFUNCTION(Client, Reliable)
+	void ClientExitSpectatorMode();
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
@@ -153,6 +170,9 @@ protected:
 	void ServerNotifyLoadedIntoMatch();
 
 	UFUNCTION(Server, Reliable)
+	void ServerCycleSpectatorTarget();
+
+	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyTeam(EGameTeam RequestedTeam);
 
 	UFUNCTION(Server, Reliable)
@@ -166,6 +186,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator")
+	TSubclassOf<UShooterSpectatorWidget> SpectatorWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
@@ -200,6 +223,11 @@ private:
 	void Input_ToggleInGameMenu();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
+	bool IsInSpectatorFlow() const;
+	void ShowSpectatorWidget(APlayerState* ViewTargetPlayerState);
+	void RefreshSpectatorWidget(APlayerState* ViewTargetPlayerState);
+	void HideSpectatorWidget();
 	void SetSystemMappingContextEnabled(bool bEnabled);
 	UTeamMatchUIInitComponent* GetTeamMatchUIInitComponent() const;
 
@@ -208,6 +236,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	UPROPERTY()
+	TObjectPtr<UShooterSpectatorWidget> SpectatorWidget;
 
 	UPROPERTY(ReplicatedUsing = OnRep_SurrenderVoteState)
 	FSurrenderVoteState SurrenderVoteState;

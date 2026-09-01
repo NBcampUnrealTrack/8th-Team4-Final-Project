@@ -130,6 +130,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Hit Zone")
 	TObjectPtr<UCombatHitZoneDefinition> CombatHitZoneDefinition;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement", meta = (ClampMin = "0.0"))
+	float GravityScaleMultiplier = 1.5f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
 

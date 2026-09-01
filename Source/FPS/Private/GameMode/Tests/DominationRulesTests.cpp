@@ -2,7 +2,7 @@
 
 #include "Misc/AutomationTest.h"
 
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDominationCaptureTimeRuleTest,

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 
@@ -43,6 +43,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Logout(AController* Exiting) override;
 	virtual void NotifyPlayerEliminatedBy(
 		AController* EliminatedController,
 		AShooterPlayerState* KillerPlayerState) override;
@@ -69,6 +70,7 @@ public:
 
 protected:
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
 	virtual bool IsSurrenderVoteAllowedNow() const override;
 	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
@@ -80,6 +82,8 @@ private:
 	void GrantAugmentRewardsForRound(int32 RewardRoundNumber);
 	void ServeNextAugmentReward(AShooterPlayerState* PlayerState);
 	void HandleInitialPlayersSpawned();
+	void HandleAugmentDraftQueueDrained(AShooterPlayerState* PlayerState);
+	void TryStartInitialObjectiveTransition();
 	void HandleCaptureCompleted(
 		EDominationPointId CapturedPointId,
 		EGameTeam CapturingTeam);
@@ -134,6 +138,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
+
+	// 최초 증강을 모두 끝내야 같은 시점부터 중앙 거점 전환 시간을 받는다.
+	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingInitialAugmentPlayers;
+	bool bInitialObjectiveTransitionStarted = false;
 
 	FTimerHandle MatchEndTimerHandle;
 };

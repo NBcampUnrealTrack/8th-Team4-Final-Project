@@ -1,12 +1,12 @@
-﻿// ShooterMatchResultSubsystem.cpp
+// ShooterMatchResultSubsystem.cpp
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 
 #include "GameFramework/PlayerState.h"
-#include "GameMode/BaseTeamMatchGameState.h"
-#include "GameMode/LobbyGameState.h"
+#include "GameMode/State/BaseTeamMatchGameState.h"
+#include "GameMode/State/LobbyGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
-#include "UI/OutGame/MatchResult/ShooterMatchResultSetting.h"
+#include "UI/ShooterUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterMatchResult, Log, All);
 
@@ -238,7 +238,7 @@ bool UShooterMatchResultSubsystem::PresentResultWidget(APlayerController* Owning
 		return true;
 	}
 
-	const UShooterMatchResultSetting* Settings = GetDefault<UShooterMatchResultSetting>();
+	const UShooterUISettings* Settings = GetDefault<UShooterUISettings>();
 
 	// 결과 화면 클래스가 프로젝트 설정에 지정되지 않음.
 	if (Settings->MatchResultScreenClass.IsNull())

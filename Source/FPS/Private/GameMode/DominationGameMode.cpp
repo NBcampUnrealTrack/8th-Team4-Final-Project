@@ -4,16 +4,17 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
-#include "GameMode/AugmentDraftManager.h"
-#include "GameMode/DominationGameState.h"
-#include "GameMode/DominationLoadoutManager.h"
-#include "GameMode/DominationMatchStartManager.h"
-#include "GameMode/DominationObjectiveManager.h"
-#include "GameMode/DominationRespawnManager.h"
-#include "GameMode/SurrenderVoteTypes.h"
-#include "GameMode/TeamPlayerManager.h"
+#include "GameMode/Manager/AugmentDraftManager.h"
+#include "GameMode/State/DominationGameState.h"
+#include "GameMode/Manager/DominationLoadoutManager.h"
+#include "GameMode/Manager/DominationMatchStartManager.h"
+#include "GameMode/Manager/DominationObjectiveManager.h"
+#include "GameMode/Manager/DominationRespawnManager.h"
+#include "GameMode/Types/SurrenderVoteTypes.h"
+#include "GameMode/Manager/TeamPlayerManager.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "Session/SessionSubSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationGameMode, Log, All);
@@ -81,6 +82,9 @@ void ADominationGameMode::BeginPlay()
 	AugmentDraftManager->OnDependenciesReady.AddUObject(
 		this,
 		&ThisClass::HandleAugmentDraftDependenciesReady);
+	AugmentDraftManager->OnPlayerDraftQueueDrained.AddUObject(
+		this,
+		&ThisClass::HandleAugmentDraftQueueDrained);
 	if (!AugmentDraftManager->HasRequiredDependencies())
 	{
 		UE_LOG(LogDominationGameMode, Error,
@@ -110,7 +114,9 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
 
 	AugmentDraftManager->OnDependenciesReady.RemoveAll(this);
+	AugmentDraftManager->OnPlayerDraftQueueDrained.RemoveAll(this);
 	AugmentDraftManager->Shutdown();
+	PendingInitialAugmentPlayers.Reset();
 
 	if (IsValid(ObjectiveManager))
 	{
@@ -136,6 +142,20 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void ADominationGameMode::Logout(AController* Exiting)
+{
+	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
+		? Exiting->GetPlayerState<AShooterPlayerState>()
+		: nullptr;
+	if (IsValid(ExitingPlayerState)
+		&& PendingInitialAugmentPlayers.Remove(ExitingPlayerState) > 0)
+	{
+		TryStartInitialObjectiveTransition();
+	}
+
+	Super::Logout(Exiting);
+}
+
 void ADominationGameMode::NotifyPlayerEliminatedBy(
 	AController* EliminatedController,
 	AShooterPlayerState*)
@@ -151,6 +171,7 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 	}
 
 	RespawnManager->ScheduleRespawn(EliminatedController);
+	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
 }
 
 void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -274,7 +295,14 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 	}
 
 	APawn* SpawnedPawn = PlayerController->GetPawn();
+	PlayerController->ChangeState(NAME_Playing);
+	PlayerController->ClientGotoState(NAME_Playing);
+	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
+	{
+		ShooterPlayerController->ClientExitSpectatorMode();
+	}
 	PlayerState->ServerRespawnReset();
+	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 	RespawnManager->BeginRespawnProtection(PlayerState);
 	if (!IsValid(LoadoutManager)
 		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
@@ -369,22 +397,82 @@ void ADominationGameMode::ServeNextAugmentReward(
 
 void ADominationGameMode::HandleInitialPlayersSpawned()
 {
-	if (!IsValid(ObjectiveManager) || !ObjectiveManager->ActivateInitialPoint())
-	{
-		UE_LOG(LogDominationGameMode, Error,
-			TEXT("Domination failed to activate the center capture point."));
-		return;
-	}
+	bInitialObjectiveTransitionStarted = false;
+	PendingInitialAugmentPlayers.Reset();
 
 	GrantAugmentRewardsForRound(1);
 
 	TArray<ADominationPlayerState*> InitialPlayerStates;
 	GetInitialParticipantPlayerStates(InitialPlayerStates);
+
+	if (!bEnableAugmentDraft)
+	{
+		TryStartInitialObjectiveTransition();
+		return;
+	}
+
+	// 먼저 전체 참가자를 등록한 뒤 후보를 제시한다.
+	// ServeNextReward가 동기적으로 대기열 소진을 알리더라도
+	// 일부 플레이어만 등록된 상태에서 중앙 거점 타이머가 시작되지 않게 한다.
+	for (ADominationPlayerState* PlayerState : InitialPlayerStates)
+	{
+		if (IsValid(PlayerState))
+		{
+			PendingInitialAugmentPlayers.Add(PlayerState);
+		}
+	}
+
 	for (ADominationPlayerState* PlayerState : InitialPlayerStates)
 	{
 		ServeNextAugmentReward(PlayerState);
 	}
 
+	TryStartInitialObjectiveTransition();
+}
+
+void ADominationGameMode::HandleAugmentDraftQueueDrained(
+	AShooterPlayerState* PlayerState)
+{
+	if (!HasAuthority() || !IsValid(PlayerState))
+	{
+		return;
+	}
+
+	if (PendingInitialAugmentPlayers.Remove(PlayerState) == 0)
+	{
+		return;
+	}
+
+	UE_LOG(LogDominationGameMode, Log,
+		TEXT("Initial augment draft completed for %s. Waiting for %d player(s)."),
+		*GetNameSafe(PlayerState),
+		PendingInitialAugmentPlayers.Num());
+
+	TryStartInitialObjectiveTransition();
+}
+
+void ADominationGameMode::TryStartInitialObjectiveTransition()
+{
+	ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	if (!HasAuthority()
+		|| bInitialObjectiveTransitionStarted
+		|| !PendingInitialAugmentPlayers.IsEmpty()
+		|| !IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
+	{
+		return;
+	}
+
+	if (!IsValid(ObjectiveManager) || !ObjectiveManager->ActivateInitialPoint())
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination failed to begin the initial center-point transition."));
+		return;
+	}
+
+	bInitialObjectiveTransitionStarted = true;
+	UE_LOG(LogDominationGameMode, Log,
+		TEXT("All initial augment drafts are complete. Starting the center-point transition."));
 	OnDominationMatchStarted.Broadcast();
 }
 
@@ -407,6 +495,21 @@ void ADominationGameMode::HandleCaptureCompleted(
 	{
 		GrantAugmentRewardsForRound(
 			DominationGameState->GetCompletedRoundCount() + 1);
+	}
+
+	// 점수/매치 승패를 먼저 확정한 뒤 ObjectiveManager에 다음 전선 진행을 명시적으로 지시한다.
+	// 매치 승리 점령도 GameState에 기록해 최종 점령 피드백이 클라이언트에 남도록 한다.
+	if (bMatchWon)
+	{
+		DominationGameState->RecordObjectiveCapture(
+			CapturedPointId,
+			CapturingTeam);
+	}
+	else if (IsValid(ObjectiveManager))
+	{
+		ObjectiveManager->AdvanceAfterCapture(
+			CapturedPointId,
+			CapturingTeam);
 	}
 
 	UE_LOG(
@@ -506,10 +609,33 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 		return;
 	}
 
+	const EPlayerParticipationState NewPlayerParticipationState = ResolveParticipationStateForNewPlayer(NewPlayer);
 	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
+		PlayerState->SetParticipationState(NewPlayerParticipationState);
 		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
 	}
+
+	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
+	{
+		MovePlayerToSpectator(NewPlayer);
+	}
+}
+
+EPlayerParticipationState ADominationGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const
+{
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	const EDominationMatchPhase Phase = IsValid(DominationGameState)
+		? DominationGameState->GetDominationPhase()
+		: EDominationMatchPhase::WaitingForPlayers;
+
+	if (Phase == EDominationMatchPhase::WaitingForPlayers
+		|| Phase == EDominationMatchPhase::ClassSelecting)
+	{
+		return EPlayerParticipationState::WaitingForMatchStart;
+	}
+
+	return EPlayerParticipationState::WaitingForNextSpawn;
 }
 
 UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)

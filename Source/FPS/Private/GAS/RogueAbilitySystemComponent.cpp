@@ -71,6 +71,7 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		if (TryActivateAbility(Handle))
 		{
 			++ActivatedCount;
+			break;
 		}
 	}
 

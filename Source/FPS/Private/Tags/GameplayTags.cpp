@@ -43,7 +43,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경 (m)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Range,     "Data.Magnitude.Range",     "증강 사거리 (m)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Damage,    "Data.Magnitude.Damage",    "증강 대미지");
 
 	// 게임플레이 입력 차단/행동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked, "State.Gameplay.InputBlocked", "게임플레이 입력 차단 부모 태그");
@@ -65,6 +67,10 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Revealed,    "State.Combat.Revealed",    "발각됨");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Invulnerable, "State.Combat.Invulnerable", "무적. 외부에서 오는 피해를 전부 무시");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_ActionBlocked, "State.Combat.ActionBlocked", "이동을 제외한 행동 불가. 사격/조준/재장전/무기 교체 차단");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_SystemOverload, "State.Combat.SystemOverload", "시스템 오버로드 지속 중. 처치 시 재적용 조건");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_UtilityHeld,   "State.Combat.UtilityHeld",   "유틸리티를 손에 든 상태. 장착 무기 태그와 공존한다. 무기 어빌리티가 이 태그로 차단된다");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Ability,            "Augment.Ability",            "증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -93,6 +99,11 @@ namespace RogueTags
 
 	// 스킬 관련 이벤트
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Skill_Used, "Event.Skill.Used", "액티브 스킬 시전 확정 -> 시전자");
+
+	// 유틸리티 사용 입력
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input,           "Event.Utility.Input",           "유틸 장착 중 사용 입력 -> 시전자. 홀드 어빌리티 전용이므로 트리거 증강에 쓰지 말 것");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input_Primary,   "Event.Utility.Input.Primary",   "주 입력 (좌클릭)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input_Secondary, "Event.Utility.Input.Secondary", "보조 입력 (우클릭)");
 
 	// 무기 관련 이벤트
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Fired,          "Event.Weapon.Fired",          "매 발사");
@@ -130,6 +141,8 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");
 
 	// 액티브 증강 쿨타임
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot1, "Cooldown.Augment.Slot1", "Q 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot2, "Cooldown.Augment.Slot2", "E 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot3, "Cooldown.Augment.Slot3", "V 슬롯 액티브 쿨타임");
+
 }

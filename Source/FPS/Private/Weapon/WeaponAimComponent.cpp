@@ -66,6 +66,11 @@ void UWeaponAimComponent::SetMovementSpreadMultiplier(const float NewMultiplier)
 	MovementSpreadMultiplier = NewMultiplier;
 }
 
+void UWeaponAimComponent::SetIsAirborne(const bool bNewIsAirborne)
+{
+	bIsAirborne = bNewIsAirborne;
+}
+
 void UWeaponAimComponent::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
 {
 	EffectiveBaseSpreadDegrees = NewSpreadDegrees;
@@ -113,14 +118,24 @@ void UWeaponAimComponent::ResetRecoilState()
 
 float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 {
-	// 3.3.1 개정 원칙: ADS 중에는 탄퍼짐이 0으로 고정된다.
-	if (bIsADS)
+	float SpreadDegrees = 0.f;
+
+	// 3.3.1 개정 원칙: ADS 중에는 지상에서 탄퍼짐이 0으로 고정된다.
+	if (!bIsADS)
 	{
-		return 0.f;
+		const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
+		SpreadDegrees = (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
 	}
 
-	const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
-	return (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
+	// 공중에서는 ADS로 고정한 0도, 이동 배율을 곱해도 0인 지향사격(기본 탄퍼짐 0인 무기)도 전부
+	// 뚫고 강제로 탄퍼짐이 붙는다 - 곱셈(배율)만으로는 0에 무엇을 곱해도 0이라 표현이 안 돼서
+	// 덧셈 페널티로 분리했다. 점프하면 조준 중이어도 정확도가 떨어져야 한다는 요구사항 대응.
+	if (bIsAirborne)
+	{
+		SpreadDegrees += InAirSpreadPenaltyDegrees;
+	}
+
+	return SpreadDegrees;
 }
 
 void UWeaponAimComponent::TickSpreadDecay(float DeltaTime)
@@ -174,7 +189,10 @@ void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
 		OwningPawn->AddControllerPitchInput(-Delta.Y);
 	}
 
-	AccumulatedRecoilPitch = TargetOffset.Y;
+	// Yaw와 마찬가지로 "실제로 카메라에 적용한 델타의 누적합"이어야 한다(= TargetOffset.Y로 덮어쓰면
+	// 안 됨) - 그래야 (1) EffectiveRecoilMultiplier가 적용된 실제 적용량과 일치하고, (2) 복귀가 다
+	// 끝나기 전에 새 버스트가 시작돼도 아직 못 돌아온 잔여값이 유실되지 않고 계속 추적된다.
+	AccumulatedRecoilPitch += Delta.Y;
 	AccumulatedRecoilYaw += Delta.X;
 	PrevRecoilOffset = TargetOffset;
 }

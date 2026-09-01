@@ -1,11 +1,11 @@
-﻿#include "GameMode/BaseRoundGameMode.h"
+#include "GameMode/BaseRoundGameMode.h"
 
 #include "Economy/CreditEconomyManager.h"
 #include "Engine/GameInstance.h"
-#include "GameMode/AugmentDraftManager.h"
+#include "GameMode/Manager/AugmentDraftManager.h"
 #include "BaseRoundGameModeLog.h"
-#include "GameMode/BaseRoundGameState.h"
-#include "GameMode/TeamPlayerManager.h"
+#include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/Manager/TeamPlayerManager.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
 #include "TimerManager.h"
@@ -493,6 +493,28 @@ void ABaseRoundGameMode::HandleInitialReadyTimeout()
 		*PendingPlayerList);
 	InitialPlayerReadinessTracker.MarkTimeoutExpired();
 	TryBeginNextRound();
+}
+
+bool ABaseRoundGameMode::IsInitialJoinPhase(const EGameFlowPhase Phase) const
+{
+	return LastCompletedRoundNumber == 0
+		&& (Phase == EGameFlowPhase::WaitingForPlayers
+			|| Phase == EGameFlowPhase::WaitingForPlayersReady);
+}
+
+EPlayerParticipationState ABaseRoundGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const
+{
+	const ABaseRoundGameState* RoundGameState = GetBaseRoundGameState();
+	const EGameFlowPhase Phase = IsValid(RoundGameState)
+		? RoundGameState->GetGameFlowPhase()
+		: EGameFlowPhase::WaitingForPlayers;
+
+	if (IsInitialJoinPhase(Phase))
+	{
+		return EPlayerParticipationState::WaitingForMatchStart;
+	}
+
+	return EPlayerParticipationState::WaitingForNextSpawn;
 }
 
 void ABaseRoundGameMode::ScheduleSpawnPreparationRetry(const TCHAR* Reason)

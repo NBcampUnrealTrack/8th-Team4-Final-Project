@@ -2,9 +2,9 @@
 
 #include "EngineUtils.h"
 #include "Actor/BaseTeamPlayerStart.h"
-#include "GameMode/BaseTeamGameState.h"
-#include "GameMode/SurrenderVoteManager.h"
-#include "GameMode/TeamPlayerManager.h"
+#include "GameMode/State/BaseTeamGameState.h"
+#include "GameMode/Manager/SurrenderVoteManager.h"
+#include "GameMode/Manager/TeamPlayerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerController.h"

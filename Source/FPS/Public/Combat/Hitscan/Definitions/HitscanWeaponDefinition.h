@@ -28,6 +28,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|Weapon")
 	FGameplayTag GetWeaponTag() const { return WeaponTag; }
 
+	// 임팩트 사운드 등 표면별 연출 조회용. 미지정이면 nullptr.
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Hitscan|Weapon")
+	UHitscanSurfaceDefinition* GetSurfaceDefinition() const { return SurfaceDefinition; }
+
 private:
 	// WeaponDamageData 조회에 사용하는 Weapon.Type.* 태그.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Weapon", meta = (AllowPrivateAccess = "true"))

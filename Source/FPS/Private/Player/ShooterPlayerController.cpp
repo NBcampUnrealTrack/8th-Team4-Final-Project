@@ -6,8 +6,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
-#include "GameMode/BaseTeamGameState.h"
+#include "GameMode/State/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
@@ -23,8 +24,10 @@
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
+#include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
+#include "Player/ShooterSpectatorPawn.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -95,6 +98,8 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		HideSpectatorWidget();
+
 		if (GetTeamMatchUIInitComponent())
 		{
 			SetSystemMappingContextEnabled(false);
@@ -129,7 +134,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
-		LoadingScreenSubsystem->SetLoadingProgress(0.5f);
+		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, 0.5f);
 	}
 
 	StartMatchLoadReadyCheck();
@@ -319,6 +324,28 @@ void AShooterPlayerController::ToggleDynamicCrosshair()
 	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
 }
 
+void AShooterPlayerController::TestHitIndicator()
+{
+	AShooterPlayerState* ShooterPS = GetPlayerState<AShooterPlayerState>();
+	URogueHealthComponent* HealthComponent = ShooterPS ? ShooterPS->GetHealthComponent() : nullptr;
+	if (!HealthComponent)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] PlayerState=%s HealthComponent=%s - 둘 중 하나가 없어서 중단."),
+			*GetNameSafe(ShooterPS), *GetNameSafe(HealthComponent));
+		return;
+	}
+
+	// 데미지 파이프라인을 거치지 않고, 실제로 오른쪽에서 맞은 것처럼 방향만 흉내내서
+	// 인디케이터 UI(회전/페이드)가 직접 잘 동작하는지만 검증한다.
+	const APawn* ControlledPawn = GetPawn();
+	const FVector TestDirection = IsValid(ControlledPawn) ? ControlledPawn->GetActorRightVector() : FVector::RightVector;
+
+	UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] 브로드캐스트 시도. 구독자 있음=%s"),
+		HealthComponent->OnHitReactionReceived.IsBound() ? TEXT("true") : TEXT("false"));
+
+	HealthComponent->OnHitReactionReceived.Broadcast(TestDirection);
+}
+
 void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
 {
 	if (HasAuthority())
@@ -370,6 +397,12 @@ void AShooterPlayerController::SetLoadingProgress(const float Progress)
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
+		if (Progress < 1.0f && !LoadingScreenSubsystem->IsLoadingScreenVisible())
+		{
+			LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, Progress);
+			return;
+		}
+
 		LoadingScreenSubsystem->SetLoadingProgress(Progress);
 	}
 }
@@ -537,6 +570,21 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRe
 	OnHitMarker.Broadcast(bRed);
 }
 
+void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
+{
+	ShowSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerState* ViewTargetPlayerState)
+{
+	RefreshSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
+{
+	HideSpectatorWidget();
+}
+
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -662,6 +710,17 @@ void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 	}
 
 	ShooterGameMode->NotifyPlayerReadyForGameFlow(this);
+}
+
+void AShooterPlayerController::ServerCycleSpectatorTarget_Implementation()
+{
+	AShooterGameMode* ShooterGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<AShooterGameMode>()
+		: nullptr;
+	if (IsValid(ShooterGameMode))
+	{
+		ShooterGameMode->CycleSpectatorTarget(this);
+	}
 }
 
 void AShooterPlayerController::StartMatchLoadReadyCheck()
@@ -910,6 +969,19 @@ void AShooterPlayerController::Input_PushToTalkReleased()
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
+	{
+		if (HasAuthority())
+		{
+			ServerCycleSpectatorTarget_Implementation();
+		}
+		else
+		{
+			ServerCycleSpectatorTarget();
+		}
+		return;
+	}
+
 	if (!CanProcessActionInput())
 	{
 		return;
@@ -923,9 +995,79 @@ void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, co
 
 void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
+	{
+		return;
+	}
+
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagReleased(InputTag);
+	}
+}
+
+bool AShooterPlayerController::IsSpectatorCycleInput(const FGameplayTag InputTag) const
+{
+	const FGameplayTag PrimaryInputTag = FGameplayTag::RequestGameplayTag(
+		TEXT("InputTag.Ability.Primary"),
+		false);
+	return PrimaryInputTag.IsValid() && InputTag.MatchesTagExact(PrimaryInputTag);
+}
+
+bool AShooterPlayerController::IsInSpectatorFlow() const
+{
+	if (GetPawn<AShooterSpectatorPawn>())
+	{
+		return true;
+	}
+
+	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
+	return IsValid(ShooterPlayerState)
+		&& ShooterPlayerState->GetParticipationState() != EPlayerParticipationState::Active;
+}
+
+void AShooterPlayerController::ShowSpectatorWidget(APlayerState* ViewTargetPlayerState)
+{
+	if (!IsLocalController() || !SpectatorWidgetClass)
+	{
+		return;
+	}
+
+	if (!SpectatorWidget)
+	{
+		SpectatorWidget = CreateWidget<UShooterSpectatorWidget>(this, SpectatorWidgetClass);
+		if (SpectatorWidget)
+		{
+			SpectatorWidget->AddToViewport(100);
+		}
+	}
+
+	RefreshSpectatorWidget(ViewTargetPlayerState);
+}
+
+void AShooterPlayerController::RefreshSpectatorWidget(APlayerState* ViewTargetPlayerState)
+{
+	if (!IsLocalController() || !SpectatorWidget)
+	{
+		return;
+	}
+
+	if (IsValid(ViewTargetPlayerState))
+	{
+		SpectatorWidget->SetSpectatorTarget(ViewTargetPlayerState);
+	}
+	else
+	{
+		SpectatorWidget->ClearSpectatorTarget();
+	}
+}
+
+void AShooterPlayerController::HideSpectatorWidget()
+{
+	if (SpectatorWidget)
+	{
+		SpectatorWidget->RemoveFromParent();
+		SpectatorWidget = nullptr;
 	}
 }
 

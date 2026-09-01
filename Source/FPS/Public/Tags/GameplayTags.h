@@ -49,6 +49,8 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Secondary);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Duration);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Radius);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Range);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Magnitude_Damage);
 
 	// 게임플레이 입력 차단/행동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Gameplay_InputBlocked);
@@ -70,6 +72,12 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_IsDead);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Revealed);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Invulnerable);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_ActionBlocked);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_SystemOverload);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_UtilityHeld);
+
+	// 증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Ability);
 
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
@@ -98,6 +106,11 @@ namespace RogueTags
 
 	// 스킬 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Skill_Used);
+
+	// 유틸리티 장착 중 사용 입력. 홀드 어빌리티 전용이므로 트리거 증강에 쓰지 말 것
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input_Primary);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Utility_Input_Secondary);
 
 	// 무기 관련 이벤트
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Weapon_Fired);
@@ -136,8 +149,9 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);
 
 	// 액티브 증강 쿨타임
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Dash);
-	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_ReconDrone);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot1);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot2);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Augment_Slot3);
 
 	// 부위 태그가 머리인지 판정, 동일한 판정 기준을 유지하기 위해 정의
 	FORCEINLINE bool IsHeadZone(const FGameplayTag& HitZoneTag)

@@ -13,3 +13,16 @@ FHitscanSurfaceRule UHitscanSurfaceDefinition::ResolveSurfaceRule(
 
 	return DefaultSurfaceRule;
 }
+
+USoundBase* UHitscanSurfaceDefinition::ResolveImpactSound(const TEnumAsByte<EPhysicalSurface> SurfaceType) const
+{
+	for (const FHitscanPhysicalSurfaceRule& Entry : SurfaceRules)
+	{
+		if (Entry.SurfaceType == SurfaceType)
+		{
+			return Entry.ImpactSound ? Entry.ImpactSound : DefaultImpactSound;
+		}
+	}
+
+	return DefaultImpactSound;
+}
