@@ -1,7 +1,7 @@
 #include "UI/InGame/HUD/DominationObjectiveTransitionTimerWidget.h"
 
 #include "Engine/World.h"
-#include "GameMode/DominationGameState.h"
+#include "GameMode/State/DominationGameState.h"
 
 void UDominationObjectiveTransitionTimerWidget::NativeConstruct()
 {

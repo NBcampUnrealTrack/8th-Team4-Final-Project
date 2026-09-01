@@ -1,7 +1,7 @@
 #include "UI/InGame/HUD/DominationObjectiveFeedbackWidget.h"
 
 #include "Engine/World.h"
-#include "GameMode/DominationGameState.h"
+#include "GameMode/State/DominationGameState.h"
 
 void UDominationObjectiveFeedbackWidget::NativeConstruct()
 {

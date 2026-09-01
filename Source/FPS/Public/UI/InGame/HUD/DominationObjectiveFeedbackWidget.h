@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "GameMode/DominationTypes.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "DominationObjectiveFeedbackWidget.generated.h"
 
 class ADominationGameState;
