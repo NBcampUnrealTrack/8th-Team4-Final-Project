@@ -98,6 +98,12 @@ void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, AP
 void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
 {
 	SetAlive(!bNewIsDead);
+	
+	// 사망 시 모든 어빌리티 취소
+	if (bNewIsDead && AbilitySystemComponent)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
 }
 
 void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
