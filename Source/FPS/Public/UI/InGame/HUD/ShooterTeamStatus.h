@@ -40,11 +40,6 @@ protected:
 	bool bShowLocalTeam = true;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
-	FLinearColor AllyColor = FLinearColor(0.2f, 0.6f, 1.0f);
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
-	FLinearColor EnemyColor = FLinearColor(1.0f, 0.3f, 0.3f);
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|UI")
 	TSubclassOf<UShooterPlayerSlot> SlotWidgetClass;
 	
 	UPROPERTY(meta = (BindWidget))
