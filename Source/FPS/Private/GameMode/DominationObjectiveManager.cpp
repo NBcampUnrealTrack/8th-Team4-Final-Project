@@ -50,9 +50,7 @@ bool UDominationObjectiveManager::Initialize(
 		return false;
 	}
 
-	DominationGameState->SetObjectiveState(
-		EDominationPointId::None,
-		EDominationObjectivePhase::Inactive);
+	DominationGameState->ResetObjectiveState();
 	UE_LOG(LogDominationObjective, Log,
 		TEXT("Registered five Domination capture points. Objectives are waiting for match start."));
 
@@ -73,9 +71,7 @@ void UDominationObjectiveManager::Shutdown()
 
 	if (ADominationGameState* DominationGameState = GetDominationGameState())
 	{
-		DominationGameState->SetObjectiveState(
-			EDominationPointId::None,
-			EDominationObjectivePhase::Inactive);
+		DominationGameState->ResetObjectiveState();
 	}
 
 	CapturePoints.Reset();
@@ -99,9 +95,8 @@ void UDominationObjectiveManager::StopObjectiveFlow()
 	if (ADominationGameState* DominationGameState = GetDominationGameState())
 	{
 		DominationGameState->SetCaptureState(FDominationCaptureState());
-		DominationGameState->SetObjectiveState(
-			DominationGameState->GetActivePointId(),
-			EDominationObjectivePhase::Inactive);
+		DominationGameState->SetObjectiveInactive(
+			DominationGameState->GetActivePointId());
 	}
 }
 
@@ -131,9 +126,8 @@ bool UDominationObjectiveManager::ActivateInitialPoint()
 		return ActiveCapturePoint.Get() == CenterPoint;
 	}
 
-	DominationGameState->SetObjectiveState(
+	DominationGameState->BeginInitialObjectiveTransition(
 		EDominationPointId::C,
-		EDominationObjectivePhase::Repositioning,
 		PointTransitionDuration);
 	TimerManager->SetTimer(
 		PointTransitionTimerHandle,
@@ -303,18 +297,10 @@ void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 		OnCaptureCompleted.Broadcast(
 			CapturedPointId,
 			CaptureTeam);
-
-		// 매치 승리가 확정된 점령이라면 다음 거점 전환을 예약하지 않는다.
-		const ADominationGameState* DominationGameState = GetDominationGameState();
-		if (IsValid(DominationGameState)
-			&& DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress)
-		{
-			BeginPointTransition(CapturedPointId, CaptureTeam);
-		}
 	}
 }
 
-void UDominationObjectiveManager::BeginPointTransition(
+void UDominationObjectiveManager::AdvanceAfterCapture(
 	const EDominationPointId CapturedPointId,
 	const EGameTeam CaptureTeam)
 {
@@ -332,13 +318,22 @@ void UDominationObjectiveManager::BeginPointTransition(
 	DominationGameState->SetCaptureState(FDominationCaptureState());
 
 	const int32 CapturedPointIndex = DominationRules::GetPointIndex(CapturedPointId);
-	const int32 NextPointIndex = CapturedPointIndex + DominationRules::GetAttackDirection(CaptureTeam);
+	const int32 AttackDirection = DominationRules::GetAttackDirection(CaptureTeam);
+	if (CapturedPointIndex == INDEX_NONE || AttackDirection == 0)
+	{
+		UE_LOG(LogDominationObjective, Error,
+			TEXT("Cannot advance Domination objective after invalid capture. Team=%d Point=%d."),
+			static_cast<uint8>(CaptureTeam),
+			static_cast<uint8>(CapturedPointId));
+		return;
+	}
+
+	const int32 NextPointIndex = CapturedPointIndex + AttackDirection;
 	TransitionTargetPointId = DominationRules::GetPointId(NextPointIndex);
 	if (TransitionTargetPointId == EDominationPointId::None)
 	{
-		DominationGameState->SetObjectiveState(
-			CapturedPointId,
-			EDominationObjectivePhase::Inactive);
+		DominationGameState->RecordObjectiveCapture(CapturedPointId, CaptureTeam);
+		DominationGameState->SetObjectiveInactive(CapturedPointId);
 		UE_LOG(LogDominationObjective, Warning,
 			TEXT("No next objective exists after team %d captured point %d. Objective flow stopped."),
 			static_cast<uint8>(CaptureTeam),
@@ -348,13 +343,15 @@ void UDominationObjectiveManager::BeginPointTransition(
 
 	if (PointTransitionDuration <= 0.0f)
 	{
+		DominationGameState->RecordObjectiveCapture(CapturedPointId, CaptureTeam);
 		HandlePointTransitionComplete();
 		return;
 	}
 
-	DominationGameState->SetObjectiveState(
+	DominationGameState->BeginObjectiveTransitionAfterCapture(
+		CapturedPointId,
+		CaptureTeam,
 		TransitionTargetPointId,
-		EDominationObjectivePhase::Repositioning,
 		PointTransitionDuration);
 	TimerManager->SetTimer(
 		PointTransitionTimerHandle,
@@ -383,9 +380,7 @@ void UDominationObjectiveManager::HandlePointTransitionComplete()
 	CaptureProgress = 0.0f;
 	bCaptureCompleted = false;
 	DominationGameState->SetCaptureState(FDominationCaptureState());
-	DominationGameState->SetObjectiveState(
-		ActivatedPointId,
-		EDominationObjectivePhase::CaptureEnabled);
+	DominationGameState->SetObjectiveCaptureEnabled(ActivatedPointId);
 	StartCaptureTracking(NextCapturePoint);
 	UE_LOG(LogDominationObjective, Log,
 		TEXT("Domination capture point %d is now active."),

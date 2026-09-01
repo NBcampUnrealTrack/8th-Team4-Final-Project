@@ -100,6 +100,26 @@ float ADominationGameState::GetPointTransitionTimeRemaining() const
 	return FMath::Max(0.0f, RemainingTime);
 }
 
+FDominationObjectiveFlowState ADominationGameState::GetObjectiveFlowState() const
+{
+	return ObjectiveFlowState;
+}
+
+EDominationPointId ADominationGameState::GetLastCapturedPointId() const
+{
+	return ObjectiveFlowState.LastCapturedPointId;
+}
+
+EGameTeam ADominationGameState::GetLastCapturingTeam() const
+{
+	return ObjectiveFlowState.LastCapturingTeam;
+}
+
+int32 ADominationGameState::GetObjectiveCaptureSerial() const
+{
+	return ObjectiveFlowState.CaptureSerial;
+}
+
 FDominationCaptureState ADominationGameState::GetCaptureState() const
 {
 	return CaptureState;
@@ -137,10 +157,102 @@ void ADominationGameState::SetDominationPhase(
 	ForceNetUpdate();
 }
 
-void ADominationGameState::SetObjectiveState(
+void ADominationGameState::ResetObjectiveState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ObjectiveFlowState = FDominationObjectiveFlowState();
+	OnRep_ObjectiveFlowState();
+	ForceNetUpdate();
+}
+
+void ADominationGameState::BeginInitialObjectiveTransition(
+	const EDominationPointId InitialPointId,
+	const float PhaseDuration)
+{
+	ApplyObjectiveState(
+		InitialPointId,
+		EDominationObjectivePhase::Repositioning,
+		PhaseDuration,
+		EDominationPointId::None,
+		EGameTeam::None,
+		false);
+}
+
+void ADominationGameState::BeginObjectiveTransitionAfterCapture(
+	const EDominationPointId CapturedPointId,
+	const EGameTeam CapturingTeam,
+	const EDominationPointId NextPointId,
+	const float PhaseDuration)
+{
+	if (CapturedPointId == EDominationPointId::None
+		|| CapturingTeam == EGameTeam::None
+		|| NextPointId == EDominationPointId::None)
+	{
+		return;
+	}
+
+	ApplyObjectiveState(
+		NextPointId,
+		EDominationObjectivePhase::Repositioning,
+		PhaseDuration,
+		CapturedPointId,
+		CapturingTeam,
+		true);
+}
+
+void ADominationGameState::RecordObjectiveCapture(
+	const EDominationPointId CapturedPointId,
+	const EGameTeam CapturingTeam)
+{
+	if (!HasAuthority()
+		|| CapturedPointId == EDominationPointId::None
+		|| CapturingTeam == EGameTeam::None)
+	{
+		return;
+	}
+
+	ObjectiveFlowState.LastCapturedPointId = CapturedPointId;
+	ObjectiveFlowState.LastCapturingTeam = CapturingTeam;
+	++ObjectiveFlowState.CaptureSerial;
+	OnRep_ObjectiveFlowState();
+	ForceNetUpdate();
+}
+
+void ADominationGameState::SetObjectiveCaptureEnabled(
+	const EDominationPointId ActivePointId)
+{
+	ApplyObjectiveState(
+		ActivePointId,
+		EDominationObjectivePhase::CaptureEnabled,
+		0.0f,
+		ObjectiveFlowState.LastCapturedPointId,
+		ObjectiveFlowState.LastCapturingTeam,
+		false);
+}
+
+void ADominationGameState::SetObjectiveInactive(
+	const EDominationPointId ActivePointId)
+{
+	ApplyObjectiveState(
+		ActivePointId,
+		EDominationObjectivePhase::Inactive,
+		0.0f,
+		ObjectiveFlowState.LastCapturedPointId,
+		ObjectiveFlowState.LastCapturingTeam,
+		false);
+}
+
+void ADominationGameState::ApplyObjectiveState(
 	const EDominationPointId NewActivePointId,
 	const EDominationObjectivePhase NewPhase,
-	const float PhaseDuration)
+	const float PhaseDuration,
+	const EDominationPointId LastCapturedPointId,
+	const EGameTeam LastCapturingTeam,
+	const bool bIncrementCaptureSerial)
 {
 	if (!HasAuthority())
 	{
@@ -152,6 +264,16 @@ void ADominationGameState::SetObjectiveState(
 	ObjectiveFlowState.PhaseEndServerTime = PhaseDuration > 0.0f
 		? static_cast<float>(GetServerWorldTimeSeconds() + PhaseDuration)
 		: 0.0f;
+	ObjectiveFlowState.TransitionDuration =
+		NewPhase == EDominationObjectivePhase::Repositioning
+			? FMath::Max(0.0f, PhaseDuration)
+			: 0.0f;
+	ObjectiveFlowState.LastCapturedPointId = LastCapturedPointId;
+	ObjectiveFlowState.LastCapturingTeam = LastCapturingTeam;
+	if (bIncrementCaptureSerial)
+	{
+		++ObjectiveFlowState.CaptureSerial;
+	}
 	OnRep_ObjectiveFlowState();
 	ForceNetUpdate();
 }

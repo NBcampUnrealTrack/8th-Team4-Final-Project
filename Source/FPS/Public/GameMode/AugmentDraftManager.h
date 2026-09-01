@@ -14,6 +14,9 @@ struct FAugmentDraftContext;
 struct FAugmentPendingReward;
 
 DECLARE_MULTICAST_DELEGATE(FOnAugmentDraftDependenciesReady);
+DECLARE_MULTICAST_DELEGATE_OneParam(
+	FOnAugmentDraftQueueDrained,
+	AShooterPlayerState*);
 
 UCLASS()
 class FPS_API UAugmentDraftManager : public UObject
@@ -46,6 +49,9 @@ public:
 	void SynchronizeGameplayInputBlock(AShooterPlayerState* PlayerState) const;
 
 	FOnAugmentDraftDependenciesReady OnDependenciesReady;
+	// 한 플레이어가 현재 대기열의 모든 증강 선택을 끝냈을 때 알린다.
+	// 어떤 참가자들을 함께 기다릴지는 게임모드가 결정한다.
+	FOnAugmentDraftQueueDrained OnPlayerDraftQueueDrained;
 
 private:
 	UFUNCTION()

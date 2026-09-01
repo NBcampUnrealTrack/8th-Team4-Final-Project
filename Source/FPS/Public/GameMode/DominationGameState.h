@@ -61,6 +61,18 @@ public:
 	float GetPointTransitionTimeRemaining() const;
 
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
+	FDominationObjectiveFlowState GetObjectiveFlowState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
+	EDominationPointId GetLastCapturedPointId() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
+	EGameTeam GetLastCapturingTeam() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
+	int32 GetObjectiveCaptureSerial() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
 	FDominationCaptureState GetCaptureState() const;
 
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
@@ -73,10 +85,21 @@ public:
 	bool IsCaptureContested() const;
 
 	void SetDominationPhase(EDominationMatchPhase NewPhase, float PhaseDuration = 0.0f);
-	void SetObjectiveState(
-		EDominationPointId NewActivePointId,
-		EDominationObjectivePhase NewPhase,
-		float PhaseDuration = 0.0f);
+	// ObjectiveManager가 의미 단위로 상태를 게시하도록 저수준 필드 조합을 외부에 노출하지 않는다.
+	void ResetObjectiveState();
+	void BeginInitialObjectiveTransition(
+		EDominationPointId InitialPointId,
+		float PhaseDuration);
+	void BeginObjectiveTransitionAfterCapture(
+		EDominationPointId CapturedPointId,
+		EGameTeam CapturingTeam,
+		EDominationPointId NextPointId,
+		float PhaseDuration);
+	void RecordObjectiveCapture(
+		EDominationPointId CapturedPointId,
+		EGameTeam CapturingTeam);
+	void SetObjectiveCaptureEnabled(EDominationPointId ActivePointId);
+	void SetObjectiveInactive(EDominationPointId ActivePointId);
 	void SetCaptureState(const FDominationCaptureState& NewCaptureState);
 
 	UPROPERTY(BlueprintAssignable, Category = "Domination|Game Flow")
@@ -102,6 +125,13 @@ private:
 	void OnRep_CaptureState();
 
 	void BroadcastMatchFlowStateChanged();
+	void ApplyObjectiveState(
+		EDominationPointId NewActivePointId,
+		EDominationObjectivePhase NewPhase,
+		float PhaseDuration,
+		EDominationPointId LastCapturedPointId,
+		EGameTeam LastCapturingTeam,
+		bool bIncrementCaptureSerial);
 
 	UPROPERTY(ReplicatedUsing = OnRep_MatchFlowState, VisibleInstanceOnly, Category = "Domination|Game Flow")
 	FDominationMatchFlowState MatchFlowState;

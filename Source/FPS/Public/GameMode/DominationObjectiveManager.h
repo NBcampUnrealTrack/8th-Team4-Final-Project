@@ -35,6 +35,11 @@ public:
 	void StopObjectiveFlow();
 	// 중앙 C를 Repositioning으로 공개하고 전환 시간이 끝나면 점령을 활성화한다.
 	bool ActivateInitialPoint();
+	// GameMode가 점수/매치 승패를 확정한 뒤 매치가 계속될 때만 호출한다.
+	// 다음 거점 계산과 ObjectiveFlowState 게시 책임은 ObjectiveManager에 남긴다.
+	void AdvanceAfterCapture(
+		EDominationPointId CapturedPointId,
+		EGameTeam CaptureTeam);
 	ADominationCapturePoint* GetCapturePoint(EDominationPointId PointId) const;
 
 	// GameMode가 라운드 점수와 매치 종료를 처리하는 원시 점령 완료 이벤트다.
@@ -47,7 +52,6 @@ private:
 	void HandleCapturePointPawnChanged(APawn* Pawn);
 	void HandleCaptureUpdateTimer();
 	void HandleSuddenDeathTimerExpired();
-	void BeginPointTransition(EDominationPointId CapturedPointId, EGameTeam CaptureTeam);
 	void HandlePointTransitionComplete();
 	void UpdateCaptureState(float DeltaSeconds);
 	void CountActivePlayers(int32& OutTeamAPlayerCount, int32& OutTeamBPlayerCount) const;
