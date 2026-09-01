@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/NetSerialization.h"
 #include "GameFramework/Actor.h"
 #include "GAS/RogueEffectApplier.h"
 #include "RogueAugmentActor.generated.h"
@@ -50,6 +51,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Augment|Actor")
 	void OnDetonated();
 
+	// 마지막으로 터진 지점
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Actor")
+	FVector LastDetonateLocation = FVector::ZeroVector;
+
 	// 끄면 외부에서 Detonate 를 부를 때까지 기다림
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor")
 	bool bAutoDetonate = true;
@@ -77,17 +82,37 @@ protected:
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
 	TSoftClassPtr<ARogueAugmentActor> SpawnOnDetonateClass;
 
+	// 0 보다 크면 스폰 지점 기준 이 반경(cm) 안 무작위 지점에서 터짐
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Scatter", meta = (ClampMin = "0.0"))
+	float ScatterRadius = 0.f;
+
+	// 무작위 지점을 지면으로 내려붙일지. 공중 폭발 방지
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Scatter",
+		meta = (EditCondition = "ScatterRadius > 0", EditConditionHides))
+	bool bScatterSnapToGround = true;
+
+	// 지면 탐색 트레이스 길이(cm)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Scatter",
+		meta = (EditCondition = "ScatterRadius > 0 && bScatterSnapToGround", EditConditionHides, ClampMin = "0.0"))
+	float ScatterTraceDistance = 5000.f;
+
 private:
 	// 터진 위치에 남길 액터 스폰
 	void SpawnFollowUpActor();
 
+	// 이번 기폭이 적용될 지점. 산포가 없으면 액터 위치
+	FVector ResolveDetonateOrigin() const;
+
 	UFUNCTION(NetMulticast, Reliable)
-	void Multicast_Detonated();
+	void Multicast_Detonated(FVector_NetQuantize Location);
 
 	// 서버 전용
 	FRogueEffectPayload Payload;
 
 	bool bDetonated = false;
+
+	// 산포의 기준점. 현재 위치를 쓰면 포격이 한쪽으로 흘러간다
+	FVector ScatterAnchor = FVector::ZeroVector;
 
 	FTimerHandle FuseTimer;
 	FTimerHandle LifeTimer;

@@ -38,6 +38,8 @@ void ARogueAugmentActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ScatterAnchor = GetActorLocation();
+
 	if (!HasAuthority())
 	{
 		return;
@@ -93,12 +95,14 @@ void ARogueAugmentActor::Detonate()
 
 	bDetonated = true;
 
-	Payload.Origin = GetActorLocation();
+	const FVector DetonateOrigin = ResolveDetonateOrigin();
+
+	Payload.Origin = DetonateOrigin;
 	Payload.Causer = this;
 
 	URogueEffectApplier::Apply(Payload);
 
-	Multicast_Detonated();
+	Multicast_Detonated(DetonateOrigin);
 
 	if (bRepeating)
 	{
@@ -113,6 +117,36 @@ void ARogueAugmentActor::Detonate()
 	{
 		Destroy();
 	}
+}
+
+FVector ARogueAugmentActor::ResolveDetonateOrigin() const
+{
+	if (ScatterRadius <= 0.f)
+	{
+		return GetActorLocation();
+	}
+
+	const FVector2D Offset = FMath::RandPointInCircle(ScatterRadius);
+	const FVector Scattered = ScatterAnchor + FVector(Offset.X, Offset.Y, 0.f);
+
+	const UWorld* World = GetWorld();
+	if (!bScatterSnapToGround || !World)
+	{
+		return Scattered;
+	}
+
+	const FVector TraceStart = Scattered + FVector(0.f, 0.f, ScatterTraceDistance);
+	const FVector TraceEnd   = Scattered - FVector(0.f, 0.f, ScatterTraceDistance);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RogueScatterGround), false, this);
+
+	FHitResult Hit;
+	if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, Params))
+	{
+		return Hit.ImpactPoint;
+	}
+
+	return Scattered;
 }
 
 void ARogueAugmentActor::SpawnFollowUpActor()
@@ -148,7 +182,9 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 	FollowUp->FinishSpawning(SpawnTransform);
 }
 
-void ARogueAugmentActor::Multicast_Detonated_Implementation()
+void ARogueAugmentActor::Multicast_Detonated_Implementation(const FVector_NetQuantize Location)
 {
+	LastDetonateLocation = Location;
+
 	OnDetonated();
 }
