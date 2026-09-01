@@ -105,13 +105,9 @@ void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
 	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetEffectiveMagazineSize()));
 	
-	EShooterHUDVisualTypes Type = EShooterHUDVisualTypes::Normal;
-	
-	if (Weapon->UsesAmmo())
-	{
-		const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;
-		Type = GetAmmoVisualType(AmmoPer);
-	}
+	// Style 갱신
+	const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;
+	const EShooterHUDVisualTypes Type = GetAmmoVisualType(AmmoPer);
 	
 	ApplyHUDVisualStyle(AmmoVisualStyles.GetStyle(Type));
 }

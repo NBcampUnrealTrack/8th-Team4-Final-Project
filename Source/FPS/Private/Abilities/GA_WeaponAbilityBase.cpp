@@ -17,6 +17,7 @@ UGA_WeaponAbilityBase::UGA_WeaponAbilityBase()
 
 	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_ActionBlocked);
 }
 
 bool UGA_WeaponAbilityBase::CanActivateAbility(

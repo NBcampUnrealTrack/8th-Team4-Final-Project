@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/ShooterPlayerState.h"
 
@@ -12,7 +12,7 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
-#include "GameMode/LobbyGameState.h"
+#include "GameMode/State/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
@@ -46,6 +46,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
+	DOREPLIFETIME(AShooterPlayerState, ParticipationState);
 	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
 }
 
@@ -231,6 +232,22 @@ void AShooterPlayerState::SetLoadedIntoMatch(bool bNewLoadedIntoMatch)
 }
 
 void AShooterPlayerState::OnRep_LoadedIntoMatch()
+{
+}
+
+void AShooterPlayerState::SetParticipationState(const EPlayerParticipationState NewParticipationState)
+{
+	if (!HasAuthority() || ParticipationState == NewParticipationState)
+	{
+		return;
+	}
+
+	ParticipationState = NewParticipationState;
+	OnRep_ParticipationState();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_ParticipationState()
 {
 }
 

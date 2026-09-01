@@ -2,7 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 
 namespace
@@ -44,7 +44,7 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 
 void ULoadingScreenSubsystem::SetLoadingProgress(const float Progress)
 {
-	CurrentProgress = FMath::Clamp(Progress, 0.0f, 1.0f);
+	CurrentProgress = FMath::Max(CurrentProgress, FMath::Clamp(Progress, 0.0f, 1.0f));
 
 	if (ActiveLoadingWidget)
 	{

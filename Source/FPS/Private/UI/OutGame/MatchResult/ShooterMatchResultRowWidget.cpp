@@ -5,8 +5,7 @@
 
 void UShooterMatchResultRowWidget::SetRowData(
 	const FShooterMatchResultRow& InRow,
-	bool bStatsAvailable
-	,EShooterResultRowSide Side)
+	bool bStatsAvailable)
 {
 	if (Text_PlayerName)
 	{
@@ -18,27 +17,27 @@ void UShooterMatchResultRowWidget::SetRowData(
 		Panel_Stats->SetVisibility(
 			bStatsAvailable
 				? ESlateVisibility::HitTestInvisible
-				: ESlateVisibility::Hidden
+				: ESlateVisibility::Collapsed
 		);
 	}
-	
-	if (bStatsAvailable)
+
+	if (!bStatsAvailable)
 	{
-		if (Text_Kills)
-		{
-			Text_Kills->SetText(FText::AsNumber(InRow.Kills));
-		}
-
-		if (Text_Deaths)
-		{
-			Text_Deaths->SetText(FText::AsNumber(InRow.Deaths));
-		}
-
-		if (Text_Assists)
-		{
-			Text_Assists->SetText(FText::AsNumber(InRow.Assists));
-		}
+		return;
 	}
 
-	BP_ApplyTeamStyle(Side);
+	if (Text_Kills)
+	{
+		Text_Kills->SetText(FText::AsNumber(InRow.Kills));
+	}
+
+	if (Text_Deaths)
+	{
+		Text_Deaths->SetText(FText::AsNumber(InRow.Deaths));
+	}
+
+	if (Text_Assists)
+	{
+		Text_Assists->SetText(FText::AsNumber(InRow.Assists));
+	}
 }

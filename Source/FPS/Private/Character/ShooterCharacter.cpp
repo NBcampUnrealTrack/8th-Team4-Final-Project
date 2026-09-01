@@ -12,6 +12,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/ShooterGameMode.h"
@@ -113,6 +114,11 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->GravityScale *= GravityScaleMultiplier;
+	}
 
 	if (HasAuthority())
 	{

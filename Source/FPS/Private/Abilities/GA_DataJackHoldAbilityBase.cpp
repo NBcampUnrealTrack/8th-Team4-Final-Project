@@ -3,9 +3,9 @@
 #include "Abilities/Tasks/AbilityTask_WaitInputRelease.h"
 #include "Engine/World.h"
 #include "GameMode/BombGameMode.h"
-#include "GameMode/BombObjectiveManager.h"
+#include "GameMode/Manager/BombObjectiveManager.h"
 #include "Player/BaseTeamPlayerState.h"
-#include "GameMode/BaseRoundGameState.h"
+#include "GameMode/State/BaseRoundGameState.h"
 #include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -20,6 +20,7 @@ UGA_DataJackHoldAbilityBase::UGA_DataJackHoldAbilityBase()
 
 	ActivationBlockedTags.AddTag(RogueTags::State_Gameplay_InputBlocked);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_ActionBlocked);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Dropping);
 }

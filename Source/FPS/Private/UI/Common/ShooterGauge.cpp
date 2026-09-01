@@ -54,17 +54,9 @@ void UShooterGauge::SynchronizeProperties()
 {
 	Super::SynchronizeProperties();
 	
-	if (Image_Bg)
+	if (Image_Bg && BgTexture)
 	{
-		if (BgTexture)
-		{
-			Image_Bg->SetBrushFromTexture(BgTexture);
-			Image_Bg->SetVisibility(ESlateVisibility::HitTestInvisible);
-		}
-		else
-		{
-			Image_Bg->SetVisibility(ESlateVisibility::Collapsed);
-		}
+		Image_Bg->SetBrushFromTexture(BgTexture);
 	}
 }
 

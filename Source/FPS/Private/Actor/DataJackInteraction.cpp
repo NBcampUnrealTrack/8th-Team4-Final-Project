@@ -3,7 +3,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "GameMode/BombObjectiveManager.h"
+#include "GameMode/Manager/BombObjectiveManager.h"
 #include "Actor/DataJackSiteVolume.h"
 #include "Actor/DataJackWorldQueries.h"
 #include "Player/BaseTeamPlayerState.h"

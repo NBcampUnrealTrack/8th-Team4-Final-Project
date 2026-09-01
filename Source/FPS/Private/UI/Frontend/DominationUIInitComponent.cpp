@@ -3,7 +3,7 @@
 #include "Augment/AugmentInventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameMode/DominationGameState.h"
+#include "GameMode/State/DominationGameState.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/UITags.h"

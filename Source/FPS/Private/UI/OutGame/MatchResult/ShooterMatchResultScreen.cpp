@@ -10,7 +10,7 @@
 void UShooterMatchResultScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-
+	
 	if (Btn_Close)
 	{
 		Btn_Close->OnClicked.AddDynamic(this, &ThisClass::HandleCloseClicked);
@@ -22,20 +22,20 @@ void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot&
 {
 	// 유효한 스냅샷은 Capture 단게에서 보장되어야함
 	ensureMsgf(InSnapshot.MatchWinner != EGameTeam::None, TEXT("유효한 결과 스냅샷에 승자가 없습니다."));
-
+	
 	// 좌우매핑을 A/B로 고정으로 두지않고 MyTeam이 왼쪽에 오도록 한다
 	const bool bLocalIsTeamA = (InSnapshot.LocalTeam == EGameTeam::TeamA);
 	const int32 MyScore = bLocalIsTeamA ? InSnapshot.TeamAScore : InSnapshot.TeamBScore;
 	const int32 EnemyScore = bLocalIsTeamA ? InSnapshot.TeamBScore : InSnapshot.TeamAScore;
-
+	
 	// 승패로 갈리는 판단은 이곳이 전부
 	const bool bVictory = (InSnapshot.MatchWinner == InSnapshot.LocalTeam);
-
+	
 	if (Switcher_OutcomeVisual && Panel_Victory && Panel_Defeat)
 	{
 		Switcher_OutcomeVisual->SetActiveWidget(bVictory ? Panel_Victory : Panel_Defeat);
 	}
-
+		
 	// 스코어 표시
 	if (Text_MyTeamScore)
 	{
@@ -102,16 +102,9 @@ void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot&
 				continue;
 			}
 
-			const bool bIsLocal = (Row.Team == InSnapshot.LocalTeam);
+			RowWidget->SetRowData(Row, InSnapshot.bStatsAvailable);
 
-			RowWidget->SetRowData(
-				Row,
-				InSnapshot.bStatsAvailable,
-				bIsLocal
-					? EShooterResultRowSide::LocalTeam
-					: EShooterResultRowSide::EnemyTeam);
-
-			if (bIsLocal)
+			if (Row.Team == InSnapshot.LocalTeam)
 			{
 				if (Box_MyTeamRows)
 				{
@@ -128,15 +121,16 @@ void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot&
 		}
 	}
 
-	// K/D/A 헤더 표시 여부
+    // K/D/A 헤더 표시 여부
 	if (Panel_StatsHeader)
 	{
 		Panel_StatsHeader->SetVisibility(
 			InSnapshot.bStatsAvailable
 				? ESlateVisibility::HitTestInvisible
-				: ESlateVisibility::Hidden
+				: ESlateVisibility::Collapsed
 		);
 	}
+		
 }
 
 void UShooterMatchResultScreen::HandleCloseClicked()

@@ -49,9 +49,9 @@ void UShooterAugmentCard::SetData(const UAugmentDefinition* InDefinition, int32 
 	}
 
 	SetStyle(TierStyle->ButtonStyle);
+	Text_Name->SetColorAndOpacity(TierStyle->AccentColor);
+	Text_TierLabel->SetColorAndOpacity(TierStyle->AccentColor);
 	Text_TierLabel->SetText(TierStyle->TierDisplayName);
-	
-	BP_OnAccentChanged(TierStyle->AccentColor);
 
 	if (IsValid(Image_AlertBadge))
 	{

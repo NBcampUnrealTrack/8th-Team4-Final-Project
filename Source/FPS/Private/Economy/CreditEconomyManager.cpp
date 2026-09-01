@@ -2,7 +2,7 @@
 
 #include "Economy/CreditWalletComponent.h"
 #include "Economy/RogueEconomySettings.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "Player/ShooterPlayerState.h"
 #include "Templates/UnrealTemplate.h"
 

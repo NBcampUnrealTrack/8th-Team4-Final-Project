@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameMode/LobbyTypes.h"
-#include "GameMode/TeamTypes.h"
+#include "GameMode/Types/LobbyTypes.h"
+#include "GameMode/Types/TeamTypes.h"
 #include "TimerManager.h"
 #include "UI/Session/SessionWidgetBase.h"
 #include "LobbyWidget.generated.h"
