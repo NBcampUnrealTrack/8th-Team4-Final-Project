@@ -43,6 +43,11 @@ bool UGA_WeaponAbilityBase::CanActivateAbility(
 		return false;
 	}
 
+	if (!RequiresWeaponReady())
+	{
+		return true;
+	}
+
 	const UCombatComponent* CombatComponent = GetCombatComponent();
 
 	return !IsValid(CombatComponent) || CombatComponent->IsWeaponReady();

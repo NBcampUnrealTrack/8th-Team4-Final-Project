@@ -30,7 +30,9 @@ bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, con
 		return false;
 	}
 
-	return Weapon->UsesAmmo() && !Weapon->IsReloading() && Weapon->GetCurrentAmmo() < Weapon->GetEffectiveMagazineSize();
+	return Weapon->UsesAmmo() && !Weapon->IsReloading()
+		&& Weapon->GetCurrentAmmo() < Weapon->GetEffectiveMagazineSize()
+		&& Weapon->GetCurrentReserveAmmo() > 0;
 }
 
 void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,

@@ -13,6 +13,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
 
@@ -56,6 +57,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
+	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
 }
 
 void AWeaponBase::BeginPlay()
@@ -74,6 +76,16 @@ void AWeaponBase::BeginPlay()
 	EffectivePelletCount = PelletCountPerShot;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
+	CurrentReserveAmmo = MaxReserveAmmo;
+	bEmptyClipNotified = false;
+
+	// 스나이퍼는 좌우(Yaw) 반동이 없어야 한다 - 무기 BP/DataTable에 설정된 값과 무관하게 코드에서
+	// 강제한다(CanADS()/GetCurrentSpreadDegrees()의 스나이퍼 강제 규칙과 같은 패턴). ApplySpreadRecoilTuningTable이
+	// 이미 실행된 뒤(Aim->BeginPlay는 위 Super::BeginPlay()에서 호출됨)라 여기서 덮어써야 최종값이 된다.
+	if (Aim && GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
+	{
+		Aim->SetRecoilYawMultiplier(0.f);
+	}
 }
 
 void AWeaponBase::Tick(float DeltaTime)
@@ -107,31 +119,37 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
 }
 
-void AWeaponBase::TryPlayEmptyClipSound()
+bool AWeaponBase::TryPlayEmptyClipSound()
 {
-	if (!IsOutOfAmmo())
+	// 재장전 중에는 탄약이 채워지기 전까지 IsOutOfAmmo()가 계속 true라, 재장전 도중 사격
+	// 입력을 눌러도 빈 탄창 클릭음이 또 재생되지 않도록 막는다.
+	if (!IsOutOfAmmo() || bIsReloading)
 	{
-		return;
+		return false;
+	}
+
+	// 탄창이 빈 뒤 첫 호출에서만 소리를 낸다 - 그 다음부터는 재입력 시 자동 재장전으로
+	// 넘어가야 하므로(호출부 GA_RangedAttack), 여기서 false를 반환해 알린다.
+	if (bEmptyClipNotified)
+	{
+		return false;
 	}
 
 	const UWorld* World = GetWorld();
 	if (!World)
 	{
-		return;
+		return false;
 	}
 
-	const float ClickInterval = EffectiveRPM > 0.f ? (60.f / EffectiveRPM) : 0.5f;
-	if ((World->GetTimeSeconds() - LastFireTime) < ClickInterval)
-	{
-		return;
-	}
-
+	bEmptyClipNotified = true;
 	LastFireTime = World->GetTimeSeconds();
 
 	if (Effects)
 	{
 		Effects->PlayEmptyClipSound();
 	}
+
+	return true;
 }
 
 void AWeaponBase::SetEffectiveRPM(float NewRPM)
@@ -157,6 +175,14 @@ void AWeaponBase::SetIsAirborne(bool bNewIsAirborne)
 	if (Aim)
 	{
 		Aim->SetIsAirborne(bNewIsAirborne);
+	}
+}
+
+void AWeaponBase::SetIsStationary(bool bNewIsStationary)
+{
+	if (Aim)
+	{
+		Aim->SetIsStationary(bNewIsStationary);
 	}
 }
 
@@ -221,7 +247,9 @@ bool AWeaponBase::IsADS() const
 
 bool AWeaponBase::CanADS() const
 {
-	return Aim && Aim->CanADS();
+	// 정조준은 스나이퍼 전용이다 - 다른 무기는 Aim 컴포넌트의 bCanADS 설정과 무관하게 항상 불가능하다
+	// (무기 BP마다 체크박스를 일일이 끌 필요 없이 여기서 한 번에 강제한다).
+	return GetWeaponTag() == RogueTags::Weapon_Type_Sniper && Aim && Aim->CanADS();
 }
 
 float AWeaponBase::GetADSFieldOfView() const
@@ -246,7 +274,19 @@ float AWeaponBase::GetBaseSpreadDegrees() const
 
 float AWeaponBase::GetCurrentSpreadDegrees() const
 {
-	return Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
+	if (!Aim)
+	{
+		return 0.f;
+	}
+
+	// 스나이퍼는 스코프 없이(비ADS) 쏘면 이동/블룸 계산과 무관하게 항상 크게 흔들려야 한다 -
+	// 반드시 정조준해야만 쓸 수 있는 무기로 만들기 위한 강제 규칙(CanADS()와 같은 패턴).
+	if (!Aim->IsADS() && GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
+	{
+		return SniperUnscopedSpreadDegrees;
+	}
+
+	return Aim->GetCurrentSpreadDegrees();
 }
 
 void AWeaponBase::SetFirstPersonPresentationVisible(const bool bVisible)
@@ -484,7 +524,7 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize)
+	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize || CurrentReserveAmmo <= 0)
 	{
 		return;
 	}
@@ -509,7 +549,35 @@ void AWeaponBase::StartReload()
 
 void AWeaponBase::FinishReload()
 {
-	CurrentAmmo = EffectiveMagazineSize;
+	// 예비 탄약이 부족하면 탄창을 다 못 채우고 남은 예비 탄약만큼만 채운다(예: 탄창 30발 중 12발
+	// 남았는데 예비 탄약이 5발뿐이면 17발만 채우고 예비 탄약은 0이 된다).
+	const int32 AmountToReload = FMath::Clamp(EffectiveMagazineSize - CurrentAmmo, 0, CurrentReserveAmmo);
+	CurrentAmmo += AmountToReload;
+	CurrentReserveAmmo -= AmountToReload;
+	if (CurrentAmmo > 0)
+	{
+		bEmptyClipNotified = false;
+	}
+
+	bIsReloading = false;
+	if (HasAuthority())
+	{
+		ForceNetUpdate();
+	}
+}
+
+void AWeaponBase::CancelReload()
+{
+	if (!bIsReloading)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadTimerHandle);
+	}
+
 	bIsReloading = false;
 	if (HasAuthority())
 	{
@@ -537,7 +605,10 @@ FVector AWeaponBase::CalculateTraceDirection(const FVector& AimDirection) const
 	//
 	// 펠릿마다 독립적으로 호출되므로, 샷건처럼 PelletCountPerShot > 1인 무기는
 	// 매 펠릿이 콘 안에서 각각 다른 방향으로 무작위 샘플링된다.
-	const float SpreadDegrees = Aim ? Aim->GetCurrentSpreadDegrees() : 0.f;
+	// GetCurrentSpreadDegrees()를 거쳐야 스나이퍼 비ADS 강제 탄퍼짐(SniperUnscopedSpreadDegrees)이
+	// 실제 탄 방향에도 반영된다 - Aim->GetCurrentSpreadDegrees()를 직접 부르면 크로스헤어 UI만
+	// 커지고 실제 탄은 그대로 나가는 불일치가 생긴다.
+	const float SpreadDegrees = GetCurrentSpreadDegrees();
 	return UKismetMathLibrary::RandomUnitVectorInConeInDegrees(AimDirection, SpreadDegrees);
 }
 

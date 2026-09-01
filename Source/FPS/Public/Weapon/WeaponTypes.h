@@ -104,6 +104,11 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
+	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). 정지(브레이킹 성공) 중에는
+	// 여전히 0으로 고정된다 - 조준해도 움직이면서 쏘면 빗나가야 한다는 요구사항 대응.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float MovingADSSpreadDegrees = 2.f;
+
 	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
 	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
@@ -112,6 +117,11 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	float RecoilRandomness = 0.f;
+
+	// RecoilCurve의 Yaw(X채널) 결과에 곱해지는 배율. 0으로 두면 이 무기는 좌우 반동이 전혀 없고
+	// Pitch(상하) 반동만 남는다 - 예: 스나이퍼는 X축 반동을 없애고 싶을 때 0으로 설정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilYawMultiplier = 1.f;
 
 	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")

@@ -6,6 +6,7 @@
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/ShooterAnimInstance.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Tags/GameplayTags.h"
@@ -34,9 +35,19 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 		return true;
 	}
 
-	if (Weapon->IsOutOfAmmo())
+	if (Weapon->IsOutOfAmmo() && !Weapon->IsReloading())
 	{
-		Weapon->TryPlayEmptyClipSound();
+		// 탄창이 빈 뒤 첫 사격 입력엔 클릭음만 재생한다(TryPlayEmptyClipSound가 true 반환).
+		// 이미 한 번 클릭음을 들은 뒤 또 사격 입력이 들어오면(false 반환), 재장전 입력을 누른 것과
+		// 똑같이 처리해 자동으로 재장전을 시작한다 - 매번 R을 따로 눌러야 하는 불편을 없앤다.
+		if (!Weapon->TryPlayEmptyClipSound())
+		{
+			if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+			{
+				static const FGameplayTag ReloadInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Reload"));
+				RogueASC->AbilityInputTagPressed(ReloadInputTag);
+			}
+		}
 	}
 
 	return false;
