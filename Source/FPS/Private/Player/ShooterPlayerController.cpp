@@ -14,6 +14,7 @@
 #include "Input/ShooterInputConfig.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
@@ -28,6 +29,7 @@
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
 #include "Player/ShooterSpectatorPawn.h"
+#include "Weapon/WeaponBase.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -1003,6 +1005,22 @@ void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, c
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->AbilityInputTagReleased(InputTag);
+	}
+
+	// 발사 입력을 뗀 순간을 장착 무기에 알린다 - 빈 탄창에서 "클릭음 → 떼고 다시 클릭 → 재장전"
+	// 2단계 입력을 성립시키기 위한 신호(AWeaponBase::NotifyPrimaryInputReleased).
+	static const FGameplayTag PrimaryInputTag =
+		FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Primary"), false);
+	if (PrimaryInputTag.IsValid() && InputTag.MatchesTagExact(PrimaryInputTag))
+	{
+		APawn* ControlledPawn = GetPawn();
+		if (IsValid(ControlledPawn) && ControlledPawn->Implements<UPlayerInterface>())
+		{
+			if (AWeaponBase* CurrentWeapon = IPlayerInterface::Execute_GetCurrentWeapon(ControlledPawn))
+			{
+				CurrentWeapon->NotifyPrimaryInputReleased();
+			}
+		}
 	}
 }
 

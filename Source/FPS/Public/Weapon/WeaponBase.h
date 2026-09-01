@@ -125,10 +125,20 @@ public:
 
 	// 탄창이 빈 상태에서 사격 입력이 들어왔을 때 호출한다. 탄창이 빈 뒤 첫 호출에서만 클릭음을
 	// 재생하고 true를 반환한다 - 이후 같은 빈 탄창 상태에서 또 호출되면(이미 한 번 클릭음을 들은
-	// 뒤 재입력) 아무 것도 하지 않고 false를 반환하므로, 호출부(GA_RangedAttack)가 이걸 "다음
-	// 입력부터는 자동으로 재장전을 시도하라"는 신호로 쓸 수 있다.
+	// 뒤 재입력) 아무 것도 하지 않고 false를 반환한다. 자동 재장전은 하지 않으며, false 반환 뒤
+	// 재장전 여부는 호출부(GA_RangedAttack)가 IsEmptyReloadArmed()로 판단한다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool TryPlayEmptyClipSound();
+
+	// 발사 입력(InputTag.Ability.Primary)이 떼어졌을 때 컨트롤러가 호출한다. 탄창이 빈 상태에서
+	// 클릭음을 이미 들었다면(bEmptyClipNotified), 다음 발사 입력을 "떼었다 다시 누른 새 입력"으로
+	// 인정해 재장전을 무장(arm)한다 - 누르고 있는 동안 자동으로 재장전되지 않게 하기 위함.
+	void NotifyPrimaryInputReleased();
+
+	// 빈 탄창에서 클릭음을 들은 뒤 발사 입력을 한 번 떼었는지. GA_RangedAttack이 이 값이 true일
+	// 때만 재장전을 시작한다. 재장전 시작/완료 시 리셋된다.
+	bool IsEmptyReloadArmed() const { return bEmptyReloadArmed; }
+	void ConsumeEmptyReloadArm() { bEmptyReloadArmed = false; }
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseRPM() const { return BaseRPM; }
@@ -482,6 +492,11 @@ private:
 	// 탄창이 빈 뒤 TryPlayEmptyClipSound()가 클릭음을 이미 재생했는지. 탄약이 다시 채워지면
 	// (FinishReload/BeginPlay) 리셋된다.
 	bool bEmptyClipNotified = false;
+
+	// 빈 탄창 클릭음을 들은 뒤 발사 입력을 떼었다가 다시 눌러 재장전을 요청할 수 있는 상태인지.
+	// NotifyPrimaryInputReleased()에서 true, 재장전 시작(GA_RangedAttack) 및 FinishReload/BeginPlay에서
+	// false. 비복제 - bEmptyClipNotified와 동일하게 로컬 입력 판정용이다.
+	bool bEmptyReloadArmed = false;
 
 	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).

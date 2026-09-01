@@ -2,6 +2,8 @@
 
 #include "Abilities/GA_Reload.h"
 
+#include "AbilitySystemComponent.h"
+#include "Abilities/GA_ADS.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Animation/AnimInstance.h"
 #include "Augment/RogueAugmentStatResolver.h"
@@ -43,6 +45,27 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	// 재장전을 시작하면 정조준(GA_ADS)을 즉시 취소한다 - 줌을 유지한 채 재장전되는 문제 방지
+	// (특히 스나이퍼). GA_ADS::EndAbility가 모든 종료 경로에서 SetADS(false)/SetAiming(false)를
+	// 처리하므로 취소만으로 줌/조준 상태가 깔끔히 풀린다. GA_ADS는 Started 트리거라 재장전이 끝나도
+	// 자동 재줌되지 않고 다시 우클릭해야 한다. 태그(Asset Tag) 매칭에 의존하지 않도록 어빌리티
+	// 클래스로 직접 찾아 취소한다.
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	{
+		TArray<FGameplayAbilitySpecHandle> ADSHandles;
+		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
+		{
+			if (Spec.IsActive() && Spec.Ability && Spec.Ability->IsA(UGA_ADS::StaticClass()))
+			{
+				ADSHandles.Add(Spec.Handle);
+			}
+		}
+		for (const FGameplayAbilitySpecHandle& ADSHandle : ADSHandles)
+		{
+			ASC->CancelAbilityHandle(ADSHandle);
+		}
 	}
 
 	// 재장전 시간의 기준값은 실제 리로드 몽타주 길이다(무기 BP의 ReloadDuration 필드는 몽타주가

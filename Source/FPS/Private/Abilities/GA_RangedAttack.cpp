@@ -38,10 +38,12 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 	if (Weapon->IsOutOfAmmo() && !Weapon->IsReloading())
 	{
 		// 탄창이 빈 뒤 첫 사격 입력엔 클릭음만 재생한다(TryPlayEmptyClipSound가 true 반환).
-		// 이미 한 번 클릭음을 들은 뒤 또 사격 입력이 들어오면(false 반환), 재장전 입력을 누른 것과
-		// 똑같이 처리해 자동으로 재장전을 시작한다 - 매번 R을 따로 눌러야 하는 불편을 없앤다.
-		if (!Weapon->TryPlayEmptyClipSound())
+		// 이미 클릭음을 들은 뒤(false 반환)엔, 발사 버튼을 한 번 떼었다가 다시 누른 경우에만
+		// (IsEmptyReloadArmed) 재장전을 시작한다 - 누르고 있는 동안 자동 재장전되는 걸 막고,
+		// "빈탄창 소리 → 다시 클릭 → 재장전" 2단계 입력을 강제한다. R 키 직접 입력은 별개로 동작한다.
+		if (!Weapon->TryPlayEmptyClipSound() && Weapon->IsEmptyReloadArmed())
 		{
+			Weapon->ConsumeEmptyReloadArm();
 			if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
 			{
 				static const FGameplayTag ReloadInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Reload"));

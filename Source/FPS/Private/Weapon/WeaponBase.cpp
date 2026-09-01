@@ -78,6 +78,7 @@ void AWeaponBase::BeginPlay()
 	CurrentAmmo = EffectiveMagazineSize;
 	CurrentReserveAmmo = MaxReserveAmmo;
 	bEmptyClipNotified = false;
+	bEmptyReloadArmed = false;
 
 	// 스나이퍼는 좌우(Yaw) 반동이 없어야 한다 - 무기 BP/DataTable에 설정된 값과 무관하게 코드에서
 	// 강제한다(CanADS()/GetCurrentSpreadDegrees()의 스나이퍼 강제 규칙과 같은 패턴). ApplySpreadRecoilTuningTable이
@@ -128,8 +129,8 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 		return false;
 	}
 
-	// 탄창이 빈 뒤 첫 호출에서만 소리를 낸다 - 그 다음부터는 재입력 시 자동 재장전으로
-	// 넘어가야 하므로(호출부 GA_RangedAttack), 여기서 false를 반환해 알린다.
+	// 탄창이 빈 뒤 첫 호출에서만 소리를 낸다 - 그 뒤 호출엔 false를 반환한다. 호출부(GA_RangedAttack)는
+	// 이 false + IsEmptyReloadArmed()가 참일 때만(=발사 입력을 떼었다 다시 누름) 재장전을 시작한다.
 	if (bEmptyClipNotified)
 	{
 		return false;
@@ -142,6 +143,7 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	}
 
 	bEmptyClipNotified = true;
+	bEmptyReloadArmed = false;
 	LastFireTime = World->GetTimeSeconds();
 
 	if (Effects)
@@ -150,6 +152,16 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	}
 
 	return true;
+}
+
+void AWeaponBase::NotifyPrimaryInputReleased()
+{
+	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
+	// 다음 발사 입력은 "떼었다 다시 누른 새 입력"으로 보고 재장전을 허용한다(GA_RangedAttack).
+	if (IsOutOfAmmo() && bEmptyClipNotified && !bIsReloading)
+	{
+		bEmptyReloadArmed = true;
+	}
 }
 
 void AWeaponBase::SetEffectiveRPM(float NewRPM)
@@ -530,6 +542,7 @@ void AWeaponBase::StartReload()
 	}
 
 	bIsReloading = true;
+	bEmptyReloadArmed = false;
 	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
 	// 항상 무반동 상태로 시작한다.
 	if (Aim)
@@ -558,6 +571,7 @@ void AWeaponBase::FinishReload()
 	{
 		bEmptyClipNotified = false;
 	}
+	bEmptyReloadArmed = false;
 
 	bIsReloading = false;
 	if (HasAuthority())
