@@ -13,6 +13,7 @@ class UAbilitySystemComponent;
 class UCameraComponent;
 class UCombatHitZoneDefinition;
 class UCombatComponent;
+class UFootstepComponent;
 class UInputAction;
 class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
@@ -50,6 +51,8 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
+	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 
 	virtual void CheckJumpInput(float DeltaTime) override;
 
@@ -77,6 +80,8 @@ public:
 	void HandleJumpReleased();
 	void HandleSprintPressed();
 	void HandleSprintReleased();
+	void HandleCrouchPressed();
+	void HandleCrouchReleased();
 
 protected:
 	bool InitializeDefaultWeaponLoadout();
@@ -126,6 +131,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<ULagCompensationComponent> LagCompensation;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Audio")
+	TObjectPtr<UFootstepComponent> Footstep;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Hit Zone")
 	TObjectPtr<UCombatHitZoneDefinition> CombatHitZoneDefinition;

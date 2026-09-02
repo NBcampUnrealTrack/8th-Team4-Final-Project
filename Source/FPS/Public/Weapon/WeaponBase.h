@@ -33,6 +33,11 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// 오너 참조가 늦게 복제되는 경우(부활 직후 클라이언트: 무기 액터/CurrentWeapon 복제가
+	// 빙의보다 먼저 도착) AttachToOwnerMeshes가 no-op으로 끝나 무기가 허공에 남는다.
+	// 오너가 채워지는 이 시점에 부착/표시를 다시 확정한다.
+	virtual void OnRep_Owner() override;
+
 	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> Spread가 반영된 펠릿별 최종 방향 생성
 	// -> B Hitscan Resolver에 사격 1회 전달 -> 반동 적용 -> 연사 카운트 증가.
 	// bHeavyAttack: 전술 칼처럼 좌/우클릭 대미지가 다른 무기용. AltBaseDamage가 0이면 무시되고 BaseDamage를 쓴다.
