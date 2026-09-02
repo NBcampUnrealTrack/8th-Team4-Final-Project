@@ -1,9 +1,9 @@
 #include "GameMode/Manager/DominationLoadoutManager.h"
 
 #include "GameMode/Types/DominationTypes.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "GameFramework/Pawn.h"
 #include "Player/DominationPlayerState.h"
-#include "Tags/GameplayTags.h"
 #include "Weapon/RogueWeaponSettings.h"
 #include "Weapon/WeaponBase.h"
 #include "Weapon/WeaponInventoryComponent.h"
@@ -11,11 +11,27 @@
 
 bool UDominationLoadoutManager::HasRequiredWeaponRegistryEntries() const
 {
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
 	const URogueWeaponSettings* WeaponSettings = GetDefault<URogueWeaponSettings>();
-	return IsValid(WeaponSettings)
-		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Rifle)
-		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Sniper)
-		&& WeaponSettings->ResolveWeaponClass(RogueTags::Weapon_Type_Shotgun);
+	if (!IsValid(ClassSettings)
+		|| !IsValid(WeaponSettings)
+		|| ClassSettings->CombatClasses.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		if (Definition.CombatClass == EDominationCombatClass::Unselected
+			|| !Definition.PrimaryWeaponTag.IsValid()
+			|| !WeaponSettings->ResolveWeaponClass(Definition.PrimaryWeaponTag))
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 bool UDominationLoadoutManager::InitializeCombatClassInventory(
@@ -56,15 +72,11 @@ bool UDominationLoadoutManager::ApplyCombatClassLoadout(
 FGameplayTag UDominationLoadoutManager::ResolvePrimaryWeaponTag(
 	const EDominationCombatClass CombatClass)
 {
-	switch (CombatClass)
-	{
-	case EDominationCombatClass::Trooper:
-		return RogueTags::Weapon_Type_Rifle;
-	case EDominationCombatClass::Ranger:
-		return RogueTags::Weapon_Type_Sniper;
-	case EDominationCombatClass::Vanguard:
-		return RogueTags::Weapon_Type_Shotgun;
-	default:
-		return FGameplayTag();
-	}
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	const FDominationCombatClassDefinition* Definition = IsValid(ClassSettings)
+		? ClassSettings->FindDefinition(CombatClass)
+		: nullptr;
+
+	return Definition ? Definition->PrimaryWeaponTag : FGameplayTag();
 }

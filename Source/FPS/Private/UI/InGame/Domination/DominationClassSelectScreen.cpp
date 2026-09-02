@@ -2,6 +2,7 @@
 
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
 
@@ -10,39 +11,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogDominationClassSelectScreen, Log, All);
 UDominationClassSelectScreen::UDominationClassSelectScreen()
 {
 	InputConfig = EShooterWidgetInputMode::Menu;
-
-	FDominationClassCardPresentation& Trooper = ClassOptions.AddDefaulted_GetRef();
-	Trooper.CombatClass = EDominationCombatClass::Trooper;
-	Trooper.DisplayName = NSLOCTEXT(
-		"DominationClassSelection",
-		"TrooperName",
-		"Trooper");
-	Trooper.Description = NSLOCTEXT(
-		"DominationClassSelection",
-		"TrooperDescription",
-		"Assault Rifle");
-
-	FDominationClassCardPresentation& Ranger = ClassOptions.AddDefaulted_GetRef();
-	Ranger.CombatClass = EDominationCombatClass::Ranger;
-	Ranger.DisplayName = NSLOCTEXT(
-		"DominationClassSelection",
-		"RangerName",
-		"Ranger");
-	Ranger.Description = NSLOCTEXT(
-		"DominationClassSelection",
-		"RangerDescription",
-		"Sniper Rifle");
-
-	FDominationClassCardPresentation& Vanguard = ClassOptions.AddDefaulted_GetRef();
-	Vanguard.CombatClass = EDominationCombatClass::Vanguard;
-	Vanguard.DisplayName = NSLOCTEXT(
-		"DominationClassSelection",
-		"VanguardName",
-		"Vanguard");
-	Vanguard.Description = NSLOCTEXT(
-		"DominationClassSelection",
-		"VanguardDescription",
-		"Shotgun");
 }
 
 void UDominationClassSelectScreen::NativeOnActivated()
@@ -103,9 +71,18 @@ void UDominationClassSelectScreen::RebuildClassCards()
 		return;
 	}
 
-	for (const FDominationClassCardPresentation& Option : ClassOptions)
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	if (!IsValid(ClassSettings))
 	{
-		if (Option.CombatClass == EDominationCombatClass::Unselected)
+		UE_LOG(LogDominationClassSelectScreen, Error,
+			TEXT("Domination class settings are unavailable."));
+		return;
+	}
+
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		if (Definition.CombatClass == EDominationCombatClass::Unselected)
 		{
 			continue;
 		}
@@ -119,7 +96,12 @@ void UDominationClassSelectScreen::RebuildClassCards()
 			continue;
 		}
 
-		ClassCard->SetClassData(Option);
+		FDominationClassCardPresentation Presentation;
+		Presentation.CombatClass = Definition.CombatClass;
+		Presentation.DisplayName = Definition.DisplayName;
+		Presentation.Description = Definition.Description;
+		Presentation.Icon = Definition.Icon;
+		ClassCard->SetClassData(Presentation);
 		ClassCard->OnClassCardClicked.AddUObject(
 			this,
 			&ThisClass::HandleClassCardClicked);
