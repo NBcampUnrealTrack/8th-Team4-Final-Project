@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "GameMode/ShooterGameMode.h"
@@ -62,6 +62,20 @@ void AShooterGameMode::HandlePlayerEliminated(
 	}
 
 	AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
+	AShooterPlayerState* VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+
+	if (IsValid(VictimPlayerState))
+	{
+		VictimPlayerState->ServerAddDeath();
+	}
+
+	// 자살/팀킬은 킬 증가 X
+	if (IsValid(KillerPlayerState)
+		&& KillerPlayerState != VictimPlayerState
+		&& (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
+	{
+		KillerPlayerState->ServerAddKill();
+	}
 
 	if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
 	{

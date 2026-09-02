@@ -48,6 +48,8 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 	DOREPLIFETIME(AShooterPlayerState, ParticipationState);
 	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
+	DOREPLIFETIME(AShooterPlayerState, Kills);
+	DOREPLIFETIME(AShooterPlayerState, Deaths);
 }
 
 UAbilitySystemComponent* AShooterPlayerState::GetAbilitySystemComponent() const
@@ -272,6 +274,40 @@ void AShooterPlayerState::SetVoiceTalking(bool bNewVoiceTalking)
 void AShooterPlayerState::OnRep_VoiceTalking()
 {
 	OnVoiceTalkingChanged.Broadcast(this, bIsVoiceTalking);
+}
+
+void AShooterPlayerState::ServerAddKill(const int32 Amount)
+{
+	if (!HasAuthority() || Amount == 0)
+	{
+		return;
+	}
+
+	Kills = FMath::Max(0, Kills + Amount);
+	OnRep_Kills();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::ServerAddDeath(const int32 Amount)
+{
+	if (!HasAuthority() || Amount == 0)
+	{
+		return;
+	}
+
+	Deaths = FMath::Max(0, Deaths + Amount);
+	OnRep_Deaths();
+	ForceNetUpdate();
+}
+
+void AShooterPlayerState::OnRep_Kills()
+{
+	OnKillStatsChanged.Broadcast(this, Kills, Deaths);
+}
+
+void AShooterPlayerState::OnRep_Deaths()
+{
+	OnKillStatsChanged.Broadcast(this, Kills, Deaths);
 }
 
 void AShooterPlayerState::ServerGrantStartupAbilities()

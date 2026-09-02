@@ -22,6 +22,7 @@ class UShopPurchaseComponent;
 class UWeaponInventoryComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterVoiceTalkingChangedSignature, AShooterPlayerState*, PlayerState, bool, bIsTalking);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FShooterKillStatsChangedSignature, AShooterPlayerState*, PlayerState, int32, Kills, int32, Deaths);
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -96,6 +97,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Voice")
 	FShooterVoiceTalkingChangedSignature OnVoiceTalkingChanged;
 
+	UFUNCTION(BlueprintPure, Category = "Shooter|Stats")
+	int32 GetKills() const { return Kills; }
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Stats")
+	int32 GetDeaths() const { return Deaths; }
+
+	// 서버 전용
+	void ServerAddKill(int32 Amount = 1);
+	void ServerAddDeath(int32 Amount = 1);
+
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Stats")
+	FShooterKillStatsChangedSignature OnKillStatsChanged;
+
 protected:
 	virtual void PostInitializeComponents() override;
 
@@ -120,6 +134,12 @@ private:
 
 	UFUNCTION()
 	void OnRep_VoiceTalking();
+
+	UFUNCTION()
+	void OnRep_Kills();
+
+	UFUNCTION()
+	void OnRep_Deaths();
 
 	UFUNCTION(Client, Reliable)
 	void ClientSyncEquippedWeaponState(FGameplayTag EquippedStateTag);
@@ -188,4 +208,10 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_VoiceTalking, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Voice", meta = (AllowPrivateAccess = "true"))
 	bool bIsVoiceTalking = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Kills, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Stats", meta = (AllowPrivateAccess = "true"))
+	int32 Kills = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_Deaths, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Stats", meta = (AllowPrivateAccess = "true"))
+	int32 Deaths = 0;
 };
