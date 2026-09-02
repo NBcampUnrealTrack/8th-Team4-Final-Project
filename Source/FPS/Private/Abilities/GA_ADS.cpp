@@ -23,7 +23,8 @@ bool UGA_ADS::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	}
 
 	const AWeaponBase* Weapon = GetEquippedWeapon();
-	return IsValid(Weapon) && Weapon->CanADS();
+	// 재장전 중에는 정조준을 걸 수 없다 - 재장전 애니메이션 중 정조준 자세로 전환되는 버그 방지.
+	return IsValid(Weapon) && Weapon->CanADS() && !Weapon->IsReloading();
 }
 
 void UGA_ADS::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,

@@ -74,5 +74,12 @@ private:
 	bool bSuddenDeathActive = false;
 	double LastCaptureUpdateTime = 0.0;
 
+	// 거점에 아무도 없는 상태가 지속된 시간. 사람이 들어오면 즉시 0으로 리셋된다.
+	float EmptyZoneElapsedSeconds = 0.0f;
+
 	static constexpr float CaptureUpdateInterval = 0.1f;
+	// 거점이 비어도 이 시간(초) 동안은 진행률을 그대로 유지한다.
+	static constexpr float EmptyZoneHoldDuration = 10.0f;
+	// 유지 시간이 지난 뒤, 초당 이만큼(0.02 = 2%)씩 0%까지 감소시킨다.
+	static constexpr float EmptyZoneDecayRatePerSecond = 0.02f;
 };

@@ -31,52 +31,6 @@ namespace
 	constexpr int32 TeamOutlineStencilEnemy = 2;
 	constexpr int32 TeamOutlineStencilEnemyRevealed = 3;
 
-	AShooterPlayerState* ResolveShooterPlayerState(AActor* Actor)
-	{
-		if (!IsValid(Actor))
-		{
-			return nullptr;
-		}
-
-		if (AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(Actor))
-		{
-			return PlayerState;
-		}
-		if (APawn* Pawn = Cast<APawn>(Actor))
-		{
-			return Pawn->GetPlayerState<AShooterPlayerState>();
-		}
-		if (AController* Controller = Cast<AController>(Actor))
-		{
-			return Controller->GetPlayerState<AShooterPlayerState>();
-		}
-
-		return nullptr;
-	}
-
-	AShooterPlayerState* ResolveKillerPlayerState(const FRogueDeathContext& Context)
-	{
-		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Context.InstigatorActor.Get()))
-		{
-			return PlayerState;
-		}
-
-		AActor* Causer = Context.CauserActor.Get();
-		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer))
-		{
-			return PlayerState;
-		}
-		if (!IsValid(Causer))
-		{
-			return nullptr;
-		}
-
-		if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer->GetOwner()))
-		{
-			return PlayerState;
-		}
-		return ResolveShooterPlayerState(Causer->GetInstigator());
-	}
 }
 
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
@@ -361,7 +315,7 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Con
 	AShooterGameMode* ShooterGameMode = IsValid(World) ? World->GetAuthGameMode<AShooterGameMode>() : nullptr;
 	if (IsValid(OwningController) && IsValid(ShooterGameMode))
 	{
-		ShooterGameMode->NotifyPlayerEliminatedBy(OwningController, ResolveKillerPlayerState(Context));
+		ShooterGameMode->HandlePlayerEliminated(OwningController, Context);
 	}
 }
 

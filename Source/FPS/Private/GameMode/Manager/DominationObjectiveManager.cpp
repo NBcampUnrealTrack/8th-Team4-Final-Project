@@ -90,6 +90,7 @@ void UDominationObjectiveManager::StopObjectiveFlow()
 	TransitionTargetPointId = EDominationPointId::None;
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
+	EmptyZoneElapsedSeconds = 0.0f;
 	bCaptureCompleted = false;
 
 	if (ADominationGameState* DominationGameState = GetDominationGameState())
@@ -117,6 +118,7 @@ bool UDominationObjectiveManager::ActivateInitialPoint()
 	TransitionTargetPointId = EDominationPointId::C;
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
+	EmptyZoneElapsedSeconds = 0.0f;
 	bCaptureCompleted = false;
 	DominationGameState->SetCaptureState(FDominationCaptureState());
 
@@ -251,11 +253,34 @@ void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 
 	if (!bTeamAPresent && !bTeamBPresent)
 	{
-		CapturingTeam = EGameTeam::None;
-		CaptureProgress = 0.0f;
+		// 아무도 없으면 EmptyZoneHoldDuration(10초)까지는 진행률을 그대로 유지하고,
+		// 그 이후부터는 EmptyZoneDecayRatePerSecond(초당 2%)로 0%까지 서서히 감소시킨다.
+		if (CaptureProgress > 0.0f && DeltaSeconds > 0.0f)
+		{
+			const float PreviousElapsed = EmptyZoneElapsedSeconds;
+			EmptyZoneElapsedSeconds += DeltaSeconds;
+			const float DecaySeconds = FMath::Max(
+				0.0f,
+				EmptyZoneElapsedSeconds - FMath::Max(PreviousElapsed, EmptyZoneHoldDuration));
+			if (DecaySeconds > 0.0f)
+			{
+				CaptureProgress = FMath::Max(
+					0.0f,
+					CaptureProgress - DecaySeconds * EmptyZoneDecayRatePerSecond);
+			}
+		}
+
+		if (CaptureProgress <= 0.0f)
+		{
+			CapturingTeam = EGameTeam::None;
+			EmptyZoneElapsedSeconds = 0.0f;
+		}
+
 		PublishCaptureState(TeamAPlayerCount, TeamBPlayerCount, false);
 		return;
 	}
+
+	EmptyZoneElapsedSeconds = 0.0f;
 
 	if (bContested)
 	{
@@ -270,10 +295,9 @@ void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 		? TeamAPlayerCount
 		: TeamBPlayerCount;
 
-	if (CapturingTeam != PresentTeam)
+	if (CapturingTeam == EGameTeam::None)
 	{
 		CapturingTeam = PresentTeam;
-		CaptureProgress = 0.0f;
 	}
 
 	const bool bWasComplete = CaptureProgress >= 1.0f;
@@ -282,7 +306,21 @@ void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 		const float CaptureTime = CaptureRules.GetCaptureTime(
 			PresentPlayerCount,
 			bSuddenDeathActive);
-		CaptureProgress = FMath::Min(1.0f, CaptureProgress + DeltaSeconds / CaptureTime);
+		const float ProgressDelta = DeltaSeconds / CaptureTime;
+		if (CapturingTeam == PresentTeam)
+		{
+			// 점령 중인 팀이 그대로 있음 - 진행률 증가
+			CaptureProgress = FMath::Min(1.0f, CaptureProgress + ProgressDelta);
+		}
+		else
+		{
+			// 점령 중이던 팀은 없고 상대 팀만 있음 - 즉시 0%가 아니라 점령 속도만큼 서서히 되돌린다.
+			CaptureProgress = FMath::Max(0.0f, CaptureProgress - ProgressDelta);
+			if (CaptureProgress <= 0.0f)
+			{
+				CapturingTeam = PresentTeam;
+			}
+		}
 	}
 
 	PublishCaptureState(TeamAPlayerCount, TeamBPlayerCount, false);
@@ -314,6 +352,7 @@ void UDominationObjectiveManager::AdvanceAfterCapture(
 	StopCaptureTracking();
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
+	EmptyZoneElapsedSeconds = 0.0f;
 	bCaptureCompleted = false;
 	DominationGameState->SetCaptureState(FDominationCaptureState());
 
@@ -378,6 +417,7 @@ void UDominationObjectiveManager::HandlePointTransitionComplete()
 	TransitionTargetPointId = EDominationPointId::None;
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
+	EmptyZoneElapsedSeconds = 0.0f;
 	bCaptureCompleted = false;
 	DominationGameState->SetCaptureState(FDominationCaptureState());
 	DominationGameState->SetObjectiveCaptureEnabled(ActivatedPointId);

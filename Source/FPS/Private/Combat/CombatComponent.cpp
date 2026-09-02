@@ -92,14 +92,22 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	const bool bIsFalling = Movement->IsFalling();
 	Weapon->SetIsAirborne(bIsFalling);
 
+	// 이동 입력을 누르고 있는지와 무관하게, 실제 속도가 임계값 이하로 떨어지면 그 즉시 "정지
+	// (브레이킹 성공)"로 취급한다 - 반대 방향 키로 급정지(카운터 스트레이프)해서 속도를 0으로
+	// 만든 경우도 정지로 인정된다. 완전 정지든 감속으로 멈춘 것이든 동일하게 취급한다.
+	const bool bIsStationary = !bIsFalling && !Movement->IsSprinting()
+		&& Movement->Velocity.Size2D() <= StationarySpeedThreshold;
+	// ADS 탄퍼짐이 0으로 고정되는 조건(브레이킹 성공)에 쓰인다 - WeaponAimComponent::
+	// CalculateCurrentSpreadDegrees 참고.
+	Weapon->SetIsStationary(bIsStationary);
+
 	float Multiplier;
 	if (bIsFalling || Movement->IsSprinting())
 	{
 		Multiplier = SpreadMultiplierAirOrSprint;
 	}
-	else if (Movement->Velocity.Size2D() <= StationarySpeedThreshold)
+	else if (bIsStationary)
 	{
-		// 완전 정지든 방금 브레이킹(감속)으로 멈춘 것이든 동일하게 취급한다.
 		Multiplier = SpreadMultiplierStationary;
 	}
 	else
@@ -275,7 +283,7 @@ bool UCombatComponent::InitializeWeaponLoadout(
 bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 {
 	AActor* OwnerActor = GetOwner();
-	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || bIsCycling)
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return false;
 	}
@@ -291,15 +299,19 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 		return true;
 	}
 
-	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon->IsReloading())
-	{
-		return false;
-	}
-
+	// 스왑 애니메이션 도중(bIsCycling)에도 다시 스왑할 수 있다 - BeginEquipCycle이 아래에서 기존
+	// WeaponSwitchTimerHandle을 새로 세팅하기 전에 알아서 지우므로 별도 취소가 필요 없다.
 	AWeaponBase* PreviousWeapon = CurrentWeapon.Get();
 	if (IsValid(PreviousWeapon))
 	{
 		PreviousWeapon->SetADS(false);
+
+		// 재장전 중이어도 스왑을 막지 않는다 - 대신 재장전은 즉시 취소한다(탄약 미충전). 재장전은
+		// 모션이 끝까지 재생돼야만 완료되므로, 스왑으로 중단됐다면 무기로 돌아왔을 때 다시 걸어야 한다.
+		if (PreviousWeapon->IsReloading())
+		{
+			PreviousWeapon->CancelReload();
+		}
 	}
 	// GA_ADS가 이 스왑을 못 보고(예: 다른 입력으로 트리거된 스왑) 여전히 조준 애니메이션을 유지한 채로
 	// 남지 않도록, 스왑 시점에 조준 상태를 즉시 해제한다. GA_ADS가 나중에 입력 해제로 정상 종료돼도

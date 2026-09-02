@@ -41,12 +41,14 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 	MaxBloomDegrees = Row->MaxBloomDegrees;
 	SpreadDecayDelay = Row->SpreadDecayDelay;
 	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
+	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
 
 	RecoilCurve = Row->RecoilCurve;
 	RecoilRandomness = Row->RecoilRandomness;
 	RecoilMaxPitch = Row->RecoilMaxPitch;
 	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
 	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
+	RecoilYawMultiplier = Row->RecoilYawMultiplier;
 }
 
 void UWeaponAimComponent::SetADS(const bool bNewIsADS)
@@ -71,6 +73,11 @@ void UWeaponAimComponent::SetIsAirborne(const bool bNewIsAirborne)
 	bIsAirborne = bNewIsAirborne;
 }
 
+void UWeaponAimComponent::SetIsStationary(const bool bNewIsStationary)
+{
+	bIsStationary = bNewIsStationary;
+}
+
 void UWeaponAimComponent::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
 {
 	EffectiveBaseSpreadDegrees = NewSpreadDegrees;
@@ -79,6 +86,11 @@ void UWeaponAimComponent::SetEffectiveSpreadDegrees(const float NewSpreadDegrees
 void UWeaponAimComponent::SetEffectiveRecoilMultiplier(const float NewMultiplier)
 {
 	EffectiveRecoilMultiplier = NewMultiplier;
+}
+
+void UWeaponAimComponent::SetRecoilYawMultiplier(const float NewMultiplier)
+{
+	RecoilYawMultiplier = NewMultiplier;
 }
 
 float UWeaponAimComponent::GetCurrentSpreadDegrees() const
@@ -120,8 +132,17 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 {
 	float SpreadDegrees = 0.f;
 
-	// 3.3.1 개정 원칙: ADS 중에는 지상에서 탄퍼짐이 0으로 고정된다.
-	if (!bIsADS)
+	// ADS 중에는 정지(브레이킹 성공) 상태일 때만 탄퍼짐이 0으로 고정된다. 이동 중(브레이킹 실패)에는
+	// 조준해도 MovingADSSpreadDegrees만큼 탄퍼짐이 붙는다 - 스코프를 껴도 움직이면서 쏘면 빗나가야
+	// 한다는 요구사항 대응. bIsADS가 아닐 때(지향 사격)는 기존 블룸/이동 배율 계산을 그대로 쓴다.
+	if (bIsADS)
+	{
+		if (!bIsStationary)
+		{
+			SpreadDegrees = MovingADSSpreadDegrees;
+		}
+	}
+	else
 	{
 		const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
 		SpreadDegrees = (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
@@ -181,6 +202,8 @@ void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
 	FVector2D Delta = TargetOffset - PrevRecoilOffset;
 	Delta.X += FMath::FRandRange(-RecoilRandomness, RecoilRandomness);
 	Delta *= EffectiveRecoilMultiplier;
+	// Yaw(좌우) 반동만 별도로 축소/제거할 수 있게 한다 - 예: 스나이퍼는 X축 반동을 0으로 설정.
+	Delta.X *= RecoilYawMultiplier;
 
 	if (APawn* OwningPawn = Cast<APawn>(GetOwner() ? GetOwner()->GetOwner() : nullptr))
 	{
@@ -218,9 +241,12 @@ void UWeaponAimComponent::TickRecoilRecovery(float DeltaTime)
 	const float NewPitch = FMath::FInterpTo(AccumulatedRecoilPitch, 0.f, DeltaTime, RecoilRecoverySpeed);
 	const float NewYaw = FMath::FInterpTo(AccumulatedRecoilYaw, 0.f, DeltaTime, RecoilRecoverySpeed);
 
-	// 누적된 반동을 되돌리는 방향(반대 부호)으로 입력을 넣어 원위치로 보간 복귀시킨다.
+	// 누적된 반동을 되돌리는 방향으로 입력을 넣어 원위치로 보간 복귀시킨다. Pitch는 발사 시 부호를
+	// 반전해서 적용했으므로(-Delta.Y) 복귀도 반전(-)이 필요하지만, Yaw는 발사 시 반전 없이 그대로
+	// 적용했으므로(Delta.X) 복귀도 반전 없이 그대로 적용해야 한다 - 부호를 통일하면 Yaw가 원위치로
+	// 돌아오지 않고 반동이 밀린 방향으로 계속 쌓이는 버그가 된다.
 	OwningPawn->AddControllerPitchInput(-(NewPitch - AccumulatedRecoilPitch));
-	OwningPawn->AddControllerYawInput(-(NewYaw - AccumulatedRecoilYaw));
+	OwningPawn->AddControllerYawInput(NewYaw - AccumulatedRecoilYaw);
 
 	AccumulatedRecoilPitch = NewPitch;
 	AccumulatedRecoilYaw = NewYaw;

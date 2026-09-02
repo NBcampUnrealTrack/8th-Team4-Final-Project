@@ -12,6 +12,10 @@ UGA_SwitchWeapon::UGA_SwitchWeapon()
 {
 	ActivationBlockedTags.RemoveTag(RogueTags::State_Combat_UtilityHeld);
 	CancelAbilitiesWithTag.AddTag(RogueTags::Augment_Ability);
+	// 재장전 도중 스왑되면 재장전 어빌리티(GA_Reload)를 즉시 취소한다 - 실제 탄약 상태 정리는
+	// CombatComponent::SwitchWeaponSlot()이 AWeaponBase::CancelReload()로 직접 처리하므로, 여기서는
+	// GAS 어빌리티 인스턴스(WaitDelay 태스크 등)가 스왑 이후까지 남아있지 않도록 정리하는 역할이다.
+	CancelAbilitiesWithTag.AddTag(RogueTags::State_Combat_IsReloading);
 }
 
 bool UGA_SwitchWeapon::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,

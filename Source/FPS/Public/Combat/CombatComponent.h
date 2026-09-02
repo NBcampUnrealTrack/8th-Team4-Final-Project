@@ -135,8 +135,9 @@ protected:
 	// --- 이동 상태 탄퍼짐 배율 ---
 	// 이 속도(cm/s, 수평 기준) 이하면 정지로 취급한다. 브레이킹(감속)으로 이 속도 밑으로 떨어져도
 	// 같은 취급이라 별도의 "브레이킹 성공" 판정을 두지 않는다 - 정지든 방금 멈췄든 결과는 같다.
+	// 0이면 속도가 완전히 0일 때만 정지로 인정된다(미세한 잔여 속도도 이동 중으로 취급).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread", meta = (ClampMin = "0.0"))
-	float StationarySpeedThreshold = 10.f;
+	float StationarySpeedThreshold = 0.f;
 
 	// 정지(또는 브레이킹 성공) 상태 탄퍼짐 배율.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Spread")

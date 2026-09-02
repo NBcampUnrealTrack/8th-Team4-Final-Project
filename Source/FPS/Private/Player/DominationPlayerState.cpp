@@ -1,5 +1,6 @@
 #include "Player/DominationPlayerState.h"
 
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "Net/UnrealNetwork.h"
 
 void ADominationPlayerState::GetLifetimeReplicatedProps(
@@ -23,9 +24,10 @@ bool ADominationPlayerState::HasSelectedCombatClass() const
 bool ADominationPlayerState::TryConfirmCombatClass(
 	const EDominationCombatClass RequestedClass)
 {
-	const bool bIsSelectableClass = RequestedClass == EDominationCombatClass::Trooper
-		|| RequestedClass == EDominationCombatClass::Ranger
-		|| RequestedClass == EDominationCombatClass::Vanguard;
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	const bool bIsSelectableClass = IsValid(ClassSettings)
+		&& ClassSettings->IsSelectableClass(RequestedClass);
 	if (!HasAuthority()
 		|| HasSelectedCombatClass()
 		|| !bIsSelectableClass)
