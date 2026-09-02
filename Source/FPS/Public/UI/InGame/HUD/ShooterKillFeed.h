@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
+#include "GameMode/State/BaseTeamGameState.h" 
 #include "ShooterKillFeed.generated.h"
 
 class UShooterKillFeedEntry;
@@ -15,6 +16,8 @@ class FPS_API UShooterKillFeed : public UCommonUserWidget
 	GENERATED_BODY()
 	
 public:
+	virtual void NativeConstruct() override;
+	
 	UFUNCTION(BlueprintCallable, Category = "Kill Feed")
 	void AddEntry(const FShooterKillFeedEntryData& Entry);
 	
@@ -25,6 +28,9 @@ protected:
 	
 	// 오래된 줄 갱신
 	void RemoveOldestEntry();
+	
+	UFUNCTION()
+	void HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent);
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Kill Feed", meta = (ClampMin = "1"))
 	int32 MaxVisibleEntries = 5;
@@ -40,6 +46,8 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UShooterKillFeedEntry>> ActiveEntries;
+	
+	TWeakObjectPtr<ABaseTeamGameState> BoundGameState;
 	
 	FTimerHandle ExpiryTimerHandle;
 };

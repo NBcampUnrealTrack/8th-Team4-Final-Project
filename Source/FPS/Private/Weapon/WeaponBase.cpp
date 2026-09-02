@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
 
@@ -24,6 +24,7 @@ AWeaponBase::AWeaponBase()
 	// 데디케이티드/리슨 서버에서 CombatComponent가 스폰한 이 액터가 클라이언트에도 존재해야
 	// OnRep_EquippedWeapon에서 각자 로컬로 부착할 대상이 생긴다.
 	bReplicates = true;
+	bNetUseOwnerRelevancy = true;
 
 	// 부착 지점 역할만 하는 빈 루트. Mesh1P/Mesh3P는 CombatComponent가 장착 시 각자 다른
 	// 캐릭터 컴포넌트(Mesh1P/Mesh3P)로 재부착하므로 서로의 부모-자식이 되면 안 된다.
