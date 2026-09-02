@@ -41,6 +41,15 @@ enum class EDominationObjectivePhase : uint8
 	Repositioning UMETA(DisplayName = "Repositioning")
 };
 
+// 인디케이터 색상은 절대 팀(A/B)이 아니라 로컬 플레이어 기준 아군/적으로 수정
+UENUM(BlueprintType)
+enum class EDominationCaptureRelation : uint8
+{
+	Neutral UMETA(DisplayName = "Neutral"),
+	Ally UMETA(DisplayName = "Ally"),
+	Enemy UMETA(DisplayName = "Enemy")
+};
+
 namespace DominationRules
 {
 	inline constexpr int32 PointCount = 5;
@@ -98,6 +107,19 @@ namespace DominationRules
 		default:
 			return 0;
 		}
+	}
+
+	// 인디케이터 색상을 모든 위젯이 동일하게 판단하도록 공용 헬퍼로 뽑음
+	FORCEINLINE EDominationCaptureRelation GetCaptureRelation(
+		const EGameTeam CapturingTeam,
+		const EGameTeam LocalTeam)
+	{
+		if (CapturingTeam == EGameTeam::None || LocalTeam == EGameTeam::None)
+		{
+			return EDominationCaptureRelation::Neutral;
+		}
+
+		return CapturingTeam == LocalTeam ? EDominationCaptureRelation::Ally : EDominationCaptureRelation::Enemy;
 	}
 
 	FORCEINLINE int32 GetSpawnBoundaryIndex(
