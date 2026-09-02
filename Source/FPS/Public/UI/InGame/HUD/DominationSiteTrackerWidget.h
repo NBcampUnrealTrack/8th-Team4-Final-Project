@@ -9,6 +9,7 @@
 
 class ADominationGameState;
 class ADominationCapturePoint;
+class APawn;
 
 /**
  * A-B-C-D-E 5개 거점을 한눈에 보여주는 인디케이터 (O-O-O-O-O, 활성 거점만 강조).
@@ -109,6 +110,8 @@ private:
 
 	UFUNCTION()
 	void HandleObjectiveFlowStateChanged();
+
+	void HandleCapturePointPawnChanged(APawn* Pawn);
 
 	void RefreshActiveCapturePoint();
 	void RefreshLocalCaptureZoneState();

@@ -54,6 +54,12 @@ void UDominationSiteTrackerWidget::NativeDestruct()
 		World->GetTimerManager().ClearTimer(LocalCaptureZoneTimerHandle);
 	}
 
+	if (ADominationCapturePoint* CapturePoint = ActiveCapturePoint.Get())
+	{
+		CapturePoint->OnPawnEntered.RemoveAll(this);
+		CapturePoint->OnPawnExited.RemoveAll(this);
+	}
+
 	ActiveCapturePoint.Reset();
 	BoundGameState.Reset();
 	Super::NativeDestruct();
@@ -171,9 +177,20 @@ void UDominationSiteTrackerWidget::HandleObjectiveFlowStateChanged()
 	BP_OnTransitionStateChanged(IsPointTransitioning());
 }
 
+void UDominationSiteTrackerWidget::HandleCapturePointPawnChanged(APawn*)
+{
+	RefreshLocalCaptureZoneState();
+}
+
 void UDominationSiteTrackerWidget::RefreshActiveCapturePoint()
 {
+	if (ADominationCapturePoint* PreviousCapturePoint = ActiveCapturePoint.Get())
+	{
+		PreviousCapturePoint->OnPawnEntered.RemoveAll(this);
+		PreviousCapturePoint->OnPawnExited.RemoveAll(this);
+	}
 	ActiveCapturePoint.Reset();
+
 	const ADominationGameState* DominationGameState = BoundGameState.Get();
 	UWorld* World = GetWorld();
 	if (!IsValid(DominationGameState) || !IsValid(World))
@@ -187,6 +204,8 @@ void UDominationSiteTrackerWidget::RefreshActiveCapturePoint()
 		if (Iterator->GetPointId() == ActivePointId)
 		{
 			ActiveCapturePoint = *Iterator;
+			Iterator->OnPawnEntered.AddUObject(this, &ThisClass::HandleCapturePointPawnChanged);
+			Iterator->OnPawnExited.AddUObject(this, &ThisClass::HandleCapturePointPawnChanged);
 			return;
 		}
 	}
