@@ -1,6 +1,7 @@
 #include "UI/InGame/HUD/DominationObjectiveCompassWidget.h"
 
 #include "Actor/DominationCapturePoint.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -172,10 +173,14 @@ void UDominationObjectiveCompassWidget::RefreshScreenPlacement()
 
 	bShouldShow = true;
 	DistanceMeters = FVector::Dist(CapturePoint->GetActorLocation(), LocalPawn->GetActorLocation()) / 100.0f;
+	
+	// 해상도에 따른 위치 고정
+	const float ViewportScale = FMath::Max(KINDA_SMALL_NUMBER, UWidgetLayoutLibrary::GetViewportScale(this));
+	const FVector2D LocalViewportSize(ViewportSizeX / ViewportScale, ViewportSizeY / ViewportScale);
 
-	const FVector2D ScreenCenter(ViewportSizeX * 0.5f, ViewportSizeY * 0.5f);
-	const float SafeHalfWidth = FMath::Max(1.0f, ViewportSizeX * 0.5f - EdgePaddingPixels);
-	const float SafeHalfHeight = FMath::Max(1.0f, ViewportSizeY * 0.5f - EdgePaddingPixels);
+	const FVector2D ScreenCenter(LocalViewportSize.X * 0.5f, LocalViewportSize.Y * 0.5f);
+	const float SafeHalfWidth = FMath::Max(1.0f, LocalViewportSize.X * 0.5f - EdgePaddingPixels);
+	const float SafeHalfHeight = FMath::Max(1.0f, LocalViewportSize.Y * 0.5f - EdgePaddingPixels);
 
 	FVector2D ProjectedPosition;
 	const bool bProjected = LocalController->ProjectWorldLocationToScreen(
@@ -183,6 +188,7 @@ void UDominationObjectiveCompassWidget::RefreshScreenPlacement()
 
 	if (bProjected)
 	{
+		ProjectedPosition /= ViewportScale;
 		const FVector2D Offset = ProjectedPosition - ScreenCenter;
 		if (FMath::Abs(Offset.X) <= SafeHalfWidth && FMath::Abs(Offset.Y) <= SafeHalfHeight)
 		{
