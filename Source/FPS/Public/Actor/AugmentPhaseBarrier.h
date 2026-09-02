@@ -56,3 +56,5 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_IsRuntimeBarrier)
 	bool bIsRuntimeBarrier = false;
 };
+
+

@@ -13,6 +13,7 @@ class UAbilitySystemComponent;
 class UCameraComponent;
 class UCombatHitZoneDefinition;
 class UCombatComponent;
+class UFootstepComponent;
 class UInputAction;
 class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
@@ -126,6 +127,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Combat")
 	TObjectPtr<ULagCompensationComponent> LagCompensation;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Audio")
+	TObjectPtr<UFootstepComponent> Footstep;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|Hit Zone")
 	TObjectPtr<UCombatHitZoneDefinition> CombatHitZoneDefinition;

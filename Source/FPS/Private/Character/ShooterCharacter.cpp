@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
+#include "Character/FootstepComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Combat/LagCompensationComponent.h"
@@ -109,6 +110,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 	Combat->SetIsReplicated(true);
 
 	LagCompensation = CreateDefaultSubobject<ULagCompensationComponent>(TEXT("LagCompensation"));
+
+	Footstep = CreateDefaultSubobject<UFootstepComponent>(TEXT("Footstep"));
 }
 
 void AShooterCharacter::BeginPlay()
