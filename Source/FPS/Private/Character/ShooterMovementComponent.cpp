@@ -7,10 +7,28 @@
 UShooterMovementComponent::UShooterMovementComponent()
 {
 	MaxWalkSpeed = WalkSpeed;
+	MaxWalkSpeedCrouched = CrouchSpeed;
+	CrouchedHalfHeight = CrouchHalfHeight;
+	NavAgentProps.bCanCrouch = true;
+}
+
+void UShooterMovementComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	MaxWalkSpeed = WalkSpeed;
+	MaxWalkSpeedCrouched = CrouchSpeed;
+	CrouchedHalfHeight = CrouchHalfHeight;
+	NavAgentProps.bCanCrouch = true;
 }
 
 void UShooterMovementComponent::StartSprint()
 {
+	if (IsCrouching())
+	{
+		return;
+	}
+
 	bWantsToSprint = true;
 	MaxWalkSpeed = SprintSpeed;
 }

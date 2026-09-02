@@ -5,6 +5,7 @@
 #include "GameMode/State/BaseRoundGameState.h"
 #include "Net/UnrealNetwork.h"
 
+
 AAugmentPhaseBarrier::AAugmentPhaseBarrier()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -17,6 +18,7 @@ AAugmentPhaseBarrier::AAugmentPhaseBarrier()
 	BarrierMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BarrierMesh"));
 	SetRootComponent(BarrierMesh);
 }
+
 
 void AAugmentPhaseBarrier::GetLifetimeReplicatedProps(
 	TArray<FLifetimeProperty>& OutLifetimeProps) const

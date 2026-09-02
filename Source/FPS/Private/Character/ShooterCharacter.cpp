@@ -263,6 +263,26 @@ void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, ui
 	}
 }
 
+void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 1);
+	}
+}
+
+void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 0);
+	}
+}
+
 void AShooterCharacter::CheckJumpInput(float DeltaTime)
 {
 	if (bPressedJump)
@@ -479,6 +499,17 @@ void AShooterCharacter::HandleSprintReleased()
 	{
 		ShooterMovement->StopSprint();
 	}
+}
+
+void AShooterCharacter::HandleCrouchPressed()
+{
+	HandleSprintReleased();
+	Crouch();
+}
+
+void AShooterCharacter::HandleCrouchReleased()
+{
+	UnCrouch();
 }
 
 // 무기 슬롯 전환은 UGA_SwitchWeapon(GAS 어빌리티)이 담당한다 - Fire/Reload와 동일하게

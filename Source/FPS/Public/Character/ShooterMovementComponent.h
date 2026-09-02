@@ -12,6 +12,8 @@ class FPS_API UShooterMovementComponent : public UCharacterMovementComponent
 public:
 	UShooterMovementComponent();
 
+	virtual void BeginPlay() override;
+
 	UFUNCTION(BlueprintCallable, Category = "FPS|Movement")
 	void StartSprint();
 
@@ -32,6 +34,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float SprintSpeed = 850.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
+	float CrouchSpeed = 300.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
+	float CrouchHalfHeight = 44.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Movement")
 	bool bWantsToSprint = false;

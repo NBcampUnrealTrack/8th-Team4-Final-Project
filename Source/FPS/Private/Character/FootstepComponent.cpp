@@ -7,6 +7,11 @@
 #include "Kismet/GameplayStatics.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 
+namespace
+{
+	constexpr float FootstepTraceDistance = 100.0f;
+}
+
 UFootstepComponent::UFootstepComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -28,8 +33,7 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 	}
 
 	const ACharacter* CharacterOwner = Cast<ACharacter>(Owner);
-	if (bSkipWhenFalling
-		&& IsValid(CharacterOwner)
+	if (IsValid(CharacterOwner)
 		&& IsValid(CharacterOwner->GetCharacterMovement())
 		&& CharacterOwner->GetCharacterMovement()->IsFalling())
 	{
@@ -39,7 +43,7 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 	const FVector TraceStart = SourceMesh->DoesSocketExist(FootSocketName)
 		? SourceMesh->GetSocketLocation(FootSocketName)
 		: Owner->GetActorLocation();
-	const FVector TraceEnd = TraceStart - FVector(0.0f, 0.0f, TraceDistance);
+	const FVector TraceEnd = TraceStart - FVector(0.0f, 0.0f, FootstepTraceDistance);
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FootstepTrace), false, Owner);
 	QueryParams.bReturnPhysicalMaterial = true;
@@ -47,7 +51,7 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 	FHitResult HitResult;
 	UWorld* World = GetWorld();
 	if (!IsValid(World)
-		|| !World->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, TraceChannel, QueryParams))
+		|| !World->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
 	{
 		return;
 	}
@@ -65,6 +69,6 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 		this,
 		FootstepSound->Sound,
 		HitResult.ImpactPoint,
-		BaseVolumeMultiplier * FootstepSound->VolumeMultiplier,
-		BasePitchMultiplier * FootstepSound->PitchMultiplier);
+		FootstepSound->VolumeMultiplier,
+		FootstepSound->PitchMultiplier);
 }

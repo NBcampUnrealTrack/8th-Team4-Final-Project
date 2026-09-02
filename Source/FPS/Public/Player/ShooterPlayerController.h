@@ -218,6 +218,8 @@ private:
 	void Input_JumpReleased();
 	void Input_SprintPressed();
 	void Input_SprintReleased();
+	void Input_CrouchPressed();
+	void Input_CrouchReleased();
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_ToggleInGameMenu();

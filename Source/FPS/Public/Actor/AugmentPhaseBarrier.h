@@ -14,6 +14,7 @@ class UStaticMeshComponent;
  * 배치 인스턴스의 Transform을 그대로 사용해 페이즈용 장벽을 생성하므로,
  * 각 인스턴스의 위치/회전/스케일은 에디터에서 자유롭게 조절할 수 있다.
  */
+
 UCLASS(Blueprintable)
 class FPS_API AAugmentPhaseBarrier : public AActor
 {
