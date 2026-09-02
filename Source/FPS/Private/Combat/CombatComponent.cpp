@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Combat/CombatComponent.h"
 
@@ -472,6 +472,28 @@ bool UCombatComponent::ShouldSuppressMainHUDForADS() const
 		&& Weapon->ShouldHideMainHUDWhileADS();
 }
 
+void UCombatComponent::SetPresentationSuppressed(const bool bSuppressed)
+{
+	if (bPresentationSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bPresentationSuppressed = bSuppressed;
+	RefreshWeaponPresentation();
+}
+
+void UCombatComponent::ReEquipCurrentWeapon()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(CurrentWeapon.Get()))
+	{
+		return;
+	}
+
+	BeginEquipCycle(CurrentWeapon.Get());
+}
+
 void UCombatComponent::RefreshFirstPersonADSPresentation() const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
@@ -712,17 +734,19 @@ void UCombatComponent::OnRep_IsCycling()
 
 void UCombatComponent::RefreshWeaponPresentation()
 {
+	const bool bAllowPresentation = !bPresentationSuppressed;
+
 	if (IsValid(PrimaryWeapon.Get()))
 	{
-		PrimaryWeapon->SetPresentationActive(PrimaryWeapon.Get() == CurrentWeapon.Get());
+		PrimaryWeapon->SetPresentationActive(bAllowPresentation && PrimaryWeapon.Get() == CurrentWeapon.Get());
 	}
 	if (IsValid(SecondaryWeapon.Get()))
 	{
-		SecondaryWeapon->SetPresentationActive(SecondaryWeapon.Get() == CurrentWeapon.Get());
+		SecondaryWeapon->SetPresentationActive(bAllowPresentation && SecondaryWeapon.Get() == CurrentWeapon.Get());
 	}
 	if (IsValid(MeleeWeapon.Get()))
 	{
-		MeleeWeapon->SetPresentationActive(MeleeWeapon.Get() == CurrentWeapon.Get());
+		MeleeWeapon->SetPresentationActive(bAllowPresentation && MeleeWeapon.Get() == CurrentWeapon.Get());
 	}
 
 	if (IsValid(CurrentWeapon.Get())
@@ -730,7 +754,7 @@ void UCombatComponent::RefreshWeaponPresentation()
 		&& CurrentWeapon.Get() != SecondaryWeapon.Get()
 		&& CurrentWeapon.Get() != MeleeWeapon.Get())
 	{
-		CurrentWeapon->SetPresentationActive(true);
+		CurrentWeapon->SetPresentationActive(bAllowPresentation);
 	}
 
 	// SetPresentationActive가 현재 무기의 Mesh1P Visibility를 다시 켤 수 있으므로,

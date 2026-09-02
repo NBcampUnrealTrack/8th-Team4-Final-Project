@@ -1,6 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "GAS/RogueUtilityHoldCueNotify.h"
 
 #include "Animation/AnimInstance.h"
@@ -140,6 +139,9 @@ void ARogueUtilityHoldCueNotify::AttachHeldMesh(AActor* Target, const FGameplayC
 	{
 		return;
 	}
+
+	// 메시를 보이도록 설정
+	SetActorHiddenInGame(false);
 
 	HeldMesh->SetStaticMesh(Mesh);
 	HeldMesh->SetCastShadow(!bFirstPerson);

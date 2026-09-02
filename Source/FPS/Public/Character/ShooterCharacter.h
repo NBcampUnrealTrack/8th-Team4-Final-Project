@@ -141,13 +141,19 @@ protected:
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
-	// 발각 태그 구독 갱신
-	void UpdateRevealTagSubscription();
-	void UnsubscribeRevealTag();
+	// 태그 구독 갱신
+	void UpdateTagSubscriptions();
+	void UnsubscribeTags();
+
+	// 발각 태그 - 팀 아웃라인 갱신
 	void HandleRevealTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
 
-	TWeakObjectPtr<UAbilitySystemComponent> RevealTagAbilitySystem;
+	// 유틸리티 홀드 태그 - 무기 표현 억제와 복귀 시 장착 사이클
+	void HandleUtilityHeldChanged(const FGameplayTag ChangedTag, int32 NewCount);
+
+	TWeakObjectPtr<UAbilitySystemComponent> SubscribedAbilitySystem;
 	FDelegateHandle RevealTagEventHandle;
+	FDelegateHandle UtilityHeldEventHandle;
 
 	// 랙돌에 피격 임펄스 적용
 	void ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const;
