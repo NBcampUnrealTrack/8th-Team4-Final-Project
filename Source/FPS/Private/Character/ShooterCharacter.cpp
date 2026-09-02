@@ -96,6 +96,13 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 
 	UpdateTagSubscriptions();
 	RefreshTeamOutline();
+
+	// 부활 직후 무기 액터가 캐릭터보다 먼저 만들어지고 빙의가 뒤따르면, 무기 장착 시점에
+	// 캐릭터 메쉬/오너 참조가 아직 준비되지 않아 부착·표시가 누락될 수 있다. 여기서 다시 확정한다.
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
 }
 
 void AShooterCharacter::OnRep_PlayerState()
@@ -104,6 +111,13 @@ void AShooterCharacter::OnRep_PlayerState()
 
 	UpdateTagSubscriptions();
 	RefreshTeamOutline();
+
+	// 클라이언트에서도 PlayerState/오너 복제가 무기 복제보다 늦게 도착하는 경우를 대비해
+	// 장착 무기 표현을 다시 적용한다(멱등).
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
 }
 
 void AShooterCharacter::RefreshTeamOutline()
@@ -294,6 +308,26 @@ void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, ui
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
 	{
 		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir, bIsInAir ? 1 : 0);
+	}
+}
+
+void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 1);
+	}
+}
+
+void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 0);
 	}
 }
 
@@ -513,6 +547,17 @@ void AShooterCharacter::HandleSprintReleased()
 	{
 		ShooterMovement->StopSprint();
 	}
+}
+
+void AShooterCharacter::HandleCrouchPressed()
+{
+	HandleSprintReleased();
+	Crouch();
+}
+
+void AShooterCharacter::HandleCrouchReleased()
+{
+	UnCrouch();
 }
 
 // 무기 슬롯 전환은 UGA_SwitchWeapon(GAS 어빌리티)이 담당한다 - Fire/Reload와 동일하게

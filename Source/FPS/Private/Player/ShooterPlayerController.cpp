@@ -180,6 +180,12 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Started, this, &ThisClass::Input_SprintPressed);
 		EnhancedInputComponent->BindAction(InputConfig->SprintAction, ETriggerEvent::Completed, this, &ThisClass::Input_SprintReleased);
 	}
+	if (InputConfig->CrouchAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchPressed);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased);
+	}
 	if (InputConfig->PushToTalkAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
@@ -956,6 +962,27 @@ void AShooterPlayerController::Input_SprintReleased()
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleSprintReleased();
+	}
+}
+
+void AShooterPlayerController::Input_CrouchPressed()
+{
+	if (!CanProcessMovementInput())
+	{
+		return;
+	}
+
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
+		ShooterCharacter->HandleCrouchPressed();
+	}
+}
+
+void AShooterPlayerController::Input_CrouchReleased()
+{
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
+		ShooterCharacter->HandleCrouchReleased();
 	}
 }
 

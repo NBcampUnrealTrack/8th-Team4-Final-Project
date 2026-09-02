@@ -100,6 +100,34 @@ void AWeaponBase::Tick(float DeltaTime)
 	}
 }
 
+void AWeaponBase::OnRep_Owner()
+{
+	Super::OnRep_Owner();
+
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor))
+	{
+		return;
+	}
+
+	// BeginPlay가 오너보다 먼저 실행됐다면 카메라 캐시가 비어 있으므로 여기서 다시 잡는다.
+	if (!CachedOwnerCamera)
+	{
+		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
+	}
+
+	// 현재 손에 든 무기(서버가 SetActorHiddenInGame(false)로 복제한 상태)만 다시 부착/표시한다.
+	// 숨겨진 슬롯 무기는 부착만 확정하고 가시성은 건드리지 않는다.
+	AttachToOwnerMeshes();
+
+	const bool bPresented = !IsHidden();
+	SetFirstPersonPresentationVisible(bPresented);
+	if (IsValid(Mesh3P))
+	{
+		Mesh3P->SetVisibility(bPresented, true);
+	}
+}
+
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
