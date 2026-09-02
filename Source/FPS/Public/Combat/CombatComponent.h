@@ -84,6 +84,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
 	void FinishCycling();
 
+	// 부활/빙의 직후처럼 무기 표현이 늦게 잡히는 경우, 외부(캐릭터의 PossessedBy/OnRep_PlayerState)에서
+	// 부착·가시성을 강제로 다시 적용한다. RefreshWeaponPresentation()은 멱등이라 반복 호출해도 안전하다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	void RefreshEquippedWeaponPresentation() { RefreshWeaponPresentation(); }
+
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
 	FOnCyclingStateChanged OnCyclingStateChanged;
 

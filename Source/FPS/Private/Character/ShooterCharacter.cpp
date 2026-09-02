@@ -96,6 +96,13 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 
 	UpdateRevealTagSubscription();
 	RefreshTeamOutline();
+
+	// 부활 직후 무기 액터가 캐릭터보다 먼저 만들어지고 빙의가 뒤따르면, 무기 장착 시점에
+	// 캐릭터 메쉬/오너 참조가 아직 준비되지 않아 부착·표시가 누락될 수 있다. 여기서 다시 확정한다.
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
 }
 
 void AShooterCharacter::OnRep_PlayerState()
@@ -104,6 +111,13 @@ void AShooterCharacter::OnRep_PlayerState()
 
 	UpdateRevealTagSubscription();
 	RefreshTeamOutline();
+
+	// 클라이언트에서도 PlayerState/오너 복제가 무기 복제보다 늦게 도착하는 경우를 대비해
+	// 장착 무기 표현을 다시 적용한다(멱등).
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
 }
 
 void AShooterCharacter::RefreshTeamOutline()
