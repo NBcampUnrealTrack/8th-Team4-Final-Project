@@ -6,7 +6,6 @@
 #include "Engine/DataTable.h"
 #include "WeaponTypes.generated.h"
 
-class AActor;
 class UCurveVector;
 
 // 런타임 무기 슬롯 식별용.
@@ -19,62 +18,6 @@ enum class EWeaponSlot : uint8
 	Secondary UMETA(DisplayName = "Secondary"),
 	Melee UMETA(DisplayName = "Melee")
 };
-
-// AWeaponBase가 외부(다른 팀원의 GAS Adapter 등)에 노출하는 순수 사격 결과 데이터.
-// GAS 타입(FGameplayTag, AbilitySystemComponent 등)을 절대 포함하지 않는다.
-// 다른 팀원이 이 구조체를 FRogueDamageRequest로 변환하는 Adapter를 별도로 작성할 예정이므로,
-// 지금 당장 쓰이지 않는 필드(HitLocation, HitAngleDegrees, RemainingPenetrationPower 등)도 항상 채워서 내보낸다.
-USTRUCT(BlueprintType)
-struct FWeaponHitResult
-{
-	GENERATED_BODY()
-
-	// 발사한 무기의 소유 액터(사격자)
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	TObjectPtr<AActor> SourceActor = nullptr;
-
-	// 이번 히트로 맞은 액터 (벽이면 벽 액터, 캐릭터면 해당 캐릭터)
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	TObjectPtr<AActor> TargetActor = nullptr;
-
-	// 관통 감쇄가 적용된, 이 히트 시점의 대미지
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	float BaseDamage = 0.f;
-
-	// 사격 위치로부터 이 히트까지의 거리 (m)
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	float DistanceMeters = 0.f;
-
-	// 히트 위치 원본 벡터. GAS 쪽이 HitZoneTag로 변환하든 안 하든 항상 채운다.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	FVector HitLocation = FVector::ZeroVector;
-
-	// 타겟의 정면 벡터 대비 입사각(도). 백스탭 판정 외 용도 대비, 항상 채운다.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	float HitAngleDegrees = 0.f;
-
-	// 피격 본 이름 (FHitResult::BoneName 원본). 데미지 파이프라인이 HitLocation만으로
-	// 부위(헤드/상체/사지)를 추정하는 것보다 정확하게 판정할 수 있도록 함께 넘긴다.
-	// 엔진 기본 타입(FName)이라 GAS와 무관하다.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	FName HitBoneName = NAME_None;
-
-	// 이 히트 지점을 관통해서 트레이스가 계속되었는지 여부
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	bool bPenetratedWall = false;
-
-	// 이 히트 이후 남은 관통력 (데미지 감쇠 계산용, 사용 안 해도 채워둔다)
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	float RemainingPenetrationPower = 0.f;
-
-	// 샷건 등 멀티 펠릿 대응, 단일 발사면 0
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon")
-	int32 PelletIndex = 0;
-};
-
-// AWeaponBase가 사격 히트를 알릴 때 사용하는 델리게이트.
-// 다른 팀원의 GAS Adapter가 이 델리게이트를 구독해서 FRogueDamageRequest 등으로 변환한다.
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWeaponHit, const FWeaponHitResult&, HitResult);
 
 // 탄퍼짐/반동 튜닝 값 한 세트. 기획(밸런스) 담당자가 코드/블루프린트를 열지 않고도
 // DataTable 행만 수정해서 에디터에서 바로 테스트할 수 있도록 분리한 값들이다.
@@ -104,6 +47,11 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
+	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). 정지(브레이킹 성공) 중에는
+	// 여전히 0으로 고정된다 - 조준해도 움직이면서 쏘면 빗나가야 한다는 요구사항 대응.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	float MovingADSSpreadDegrees = 2.f;
+
 	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
 	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
@@ -112,6 +60,11 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	float RecoilRandomness = 0.f;
+
+	// RecoilCurve의 Yaw(X채널) 결과에 곱해지는 배율. 0으로 두면 이 무기는 좌우 반동이 전혀 없고
+	// Pitch(상하) 반동만 남는다 - 예: 스나이퍼는 X축 반동을 없애고 싶을 때 0으로 설정.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilYawMultiplier = 1.f;
 
 	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")

@@ -1,7 +1,7 @@
 #include "Actor/DominationCapturePoint.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
-#include "Components/SphereComponent.h"
 #include "GameFramework/Pawn.h"
 
 ADominationCapturePoint::ADominationCapturePoint()
@@ -12,9 +12,9 @@ ADominationCapturePoint::ADominationCapturePoint()
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
-	CaptureZone = CreateDefaultSubobject<USphereComponent>(TEXT("CaptureZone"));
+	CaptureZone = CreateDefaultSubobject<UBoxComponent>(TEXT("CaptureZone"));
 	CaptureZone->SetupAttachment(SceneRoot);
-	CaptureZone->SetSphereRadius(CaptureRadius);
+	CaptureZone->SetBoxExtent(CaptureBoxExtent);
 	CaptureZone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CaptureZone->SetCollisionObjectType(ECC_WorldDynamic);
 	CaptureZone->SetCollisionResponseToAllChannels(ECR_Ignore);
@@ -33,7 +33,7 @@ void ADominationCapturePoint::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	CaptureZone->SetSphereRadius(CaptureRadius);
+	CaptureZone->SetBoxExtent(CaptureBoxExtent);
 }
 
 EDominationPointId ADominationCapturePoint::GetPointId() const
@@ -41,15 +41,18 @@ EDominationPointId ADominationCapturePoint::GetPointId() const
 	return PointId;
 }
 
-float ADominationCapturePoint::GetCaptureRadius() const
+FVector ADominationCapturePoint::GetCaptureBoxExtent() const
 {
-	return CaptureRadius;
+	return CaptureBoxExtent;
 }
 
 bool ADominationCapturePoint::ContainsWorldLocation(const FVector& WorldLocation) const
 {
-	return FVector::DistSquared(CaptureZone->GetComponentLocation(), WorldLocation)
-		<= FMath::Square(CaptureZone->GetScaledSphereRadius());
+	const FVector LocalLocation = CaptureZone->GetComponentTransform().InverseTransformPosition(WorldLocation);
+	const FVector ScaledExtent = CaptureZone->GetScaledBoxExtent();
+	return FMath::Abs(LocalLocation.X) <= ScaledExtent.X
+		&& FMath::Abs(LocalLocation.Y) <= ScaledExtent.Y
+		&& FMath::Abs(LocalLocation.Z) <= ScaledExtent.Z;
 }
 
 void ADominationCapturePoint::GetOverlappingPawns(TArray<APawn*>& OutPawns) const

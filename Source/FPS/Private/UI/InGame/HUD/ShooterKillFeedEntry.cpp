@@ -7,6 +7,7 @@
 
 void UShooterKillFeedEntry::SetData(const FShooterKillFeedEntryData& InData)
 {
+	// 일반 킬 패널
 	if (Text_KillerName)
 	{
 		Text_KillerName->SetText(InData.KillerName);
@@ -16,6 +17,12 @@ void UShooterKillFeedEntry::SetData(const FShooterKillFeedEntryData& InData)
 	{
 		Text_VictimName->SetText(InData.VictimName);
 	}
+	if (Icon_Headshot)
+	{
+		Icon_Headshot->SetVisibility(InData.bHeadshot ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	
+	BP_OnEntryDataApplied(InData);
 	
 	const ABaseTeamPlayerState* LocalPlayerState =
 		GetOwningPlayerState<ABaseTeamPlayerState>();
@@ -29,10 +36,5 @@ void UShooterKillFeedEntry::SetData(const FShooterKillFeedEntryData& InData)
 		const bool bVictimIsAlly = InData.VictimTeam == LocalTeam;
 		
 		RefreshTeamVisual(bKillerIsAlly, bVictimIsAlly);
-	}
-	
-	if (Icon_Headshot)
-	{
-		Icon_Headshot->SetVisibility(InData.bHeadshot ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 }

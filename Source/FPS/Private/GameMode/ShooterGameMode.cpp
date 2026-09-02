@@ -4,13 +4,41 @@
 #include "GameMode/ShooterGameMode.h"
 
 #include "EngineUtils.h"
+#include "GAS/Damage/RogueDamageTypes.h"
 #include "GameFramework/GameStateBase.h"
+#include "GameMode/State/BaseTeamGameState.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpectatorPawn.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Player/ShooterPlayerState.h"
+
+namespace
+{
+	AShooterPlayerState* ResolveShooterPlayerState(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return nullptr;
+		}
+
+		if (AShooterPlayerState* PlayerState = Cast<AShooterPlayerState>(Actor))
+		{
+			return PlayerState;
+		}
+		if (APawn* Pawn = Cast<APawn>(Actor))
+		{
+			return Pawn->GetPlayerState<AShooterPlayerState>();
+		}
+		if (AController* Controller = Cast<AController>(Actor))
+		{
+			return Controller->GetPlayerState<AShooterPlayerState>();
+		}
+
+		return nullptr;
+	}
+}
 
 AShooterGameMode::AShooterGameMode()
 {
@@ -22,6 +50,55 @@ void AShooterGameMode::HandleStartingNewPlayer_Implementation(APlayerController*
 {
 	InitializePlayerParticipationState(NewPlayer);
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+}
+
+void AShooterGameMode::HandlePlayerEliminated(
+	AController* EliminatedController,
+	const FRogueDeathContext& DeathContext)
+{
+	if (!HasAuthority() || !IsValid(EliminatedController))
+	{
+		return;
+	}
+
+	AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
+
+	if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
+	{
+		FShooterEliminationEvent EliminationEvent;
+		EliminationEvent.KillerPlayerState = KillerPlayerState;
+		EliminationEvent.VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+		EliminationEvent.WeaponTag = DeathContext.WeaponTag;
+		EliminationEvent.bHeadshot = DeathContext.bHeadshot;
+
+		TeamGameState->BroadcastPlayerEliminated(EliminationEvent);
+	}
+
+	NotifyPlayerEliminatedBy(EliminatedController, KillerPlayerState);
+}
+
+AShooterPlayerState* AShooterGameMode::ResolveKillerPlayerState(const FRogueDeathContext& DeathContext)
+{
+	if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(DeathContext.InstigatorActor.Get()))
+	{
+		return PlayerState;
+	}
+
+	AActor* Causer = DeathContext.CauserActor.Get();
+	if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer))
+	{
+		return PlayerState;
+	}
+	if (!IsValid(Causer))
+	{
+		return nullptr;
+	}
+
+	if (AShooterPlayerState* PlayerState = ResolveShooterPlayerState(Causer->GetOwner()))
+	{
+		return PlayerState;
+	}
+	return ResolveShooterPlayerState(Causer->GetInstigator());
 }
 
 void AShooterGameMode::NotifyPlayerEliminatedBy(

@@ -1,7 +1,6 @@
 #include "GameMode/DominationGameMode.h"
 
 #include "Augment/AugmentDraftProfile.h"
-#include "Character/ShooterCharacter.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Manager/AugmentDraftManager.h"
@@ -10,6 +9,7 @@
 #include "GameMode/Manager/DominationMatchStartManager.h"
 #include "GameMode/Manager/DominationObjectiveManager.h"
 #include "GameMode/Manager/DominationRespawnManager.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "GameMode/Types/SurrenderVoteTypes.h"
 #include "GameMode/Manager/TeamPlayerManager.h"
 #include "Player/DominationPlayerController.h"
@@ -31,10 +31,6 @@ ADominationGameMode::ADominationGameMode()
 	ObjectiveManager = CreateDefaultSubobject<UDominationObjectiveManager>(TEXT("ObjectiveManager"));
 	RespawnManager = CreateDefaultSubobject<UDominationRespawnManager>(TEXT("RespawnManager"));
 	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
-
-	CombatClassPawnClasses.Add(EDominationCombatClass::Trooper, nullptr);
-	CombatClassPawnClasses.Add(EDominationCombatClass::Ranger, nullptr);
-	CombatClassPawnClasses.Add(EDominationCombatClass::Vanguard, nullptr);
 }
 
 void ADominationGameMode::BeginPlay()
@@ -318,16 +314,11 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 
 bool ADominationGameMode::HasValidCombatClassConfiguration() const
 {
-	const auto HasPawnClass = [this](const EDominationCombatClass CombatClass)
-	{
-		const TSubclassOf<AShooterCharacter>* PawnClass =
-			CombatClassPawnClasses.Find(CombatClass);
-		return PawnClass != nullptr && PawnClass->Get() != nullptr;
-	};
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
 
-	return HasPawnClass(EDominationCombatClass::Trooper)
-		&& HasPawnClass(EDominationCombatClass::Ranger)
-		&& HasPawnClass(EDominationCombatClass::Vanguard)
+	return IsValid(ClassSettings)
+		&& ClassSettings->HasValidDefinitions()
 		&& IsValid(LoadoutManager)
 		&& LoadoutManager->HasRequiredWeaponRegistryEntries();
 }
@@ -650,8 +641,12 @@ UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(ACo
 	}
 
 	const EDominationCombatClass CombatClass = DominationPlayerState->GetCombatClass();
-	const TSubclassOf<AShooterCharacter>* PawnClass = CombatClassPawnClasses.Find(CombatClass);
-	if (PawnClass == nullptr || PawnClass->Get() == nullptr)
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	UClass* PawnClass = IsValid(ClassSettings)
+		? ClassSettings->ResolvePawnClass(CombatClass)
+		: nullptr;
+	if (!IsValid(PawnClass))
 	{
 		UE_LOG(
 			LogDominationGameMode,
@@ -661,5 +656,5 @@ UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(ACo
 		return nullptr;
 	}
 
-	return PawnClass->Get();
+	return PawnClass;
 }

@@ -28,6 +28,10 @@ public:
 	                              const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 protected:
+	// 스왑 애니메이션 도중에도 다른 슬롯으로 다시 스왑할 수 있어야 하므로 이 게이트를 건너뛴다.
+	virtual bool RequiresWeaponReady() const override { return false; }
+
+
 	// 이 어빌리티가 전환할 목표 슬롯.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Loadout")
 	EWeaponSlot TargetWeaponSlot = EWeaponSlot::Primary;
