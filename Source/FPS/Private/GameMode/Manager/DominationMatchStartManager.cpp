@@ -3,6 +3,7 @@
 #include "Engine/World.h"
 #include "GameMode/DominationGameMode.h"
 #include "GameMode/State/DominationGameState.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "GameMode/Manager/DominationLoadoutManager.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
@@ -238,7 +239,12 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 			: nullptr;
 		if (IsValid(PlayerState) && !PlayerState->HasSelectedCombatClass())
 		{
-			PlayerState->TryConfirmCombatClass(EDominationCombatClass::Trooper);
+			const UDominationClassSettings* ClassSettings =
+				GetDefault<UDominationClassSettings>();
+			if (IsValid(ClassSettings))
+			{
+				PlayerState->TryConfirmCombatClass(ClassSettings->DefaultCombatClass);
+			}
 		}
 	}
 

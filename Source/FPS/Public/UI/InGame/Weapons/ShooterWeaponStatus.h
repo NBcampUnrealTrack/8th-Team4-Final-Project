@@ -37,11 +37,14 @@ protected:
 	// Set Style 적용
 	void ApplyHUDVisualStyle(const FShooterAmmoVisualStyle& Style);
 	
+	// '/' 앞: 현재 탄창 잔탄(GetCurrentAmmo).
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Ammo;
+	// '/' 뒤: 이름은 MaxAmmo지만 실제로는 예비탄창(보유) 잔탄(GetCurrentReserveAmmo)을 표시한다.
+	// 바인딩/스타일 데이터를 유지하려고 위젯 이름은 그대로 두고 표시값만 바꿨다.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_MaxAmmo;
-	// 예비(보유) 탄약. 위젯 블루프린트에 아직 추가 안 됐을 수 있어 Optional로 둔다.
+	// 예비(보유) 탄약을 별도 위젯으로도 표시하고 싶을 때 쓰는 옵션 슬롯. 없으면 무시된다.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_ReserveAmmo;
 	
@@ -78,6 +81,7 @@ protected:
 	TWeakObjectPtr<AWeaponBase> CachedWeapon;
 	
 	int32 CachedAmmo = INDEX_NONE;
+	// GetEffectiveMagazineSize()(증강 반영된 탄창 최대치). 화면에는 표시하지 않고 색상 경고 비율 계산에만 쓴다.
 	int32 CachedMaxAmmo = INDEX_NONE;
 	int32 CachedReserveAmmo = INDEX_NONE;
 	

@@ -43,9 +43,6 @@ private:
 	TSubclassOf<UDominationClassSelectCard> ClassCardWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
-	TArray<FDominationClassCardPresentation> ClassOptions;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	FMargin ClassCardPadding = FMargin(8.0f);
 
 	UPROPERTY(Transient)

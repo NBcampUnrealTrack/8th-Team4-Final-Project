@@ -7,7 +7,6 @@
 #include "DominationGameMode.generated.h"
 
 class APlayerController;
-class AShooterCharacter;
 class AShooterPlayerState;
 class ADominationPlayerController;
 class ADominationPlayerState;
@@ -89,9 +88,6 @@ private:
 		EGameTeam CapturingTeam);
 	void FinishDominationMatch(EGameTeam WinningTeam);
 	void ReturnToLobbyAfterMatch();
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Class Pawn", meta = (AllowPrivateAccess = "true"))
-	TMap<EDominationCombatClass, TSubclassOf<AShooterCharacter>> CombatClassPawnClasses;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "8"))
 	int32 MinimumPlayersToStart = 2;

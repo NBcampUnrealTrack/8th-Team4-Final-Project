@@ -31,6 +31,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective UI")
 	EGameTeam GetCapturingTeam() const;
 
+	// 로컬 플레이어 기준 아군/적/중립. 인디케이터 색 판단용
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective UI")
+	EDominationCaptureRelation GetCapturingRelation() const;
+
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective UI")
 	bool IsCaptureContested() const;
 
