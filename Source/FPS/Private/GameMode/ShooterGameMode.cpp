@@ -75,6 +75,12 @@ void AShooterGameMode::HandlePlayerEliminated(
 		&& (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
 	{
 		KillerPlayerState->ServerAddKill();
+
+		if (AShooterPlayerController* KillerController =
+			Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
+		{
+			KillerController->ClientPlayKillSound();
+		}
 	}
 
 	if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
