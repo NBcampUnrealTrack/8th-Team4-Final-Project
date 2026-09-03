@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
@@ -113,4 +113,5 @@ private:
 	float InterpAO_Yaw = 0.f;
 	TWeakObjectPtr<AWeaponBase> LastAnimationWeapon;
 	bool bWasReloading = false;
+	bool bWasUtilityHeld = false;
 };

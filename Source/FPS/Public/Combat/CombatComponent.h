@@ -52,6 +52,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool ReplacePrimaryWeapon(TSubclassOf<AWeaponBase> PrimaryWeaponClass);
 
+	// 현재 무기 재장착, 유틸리티 장착 후 복귀에서 호출
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	void ReEquipCurrentWeapon();
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|Loadout")
 	AWeaponBase* GetWeaponInSlot(EWeaponSlot WeaponSlot) const;
 
@@ -116,6 +120,13 @@ public:
 	// 현재 ADS 상태와 장착 무기의 표현 설정을 조합한 최종 Main HUD 숨김 여부.
 	UFUNCTION(BlueprintPure, Category = "FPS|Combat|ADS")
 	bool ShouldSuppressMainHUDForADS() const;
+
+	// 유틸리티 홀드 중 무기 표현 억제
+	UFUNCTION(BlueprintCallable, Category = "FPS|Combat")
+	void SetPresentationSuppressed(bool bSuppressed);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Combat")
+	bool IsPresentationSuppressed() const { return bPresentationSuppressed; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -185,6 +196,9 @@ private:
 
 	// UI에 마지막으로 전달한 로컬 ADS HUD suppression 상태. 같은 값의 중복 브로드캐스트를 막는다.
 	bool bMainHUDSuppressedForADS = false;
+
+	// 유틸리티 홀드 중 무기 표현 억제
+	bool bPresentationSuppressed = false;
 
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeaponBase* LastWeapon);

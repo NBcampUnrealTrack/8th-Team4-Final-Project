@@ -85,7 +85,7 @@ void AShooterCharacter::BeginPlay()
 
 void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UnsubscribeRevealTag();
+	UnsubscribeTags();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -94,7 +94,7 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
-	UpdateRevealTagSubscription();
+	UpdateTagSubscriptions();
 	RefreshTeamOutline();
 
 	// 부활 직후 무기 액터가 캐릭터보다 먼저 만들어지고 빙의가 뒤따르면, 무기 장착 시점에
@@ -109,7 +109,7 @@ void AShooterCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
-	UpdateRevealTagSubscription();
+	UpdateTagSubscriptions();
 	RefreshTeamOutline();
 
 	// 클라이언트에서도 PlayerState/오너 복제가 무기 복제보다 늦게 도착하는 경우를 대비해
@@ -175,41 +175,75 @@ void AShooterCharacter::RefreshTeamOutlineForAll(UWorld* World)
 	}
 }
 
-void AShooterCharacter::UpdateRevealTagSubscription()
+void AShooterCharacter::UpdateTagSubscriptions()
 {
 	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
-	if (RevealTagAbilitySystem.Get() == AbilitySystem)
+	if (SubscribedAbilitySystem.Get() == AbilitySystem)
 	{
 		return;
 	}
 
-	UnsubscribeRevealTag();
+	UnsubscribeTags();
 
-	if (IsValid(AbilitySystem))
+	if (!IsValid(AbilitySystem))
 	{
-		RevealTagAbilitySystem = AbilitySystem;
-		RevealTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
-			RogueTags::State_Combat_Revealed,
-			EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleRevealTagChanged);
+		return;
+	}
+
+	SubscribedAbilitySystem = AbilitySystem;
+
+	RevealTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_Revealed,
+		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleRevealTagChanged);
+
+	UtilityHeldEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_UtilityHeld,
+		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleUtilityHeldChanged);
+
+	if (IsValid(Combat))
+	{
+		Combat->SetPresentationSuppressed(
+			AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_UtilityHeld));
 	}
 }
 
-void AShooterCharacter::UnsubscribeRevealTag()
+void AShooterCharacter::UnsubscribeTags()
 {
-	if (UAbilitySystemComponent* AbilitySystem = RevealTagAbilitySystem.Get())
+	if (UAbilitySystemComponent* AbilitySystem = SubscribedAbilitySystem.Get())
 	{
 		AbilitySystem->RegisterGameplayTagEvent(
 			RogueTags::State_Combat_Revealed,
 			EGameplayTagEventType::NewOrRemoved).Remove(RevealTagEventHandle);
+
+		AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_UtilityHeld,
+			EGameplayTagEventType::NewOrRemoved).Remove(UtilityHeldEventHandle);
 	}
 
 	RevealTagEventHandle.Reset();
-	RevealTagAbilitySystem.Reset();
+	UtilityHeldEventHandle.Reset();
+	SubscribedAbilitySystem.Reset();
 }
 
 void AShooterCharacter::HandleRevealTagChanged(const FGameplayTag, const int32)
 {
 	RefreshTeamOutline();
+}
+
+void AShooterCharacter::HandleUtilityHeldChanged(const FGameplayTag, const int32 NewCount)
+{
+	if (!IsValid(Combat))
+	{
+		return;
+	}
+
+	const bool bHeld = NewCount > 0;
+	Combat->SetPresentationSuppressed(bHeld);
+
+	if (!bHeld && HasAuthority())
+	{
+		Combat->ReEquipCurrentWeapon();
+	}
 }
 
 bool AShooterCharacter::InitializeDefaultWeaponLoadout()
