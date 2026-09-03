@@ -57,7 +57,7 @@ public:
 	bool RestartPlayerAtObjective(
 		APlayerController* PlayerController,
 		EDominationPointId ObjectivePointId);
-	void RespawnEliminatedPlayer(AController* EliminatedController);
+	void RespawnPlayer(AController* Controller);
 
 	// 초기 참가자 스폰이 끝나고 중앙 거점 활성화 대기가 시작된 뒤 발생한다.
 	// 외부 증강 시스템은 Manager 내부가 아니라 이 GameMode 경계에 연결한다.
@@ -88,6 +88,9 @@ private:
 		EGameTeam CapturingTeam);
 	void FinishDominationMatch(EGameTeam WinningTeam);
 	void ReturnToLobbyAfterMatch();
+	bool TryJoinPlayerInProgress(
+		ADominationPlayerController* PlayerController,
+		EDominationCombatClass RequestedClass);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "8"))
 	int32 MinimumPlayersToStart = 2;
