@@ -15,12 +15,14 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "Sound/SoundBase.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -199,6 +201,20 @@ void AShooterPlayerController::SetupInputComponent()
 			ETriggerEvent::Started,
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
+	}
+	if (InputConfig->ShowScoreboardAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ShowScoreboardAction,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::Input_ShowScoreboard);
+
+		EnhancedInputComponent->BindAction(
+			InputConfig->ShowScoreboardAction,
+			ETriggerEvent::Completed,
+			this,
+			&ThisClass::Input_HideScoreboard);
 	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
@@ -578,6 +594,14 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRe
 	OnHitMarker.Broadcast(bRed);
 }
 
+void AShooterPlayerController::ClientPlayKillSound_Implementation()
+{
+	if (LocalKillSound)
+	{
+		UGameplayStatics::PlaySound2D(this, LocalKillSound);
+	}
+}
+
 void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
 {
 	ShowSpectatorWidget(ViewTargetPlayerState);
@@ -826,6 +850,32 @@ void AShooterPlayerController::Input_ToggleInGameMenu()
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
 		UIInitComponent->ToggleInGameMenu();
+	}
+}
+
+void AShooterPlayerController::Input_ShowScoreboard()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->ShowScoreboard();
+	}
+}
+
+void AShooterPlayerController::Input_HideScoreboard()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->HideScoreboard();
 	}
 }
 

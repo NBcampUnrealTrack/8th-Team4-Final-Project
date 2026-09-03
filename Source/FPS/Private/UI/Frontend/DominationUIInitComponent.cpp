@@ -71,6 +71,7 @@ void UDominationUIInitComponent::EndPlay(
 	const EEndPlayReason::Type EndPlayReason)
 {
 	ClearInitializationRetry();
+	UnbindFromPlayerState();
 	UnbindFromGameState();
 	RemoveClassSelectionScreen();
 
@@ -100,7 +101,21 @@ void UDominationUIInitComponent::RefreshDominationUI()
 	}
 
 	BindToGameState(DominationGameState);
-	RefreshClassSelectionPresentation(DominationGameState);
+
+	ADominationPlayerController* PlayerController =
+		Cast<ADominationPlayerController>(GetOwner());
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	if (!IsValid(PlayerState))
+	{
+		RemoveClassSelectionScreen();
+		ScheduleInitializationRetry();
+		return;
+	}
+
+	BindToPlayerState(PlayerState);
+	RefreshClassSelectionPresentation(DominationGameState, PlayerState);
 
 	const EDominationMatchPhase Phase = DominationGameState->GetDominationPhase();
 	if (Phase != EDominationMatchPhase::InProgress
@@ -116,12 +131,7 @@ void UDominationUIInitComponent::RefreshDominationUI()
 		return;
 	}
 
-	ADominationPlayerController* PlayerController =
-		Cast<ADominationPlayerController>(GetOwner());
-	ADominationPlayerState* PlayerState = IsValid(PlayerController)
-		? PlayerController->GetPlayerState<ADominationPlayerState>()
-		: nullptr;
-	if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
+	if (PlayerState->GetTeam() == EGameTeam::None)
 	{
 		ScheduleInitializationRetry();
 		return;
@@ -165,11 +175,27 @@ void UDominationUIInitComponent::RefreshDominationUI()
 }
 
 void UDominationUIInitComponent::RefreshClassSelectionPresentation(
-	ADominationGameState* DominationGameState)
+	ADominationGameState* DominationGameState,
+	ADominationPlayerState* PlayerState)
 {
-	if (IsValid(DominationGameState)
-		&& DominationGameState->GetDominationPhase()
-			== EDominationMatchPhase::ClassSelecting)
+	if (!IsValid(DominationGameState) || !IsValid(PlayerState))
+	{
+		RemoveClassSelectionScreen();
+		return;
+	}
+
+	const EDominationMatchPhase Phase = DominationGameState->GetDominationPhase();
+	const EPlayerParticipationState ParticipationState =
+		PlayerState->GetParticipationState();
+	const bool bInitialParticipantSelecting =
+		Phase == EDominationMatchPhase::ClassSelecting
+		&& ParticipationState == EPlayerParticipationState::WaitingForMatchStart;
+	const bool bJoinInProgressSelecting =
+		Phase == EDominationMatchPhase::InProgress
+		&& ParticipationState == EPlayerParticipationState::WaitingForNextSpawn
+		&& !PlayerState->HasSelectedCombatClass();
+
+	if (bInitialParticipantSelecting || bJoinInProgressSelecting)
 	{
 		PresentClassSelectionScreen();
 		return;
@@ -230,6 +256,18 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 void UDominationUIInitComponent::HandleMatchStateChanged()
 {
 	TryCaptureMatchResult();
+}
+
+void UDominationUIInitComponent::HandleParticipationStateChanged(
+	const EPlayerParticipationState)
+{
+	RefreshDominationUI();
+}
+
+void UDominationUIInitComponent::HandleCombatClassChanged(
+	const EDominationCombatClass)
+{
+	RefreshDominationUI();
 }
 
 void UDominationUIInitComponent::TryCaptureMatchResult()
@@ -302,6 +340,44 @@ void UDominationUIInitComponent::UnbindFromGameState()
 		BoundGameState->OnMatchStateChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
+}
+
+void UDominationUIInitComponent::BindToPlayerState(
+	ADominationPlayerState* PlayerState)
+{
+	if (BoundPlayerState.Get() == PlayerState)
+	{
+		return;
+	}
+
+	UnbindFromPlayerState();
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	BoundPlayerState = PlayerState;
+	PlayerState->OnParticipationStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleParticipationStateChanged);
+	PlayerState->OnCombatClassChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleCombatClassChanged);
+}
+
+void UDominationUIInitComponent::UnbindFromPlayerState()
+{
+	if (ADominationPlayerState* PlayerState = BoundPlayerState.Get())
+	{
+		PlayerState->OnParticipationStateChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleParticipationStateChanged);
+		PlayerState->OnCombatClassChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandleCombatClassChanged);
+	}
+
+	BoundPlayerState.Reset();
 }
 
 bool UDominationUIInitComponent::IsAugmentPresentationAllowed() const

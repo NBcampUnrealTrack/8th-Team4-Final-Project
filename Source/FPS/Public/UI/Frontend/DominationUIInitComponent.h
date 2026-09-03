@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "GameplayTagContainer.h"
+#include "Player/PlayerParticipationState.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "DominationUIInitComponent.generated.h"
 
 class ADominationGameState;
+class ADominationPlayerState;
 class UDominationClassSelectScreen;
 class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
@@ -47,8 +50,16 @@ private:
 	UFUNCTION()
 	void HandleMatchStateChanged();
 
+	UFUNCTION()
+	void HandleParticipationStateChanged(EPlayerParticipationState ParticipationState);
+
+	UFUNCTION()
+	void HandleCombatClassChanged(EDominationCombatClass SelectedClass);
+
 	void RefreshDominationUI();
-	void RefreshClassSelectionPresentation(ADominationGameState* DominationGameState);
+	void RefreshClassSelectionPresentation(
+		ADominationGameState* DominationGameState,
+		ADominationPlayerState* PlayerState);
 	void PresentClassSelectionScreen();
 	void RemoveClassSelectionScreen();
 	void TryCaptureMatchResult();
@@ -56,6 +67,8 @@ private:
 	void ClearInitializationRetry();
 	void BindToGameState(ADominationGameState* DominationGameState);
 	void UnbindFromGameState();
+	void BindToPlayerState(ADominationPlayerState* PlayerState);
+	void UnbindFromPlayerState();
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
@@ -94,5 +107,6 @@ private:
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
+	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 	FTimerHandle InitializationRetryTimerHandle;
 };

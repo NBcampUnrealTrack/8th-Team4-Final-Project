@@ -1,4 +1,4 @@
-#include "Animation/ShooterAnimInstance.h"
+﻿#include "Animation/ShooterAnimInstance.h"
 
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
@@ -18,6 +18,7 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 	CacheReferences();
 	LastAnimationWeapon.Reset();
 	bWasReloading = false;
+	bWasUtilityHeld = false;
 	UpdateWeaponValues();
 	if (ShooterCharacter)
 	{
@@ -126,7 +127,10 @@ void UShooterAnimInstance::UpdateWeaponValues()
 
 	UpdateWeaponAnimationData();
 
-	if (CurrentWeapon.Get() != LastAnimationWeapon.Get())
+	const bool bUtilityHeld = IsValid(Combat) && Combat->IsPresentationSuppressed();
+	const bool bReleasedUtility = !bUtilityHeld && bWasUtilityHeld;
+
+	if (CurrentWeapon.Get() != LastAnimationWeapon.Get() || bReleasedUtility)
 	{
 		LastAnimationWeapon = CurrentWeapon.Get();
 		bWasReloading = false;
@@ -139,6 +143,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	}
 
 	bWasReloading = bIsReloading;
+	bWasUtilityHeld = bUtilityHeld;
 }
 
 void UShooterAnimInstance::UpdateWeaponAnimationData()

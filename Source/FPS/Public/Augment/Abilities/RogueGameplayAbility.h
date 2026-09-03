@@ -121,7 +121,7 @@ protected:
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
 	float EquipSeconds = 0.f;
 
-	// 손에 든 순간 실행할 GameplayCue
+	// 손에 든 동안 유지할 GameplayCue. Looping 큐
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, Categories = "GameplayCue"))
 	FGameplayTag EquipCueTag;

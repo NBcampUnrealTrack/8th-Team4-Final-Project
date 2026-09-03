@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Combat/CombatComponent.h"
 
@@ -67,6 +67,22 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	UpdateMovementSpreadMultiplier();
 	UpdateCameraZoom(DeltaTime);
+
+	// 스왑 타이머가 완료 콜백(FinishCycling) 없이 사라지면 bIsCycling이 true로 굳어
+	// IsWeaponReady()가 계속 false가 되고 사격/재장전이 영구히 막힌다 - 부활 직후
+	// 기본 로드아웃 초기화와 클래스 로드아웃 적용이 겹칠 때 관측된다. 서버에서 방어적으로 해제한다.
+	const AActor* OwnerActor = GetOwner();
+	if (bIsCycling && IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		const UWorld* World = GetWorld();
+		if (IsValid(World) && !World->GetTimerManager().IsTimerActive(WeaponSwitchTimerHandle))
+		{
+			UE_LOG(LogCombatComponent, Warning,
+				TEXT("[CombatComponent] %s: 스왑 타이머 없이 bIsCycling이 남아 있어 강제로 해제한다."),
+				*GetNameSafe(OwnerActor));
+			FinishCycling();
+		}
+	}
 }
 
 void UCombatComponent::UpdateMovementSpreadMultiplier() const
@@ -366,6 +382,12 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 			ApplyCurrentWeapon(PreviousPrimary);
 			BeginEquipCycle(PreviousPrimary);
 		}
+		else
+		{
+			// 부활 시 BeginPlay의 기본 로드아웃이 이미 같은 클래스를 장착해 둔 경로 -
+			// 아무것도 바뀌지 않지만, 빙의/복제 타이밍상 부착·표시가 누락됐을 수 있어 한 번 더 확정한다.
+			RefreshWeaponPresentation();
+		}
 
 		return true;
 	}
@@ -470,6 +492,28 @@ bool UCombatComponent::ShouldSuppressMainHUDForADS() const
 	return bAiming
 		&& IsValid(Weapon)
 		&& Weapon->ShouldHideMainHUDWhileADS();
+}
+
+void UCombatComponent::SetPresentationSuppressed(const bool bSuppressed)
+{
+	if (bPresentationSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bPresentationSuppressed = bSuppressed;
+	RefreshWeaponPresentation();
+}
+
+void UCombatComponent::ReEquipCurrentWeapon()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority() || !IsValid(CurrentWeapon.Get()))
+	{
+		return;
+	}
+
+	BeginEquipCycle(CurrentWeapon.Get());
 }
 
 void UCombatComponent::RefreshFirstPersonADSPresentation() const
@@ -712,17 +756,19 @@ void UCombatComponent::OnRep_IsCycling()
 
 void UCombatComponent::RefreshWeaponPresentation()
 {
+	const bool bAllowPresentation = !bPresentationSuppressed;
+
 	if (IsValid(PrimaryWeapon.Get()))
 	{
-		PrimaryWeapon->SetPresentationActive(PrimaryWeapon.Get() == CurrentWeapon.Get());
+		PrimaryWeapon->SetPresentationActive(bAllowPresentation && PrimaryWeapon.Get() == CurrentWeapon.Get());
 	}
 	if (IsValid(SecondaryWeapon.Get()))
 	{
-		SecondaryWeapon->SetPresentationActive(SecondaryWeapon.Get() == CurrentWeapon.Get());
+		SecondaryWeapon->SetPresentationActive(bAllowPresentation && SecondaryWeapon.Get() == CurrentWeapon.Get());
 	}
 	if (IsValid(MeleeWeapon.Get()))
 	{
-		MeleeWeapon->SetPresentationActive(MeleeWeapon.Get() == CurrentWeapon.Get());
+		MeleeWeapon->SetPresentationActive(bAllowPresentation && MeleeWeapon.Get() == CurrentWeapon.Get());
 	}
 
 	if (IsValid(CurrentWeapon.Get())
@@ -730,7 +776,7 @@ void UCombatComponent::RefreshWeaponPresentation()
 		&& CurrentWeapon.Get() != SecondaryWeapon.Get()
 		&& CurrentWeapon.Get() != MeleeWeapon.Get())
 	{
-		CurrentWeapon->SetPresentationActive(true);
+		CurrentWeapon->SetPresentationActive(bAllowPresentation);
 	}
 
 	// SetPresentationActive가 현재 무기의 Mesh1P Visibility를 다시 켤 수 있으므로,

@@ -54,6 +54,9 @@ public:
 	// LobbyGameMode uses this path to commit map and match type together.
 	void StartRoomGameWithSettings(const FString& GameMapName, const FString& GameMatchType);
 
+	// 게임 모드가 실제 플레이 맵에 진입한 뒤 중도 참가 허용 여부를 명시적으로 제어한다.
+	bool SetRoomJoinable(bool bIsJoinable);
+
 	UPROPERTY(BlueprintAssignable)
 	FOnCreateRoomComplete OnCreateRoomComplete;
 
@@ -79,7 +82,6 @@ private:
 	FString ResolveMapPathFromName(const FString& MapName) const;
 	TArray<FRoomInfo> BuildRoomInfoList() const;
 	void ApplyCachedRoomSettings(FOnlineSessionSettings& SessionSettings, bool bIsJoinable) const;
-	bool SetRoomJoinable(bool bIsJoinable);
 	void CompleteLeaveRoom(bool bWasSuccessful);
 	void ReturnToFrontendNow();
 	bool TravelRoomToLobbyNow();

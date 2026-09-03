@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -24,6 +24,7 @@ class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
 class UInputMappingContext;
 class APlayerState;
+class USoundBase;
 struct FInputActionValue;
 
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bRed면 빨간 X(헤드샷 또는 처치), 아니면 기본 X.
@@ -115,6 +116,10 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(bool bRed);
 
+	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드를 재생
+	UFUNCTION(Client, Reliable)
+	void ClientPlayKillSound();
+
 	UFUNCTION(Client, Reliable)
 	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
 
@@ -193,6 +198,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Feedback")
+	TObjectPtr<USoundBase> LocalKillSound;
+
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 	void SetMappingContextEnabled(
 		UInputMappingContext* MappingContext,
@@ -223,6 +231,8 @@ private:
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_ToggleInGameMenu();
+	void Input_ShowScoreboard();
+	void Input_HideScoreboard();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;

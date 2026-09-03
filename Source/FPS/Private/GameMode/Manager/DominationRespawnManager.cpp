@@ -106,18 +106,18 @@ void UDominationRespawnManager::ClearAllRespawnProtections()
 	ActiveRespawnProtections.Reset();
 }
 
-void UDominationRespawnManager::ScheduleRespawn(AController* EliminatedController)
+void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 {
-	const TWeakObjectPtr<AController> ControllerKey(EliminatedController);
-	if (IsValid(EliminatedController))
+	const TWeakObjectPtr<AController> ControllerKey(WaitingController);
+	if (IsValid(WaitingController))
 	{
 		EndRespawnProtection(
-			EliminatedController->GetPlayerState<AShooterPlayerState>());
+			WaitingController->GetPlayerState<AShooterPlayerState>());
 	}
 
 	FTimerManager* TimerManager = GetTimerManager();
 	if (TimerManager == nullptr
-		|| !IsValid(EliminatedController)
+		|| !IsValid(WaitingController)
 		|| PendingRespawnTimers.Contains(ControllerKey))
 	{
 		return;
@@ -346,14 +346,14 @@ bool UDominationRespawnManager::CacheSpawnVolumes()
 }
 
 void UDominationRespawnManager::HandleRespawnTimer(
-	const TWeakObjectPtr<AController> EliminatedController)
+	const TWeakObjectPtr<AController> WaitingController)
 {
-	PendingRespawnTimers.Remove(EliminatedController);
+	PendingRespawnTimers.Remove(WaitingController);
 
 	ADominationGameMode* GameMode = GetOwnerGameMode();
-	if (IsValid(GameMode) && EliminatedController.IsValid())
+	if (IsValid(GameMode) && WaitingController.IsValid())
 	{
-		GameMode->RespawnEliminatedPlayer(EliminatedController.Get());
+		GameMode->RespawnPlayer(WaitingController.Get());
 	}
 }
 

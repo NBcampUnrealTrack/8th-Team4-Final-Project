@@ -13,6 +13,7 @@
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/InGame/Scoreboard/ShooterScoreboard.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTeamMatchUIInit, Log, All);
 
@@ -59,6 +60,7 @@ void UTeamMatchUIInitComponent::ShutdownTeamMatchUI()
 	RemoveInGameMenu();
 	RemoveSurrenderVote();
 	HideAugmentSelect();
+	HideScoreboard();
 
 	if (BoundInventory.IsValid())
 	{
@@ -280,6 +282,34 @@ void UTeamMatchUIInitComponent::HideAugmentSelect()
 		&ThisClass::HandleAugmentRerollRequested);
 	RemoveScreenFromLayer(UITags::UI_Layer_Modal, AugmentScreen);
 	SetAugmentSelectInstance(nullptr);
+}
+
+void UTeamMatchUIInitComponent::ShowScoreboard()
+{
+	if (IsValid(ScoreboardInstance))
+	{
+		return;
+	}
+	
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!ensure(UIManager) || !ensure(ScoreboardClass))
+	{
+		return;
+	}
+	
+	ScoreboardInstance = Cast<UShooterScoreboard>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_GameMenu, ScoreboardClass));
+}
+
+void UTeamMatchUIInitComponent::HideScoreboard()
+{
+	if (!IsValid(ScoreboardInstance))
+	{
+		return;
+	}
+	
+	RemoveScreenFromLayer(UITags::UI_Layer_GameMenu, ScoreboardInstance);
+	ScoreboardInstance = nullptr;
 }
 
 void UTeamMatchUIInitComponent::ScheduleModalRefresh()

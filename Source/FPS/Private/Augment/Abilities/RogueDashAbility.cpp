@@ -46,6 +46,12 @@ void URogueDashAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		return;
 	}
 
+	// 대시 증강은 리팩토링 예정, 현재는 ActivationCueTag를 통해 효과를 발신
+	if (ActivationCueTag.IsValid())
+	{
+		K2_ExecuteGameplayCue(ActivationCueTag, FGameplayEffectContextHandle());
+	}
+
 	const int32 Level = GetAbilityLevel(Handle, ActorInfo);
 
 	static const FString DistanceContext(TEXT("URogueDashAbility::DashDistance"));

@@ -16,7 +16,7 @@ class UAbilitySystemComponent;
 class UDominationObjectiveManager;
 struct FGameplayEventData;
 
-/** 사망자별 리스폰 대기, 전선 기준 스폰 위치, 리스폰 직후 보호 수명주기를 관리한다. 실제 Pawn 생성은 GameMode에 요청한다. */
+/** 전투 스폰 대기, 전선 기준 스폰 위치, 스폰 직후 보호 수명주기를 관리한다. 실제 Pawn 생성은 GameMode에 요청한다. */
 UCLASS()
 class FPS_API UDominationRespawnManager : public UDominationManagerBase
 {
@@ -33,7 +33,7 @@ public:
 	void CancelPendingRespawns();
 	// 매치 종료 시 남아 있는 보호 태그, 만료 타이머, 발사 이벤트 구독을 모두 해제한다.
 	void ClearAllRespawnProtections();
-	void ScheduleRespawn(AController* EliminatedController);
+	void ScheduleRespawn(AController* WaitingController);
 	void BeginRespawnProtection(AShooterPlayerState* PlayerState);
 	bool TryGetSpawnTransform(
 		EGameTeam Team,
@@ -48,7 +48,7 @@ private:
 	UFUNCTION()
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
-	void HandleRespawnTimer(TWeakObjectPtr<AController> EliminatedController);
+	void HandleRespawnTimer(TWeakObjectPtr<AController> WaitingController);
 	void HandleRespawnProtectionExpired(TWeakObjectPtr<AShooterPlayerState> PlayerState);
 	void HandleProtectedPlayerWeaponFired(
 		FGameplayTag EventTag,
