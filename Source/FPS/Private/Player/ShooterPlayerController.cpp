@@ -15,12 +15,14 @@
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "Sound/SoundBase.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -576,6 +578,14 @@ void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRed)
 {
 	OnHitMarker.Broadcast(bRed);
+}
+
+void AShooterPlayerController::ClientPlayKillSound_Implementation()
+{
+	if (LocalKillSound)
+	{
+		UGameplayStatics::PlaySound2D(this, LocalKillSound);
+	}
 }
 
 void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
