@@ -215,6 +215,12 @@ void AShooterPlayerController::SetupInputComponent()
 			ETriggerEvent::Completed,
 			this,
 			&ThisClass::Input_HideScoreboard);
+		
+		EnhancedInputComponent->BindAction(
+			InputConfig->ShowScoreboardAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ThisClass::Input_HideScoreboard);	
 	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
