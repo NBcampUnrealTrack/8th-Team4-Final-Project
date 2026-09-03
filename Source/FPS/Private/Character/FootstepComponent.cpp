@@ -84,7 +84,7 @@ void UFootstepComponent::ServerPlayFootstep_Implementation(const FName FootSocke
 
 void UFootstepComponent::MulticastPlayFootstep_Implementation(
 	const FVector_NetQuantize FootstepLocation,
-	const TEnumAsByte<EPhysicalSurface> SurfaceType)
+	const EPhysicalSurface SurfaceType)
 {
 	if (GetNetMode() == NM_DedicatedServer)
 	{

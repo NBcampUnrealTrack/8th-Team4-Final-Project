@@ -23,7 +23,7 @@ private:
 	void ServerPlayFootstep(FName FootSocketName);
 
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastPlayFootstep(FVector_NetQuantize FootstepLocation, TEnumAsByte<EPhysicalSurface> SurfaceType);
+	void MulticastPlayFootstep(FVector_NetQuantize FootstepLocation, EPhysicalSurface SurfaceType);
 
 	bool BuildFootstepData(
 		USkeletalMeshComponent* SourceMesh,
