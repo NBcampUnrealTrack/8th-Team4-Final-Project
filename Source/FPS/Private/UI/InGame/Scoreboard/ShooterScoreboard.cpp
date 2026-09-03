@@ -334,9 +334,8 @@ FShooterScoreboardRowData UShooterScoreboard::BuildRowData(APlayerState* PlayerS
 	// K/D 
 	if (const AShooterPlayerState* ShooterPS = Cast<AShooterPlayerState>(PlayerState))
 	{
-		// TODO: 
-		// Data.Kills = ShooterPS->GetKills();
-		// Data.Deaths = ShooterPS->GetDeaths();
+		Data.Kills = ShooterPS->GetKills();
+		Data.Deaths = ShooterPS->GetDeaths();
 	}
 
 	// Assists 는 소스가 없으므로 기본값 유지

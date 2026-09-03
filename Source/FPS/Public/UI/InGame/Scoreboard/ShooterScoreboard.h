@@ -88,6 +88,5 @@ private:
 	TSharedPtr<FStreamableHandle> IconLoadHandle;
 	TArray<FPrimaryAssetId> LoadedIconIds;
 	
-	// PlayerState에 K/D/A가 생기면 true로 바꿈
-	static constexpr bool bStatsAvailable = false;
+	static constexpr bool bStatsAvailable = true;
 };

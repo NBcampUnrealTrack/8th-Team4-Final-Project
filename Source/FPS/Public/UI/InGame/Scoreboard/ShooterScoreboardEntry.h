@@ -49,7 +49,7 @@ public:
 	// 이 Row가 그 칩을 갖고있나 체크
 	bool OwnsAugmentChip(const UShooterAugmentChip* Chip) const;
 	
-protected:protected:
+protected:
 	virtual void NativeOnInitialized() override;
 
 	// 결과 화면과 같은 방식으로 팀 색을 WBP 에 넘긴다
