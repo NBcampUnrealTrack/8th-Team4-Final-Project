@@ -10,6 +10,7 @@ class ARogueAugmentActor;
 class UAugmentDefinition;
 class UGameplayEffect;
 class URogueGameplayAbility;
+class UStaticMesh;
 
 
 // 증강 등급
@@ -248,6 +249,37 @@ struct FAugmentLevelData
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value")
     TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
+};
+
+// 손에 든 동안 보여줄 메시
+USTRUCT(BlueprintType)
+struct FAugmentHeldVisual
+{
+    GENERATED_BODY()
+
+    // 메시가 없으면 몽타주만 재생
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    TSoftObjectPtr<UStaticMesh> Mesh;
+
+    // 1인칭 부착 소켓 이름
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FName GripSocketName1P;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripOffsetLocation1P = FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FRotator GripOffsetRotation1P = FRotator::ZeroRotator;
+
+    // 3인칭 부착 소켓 이름
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FName GripSocketName3P = TEXT("Weapon_R_Socket");
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripOffsetLocation3P = FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FRotator GripOffsetRotation3P = FRotator::ZeroRotator;
 };
 
 // 등급 추첨 가중치

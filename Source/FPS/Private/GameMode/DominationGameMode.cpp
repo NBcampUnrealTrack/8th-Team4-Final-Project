@@ -103,6 +103,17 @@ void ADominationGameMode::BeginPlay()
 	MatchStartManager->OnInitialPlayersSpawned.AddUObject(
 		this,
 		&ThisClass::HandleInitialPlayersSpawned);
+
+	// 로비 -> 게임 이동 중에는 방을 닫아두고, 실제 Domination 월드 준비가 끝난 뒤
+	// 세션 검색/참가를 다시 열어 JIP가 게임플레이 수명주기와 같은 시점부터 허용되게 한다.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem =
+			GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->SetRoomJoinable(true);
+		}
+	}
 }
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -166,6 +177,14 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 		return;
 	}
 
+	if (AShooterPlayerState* PlayerState =
+		EliminatedController->GetPlayerState<AShooterPlayerState>())
+	{
+		PlayerState->SetParticipationState(
+			EPlayerParticipationState::WaitingForNextSpawn);
+		PlayerState->SetAlive(false);
+	}
+
 	RespawnManager->ScheduleRespawn(EliminatedController);
 	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
 }
@@ -175,18 +194,36 @@ void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* Player
 	ADominationPlayerController* DominationPlayerController =
 		Cast<ADominationPlayerController>(PlayerController);
 
-	if (!IsValid(DominationPlayerController) || !IsValid(MatchStartManager))
+	if (!IsValid(DominationPlayerController))
 	{
 		return;
 	}
 
 	Super::NotifyPlayerReadyForGameFlow(PlayerController);
+
+	ADominationPlayerState* PlayerState =
+		DominationPlayerController->GetPlayerState<ADominationPlayerState>();
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	if (PlayerState->GetParticipationState()
+		== EPlayerParticipationState::WaitingForNextSpawn)
+	{
+		DominationPlayerController->ClientHideLoadingScreen();
+		return;
+	}
+
 	if (!AreAugmentDraftDependenciesReady())
 	{
 		return;
 	}
 
-	MatchStartManager->NotifyPlayerLoaded();
+	if (IsValid(MatchStartManager))
+	{
+		MatchStartManager->NotifyPlayerLoaded();
+	}
 }
 
 bool ADominationGameMode::IsSurrenderVoteAllowedNow() const
@@ -210,10 +247,25 @@ void ADominationGameMode::RequestCombatClass(
 	ADominationPlayerController* PlayerController,
 	const EDominationCombatClass RequestedClass)
 {
-	if (IsValid(MatchStartManager))
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	if (!HasAuthority() || !IsValid(PlayerState))
 	{
-		MatchStartManager->RequestCombatClass(PlayerController, RequestedClass);
+		return;
 	}
+
+	if (PlayerState->GetParticipationState()
+		== EPlayerParticipationState::WaitingForMatchStart)
+	{
+		if (IsValid(MatchStartManager))
+		{
+			MatchStartManager->RequestCombatClass(PlayerController, RequestedClass);
+		}
+		return;
+	}
+
+	TryJoinPlayerInProgress(PlayerController, RequestedClass);
 }
 
 UDominationLoadoutManager* ADominationGameMode::GetLoadoutManager() const
@@ -262,9 +314,9 @@ bool ADominationGameMode::RestartPlayerAtObjective(
 	return IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
 }
 
-void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedController)
+void ADominationGameMode::RespawnPlayer(AController* Controller)
 {
-	APlayerController* PlayerController = Cast<APlayerController>(EliminatedController);
+	APlayerController* PlayerController = Cast<APlayerController>(Controller);
 	ADominationPlayerState* PlayerState = IsValid(PlayerController)
 		? PlayerController->GetPlayerState<ADominationPlayerState>()
 		: nullptr;
@@ -272,44 +324,90 @@ void ADominationGameMode::RespawnEliminatedPlayer(AController* EliminatedControl
 	if (!IsValid(PlayerController)
 		|| !IsValid(PlayerState)
 		|| !IsValid(DominationGameState)
-		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress
+		|| PlayerState->GetParticipationState()
+			!= EPlayerParticipationState::WaitingForNextSpawn)
 	{
 		return;
 	}
 
+	const EDominationPointId SpawnObjectivePointId = DominationGameState->HasActivePoint()
+		? DominationGameState->GetActivePointId()
+		: EDominationPointId::C;
+
 	if (!RestartPlayerAtObjective(
 		PlayerController,
-		DominationGameState->GetActivePointId()))
+		SpawnObjectivePointId))
 	{
 		UE_LOG(
 			LogDominationGameMode,
 			Error,
 			TEXT("Could not resolve a Domination respawn for team %d at active point %d."),
 			static_cast<uint8>(PlayerState->GetTeam()),
-			static_cast<uint8>(DominationGameState->GetActivePointId()));
+			static_cast<uint8>(SpawnObjectivePointId));
 		return;
 	}
 
 	APawn* SpawnedPawn = PlayerController->GetPawn();
-	PlayerController->ChangeState(NAME_Playing);
-	PlayerController->ClientGotoState(NAME_Playing);
-	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
-	{
-		ShooterPlayerController->ClientExitSpectatorMode();
-	}
 	PlayerState->ServerRespawnReset();
-	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
-	RespawnManager->BeginRespawnProtection(PlayerState);
 	if (!IsValid(LoadoutManager)
 		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
 	{
 		UE_LOG(LogDominationGameMode, Error,
 			TEXT("Failed to restore the Domination class loadout for %s."),
 			*GetNameSafe(PlayerState));
+		MovePlayerToSpectator(PlayerController);
+		PlayerState->SetAlive(false);
 		return;
 	}
 
+	PlayerController->ChangeState(NAME_Playing);
+	PlayerController->ClientGotoState(NAME_Playing);
+	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
+	{
+		ShooterPlayerController->ClientExitSpectatorMode();
+	}
+	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
+	RespawnManager->BeginRespawnProtection(PlayerState);
+
 	ServeNextAugmentReward(PlayerState);
+}
+
+bool ADominationGameMode::TryJoinPlayerInProgress(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass RequestedClass)
+{
+	ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	if (!IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress
+		|| !IsValid(PlayerState)
+		|| !PlayerState->IsLoadedIntoMatch()
+		|| PlayerState->GetParticipationState()
+			!= EPlayerParticipationState::WaitingForNextSpawn
+		|| !IsValid(LoadoutManager)
+		|| !IsValid(RespawnManager)
+		|| !PlayerState->TryConfirmCombatClass(RequestedClass))
+	{
+		return false;
+	}
+
+	if (!LoadoutManager->InitializeCombatClassInventory(PlayerState))
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Failed to initialize the Domination class inventory for join-in-progress player %s."),
+			*GetNameSafe(PlayerState));
+		return false;
+	}
+
+	RespawnManager->ScheduleRespawn(PlayerController);
+	UE_LOG(LogDominationGameMode, Log,
+		TEXT("Join-in-progress player %s selected class %d and is waiting to spawn."),
+		*GetNameSafe(PlayerState),
+		static_cast<uint8>(RequestedClass));
+	return true;
 }
 
 bool ADominationGameMode::HasValidCombatClassConfiguration() const
@@ -535,6 +633,15 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 		return;
 	}
 
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem =
+			GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->SetRoomJoinable(false);
+		}
+	}
+
 	DominationGameState->SetMatchWinner(WinningTeam);
 	DominationGameState->SetDominationPhase(
 		EDominationMatchPhase::MatchEnded,
@@ -610,6 +717,13 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
 	{
 		MovePlayerToSpectator(NewPlayer);
+		if (AShooterPlayerState* PlayerState =
+			NewPlayer->GetPlayerState<AShooterPlayerState>())
+		{
+			// SpectatorPawn이 첫 Avatar가 되면 초기 vitals가 생존 상태를 만들 수 있으므로
+			// 실제 전투 Pawn이 생기기 전까지 참가 상태와 생존 상태를 일치시킨다.
+			PlayerState->SetAlive(false);
+		}
 	}
 }
 
@@ -620,8 +734,7 @@ EPlayerParticipationState ADominationGameMode::ResolveParticipationStateForNewPl
 		? DominationGameState->GetDominationPhase()
 		: EDominationMatchPhase::WaitingForPlayers;
 
-	if (Phase == EDominationMatchPhase::WaitingForPlayers
-		|| Phase == EDominationMatchPhase::ClassSelecting)
+	if (Phase == EDominationMatchPhase::WaitingForPlayers)
 	{
 		return EPlayerParticipationState::WaitingForMatchStart;
 	}
