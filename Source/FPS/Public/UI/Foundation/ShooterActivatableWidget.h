@@ -15,7 +15,9 @@ enum class EShooterWidgetInputMode : uint8
 	// 게임 입력만. 커서 없음. HUD 
 	Game,
 	// UI 입력만. 커서 표시. 로비, 설정, 일시정지 
-	Menu
+	Menu,
+	// 커서는 띄우되 이동은 유지하고 시점만 막음 스코어보드
+	GameAndMenu_LockLook
 };
  
 UCLASS(Abstract, Blueprintable)
