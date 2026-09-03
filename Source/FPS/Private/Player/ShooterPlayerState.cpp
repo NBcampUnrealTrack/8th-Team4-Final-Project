@@ -257,6 +257,7 @@ void AShooterPlayerState::SetParticipationState(const EPlayerParticipationState 
 
 void AShooterPlayerState::OnRep_ParticipationState()
 {
+	OnParticipationStateChanged.Broadcast(ParticipationState);
 }
 
 void AShooterPlayerState::SetVoiceTalking(bool bNewVoiceTalking)

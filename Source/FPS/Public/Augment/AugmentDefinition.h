@@ -72,6 +72,12 @@ public:
 	FGameplayTagContainer RequiredUnlockTags;
 
 	// --------------------------------------------------
+	// 손에 드는 액티브 증강의 비주얼. 액티브가 아니면 무효
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+	FAugmentHeldVisual HeldVisual;
+
+	// --------------------------------------------------
 	// 효과. 수치는 Levels 의 0번 칸
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -32,9 +32,9 @@ protected:
 	UFUNCTION()
 	void HandleInputReleased(float TimeHeld);
 
-	// State_Movement_InAir 태그가 켜질 때(점프/낙하) 호출된다. 스나이퍼로 조준 중 공중에 뜨면
-	// 스스로 취소한다 - 다른 무기는 GetWeaponTag() 비교에서 걸러져 영향받지 않는다.
-	void HandleInAirTagChanged(const FGameplayTag Tag, int32 NewCount);
+	// 조준을 끊는 태그(State_Movement_InAir, State_Combat_UtilityHeld)가 켜질 때 호출된다.
+	// 스나이퍼로 조준 중일 때만 스스로 취소한다 - 다른 무기는 GetWeaponTag() 비교에서 걸러진다.
+	void HandleAimCancelTagChanged(const FGameplayTag Tag, int32 NewCount);
 
 	// 활성화 시점에 조준을 걸어둔 무기/CombatComponent. 도중에 무기가 바뀌어도(예: 조준 중 무기 전환
 	// 입력) EndAbility가 지금 장착된 무기가 아니라 "이 어빌리티가 실제로 켰던" 대상을 끄도록 캐싱한다.
@@ -44,6 +44,7 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UCombatComponent> AimingCombatComponent;
 
-	// HandleInAirTagChanged 구독 해제용. ActivateAbility에서 등록하고 EndAbility에서 반드시 해제한다.
+	// HandleAimCancelTagChanged 구독 해제용. ActivateAbility에서 등록하고 EndAbility에서 반드시 해제한다.
 	FDelegateHandle InAirTagEventHandle;
+	FDelegateHandle UtilityHeldTagEventHandle;
 };

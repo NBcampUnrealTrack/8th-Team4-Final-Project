@@ -23,6 +23,10 @@ class UWeaponInventoryComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FShooterVoiceTalkingChangedSignature, AShooterPlayerState*, PlayerState, bool, bIsTalking);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FShooterKillStatsChangedSignature, AShooterPlayerState*, PlayerState, int32, Kills, int32, Deaths);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FShooterParticipationStateChangedSignature,
+	EPlayerParticipationState,
+	ParticipationState);
 
 UCLASS()
 class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbilitySystemInterface
@@ -88,6 +92,9 @@ public:
 	EPlayerParticipationState GetParticipationState() const { return ParticipationState; }
 
 	void SetParticipationState(EPlayerParticipationState NewParticipationState);
+
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Match")
+	FShooterParticipationStateChangedSignature OnParticipationStateChanged;
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Voice")
 	bool IsVoiceTalking() const { return bIsVoiceTalking; }

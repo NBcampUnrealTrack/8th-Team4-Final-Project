@@ -254,6 +254,12 @@ void URogueGameplayAbility::FinishDeliver()
 		Deliver(*ActiveEntry, ActivePayload);
 	}
 
+	// 손에 든 증강은 사용 후 큐 제거
+	if (bHoldToUse && EquipCueTag.IsValid())
+	{
+		K2_RemoveGameplayCue(EquipCueTag);
+	}
+
 	// 사용 모션 시간이 있으면 대기 후 회복
 	if (bHoldToUse && RecoverySeconds > 0.f)
 	{
@@ -280,7 +286,7 @@ FGameplayCueParameters URogueGameplayAbility::MakeCueParams() const
 	FGameplayCueParameters CueParams;
 	CueParams.Instigator   = Avatar;
 	CueParams.EffectCauser = Avatar;
-	CueParams.SourceObject = this;
+	CueParams.SourceObject = GetSourceObject(CurrentSpecHandle, CurrentActorInfo);
 
 	CueParams.Location = ActivePayload.Origin;
 	CueParams.Normal   = ActivePayload.Direction;
@@ -320,7 +326,11 @@ void URogueGameplayAbility::BeginHold()
 	WaitCancel->OnPress.AddDynamic(this, &ThisClass::HandleHoldCancelPress);
 	WaitCancel->ReadyForActivation();
 
-	ExecuteCue(EquipCueTag);
+	// 손에 든 동안 유지
+	if (EquipCueTag.IsValid())
+	{
+		K2_AddGameplayCueWithParams(EquipCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
+	}
 
 	// 장착 모션이 있으면 대기
 	if (EquipSeconds > 0.f)
