@@ -385,6 +385,9 @@ void AWeaponBase::AttachToOwnerMeshes() const
 		// 무기별 보정값
 		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
 		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
+
+		Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+		Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
 	}
 }
 

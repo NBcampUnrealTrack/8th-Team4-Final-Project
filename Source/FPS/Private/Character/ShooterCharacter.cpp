@@ -122,11 +122,20 @@ void AShooterCharacter::OnRep_PlayerState()
 
 void AShooterCharacter::RefreshTeamOutline()
 {
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
 	USkeletalMeshComponent* Mesh3P = GetMesh();
 	if (!IsValid(Mesh3P))
 	{
 		return;
 	}
+
+	TArray<USceneComponent*> OutlineTargets;
+	Mesh3P->GetChildrenComponents(true, OutlineTargets);
+	OutlineTargets.Add(Mesh3P);
 
 	const UWorld* World = GetWorld();
 	const APlayerController* ViewerController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
@@ -141,7 +150,13 @@ void AShooterCharacter::RefreshTeamOutline()
 		|| ViewerPlayerState->GetTeam() == EGameTeam::None
 		|| OwnerPlayerState->GetTeam() == EGameTeam::None)
 	{
-		Mesh3P->SetRenderCustomDepth(false);
+		for (USceneComponent* Target : OutlineTargets)
+		{
+			if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
+			{
+				Primitive->SetRenderCustomDepth(false);
+			}
+		}
 		return;
 	}
 
@@ -155,8 +170,14 @@ void AShooterCharacter::RefreshTeamOutline()
 		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
 	}
 
-	Mesh3P->SetCustomDepthStencilValue(StencilValue);
-	Mesh3P->SetRenderCustomDepth(true);
+	for (USceneComponent* Target : OutlineTargets)
+	{
+		if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
+		{
+			Primitive->SetCustomDepthStencilValue(StencilValue);
+			Primitive->SetRenderCustomDepth(true);
+		}
+	}
 }
 
 void AShooterCharacter::RefreshTeamOutlineForAll(UWorld* World)
