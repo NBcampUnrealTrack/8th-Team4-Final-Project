@@ -73,7 +73,7 @@ void UShooterScoreboardEntry::SetData(
 
 	if (Text_Assists)
 	{
-		Text_Assists->SetText(FText::AsNumber(InData.Assists));
+		// Text_Assists->SetText(FText::AsNumber(InData.Assists));
 	}
 
 	if (Panel_Stats)
