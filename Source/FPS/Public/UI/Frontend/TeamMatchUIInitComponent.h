@@ -13,6 +13,8 @@ class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
 class UShooterSurrenderVoteScreen;
 class UShooterUIManagerSubsystem;
+class UShooterScoreboard;
+
 enum class ESurrenderVoteStartResult : uint8;
 
 /**
@@ -42,6 +44,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void HideAugmentSelect();
+	
+	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
+	void ShowScoreboard();
+	
+	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
+	void HideScoreboard();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -112,6 +120,11 @@ private:
 	UFUNCTION()
 	void HandleAugmentRerollRequested(int32 SlotIndex);
 
+	UPROPERTY(EditAnywhere, Category = "UI|Scoreboard")
+	TSubclassOf<UShooterScoreboard> ScoreboardClass;
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterScoreboard> ScoreboardInstance;
+	
 	TWeakObjectPtr<AShooterPlayerController> BoundPlayerController;
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	FTimerHandle ModalRefreshTimerHandle;

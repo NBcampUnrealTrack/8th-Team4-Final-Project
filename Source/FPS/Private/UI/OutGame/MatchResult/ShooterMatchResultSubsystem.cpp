@@ -5,6 +5,7 @@
 #include "GameMode/State/BaseTeamMatchGameState.h"
 #include "GameMode/State/LobbyGameState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/ShooterPlayerState.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
 #include "UI/ShooterUISettings.h"
 
@@ -107,11 +108,17 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(
 		FShooterMatchResultRow Row;
 		Row.PlayerName = FText::FromString(TeamPlayerState->GetPlayerName());
 		Row.Team = Team;
+		
+		if (const AShooterPlayerState* ShooterPS = Cast<AShooterPlayerState>(TeamPlayerState))
+		{
+			Row.Kills  = ShooterPS->GetKills();
+			Row.Deaths = ShooterPS->GetDeaths();
+		}
 
 		Snapshot.Rows.Add(Row);
 	}
 
-	Snapshot.bStatsAvailable = false;
+	Snapshot.bStatsAvailable = true;
 	Snapshot.bValid = true;
 }
 

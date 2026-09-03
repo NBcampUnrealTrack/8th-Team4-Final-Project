@@ -202,6 +202,20 @@ void AShooterPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
+	if (InputConfig->ShowScoreboardAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ShowScoreboardAction,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::Input_ShowScoreboard);
+
+		EnhancedInputComponent->BindAction(
+			InputConfig->ShowScoreboardAction,
+			ETriggerEvent::Completed,
+			this,
+			&ThisClass::Input_HideScoreboard);
+	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
@@ -836,6 +850,32 @@ void AShooterPlayerController::Input_ToggleInGameMenu()
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
 		UIInitComponent->ToggleInGameMenu();
+	}
+}
+
+void AShooterPlayerController::Input_ShowScoreboard()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->ShowScoreboard();
+	}
+}
+
+void AShooterPlayerController::Input_HideScoreboard()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->HideScoreboard();
 	}
 }
 

@@ -40,6 +40,8 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Game;
 	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonActivatableWidgetStack> Stack_GameMenu;
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Menu;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Modal;
