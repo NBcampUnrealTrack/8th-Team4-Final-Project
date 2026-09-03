@@ -231,6 +231,8 @@ private:
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_ToggleInGameMenu();
+	void Input_ShowScoreboard();
+	void Input_HideScoreboard();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
