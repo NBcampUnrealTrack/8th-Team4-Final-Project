@@ -1,4 +1,4 @@
-#include "Actor/FieldPickup.h"
+﻿#include "Actor/FieldPickup.h"
 
 #include "AbilitySystemComponent.h"
 #include "ActiveGameplayEffectHandle.h"
@@ -220,7 +220,7 @@ bool AFieldPickup::TryConsume(AActor* CandidateActor)
 bool AFieldPickup::TryApplyGameplayEffect(
 	UAbilitySystemComponent& TargetAbilitySystem) const
 {
-	// 기존 킷 보호막 제거
+	// 재획득 시 제거할 Effect Tag를 가진 GE가 있으면 먼저 제거
 	if (RemoveEffectsWithTagBeforeApply.IsValid())
 	{
 		TargetAbilitySystem.RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
