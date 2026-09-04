@@ -220,6 +220,13 @@ bool AFieldPickup::TryConsume(AActor* CandidateActor)
 bool AFieldPickup::TryApplyGameplayEffect(
 	UAbilitySystemComponent& TargetAbilitySystem) const
 {
+	// 기존 킷 보호막 제거
+	if (RemoveEffectsWithTagBeforeApply.IsValid())
+	{
+		TargetAbilitySystem.RemoveActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
+			FGameplayTagContainer(RemoveEffectsWithTagBeforeApply)));
+	}
+
 	FGameplayEffectContextHandle EffectContext = TargetAbilitySystem.MakeEffectContext();
 	EffectContext.AddSourceObject(this);
 
