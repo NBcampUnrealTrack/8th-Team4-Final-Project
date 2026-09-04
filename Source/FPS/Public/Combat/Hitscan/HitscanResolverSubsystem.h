@@ -2,8 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "Combat/Hitscan/HitscanShotTypes.h"
+#include "Combat/Hitscan/Types/HitscanShotTypes.h"
 #include "HitscanResolverSubsystem.generated.h"
+
+class UWorld;
+struct FHitscanImpactSample;
+struct FRogueHitContext;
 
 UCLASS()
 class FPS_API UHitscanResolverSubsystem : public UWorldSubsystem
@@ -13,7 +17,17 @@ class FPS_API UHitscanResolverSubsystem : public UWorldSubsystem
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
-	// 서버 Trace -> 거리/관통 계산 -> HitZone 메타데이터 집계 -> RogueDamageSubsystem 전달.
-	// Resolver는 부위 배율을 곱하지 않는다. 실제 부위 배율/증강/방어/Shield 계산은 ExecCalc_Damage가 담당한다.
-	FHitscanShotResult ResolveServerShot(const FHitscanShotRequest& Request) const;
+	bool ResolveServerShot(const FHitscanShotRequest& Request, TArray<FHitscanImpactEffectData>& OutImpactEffects) const;
+
+private:
+	bool IsValidShotRequest(const UWorld* World, const FHitscanShotRequest& Request) const;
+	void ResolveImpactSamples(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		TArray<FHitscanImpactSample>& OutImpactSamples,
+		TArray<FHitscanImpactEffectData>& OutImpactEffects) const;
+	void ApplyDamageToTargets(
+		UWorld* World,
+		const FHitscanShotRequest& Request,
+		const TArray<FRogueHitContext>& HitContexts) const;
 };

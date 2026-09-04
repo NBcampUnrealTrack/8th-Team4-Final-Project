@@ -1,18 +1,24 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Abilities/GA_WeaponAbilityBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Combat/CombatComponent.h"
 #include "GameplayTagContainer.h"
-#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "Player/BaseRoundPlayerController.h"
 #include "GameFramework/Pawn.h"
+#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 UGA_WeaponAbilityBase::UGA_WeaponAbilityBase()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_ActionBlocked);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_UtilityHeld);
 }
 
 bool UGA_WeaponAbilityBase::CanActivateAbility(
@@ -37,22 +43,25 @@ bool UGA_WeaponAbilityBase::CanActivateAbility(
 		return false;
 	}
 
-	const UCombatComponent* CombatComponent = IsValid(AvatarPawn)
-		? AvatarPawn->FindComponentByClass<UCombatComponent>()
-		: nullptr;
+	if (!RequiresWeaponReady())
+	{
+		return true;
+	}
+
+	const UCombatComponent* CombatComponent = GetCombatComponent();
 
 	return !IsValid(CombatComponent) || CombatComponent->IsWeaponReady();
 }
 
+UCombatComponent* UGA_WeaponAbilityBase::GetCombatComponent() const
+{
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	return IsValid(AvatarActor) ? AvatarActor->FindComponentByClass<UCombatComponent>() : nullptr;
+}
+
 AWeaponBase* UGA_WeaponAbilityBase::GetEquippedWeapon() const
 {
-	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor)
-	{
-		return nullptr;
-	}
-
-	const UCombatComponent* CombatComponent = AvatarActor->FindComponentByClass<UCombatComponent>();
+	const UCombatComponent* CombatComponent = GetCombatComponent();
 	return CombatComponent ? CombatComponent->GetEquippedWeapon() : nullptr;
 }
 

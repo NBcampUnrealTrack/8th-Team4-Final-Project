@@ -14,16 +14,15 @@ Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
-Plugins/Developer/RiderLink
+Windows/
+Plugins/Developer/RiderLink/
 
-Ignored project content
 
-Content/PhysicsMaterials/
-Content/UI/
-Content/Effects/
-Content/Audio/
 
 Logs and temp
 
 *.log
 *.tmp
+service/
+Docs/
+dev/

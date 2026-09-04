@@ -1,4 +1,4 @@
-#include "Animation/ShooterAnimInstance.h"
+﻿#include "Animation/ShooterAnimInstance.h"
 
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
@@ -18,6 +18,7 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 	CacheReferences();
 	LastAnimationWeapon.Reset();
 	bWasReloading = false;
+	bWasUtilityHeld = false;
 	UpdateWeaponValues();
 	if (ShooterCharacter)
 	{
@@ -122,11 +123,14 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bIsReloading = IsValid(CurrentWeapon) && CurrentWeapon->IsReloading();
 
 	const FGameplayTag WeaponTag = IsValid(CurrentWeapon) ? CurrentWeapon->GetWeaponTag() : FGameplayTag();
-	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : ShooterTags::TAG_WeaponType_None;
+	CurrentWeaponType = WeaponTag.IsValid() ? WeaponTag : RogueTags::Weapon_Type_None;
 
 	UpdateWeaponAnimationData();
 
-	if (CurrentWeapon.Get() != LastAnimationWeapon.Get())
+	const bool bUtilityHeld = IsValid(Combat) && Combat->IsPresentationSuppressed();
+	const bool bReleasedUtility = !bUtilityHeld && bWasUtilityHeld;
+
+	if (CurrentWeapon.Get() != LastAnimationWeapon.Get() || bReleasedUtility)
 	{
 		LastAnimationWeapon = CurrentWeapon.Get();
 		bWasReloading = false;
@@ -139,6 +143,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	}
 
 	bWasReloading = bIsReloading;
+	bWasUtilityHeld = bUtilityHeld;
 }
 
 void UShooterAnimInstance::UpdateWeaponAnimationData()
@@ -216,7 +221,15 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 		return;
 	}
 
-	const float PlayedDuration = Montage_Play(MontageData->ReloadMontage);
+	// Fire 차단 해제 시점은 몽타주 재생과 무관하게 AWeaponBase::EffectiveReloadDuration 타이머로
+	// 결정된다(CanFireNow -> bIsReloading). 몽타주 원본 길이가 그 값과 다르면(무기별 ReloadDuration
+	// 세팅이 실제 애니메이션 길이와 어긋난 경우) 애니메이션이 끝나기 전에 Fire가 풀리는 문제가 생기므로,
+	// PlayRate를 조정해서 몽타주가 항상 EffectiveReloadDuration과 같은 시간에 끝나도록 맞춘다.
+	const float MontageLength = MontageData->ReloadMontage->GetPlayLength();
+	const float TargetDuration = CurrentWeapon->GetEffectiveReloadDuration();
+	const float PlayRate = (MontageLength > 0.f && TargetDuration > 0.f) ? (MontageLength / TargetDuration) : 1.f;
+
+	const float PlayedDuration = Montage_Play(MontageData->ReloadMontage, PlayRate);
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(
@@ -228,6 +241,28 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
 			*GetNameSafe(MontageData->ReloadMontage));
 	}
+}
+
+void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
+{
+	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
+	{
+		return;
+	}
+
+	const UWeaponData* WeaponData = Combat->GetWeaponData();
+	if (!IsValid(WeaponData))
+	{
+		return;
+	}
+
+	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
+	if (!MontageData || !IsValid(MontageData->FireMontage))
+	{
+		return;
+	}
+
+	Montage_Play(MontageData->FireMontage);
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)

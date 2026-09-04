@@ -2,76 +2,110 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
-#include "CommonActivatableWidget.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "ShooterUIInitComponent.generated.h"
 
-class UShooterUIManagerSubsystem;
-struct FAugmentInventoryEntry;
+class ABaseRoundGameState;
+class ABaseRoundPlayerController;
+class UAugmentInventoryComponent;
+class UCommonActivatableWidget;
 class UShooterAugmentSelectScreen;
-class UAugmentInventoryComponent;   
-
-// 3개의 카드 증강 중 선택한 카드 증강은 어떤 것인지 전달
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAugmentSelectedFromUI, int32, OfferIndex);
+class UShooterInGameMenuScreen;
+class UShooterShopScreen;
+class UShooterSurrenderVoteScreen;
 
 /**
- * UI 초기화 트리거 겸 인게임 화면 진입점.
- * 화면을 여닫는 흐름은 전부 여기 있다.
+ * 로컬 PlayerController의 인게임 화면 수명주기를 조정한다.
+ * 화면은 표시와 입력만 맡고, 게임 규칙은 Controller와 GameMode에 전달한다.
  */
-UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class FPS_API UShooterUIInitComponent : public UActorComponent
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+class FPS_API UShooterUIInitComponent : public UTeamMatchUIInitComponent
 {
 	GENERATED_BODY()
 
 public:
-	// 증강 선택 화면을 Modal 레이어에 띄우고 화면을 띄운다.
-	UFUNCTION(BlueprintCallable, Category = "UI")
-	void ShowAugmentSelect(const TArray<FAugmentInventoryEntry>& InOffers);
-	
-	// 시간 초과, 데미지 입음 등으로 밖에서 닫아야 할 때 적용.
-	UFUNCTION(BlueprintCallable, Category = "UI")
-	void HideAugmentSelect();
-	
-	// 화면이 알린 선택 중계
-	UPROPERTY(BlueprintAssignable, Category = "UI")
-	FOnAugmentSelectedFromUI OnAugmentSelected;
-	
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void ToggleShop();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void ShowShop();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Shop")
+	void HideShop();
+
+	UFUNCTION(BlueprintPure, Category = "UI|Shop")
+	bool IsShopOpen() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	
-	// Player State가 준비 된 후에 화면을 띄운다.
-	// 준비가 안 됐으면 Timer로 다시 들어온다.
+	virtual bool IsAugmentPresentationAllowed() const override;
+	virtual bool IsSurrenderRequestAllowed() const override;
+	virtual void CloseModeSpecificScreensForModal() override;
+
+	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const override;
+	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const override;
+	virtual TSubclassOf<UShooterAugmentSelectScreen> GetAugmentSelectWidgetClass() const override;
+	virtual UShooterInGameMenuScreen* GetInGameMenuInstance() const override;
+	virtual void SetInGameMenuInstance(UShooterInGameMenuScreen* Instance) override;
+	virtual UShooterSurrenderVoteScreen* GetSurrenderVoteInstance() const override;
+	virtual void SetSurrenderVoteInstance(UShooterSurrenderVoteScreen* Instance) override;
+	virtual UShooterAugmentSelectScreen* GetAugmentSelectInstance() const override;
+	virtual void SetAugmentSelectInstance(UShooterAugmentSelectScreen* Instance) override;
+
+private:
 	void TryStartInGameUI();
-	
-	FTimerHandle PlayerStateWaitTimerHandle;
-	
-	UFUNCTION()
-	void HandleAugmentSelected(int32 OfferIndex);
 
-	UFUNCTION()
-	void HandleOffersChanged();
+  UFUNCTION()
+  void HandleRoundStateChanged();
 
-	// 구독해 둔 인벤토리. 남의 PlayerState 것이라 소유하지 않는다
-	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
-	
-	UShooterUIManagerSubsystem* GetUIManager() const;
-	
+  UFUNCTION()
+  void HandleShopCloseRequested();
+
+	bool CanShowShop() const;
+	void ScheduleInGameUIRetry();
+	void UnbindRuntimeDelegates();
+
+	ABaseRoundPlayerController* GetRoundPlayerController() const;
+
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
-	
-	// Controller가 뜰 때 처음 띄울 화면
+
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UCommonActivatableWidget> InitialWidgetClass;
-	// 처음 띄울 화면 Tag
+
 	UPROPERTY(EditAnywhere, Category = "UI", meta = (Categories = "UI.Layer"))
 	FGameplayTag InitialWidgetLayer;
-	
+
+	UPROPERTY(EditAnywhere, Category = "UI|System Menu")
+	TSubclassOf<UShooterInGameMenuScreen> InGameMenuClass;
+
+	UPROPERTY(EditAnywhere, Category = "UI|Surrender")
+	TSubclassOf<UShooterSurrenderVoteScreen> SurrenderVoteClass;
+
+	UPROPERTY(EditAnywhere, Category = "UI|Shop")
+	TSubclassOf<UShooterShopScreen> ShopScreenClass;
+
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterAugmentSelectScreen> AugmentSelectClass;
-	// 화면에 띄워져 있는동안만 유효 없으면 비운다
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterInGameMenuScreen> InGameMenuInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterSurrenderVoteScreen> SurrenderVoteInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterShopScreen> ShopScreenInstance;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
+
+  TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
+
+  FTimerHandle PlayerStateWaitTimerHandle;
+
+  bool bLoggedInitialWidgetPushFailure = false;
 };

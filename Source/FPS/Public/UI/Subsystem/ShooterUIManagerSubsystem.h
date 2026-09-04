@@ -21,6 +21,8 @@ class FPS_API UShooterUIManagerSubsystem : public UGameInstanceSubsystem
 public:
 	// RootLayout 을 만들어 뷰포트에 올림
 	void InitializeUI(APlayerController* OwningController, TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass);
+
+	bool IsUIInitialized() const;
 	
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	UCommonActivatableWidget* PushWidgetToLayer(FGameplayTag LayerTag, TSubclassOf<UCommonActivatableWidget> WidgetClass);
@@ -28,6 +30,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void PopWidgetFromLayer(FGameplayTag LayerTag);
 	
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void RemoveWidgetFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Widget);
+
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ClearLayer(FGameplayTag LayerTag);
 	

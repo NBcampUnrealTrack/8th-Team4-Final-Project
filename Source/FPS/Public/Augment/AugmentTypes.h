@@ -2,11 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "GAS/RogueTargetFilter.h"
 #include "UObject/PrimaryAssetId.h"
 #include "AugmentTypes.generated.h"
 
+class ARogueAugmentActor;
 class UAugmentDefinition;
+class UGameplayEffect;
 class URogueGameplayAbility;
+class UStaticMesh;
 
 
 // 증강 등급
@@ -24,17 +28,30 @@ enum class EAugmentTier : uint8
 UENUM(BlueprintType)
 enum class EAugmentCategory : uint8
 {
-    Stat            UMETA(DisplayName = "신체강화"),
-    Passive         UMETA(DisplayName = "지속효과"),
-    Active          UMETA(DisplayName = "액티브스킬"),
-    Util            UMETA(DisplayName = "전술유틸리티"),
-    Weapon_General  UMETA(DisplayName = "총기공통"),
-    Weapon_Rifle    UMETA(DisplayName = "돌격소총"),
-    Weapon_Sniper   UMETA(DisplayName = "저격소총"),
-    Weapon_Shotgun  UMETA(DisplayName = "산탄총"),
-    Weapon_Pistol   UMETA(DisplayName = "권총"),
-    Weapon_Knife    UMETA(DisplayName = "전술칼"),
-    MAX             UMETA(Hidden)
+    None            = 0 UMETA(Hidden),
+    Passive         = 1 UMETA(DisplayName = "지속효과"),
+    Active          = 2 UMETA(DisplayName = "액티브스킬"),
+    Util            = 3 UMETA(DisplayName = "전술유틸리티"),
+    Weapon_General  = 4 UMETA(DisplayName = "총기공통"),
+    Weapon_Rifle    = 5 UMETA(DisplayName = "돌격소총"),
+    Weapon_Sniper   = 6 UMETA(DisplayName = "저격소총"),
+    Weapon_Shotgun  = 7 UMETA(DisplayName = "산탄총"),
+    Weapon_Pistol   = 8 UMETA(DisplayName = "권총"),
+    Weapon_Knife    = 9 UMETA(DisplayName = "전술칼")
+};
+
+// 후보를 어느 풀에서 뽑는지
+UENUM(BlueprintType)
+enum class EAugmentRewardPool : uint8
+{
+    // 액티브, 패시브 둘 다 추첨
+    Any     UMETA(DisplayName = "전체"),
+
+    // 패시브만, 등급을 기준으로 추첨
+    Passive UMETA(DisplayName = "패시브"),
+
+    // 액티브만, 입력 슬롯으로 추첨
+    Active  UMETA(DisplayName = "액티브")
 };
 
 // 조건부 대미지 규칙이 걸리는 방향
@@ -42,8 +59,7 @@ UENUM(BlueprintType)
 enum class EAugmentDamageRuleSide : uint8
 {
     Dealt UMETA(DisplayName = "주는 피해"),
-    Taken UMETA(DisplayName = "받는 피해"),
-    MAX   UMETA(Hidden)
+    Taken UMETA(DisplayName = "받는 피해")
 };
 
 // 조건부 대미지 규칙
@@ -72,23 +88,28 @@ struct FAugmentConditionalDamageRule
     bool bUseDistanceRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MinDistanceMeters = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseDistanceRange", ClampMin = "0.0"))
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
     float MaxDistanceMeters = 0.f;
+
+	// 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
+    bool bDistanceScalesWithRangeBonus = false;
 
     // 피해자 체력 조건 (%)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
     bool bUseTargetHealthRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseTargetHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseTargetHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float TargetHealthMinPct = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseTargetHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseTargetHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float TargetHealthMaxPct = 100.f;
 
     // 가해자 체력 조건 (%)
@@ -96,11 +117,11 @@ struct FAugmentConditionalDamageRule
     bool bUseSourceHealthRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseSourceHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseSourceHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float SourceHealthMinPct = 0.f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseSourceHealthRange", ClampMin = "0.0", ClampMax = "100.0"))
+        meta = (EditCondition = "bUseSourceHealthRange", EditConditionHides, ClampMin = "0.0", ClampMax = "100.0"))
     float SourceHealthMaxPct = 100.f;
 
     // 탄창 내 발사 인덱스 조건 ("탄창 첫 3발 대미지 증가")
@@ -108,20 +129,27 @@ struct FAugmentConditionalDamageRule
     bool bUseShotIndexRange = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MinShotIndexInMagazine = 0;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
-        meta = (EditCondition = "bUseShotIndexRange", ClampMin = "0"))
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
 
-    // 조건을 만족했을 때 곱하는 배율. 1.0 이면 변화 없음
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect", meta = (ClampMin = "0.0"))
-    float DamageMultiplier = 1.f;
+    // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
+    // 상시 증강 GE 의 SetByCaller 와 같은 표기
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    float DamageBonusRate = 0.f;
 
     // 배율 이후에 더하는 고정값. 경감 규칙은 음수
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
+
+    // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float LifestealRate = 0.f;
+
     // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     bool bAppliesToHeadshotBonusOnly = false;
@@ -136,29 +164,122 @@ struct FAugmentGrantedAbility
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment")
     TSoftClassPtr<URogueGameplayAbility> AbilityClass;
 
-    // 이 어빌리티를 발동시키는 입력 슬롯 (InputTag.Ability.*).
-    // 이벤트로 발동하는 어빌리티는 입력 X
+	// 액티브 증강이 쓸 슬롯. Slot1(Q) / Slot2(E) / Slot3(V)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment",
         meta = (Categories = "InputTag.Ability"))
     FGameplayTag InputTag;
+
+    // 이벤트가 왔을 때 적용할 GE
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    TArray<TSoftClassPtr<UGameplayEffect>> EffectsToApply;
+
+    // 켜면 이벤트가 실어 온 대상에게, 끄면 자신에게 적용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bApplyToEventTarget = false;
+
+    // 대상에게 걸 때 적만 허용. 아군 오폭 방지
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bApplyToEventTarget", EditConditionHides))
+    bool bHostileTargetOnly = true;
+
+    // 이 무기로 발생한 이벤트만 발동. 비어 있으면 무기 조건 없음.
+    // 대미지 이벤트는 컨텍스트의 무기 태그 사용, 그 외에는 현재 장착 무기 태그 사용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (Categories = "Weapon.Type"))
+    FGameplayTagContainer RequiredWeaponTags;
+
+    // 교전 거리 조건
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger")
+    bool bUseDistanceRange = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
+    float MinDistanceMeters = 0.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
+    float MaxDistanceMeters = 0.f;
+
+    // 증강이 거리 조건에 따라 스케일링되는지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Trigger",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
+    bool bDistanceScalesWithRangeBonus = false;
+
+    // 효과를 받을 대상 범위. Single 이면 bApplyToEventTarget 이 결정
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area")
+    ERogueTargetScope TargetScope = ERogueTargetScope::Single;
+
+    // 반경은 레벨 수치의 Data.Magnitude.Radius
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
+        meta = (EditCondition = "TargetScope != ERogueTargetScope::Single", EditConditionHides))
+    FRogueTargetQuery TargetQuery;
+
+    // 범위의 중심을 이벤트 대상에 둘지 여부, 끄면 시전자 위치
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Area",
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", EditConditionHides))
+    bool bAreaCentersOnEventTarget = true;
+
+    // 주기 GE 의 Primary 를 틱당 정수로 나눌지 여부
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bSplitIntoIntegerTicks = false;
+
+    // 범위 가장자리에서의 대미지 배율. 1 이면 감쇄 없음. 대미지는 Data.Magnitude.Damage
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "TargetScope == ERogueTargetScope::Radius", EditConditionHides, ClampMin = "0.0", ClampMax = "1.0"))
+    float DamageFalloffAtEdge = 1.f;
+
+    // 페이로드를 들고 갈 액터. 투척물/설치물 증강만 사용
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Spawn")
+    TSoftClassPtr<ARogueAugmentActor> SpawnActorClass;
 };
 
-// 계열 안의 레벨 하나. 레벨 번호는 배열 인덱스 + 1
+// 계열 하나의 수치. 구조체 이름은 애셋 호환을 위해 유지
 USTRUCT(BlueprintType)
 struct FAugmentLevelData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level", meta = (MultiLine = "true"))
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value", meta = (MultiLine = "true"))
     FText Description;
 
-	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller. Magnitude 는 레벨마다 다르게 설정
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level",
+	// 계열이 부여하는 GE 전부에 적용되는 SetByCaller
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value",
         meta = (Categories = "Data.Magnitude", ForceInlineRow))
     TMap<FGameplayTag, float> SetByCallerMagnitudes;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Level")
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Value")
     TArray<FAugmentConditionalDamageRule> ConditionalDamageRules;
+};
+
+// 손에 든 동안 보여줄 메시
+USTRUCT(BlueprintType)
+struct FAugmentHeldVisual
+{
+    GENERATED_BODY()
+
+    // 메시가 없으면 몽타주만 재생
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    TSoftObjectPtr<UStaticMesh> Mesh;
+
+    // 1인칭 부착 소켓 이름
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FName GripSocketName1P;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripOffsetLocation1P = FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FRotator GripOffsetRotation1P = FRotator::ZeroRotator;
+
+    // 3인칭 부착 소켓 이름
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FName GripSocketName3P = TEXT("Weapon_R_Socket");
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripOffsetLocation3P = FVector::ZeroVector;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FRotator GripOffsetRotation3P = FRotator::ZeroRotator;
 };
 
 // 등급 추첨 가중치
@@ -189,13 +310,6 @@ struct FAugmentDraftContext
     // 0 이면 서버가 만들어 로그
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
     int32 RoundSeed = 0;
-
-	// 팀 점수, 패배팅 보정, 현재 적용 X
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 TeamScore = 0;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rogue|Augment")
-    int32 OpponentScore = 0;
 };
 
 // 보유 증강 한 칸
@@ -212,8 +326,28 @@ struct FAugmentInventoryEntry
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "Augment.Line"))
     FGameplayTag LineTag;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment")
-    int32 Level = 1;
+    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition);
+};
 
-    static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition, int32 Level);
+// 적립된 증강 보상 후보
+USTRUCT(BlueprintType)
+struct FAugmentPendingReward
+{
+    GENERATED_BODY()
+
+    // 패시브, 액티브 여부
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentRewardPool Pool = EAugmentRewardPool::Passive;
+
+	// 증강 등급, 액티브는 슬롯으로 추첨하므로 무시
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    EAugmentTier Tier = EAugmentTier::Common;
+
+    // 액티브 증강 슬롯
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
+    FGameplayTag ActiveSlot;
+
+    // 시드와 로그용
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RoundNumber = 0;
 };

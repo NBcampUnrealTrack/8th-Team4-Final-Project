@@ -4,6 +4,7 @@
 #include "UI/InGame/Weapons/ShooterWeaponDisplaySet.h"
 #include "Components/Image.h"
 #include "CommonTextBlock.h"
+#include "Components/Border.h"
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/Pawn.h"
 
@@ -24,12 +25,26 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 		if (!bLoggedNoWeapon)
 		{
 			bLoggedNoWeapon = true;
-			UE_LOG(LogTemp, Warning,TEXT("[WeaponStatus] 장착 무기를 찾지 못했습니다. 폰에 AWeaponBase 가 Attach 되는지 확인하세요"));
 		}
 		return;
 	}
 	
 	bLoggedNoWeapon = false;
+
+	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
+	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
+	const int32 ReserveAmmo = Weapon->GetCurrentReserveAmmo();
+
+	// 값이 달라질때만 갱신
+	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo)
+	{
+		return;
+	}
+
+	CachedAmmo = CurrentAmmo;
+	CachedMaxAmmo = MaxAmmo;
+	CachedReserveAmmo = ReserveAmmo;
+
 	RefreshAmmo(Weapon);
 }
 
@@ -49,19 +64,6 @@ AWeaponBase* UShooterWeaponStatus::FindEquippedWeapon() const
 		}
 	}
 	
-	// UCombatComponent::SetCurrentWeapon 을 부르는 곳이 생기면 이 블록을 지운다.
-	// 안 지우면 정식 장착 경로가 비어 있어도 UI 만 정상으로 보인다.
-	TArray<AActor*> AttachedActors;
-	Pawn->GetAttachedActors(AttachedActors);
-
-	for (AActor* AttachedActor : AttachedActors)
-	{
-		if (AWeaponBase* Weapon = Cast<AWeaponBase>(AttachedActor))
-		{
-			return Weapon;
-		}
-	}
-	
 	return nullptr;
 }
 
@@ -70,13 +72,121 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	if (!NewWeapon)
 	{
 		Text_Ammo->SetText(FText::GetEmpty());
+		Text_MaxAmmo->SetText(FText::GetEmpty());
 		return;
 	}
 
 	Text_Ammo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
+	Text_MaxAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible	: ESlateVisibility::Collapsed);
+	if (IsValid(Text_ReserveAmmo))
+	{
+		Text_ReserveAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	
+	// 무기 교체 시 탄약 개수가 같을 수도 있으므로 초기화
+	CachedAmmo = INDEX_NONE;
+	CachedMaxAmmo = INDEX_NONE;
+	CachedReserveAmmo = INDEX_NONE;
+	
+	if (!WeaponDisplaySet)
+	{
+		UE_LOG(LogTemp, Warning,TEXT("[WeaponStatus] DA_WeaponDisplaySet이 지정되지않았습니다."));
+		return;
+	}
+	
+	if (const FShooterWeaponDisplay* WeaponTag = WeaponDisplaySet->FindDisplay(NewWeapon->GetWeaponTag()))
+	{
+		if (IsValid(Text_WeaponName))
+		{
+			Text_WeaponName->SetText(WeaponTag->DisplayName);
+		}
+		if (IsValid(Image_WeaponIcon))
+		{
+			Image_WeaponIcon->SetBrush(WeaponTag->Icon);
+		}
+	}
 }
 
 void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 {
-	Text_Ammo->SetText(FText::Format(INVTEXT("{0} / {1}"), Weapon->GetCurrentAmmo(), Weapon->GetMagazineSize()));
+	// '/' 앞: 현재 탄창 잔탄. 장전하면 GetCurrentAmmo()가 (증강 반영된) 탄창 최대치까지 차서
+	// 자동으로 최대값으로 표시된다. 탄창 증강이 켜지면 EffectiveMagazineSize가 커지므로 이 값도 함께 올라간다.
+	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
+	// '/' 뒤: 탄창 최대치가 아니라 예비탄창(보유)에 남은 총알 수를 표시한다.
+	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetCurrentReserveAmmo()));
+	if (IsValid(Text_ReserveAmmo))
+	{
+		Text_ReserveAmmo->SetText(FText::AsNumber(Weapon->GetCurrentReserveAmmo()));
+	}
+
+	EShooterHUDVisualTypes Type = EShooterHUDVisualTypes::Normal;
+
+	if (Weapon->UsesAmmo())
+	{
+		// 색상 경고(Normal/Warning/Critical)는 표시값과 무관하게 "현재 탄창 / 탄창 최대치" 비율로 판정한다.
+		// CachedMaxAmmo에는 GetEffectiveMagazineSize()가 들어있다(화면에는 표시되지 않고 이 비율 계산에만 쓴다).
+		const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;
+		Type = GetAmmoVisualType(AmmoPer);
+	}
+	
+	ApplyHUDVisualStyle(AmmoVisualStyles.GetStyle(Type));
+}
+
+EShooterHUDVisualTypes UShooterWeaponStatus::GetAmmoVisualType(float AmmoPercent) const
+{
+	if (AmmoPercent <= CriticalThreshold)
+	{
+		return EShooterHUDVisualTypes::Critical;
+	}
+	if (AmmoPercent <= WarningThreshold)
+	{
+		return EShooterHUDVisualTypes::Warning;
+	}
+
+	return EShooterHUDVisualTypes::Normal;
+}
+
+void UShooterWeaponStatus::ApplyHUDVisualStyle(const FShooterAmmoVisualStyle& Style)
+{
+	if (Image_WeaponIcon)
+	{
+		Image_WeaponIcon->SetColorAndOpacity(Style.WeaponIconColor);
+	}
+	
+	if (Text_WeaponName)
+	{
+		Text_WeaponName->SetColorAndOpacity(Style.WeaponNameColor);
+	}
+	
+	if (Text_Ammo)
+	{
+		Text_Ammo->SetColorAndOpacity(Style.CurrentAmmoColor);
+	}
+	
+	if (Text_MaxAmmo)
+	{
+		Text_MaxAmmo->SetColorAndOpacity(Style.MaxAmmoColor);
+	}
+	
+	if (Image_Ammo)
+	{
+		Image_Ammo->SetColorAndOpacity(Style.AmmoIconColor);
+	}
+	
+	if (Border_Panel)
+	{
+		Border_Panel->SetBrushColor(Style.PanelColor);
+	}
+	
+	if (Image_Frame)
+	{
+		Image_Frame->SetColorAndOpacity(Style.FrameColor);
+	}
+	
+	if (Image_Accent)
+	{
+		Image_Accent->SetColorAndOpacity(Style.AccentColor);
+	}
+	
+	// AccentColor나 나머지도 여기서 적용
 }

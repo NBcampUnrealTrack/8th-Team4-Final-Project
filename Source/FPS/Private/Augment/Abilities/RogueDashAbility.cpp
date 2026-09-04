@@ -15,10 +15,15 @@ URogueDashAbility::URogueDashAbility()
 
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 
-	CooldownTag = RogueTags::Cooldown_Augment_Dash;
+	CooldownTag = RogueTags::Cooldown_Augment_Slot1;
 	BaseCooldown = 10.f;
 
-	// 사망 태그가 존재하면 사용 불가
+	// 액티브 스킬 시전 시 Event.Skill.Used 를 발신
+	bBroadcastSkillUsed = true;
+
+	// 동시 행동 정책은 공통 증강 부모가 아니라 각 증강에서 명시한다.
+	ActivationOwnedTags.AddTag(RogueTags::State_Gameplay_ActionInProgress);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_DataJack_Interacting);
 	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
 }
 
@@ -39,6 +44,12 @@ void URogueDashAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
+	}
+
+	// 대시 증강은 리팩토링 예정, 현재는 ActivationCueTag를 통해 효과를 발신
+	if (ActivationCueTag.IsValid())
+	{
+		K2_ExecuteGameplayCue(ActivationCueTag, FGameplayEffectContextHandle());
 	}
 
 	const int32 Level = GetAbilityLevel(Handle, ActorInfo);

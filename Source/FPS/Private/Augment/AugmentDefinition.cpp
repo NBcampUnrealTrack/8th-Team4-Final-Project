@@ -3,7 +3,7 @@
 
 #include "Augment/AugmentDefinition.h"
 
-#include "Augment/RogueGameplayAbility.h"
+#include "Tags/GameplayTags.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -20,14 +20,17 @@ FPrimaryAssetId UAugmentDefinition::GetPrimaryAssetId() const
 	return FPrimaryAssetId(AugmentAssetType, GetFName());
 }
 
-FAugmentInventoryEntry FAugmentInventoryEntry::Make(const UAugmentDefinition& Definition, int32 Level)
+FGameplayTag UAugmentDefinition::GetActiveInputSlotTag() const
 {
-	FAugmentInventoryEntry Entry;
-	Entry.DefinitionId = Definition.GetPrimaryAssetId();
-	Entry.LineTag      = Definition.LineTag;
-	Entry.Level        = Level;
+	for (const FAugmentGrantedAbility& Granted : GrantedAbilities)
+	{
+		if (Granted.InputTag.IsValid())
+		{
+			return Granted.InputTag;
+		}
+	}
 
-	return Entry;
+	return FGameplayTag();
 }
 
 #if WITH_EDITOR
@@ -55,6 +58,14 @@ namespace
 				"거리 조건을 켜고 최대 거리를 채우지 않았습니다. 이 규칙은 영영 발동하지 않습니다 (상한이 없으면 큰 수를 넣으세요)"));
 		}
 
+		if (Rule.bDistanceScalesWithRangeBonus && !Rule.bUseDistanceRange)
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("RangeScaleWithoutDistance",
+					"{0}: 사거리 스케일을 켰지만 거리 조건이 꺼져 있습니다. 이 설정은 무시됩니다"),
+				FText::FromString(Where)));
+		}
+
 		if (Rule.bUseTargetHealthRange && Rule.TargetHealthMinPct > Rule.TargetHealthMaxPct)
 		{
 			Reject(LOCTEXT("BadTargetHealthRange", "피해자 체력 범위가 뒤집혀 있습니다"));
@@ -76,13 +87,36 @@ namespace
 			Reject(LOCTEXT("ContradictoryTags", "Required 와 Blocked 태그가 겹칩니다"));
 		}
 
+		// 흡혈은 주는 피해 규칙에서만 산출
+		if (Rule.Side == EAugmentDamageRuleSide::Taken && !FMath::IsNearlyZero(Rule.LifestealRate))
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("TakenRuleLifesteal",
+					"{0}: 받는 피해 규칙의 흡혈률은 무시됩니다. 흡혈은 주는 피해 규칙에만 넣으세요"),
+				FText::FromString(Where)));
+		}
+
+		// 조건만 있고 효과가 없는 규칙
+		if (FMath::IsNearlyZero(Rule.DamageBonusRate)
+			&& FMath::IsNearlyZero(Rule.FlatDamageBonus)
+			&& FMath::IsNearlyZero(Rule.LifestealRate))
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("NoEffectRule", "{0}: 증감률, 고정값, 흡혈률이 모두 0 입니다. 이 규칙은 아무 효과가 없습니다"),
+				FText::FromString(Where)));
+		}
+
 		return bValid;
 	}
 
-	// 레벨 공통으로 부여하는 GE / GA
+	// 레벨 공통으로 부여하는 GE / GA / 대미지
 	bool AreSharedEffectsValid(const UAugmentDefinition& Definition, FDataValidationContext& Context)
 	{
 		bool bValid = true;
+
+		const FAugmentLevelData* LevelData = Definition.GetLevelData();
+		const bool bHasDamage = LevelData
+			&& LevelData->SetByCallerMagnitudes.FindRef(RogueTags::Data_Magnitude_Damage) > 0.f;
 
 		for (int32 Index = 0; Index < Definition.GrantedEffects.Num(); ++Index)
 		{
@@ -96,7 +130,10 @@ namespace
 
 		// GA 입력 슬롯 중복 체크
 		FGameplayTagContainer UsedInputTags;
-		bool bHasAnyInput = false;
+		int32 SlotInputCount = 0;
+
+		// 트리거 어빌리티는 자기 클래스로 GrantedAbilities 항목을 찾는다. 같은 클래스가 두 번이면 구분 불가
+		TSet<FSoftObjectPath> UsedAbilityClasses;
 
 		for (int32 Index = 0; Index < Definition.GrantedAbilities.Num(); ++Index)
 		{
@@ -108,13 +145,76 @@ namespace
 					LOCTEXT("NullAbilityClass", "GrantedAbilities[{0}] 의 AbilityClass 가 비어 있습니다"), Index));
 				bValid = false;
 			}
+			else
+			{
+				const FSoftObjectPath ClassPath = Granted.AbilityClass.ToSoftObjectPath();
+
+				if (UsedAbilityClasses.Contains(ClassPath))
+				{
+					Context.AddError(FText::Format(
+						LOCTEXT("DuplicateAbilityClass",
+							"GrantedAbilities[{0}] 의 AbilityClass '{1}' 이 중복입니다. "
+							"트리거 어빌리티가 어느 항목의 설정을 써야 할지 정할 수 없습니다"),
+						Index, FText::FromString(ClassPath.GetAssetName())));
+					bValid = false;
+				}
+
+				UsedAbilityClasses.Add(ClassPath);
+			}
+
+			// 트리거 거리 조건
+			if (Granted.bUseDistanceRange && Granted.MinDistanceMeters > Granted.MaxDistanceMeters)
+			{
+				Context.AddError(FText::Format(
+					LOCTEXT("TriggerBadDistanceRange",
+						"GrantedAbilities[{0}] 의 거리 범위가 뒤집혀 있습니다"), Index));
+				bValid = false;
+			}
+
+			if (Granted.bUseDistanceRange && Granted.MaxDistanceMeters <= 0.f)
+			{
+				Context.AddError(FText::Format(
+					LOCTEXT("TriggerZeroDistanceMax",
+						"GrantedAbilities[{0}] 가 거리 조건을 켜고 최대 거리를 채우지 않았습니다. "
+						"이 트리거는 영영 발동하지 않습니다 (상한이 없으면 큰 수를 넣으세요)"), Index));
+				bValid = false;
+			}
+
+			if (Granted.bDistanceScalesWithRangeBonus && !Granted.bUseDistanceRange)
+			{
+				Context.AddWarning(FText::Format(
+					LOCTEXT("TriggerRangeScaleWithoutDistance",
+						"GrantedAbilities[{0}] 가 사거리 스케일을 켰지만 거리 조건이 꺼져 있습니다. "
+						"이 설정은 무시됩니다"), Index));
+			}
+
+			// 입력, GE, 대미지가 전부 없는 경우
+			if (!Granted.InputTag.IsValid() && Granted.EffectsToApply.IsEmpty() && !bHasDamage)
+			{
+				Context.AddWarning(FText::Format(
+					LOCTEXT("TriggerWithoutEffects",
+						"GrantedAbilities[{0}] 에 입력 슬롯도 EffectsToApply 도 없습니다. "
+						"이벤트 트리거 증강이라면 EffectsToApply 나 {1} 을 채우세요"),
+					Index, FText::FromString(RogueTags::Data_Magnitude_Damage.GetTag().ToString())));
+			}
+
+			for (int32 EffectIndex = 0; EffectIndex < Granted.EffectsToApply.Num(); ++EffectIndex)
+			{
+				if (Granted.EffectsToApply[EffectIndex].IsNull())
+				{
+					Context.AddError(FText::Format(
+						LOCTEXT("NullTriggerEffect",
+							"GrantedAbilities[{0}] 의 EffectsToApply[{1}] 가 비어 있습니다"), Index, EffectIndex));
+					bValid = false;
+				}
+			}
 
 			if (!Granted.InputTag.IsValid())
 			{
 				continue;
 			}
 
-			bHasAnyInput = true;
+			++SlotInputCount;
 
 			if (UsedInputTags.HasTagExact(Granted.InputTag))
 			{
@@ -127,38 +227,35 @@ namespace
 			UsedInputTags.AddTag(Granted.InputTag);
 		}
 
-		// 액티브 스킬인데 발동 태그가 없으면 경고
-		if (Definition.AugmentCategory == EAugmentCategory::Active
-			&& !Definition.GrantedAbilities.IsEmpty() && !bHasAnyInput)
+		// Active 계열이면 입력 슬롯이 지정된 어빌리티가 반드시 1개 있어야함
+		const int32 ExpectedSlotCount = Definition.AugmentCategory == EAugmentCategory::Active ? 1 : 0;
+		if (SlotInputCount != ExpectedSlotCount)
 		{
-			Context.AddWarning(
-				LOCTEXT("ActiveWithoutInput", "액티브 증강인데 입력 슬롯이 지정된 어빌리티가 없습니다. 이벤트로 발동하는 것이 아니라면 InputTag 를 지정하세요"));
+			Context.AddError(FText::Format(
+				LOCTEXT("SlotInputCount", "InputTag 가 지정된 어빌리티가 {0}개여야 하는데 {1}개입니다"),
+				ExpectedSlotCount, SlotInputCount));
+			bValid = false;
 		}
 
 		return bValid;
 	}
 
-	bool IsLevelValid(const UAugmentDefinition& Definition, int32 LevelIndex, FDataValidationContext& Context)
+	bool IsLevelValid(const FAugmentLevelData& LevelData,
+		bool bHasSharedEffects, FDataValidationContext& Context)
 	{
-		const FAugmentLevelData& LevelData = Definition.Levels[LevelIndex];
-		const int32 LevelNumber = LevelIndex + 1;
-
 		bool bValid = true;
 
-		// GE, GA, 조건부 규칙이 모두 없는 레벨은 의미가 없음
-		if (Definition.GrantedEffects.IsEmpty() && Definition.GrantedAbilities.IsEmpty()
-			&& LevelData.ConditionalDamageRules.IsEmpty())
+		// 공통 GE/GA 가 없는 경우
+		if (!bHasSharedEffects && LevelData.ConditionalDamageRules.IsEmpty())
 		{
-			Context.AddError(FText::Format(
-				LOCTEXT("EmptyLevel", "{0}레벨에 GE / GA / 조건부 규칙이 모두 없습니다. 획득해도 아무 효과가 없습니다"),
-				LevelNumber));
+			Context.AddError(LOCTEXT("EmptyLevel",
+				"조건부 규칙이 없습니다. 공통 GE / GA 도 없어 획득해도 아무 효과가 없습니다"));
 			bValid = false;
 		}
 
 		for (int32 RuleIndex = 0; RuleIndex < LevelData.ConditionalDamageRules.Num(); ++RuleIndex)
 		{
-			const FString Where = FString::Printf(
-				TEXT("%d레벨 ConditionalDamageRules[%d]"), LevelNumber, RuleIndex);
+			const FString Where = FString::Printf(TEXT("ConditionalDamageRules[%d]"), RuleIndex);
 
 			if (!IsRuleValid(LevelData.ConditionalDamageRules[RuleIndex], Where, Context))
 			{
@@ -183,10 +280,19 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
-	// 레벨 배열이 빈 증강은 상점 후보에서 제외
-	if (Levels.IsEmpty())
+	// EAugmentCategory::None인 경우, 기존의 Stat 자리가 삭제됨
+	if (AugmentCategory == EAugmentCategory::None)
 	{
-		Context.AddError(LOCTEXT("NoLevels", "Levels 가 비어 있습니다. 최소 1레벨은 있어야 상점에 나옵니다"));
+		Context.AddError(LOCTEXT("NoCategory",
+			"AugmentCategory 가 비어 있습니다. 기획 시트의 '타입(Category)' 열에 맞춰 고르세요"));
+		MarkInvalid();
+	}
+
+	// 레벨업이 없으므로 수치는 정확히 한 칸
+	if (Levels.Num() != 1)
+	{
+		Context.AddError(FText::Format(
+			LOCTEXT("LevelCount", "Levels 는 1개여야 하는데 {0}개입니다"), Levels.Num()));
 		MarkInvalid();
 	}
 
@@ -195,12 +301,25 @@ EDataValidationResult UAugmentDefinition::IsDataValid(FDataValidationContext& Co
 		MarkInvalid();
 	}
 
-	for (int32 LevelIndex = 0; LevelIndex < Levels.Num(); ++LevelIndex)
+	const FAugmentLevelData* LevelData = GetLevelData();
+	if (LevelData == nullptr)
 	{
-		if (!IsLevelValid(*this, LevelIndex, Context))
-		{
-			MarkInvalid();
-		}
+		return Result;
+	}
+
+	const bool bHasSharedEffects = !GrantedEffects.IsEmpty() || !GrantedAbilities.IsEmpty();
+	if (!bHasSharedEffects && LevelData->ConditionalDamageRules.IsEmpty())
+	{
+		Context.AddError(LOCTEXT("NoEffects",
+			"GE / GA 가 없고 조건부 규칙도 없습니다. 획득해도 아무 효과가 없습니다"));
+		MarkInvalid();
+
+		return Result;
+	}
+
+	if (!IsLevelValid(*LevelData, bHasSharedEffects, Context))
+	{
+		MarkInvalid();
 	}
 
 	return Result;

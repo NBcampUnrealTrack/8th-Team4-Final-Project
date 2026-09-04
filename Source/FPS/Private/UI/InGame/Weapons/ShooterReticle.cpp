@@ -2,10 +2,15 @@
 #include "UI/InGame/Weapons/ShooterReticle.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/TextBlock.h"
+#include "Animation/WidgetAnimation.h" // (Modified: 히트마커 페이드 효과 추가)
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Player/ShooterPlayerController.h"
+#include "Settings/ShooterGameUserSettings.h"
+#include "Weapon/WeaponBase.h"
 
 static void ConfigureCenteredCanvasSlot(UWidget* Widget)
 {
@@ -45,6 +50,43 @@ void UShooterReticle::NativeOnInitialized()
 	ConfigureCenteredCanvasSlot(Image_Center);
 
 	SetSlotPosition(Image_Center, FVector2D::ZeroVector);
+
+	// 히트마커 기능
+	bHitMarkerActive = false;
+	if (Text_HitMarker)
+	{
+		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
+	}
+
+	// 페이드 애니메이션이 끝나는 시점에 히트마커 상태를 종료한다.
+	if (Anim_HitMarker)
+	{
+		FWidgetAnimationDynamicEvent FinishedEvent;
+		FinishedEvent.BindDynamic(this, &ThisClass::HandleHitMarkerAnimationFinished);
+		BindToAnimationFinished(Anim_HitMarker, FinishedEvent);
+	}
+}
+
+void UShooterReticle::NativeDestruct()
+{
+	// 델리게이트 해제
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnHitMarker.RemoveAll(this);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
+	}
+	bHitMarkerActive = false;
+
+	Super::NativeDestruct();
 }
 
 float UShooterReticle::ComputeSpreadRadius() const
@@ -87,6 +129,23 @@ bool UShooterReticle::IsPerfectAccuracy() const
 	return GetSpreadDegrees() <= UE_KINDA_SMALL_NUMBER;
 }
 
+bool UShooterReticle::IsAiming() const
+{
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return IsValid(Weapon) && Weapon->IsADS();
+}
+
+FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
+{
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return IsValid(Weapon) ? Weapon->GetWeaponTag() : FGameplayTag();
+}
+
+bool UShooterReticle::IsHitMarkerActive() const
+{
+	return bHitMarkerActive;
+}
+
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
@@ -101,8 +160,63 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 float UShooterReticle::GetSpreadDegrees() const
 {
-	// TODO: WeaponBase::GetCurrentSpreadDegrees() 탄퍼짐을 받아온다.
-	return 0.f;
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (Settings && !Settings->IsDynamicCrosshairEnabled())
+	{
+		// 정적 크로스헤어 설정: 실제 탄퍼짐과 무관하게 항상 0(=MinSpreadRadius로 고정)으로 취급한다.
+		return 0.f;
+	}
+
+	const AWeaponBase* Weapon = FindEquippedWeapon();
+	return Weapon ? Weapon->GetCurrentSpreadDegrees() : 0.f;
+}
+
+// 히트마커
+void UShooterReticle::HandleHitMarker(const bool bRed)
+{
+	if (!Text_HitMarker)
+	{
+		return;
+	}
+
+	bHitMarkerActive = true;
+
+	Text_HitMarker->SetColorAndOpacity(bRed ? FLinearColor::Red : FLinearColor::White);
+	Text_HitMarker->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	// 이전 타이머가 새 히트마커를 조기에 숨기지 않도록 갱신한다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
+	}
+
+	// 애니메이션이 있으면 그걸로 페이드, 없으면 즉시 켜고 HitMarkerDuration 뒤에 끈다.
+	if (Anim_HitMarker)
+	{
+		PlayAnimation(Anim_HitMarker);
+	}
+	else if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			HitMarkerTimerHandle, this, &ThisClass::HideHitMarker, HitMarkerDuration, false);
+	}
+}
+
+// 히트마커 자체만 제거한다. 기본 크로스헤어 Visibility는 Blueprint가 결정한다.
+void UShooterReticle::HideHitMarker()
+{
+	bHitMarkerActive = false;
+
+	if (Text_HitMarker)
+	{
+		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+// Anim_HitMarker 재생 종료 시 호출
+void UShooterReticle::HandleHitMarkerAnimationFinished()
+{
+	HideHitMarker();
 }
 
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const

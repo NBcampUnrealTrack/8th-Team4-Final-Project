@@ -3,8 +3,9 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 
 #include "GAS/RogueAbilitySet.h"
+#include "Tags/GameplayTags.h"
 
-DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
 
 namespace
 {
@@ -27,12 +28,13 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 
 void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid())
+	if (!InputTag.IsValid() || HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
 	{
 		return;
 	}
 
 	TArray<FGameplayAbilitySpecHandle> ToActivate;
+	int32 MatchedSpecCount = 0;
 
 	{
 		ABILITYLIST_SCOPE_LOCK();
@@ -43,6 +45,8 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 			{
 				continue;
 			}
+
+			++MatchedSpecCount;
 
 			if (Spec.IsActive())
 			{
@@ -61,10 +65,67 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		}
 	}
 
+	int32 ActivatedCount = 0;
 	for (const FGameplayAbilitySpecHandle& Handle : ToActivate)
 	{
-		TryActivateAbility(Handle);
+		if (TryActivateAbility(Handle))
+		{
+			++ActivatedCount;
+			break;
+		}
 	}
+
+	ReportInputResult(InputTag, MatchedSpecCount, ToActivate.Num(), ActivatedCount);
+}
+
+void URogueAbilitySystemComponent::ReportInputResult(
+	const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount)
+{
+	// 이 태그를 가진 어빌리티가 아예 없는 경우
+	if (MatchedSpecCount == 0)
+	{
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 입력 태그 %s 를 가진 어빌리티가 없습니다. "
+			     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set 및 "
+			     "해당 AbilitySet의 InputTag를 확인하세요"),
+			*InputTag.ToString());
+		return;
+	}
+
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	FInputDiagnostic& Diagnostic = InputDiagnostics.FindOrAdd(InputTag);
+
+	if (ActivatedCount > 0)
+	{
+		Diagnostic.LastActivatedTime = Now;
+		return;
+	}
+
+	// 후보가 없으면 매칭된 스펙이 전부 이미 활성 상태라는 뜻이라 정상이다
+	if (CandidateCount == 0)
+	{
+		return;
+	}
+
+	constexpr double RecentActivationWindow = 1.0;   
+	constexpr double RejectLogInterval      = 1.0;
+
+	const bool bRecentlyActivated = Diagnostic.LastActivatedTime > 0.0
+		&& (Now - Diagnostic.LastActivatedTime) < RecentActivationWindow;
+	const bool bLogIntervalPassed = Diagnostic.LastLogTime <= 0.0
+		|| (Now - Diagnostic.LastLogTime) >= RejectLogInterval;
+
+	if (bRecentlyActivated || !bLogIntervalPassed)
+	{
+		return;
+	}
+
+	Diagnostic.LastLogTime = Now;
+
+	UE_LOG(LogRogueAbility, Log,
+		TEXT("[RogueAbility] %s: 후보 %d개가 전부 활성화를 거절했습니다. "
+		     "CanActivateAbility 조건과 차단 태그/쿨다운/코스트를 확인하세요"),
+		*InputTag.ToString(), CandidateCount);
 }
 
 void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
@@ -96,6 +157,31 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
 			Spec.Handle, GetInstanceActivationPredictionKey(Spec));
 	}
+}
+
+void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedStateTag)
+{
+	if (EquippedStateTag == CurrentEquippedWeaponTag)
+	{
+		return;
+	}
+
+	// AddLoose/RemoveLoose 가 아니라 개수를 직접 세팅
+	if (CurrentEquippedWeaponTag.IsValid())
+	{
+		SetLooseGameplayTagCount(CurrentEquippedWeaponTag, 0, EGameplayTagReplicationState::TagOnly);
+	}
+
+	CurrentEquippedWeaponTag = EquippedStateTag;
+
+	if (EquippedStateTag.IsValid())
+	{
+		SetLooseGameplayTagCount(EquippedStateTag, 1, EGameplayTagReplicationState::TagOnly);
+	}
+
+	UE_LOG(LogRogueAbility, Log,
+		TEXT("[RogueAbility] 장착 태그 -> %s"),
+		EquippedStateTag.IsValid() ? *EquippedStateTag.ToString() : TEXT("(없음 - 맨몸)"));
 }
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)
@@ -137,4 +223,29 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s 어빌리티 %d개 부여"), *AbilitySet->GetName(), AbilitySet->Abilities.Num());
+}
+
+int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
+{
+	if (!IsOwnerActorAuthoritative())
+	{
+		UE_LOG(LogRogueAbility, Error,
+			TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
+			     "서버에서 제거하면 클라이언트로 복제됩니다"));
+		return 0;
+	}
+
+	// 라운드 한정 효과 태그를 가진 모든 GE 제거
+	const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
+		FGameplayTagContainer(RogueTags::Effect_Lifetime_Round));
+
+	const int32 RemovedCount = RemoveActiveEffects(Query);
+	if (RemovedCount > 0)
+	{
+		UE_LOG(LogRogueAbility, Log,
+			TEXT("[RogueAbility] %s: 라운드 한정 효과 %d 개 제거"),
+			*GetNameSafe(GetOwnerActor()), RemovedCount);
+	}
+
+	return RemovedCount;
 }

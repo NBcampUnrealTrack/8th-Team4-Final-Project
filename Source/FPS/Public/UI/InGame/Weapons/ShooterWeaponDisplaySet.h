@@ -32,6 +32,18 @@ public:
 		return Displays.Find(WeaponType);
 	}
 	
+	// Killlog가 WeaponTag로 아이콘을 찾을 때 사용
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool FindWeaponDisplay(FGameplayTag WeaponType, FShooterWeaponDisplay& OutDisplay) const
+	{
+		if (const FShooterWeaponDisplay* Found = FindDisplay(WeaponType))
+		{
+			OutDisplay = *Found;
+			return true;
+		}
+		return false;
+	}
+	
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TMap<FGameplayTag, FShooterWeaponDisplay> Displays;

@@ -11,7 +11,6 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitHeadshotDamageMultiplier(1.f);
 	InitShieldDamageMultiplier(1.f);
 	InitHeadshotDamageTakenRate(1.f);
-	InitHealingReceivedMultiplier(1.f);
 	InitFireRateMultiplier(1.f);
 	InitReloadSpeedMultiplier(1.f);
 	InitMagazineSizeMultiplier(1.f);
@@ -21,9 +20,6 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitMoveSpeedMultiplier(1.f);
 	InitSprintSpeedMultiplier(1.f);
 	InitJumpHeightMultiplier(1.f);
-	InitFootstepVolumeMultiplier(1.f);
-	InitHearingRangeMultiplier(1.f);
-	InitThrowRangeMultiplier(1.f);
 	InitCreditGainMultiplier(1.f);
 	InitShopCostMultiplier(1.f);
 	InitRareOrAboveDrawMultiplier(1.f);
@@ -35,7 +31,6 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitDamageReductionRate(0.f);
 	InitFlatDamageReduction(0.f);
 	InitDamageReflectRate(0.f);
-	InitShieldLeechRate(0.f);
 	InitPelletCountBonus(0.f);
 	InitEffectiveRangeBonus(0.f);
 	InitMeleeRangeBonus(0.f);
@@ -54,9 +49,6 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, JumpHeightMultiplier,    COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ExtraJumpCount,          COND_None, REPNOTIFY_Always);
 
-	// 내 발소리는 다른 클라이언트가 재생하므로 전원에게 복제
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FootstepVolumeMultiplier, COND_None, REPNOTIFY_Always);
-
 	// 나머지는 오너에게만 필요
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageMultiplier,          COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, SkillDamageMultiplier,     COND_OwnerOnly, REPNOTIFY_Always);
@@ -65,13 +57,11 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ShieldDamageMultiplier,    COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, MaxHealthPercentDamage,    COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, LifestealRate,             COND_OwnerOnly, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ShieldLeechRate,           COND_OwnerOnly, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReductionRate,       COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FlatDamageReduction,       COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HeadshotDamageTakenRate,   COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReflectRate,         COND_OwnerOnly, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HealingReceivedMultiplier, COND_OwnerOnly, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FireRateMultiplier,        COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ReloadSpeedMultiplier,     COND_OwnerOnly, REPNOTIFY_Always);
@@ -84,10 +74,7 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, SpreadMultiplier,          COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, RecoilMultiplier,          COND_OwnerOnly, REPNOTIFY_Always);
 
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HearingRangeMultiplier,    COND_OwnerOnly, REPNOTIFY_Always);
-
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, CooldownReductionRate,     COND_OwnerOnly, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ThrowRangeMultiplier,      COND_OwnerOnly, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, CreditGainMultiplier,      COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ShopCostMultiplier,        COND_OwnerOnly, REPNOTIFY_Always);
@@ -111,10 +98,9 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	}
 
 	// 1.0 이어도 성립하는 축들. 0 ~ 1.0
-	// 방어구 관통률, 생명력 흡수율, 보호막 전환율, 데미지 반사율
+	// 방어구 관통률, 생명력 흡수율, 데미지 반사율
 	if(Attribute == GetShieldPenetrationRateAttribute()
 	|| Attribute == GetLifestealRateAttribute()
-	|| Attribute == GetShieldLeechRateAttribute()
 	|| Attribute == GetDamageReflectRateAttribute()
 	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
@@ -136,9 +122,34 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 		return;
 	}
 
-	// 나머지 계열은 0.01 ~ 10.0
+	// 배율 계열은 0.01 ~ 10.0
 	// 0이 되면 나누기 연산에서 오류가 생길 수 있음
-	NewValue = FMath::Clamp(NewValue, 0.01f, 10.f);
+	if (Attribute == GetDamageMultiplierAttribute()
+	 || Attribute == GetSkillDamageMultiplierAttribute()
+	 || Attribute == GetHeadshotDamageMultiplierAttribute()
+	 || Attribute == GetShieldDamageMultiplierAttribute()
+	 || Attribute == GetFireRateMultiplierAttribute()
+	 || Attribute == GetReloadSpeedMultiplierAttribute()
+	 || Attribute == GetMagazineSizeMultiplierAttribute()
+	 || Attribute == GetPenetrationMultiplierAttribute()
+	 || Attribute == GetSpreadMultiplierAttribute()
+	 || Attribute == GetRecoilMultiplierAttribute()
+	 || Attribute == GetMoveSpeedMultiplierAttribute()
+	 || Attribute == GetSprintSpeedMultiplierAttribute()
+	 || Attribute == GetJumpHeightMultiplierAttribute()
+	 || Attribute == GetCreditGainMultiplierAttribute()
+	 || Attribute == GetShopCostMultiplierAttribute()
+	 || Attribute == GetRareOrAboveDrawMultiplierAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.01f, 10.f);
+		return;
+	}
+
+	// 위 네 버킷에 포함되지 않는 축
+	ensureMsgf(false,
+		TEXT("[RogueAugment] PreAttributeChange 에 등록되지 않은 어트리뷰트입니다: %s. "
+		     "정의역 버킷 네 개 중 하나에 추가하세요."),
+		*Attribute.GetName());
 }
 
 // RepNotify 는 매크로로 정의
@@ -155,13 +166,11 @@ ROGUE_AUG_REPNOTIFY(ShieldPenetrationRate)
 ROGUE_AUG_REPNOTIFY(ShieldDamageMultiplier)
 ROGUE_AUG_REPNOTIFY(MaxHealthPercentDamage)
 ROGUE_AUG_REPNOTIFY(LifestealRate)
-ROGUE_AUG_REPNOTIFY(ShieldLeechRate)
 
 ROGUE_AUG_REPNOTIFY(DamageReductionRate)
 ROGUE_AUG_REPNOTIFY(FlatDamageReduction)
 ROGUE_AUG_REPNOTIFY(HeadshotDamageTakenRate)
 ROGUE_AUG_REPNOTIFY(DamageReflectRate)
-ROGUE_AUG_REPNOTIFY(HealingReceivedMultiplier)
 
 ROGUE_AUG_REPNOTIFY(FireRateMultiplier)
 ROGUE_AUG_REPNOTIFY(ReloadSpeedMultiplier)
@@ -178,11 +187,8 @@ ROGUE_AUG_REPNOTIFY(MoveSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(SprintSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(JumpHeightMultiplier)
 ROGUE_AUG_REPNOTIFY(ExtraJumpCount)
-ROGUE_AUG_REPNOTIFY(FootstepVolumeMultiplier)
-ROGUE_AUG_REPNOTIFY(HearingRangeMultiplier)
 
 ROGUE_AUG_REPNOTIFY(CooldownReductionRate)
-ROGUE_AUG_REPNOTIFY(ThrowRangeMultiplier)
 
 ROGUE_AUG_REPNOTIFY(CreditGainMultiplier)
 ROGUE_AUG_REPNOTIFY(ShopCostMultiplier)

@@ -2,12 +2,6 @@
 
 #include "Tags/GameplayTags.h"
 
-namespace ShooterTags
-{
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_None, "Weapon.Type.None", "No Weapon Type");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_Rifle, "Weapon.Type.Rifle", "Rifle Weapon Type");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(TAG_WeaponType_Pistol, "Weapon.Type.Pistol", "Pistol Weapon Type");
-}
 
 namespace RogueTags
 {
@@ -19,49 +13,51 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Source_SelfCost,    "Damage.Source.SelfCost",    "자기 체력을 대가로 지불");
 
 	// 무기 종류
-	//UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_None,    "Weapon.Type.None",    "무기 없음"); - 기존 코드와 중복되어 주석 처리
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_None,    "Weapon.Type.None",    "무기 없음"); 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Rifle,   "Weapon.Type.Rifle",   "돌격소총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Sniper,  "Weapon.Type.Sniper",  "저격소총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Shotgun, "Weapon.Type.Shotgun", "산탄총");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Pistol,  "Weapon.Type.Pistol",  "기본 권총");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife,   "Weapon.Type.Knife",   "전술 칼");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife,       "Weapon.Type.Knife",       "전술 칼");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife_Light, "Weapon.Type.Knife.Light", "전술 칼 약공격");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Type_Knife_Heavy, "Weapon.Type.Knife.Heavy", "전술 칼 강공격");
 
 	// 히트 문맥
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Head,  "Hit.Zone.Head",  "머리 피격");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Torso, "Hit.Zone.Torso", "상체 피격");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Zone_Limb,  "Hit.Zone.Limb",  "사지 피격");
 
-	// 히트 거리
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Close, "Hit.Range.Close", "근거리");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Mid,   "Hit.Range.Mid",   "중거리");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Range_Far,   "Hit.Range.Far",   "원거리");
-
 	// 히트 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Angle_Back,          "Hit.Angle.Back",          "배후 공격");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Instigator_Airborne, "Hit.Instigator.Airborne", "가해자가 공중에 있었음");
 
-	// 히트 탄환 상태
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_EarlyMagazine,  "Hit.Shot.EarlyMagazine",  "탄창 초반 사격");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_LastRound,      "Hit.Shot.LastRound",      "탄창 마지막 발");
-
 	// 가해자, 대상 상태
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_LowHealth,  "Target.State.LowHealth",  "대상 체력 비율이 임계값 이하");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_FullHealth, "Target.State.FullHealth", "대상 체력 100%");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_HasShield,  "Target.State.HasShield",  "대상 보호막 잔존");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Target_State_NoShield,   "Target.State.NoShield",   "대상 보호막 없음");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_LowHealth,  "Source.State.LowHealth",  "가해자 체력 비율이 임계값 이하");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_FullHealth, "Source.State.FullHealth", "가해자 체력 100%");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_HasShield,  "Source.State.HasShield", "가해자 보호막 잔존");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_HasShield,  "Source.State.HasShield",  "가해자 보호막 잔존");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Source_State_NoShield,   "Source.State.NoShield",   "가해자 보호막 없음");
 
 	// SetByCaller 키
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base,       "Data.Damage.Base",       "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_PelletsHit, "Data.Damage.PelletsHit", "이번 사격에서 이 대상에게 적중한 펠릿 수");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Damage_Base, "Data.Damage.Base", "기본 대미지. 거리 감쇄/관통 감쇄/부위 배율 적용 완료, 증강 보정 이전");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Primary,   "Data.Magnitude.Primary",   "증강 주 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Secondary, "Data.Magnitude.Secondary", "증강 부 수치");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Duration,  "Data.Magnitude.Duration",  "증강 지속 시간");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Radius,    "Data.Magnitude.Radius",    "증강 반경 (m)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Range,     "Data.Magnitude.Range",     "증강 사거리 (m)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Data_Magnitude_Damage,    "Data.Magnitude.Damage",    "증강 대미지");
+
+	// 게임플레이 입력 차단/행동 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked, "State.Gameplay.InputBlocked", "게임플레이 입력 차단 부모 태그");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_InputBlocked_AugmentDraft, "State.Gameplay.InputBlocked.AugmentDraft", "증강 선택 중 게임플레이 입력 차단");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Gameplay_ActionInProgress, "State.Gameplay.ActionInProgress", "Data Jack 설치/해체와 동시에 진행할 수 없는 GameplayAbility 실행 중");
+
+	// Data Jack 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Carrying, "State.Combat.DataJack.Carrying", "Data Jack 보유 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting, "State.Combat.DataJack.Interacting", "Data Jack 설치/해체 중. 부모 태그");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting_Planting, "State.Combat.DataJack.Interacting.Planting", "Data Jack 설치 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Interacting_Defusing, "State.Combat.DataJack.Interacting.Defusing", "Data Jack 해체 중");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_DataJack_Dropping, "State.Combat.DataJack.Dropping", "Data Jack 드롭 입력 유지 중");
 
 	// 전투 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsAiming,    "State.Combat.IsAiming",    "조준 중");
@@ -70,6 +66,11 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsSwapping,  "State.Combat.IsSwapping",  "무기 교체 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_IsDead,      "State.Combat.IsDead",      "사망 확정");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Revealed,    "State.Combat.Revealed",    "발각됨");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Invulnerable, "State.Combat.Invulnerable", "무적. 외부에서 오는 피해를 전부 무시");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_ActionBlocked, "State.Combat.ActionBlocked", "이동을 제외한 행동 불가. 사격/조준/재장전/무기 교체 차단");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_SystemOverload, "State.Combat.SystemOverload", "시스템 오버로드 지속 중. 처치 시 재적용 조건");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_UtilityHeld,   "State.Combat.UtilityHeld",   "유틸리티를 손에 든 상태. 장착 무기 태그와 공존한다. 무기 어빌리티가 이 태그로 차단된다");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Ability,            "Augment.Ability",            "증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -96,6 +97,14 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_LethalSurvived,    "Event.Combat.LethalSurvived",    "생존 개입 발동 -> 피격자");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Team_AllyDeath,           "Event.Team.AllyDeath",           "팀원 사망 -> 같은 팀 전원");
 
+	// 스킬 관련 이벤트
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Skill_Used, "Event.Skill.Used", "액티브 스킬 시전 확정 -> 시전자");
+
+	// 유틸리티 사용 입력
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input,           "Event.Utility.Input",           "유틸 장착 중 사용 입력 -> 시전자. 홀드 어빌리티 전용이므로 트리거 증강에 쓰지 말 것");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input_Primary,   "Event.Utility.Input.Primary",   "주 입력 (좌클릭)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Utility_Input_Secondary, "Event.Utility.Input.Secondary", "보조 입력 (우클릭)");
+
 	// 무기 관련 이벤트
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_Fired,          "Event.Weapon.Fired",          "매 발사");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Weapon_ReloadStart,    "Event.Weapon.ReloadStart",    "재장전 시작");
@@ -117,14 +126,23 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Shotgun_Owned,   "Unlock.Weapon.Shotgun.Owned",   "산탄총 보유");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Pistol_Upgraded, "Unlock.Weapon.Pistol.Upgraded", "권총 업그레이드");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Knife_Upgraded,  "Unlock.Weapon.Knife.Upgraded",  "칼 업그레이드");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Unlock_Weapon_Firearm_Any,       "Unlock.Weapon.Firearm.Any",       "총기 그룹 중 1개 이상 해금");
 
 	// 증강 계열
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Line, "Augment.Line", "증강 계열 앵커. 하위 계열 태그는 에디터에서 추가");
 
+	// 효과 수명
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Lifetime_Round, "Effect.Lifetime.Round", "이번 라운드에만 유지되는 효과. 라운드 시작 시 제거");
+
+	// 상호 배타 효과 그룹
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
+
 	// 어빌리티 입력 슬롯
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 하위 슬롯 태그는 에디터에서 추가");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");
 
 	// 액티브 증강 쿨타임
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Dash,       "Cooldown.Augment.Dash",       "대시 쿨타임");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_ReconDrone, "Cooldown.Augment.ReconDrone", "정찰 드론 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot1, "Cooldown.Augment.Slot1", "Q 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot2, "Cooldown.Augment.Slot2", "E 슬롯 액티브 쿨타임");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Augment_Slot3, "Cooldown.Augment.Slot3", "V 슬롯 액티브 쿨타임");
+
 }

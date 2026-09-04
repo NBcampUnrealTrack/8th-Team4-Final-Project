@@ -17,21 +17,17 @@ struct FPS_API FRogueGameplayEffectContext : public FGameplayEffectContext
 public:
 	UPROPERTY() FGameplayTag SourceTag;
 	UPROPERTY() FGameplayTag WeaponTag;
-	UPROPERTY() FGameplayTag HitZoneTag;
 	UPROPERTY() FGameplayTagContainer ContextTags;
 	UPROPERTY() float HitDistanceMeters = 0.f;
-	UPROPERTY() int32 PelletsHit = 1;
 	UPROPERTY() int32 ShotIndexInMagazine = 0;
-
-	// 거리/관통까지 계산된 부위별 원본 피해와 무기 부위 배율.
-	// ExecCalc_Damage가 이 배열을 사용해 부위 배율을 적용한다.
-	UPROPERTY() TArray<FRogueHitZoneDamagePart> HitZoneDamageParts;
-
-	// 기존 DamageRequest 호출자 호환용. 신규 Hitscan은 HitZoneDamageParts를 사용한다.
-	UPROPERTY() float HeadshotDamage = 0.f;
-	UPROPERTY() float AppliedHeadshotMultiplier = 1.f;
+	UPROPERTY() bool bHeadshot = false;
+	UPROPERTY() TArray<FRogueHitGroup> HitGroups;
+	UPROPERTY() FVector_NetQuantizeNormal HitShotDirection = FVector::ZeroVector;
+	UPROPERTY() FName HitBoneName = NAME_None;
 
 	UPROPERTY() int32 ReflectDepth = 0;
+
+	UPROPERTY() float LifestealRate = 0.f;
 
 	virtual UScriptStruct* GetScriptStruct() const override
 	{
@@ -51,6 +47,8 @@ public:
 	virtual bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess) override;
 
 	static const FRogueGameplayEffectContext* ExtractFrom(const FGameplayEffectContextHandle& Handle);
+
+	static FRogueGameplayEffectContext* ExtractMutableFrom(FGameplayEffectContextHandle& Handle);
 };
 
 template<>

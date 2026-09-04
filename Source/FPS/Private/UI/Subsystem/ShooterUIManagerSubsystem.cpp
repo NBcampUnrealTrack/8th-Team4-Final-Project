@@ -1,6 +1,7 @@
 ﻿// ShooterUIManagerSubsystem.cpp
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "CommonActivatableWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 
@@ -36,6 +37,11 @@ void UShooterUIManagerSubsystem::InitializeUI(
 	RootLayoutInstance->AddToViewport(-1);
 }
 
+bool UShooterUIManagerSubsystem::IsUIInitialized() const
+{
+	return IsValid(RootLayoutInstance) && RootLayoutInstance->IsInViewport();
+}
+
 UCommonActivatableWidget* UShooterUIManagerSubsystem::PushWidgetToLayer(
 	FGameplayTag LayerTag,
 	TSubclassOf<UCommonActivatableWidget> WidgetClass)
@@ -57,6 +63,18 @@ void UShooterUIManagerSubsystem::PopWidgetFromLayer(FGameplayTag LayerTag){
 	}
 	
 	RootLayoutInstance->PopWidgetFromLayer(LayerTag);
+}
+
+void UShooterUIManagerSubsystem::RemoveWidgetFromLayer(
+    const FGameplayTag LayerTag,
+    UCommonActivatableWidget* Widget)
+{
+    if (!IsValid(RootLayoutInstance) || !IsValid(Widget))
+    {
+        return;
+    }
+
+    RootLayoutInstance->RemoveWidgetFromLayer(LayerTag, Widget);
 }
 
 void UShooterUIManagerSubsystem::ClearLayer(FGameplayTag LayerTag){

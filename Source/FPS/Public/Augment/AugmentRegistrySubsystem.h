@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "Subsystems/GameInstanceSubsystem.h"
+#include "Augment/AugmentTypes.h"
 #include "AugmentRegistrySubsystem.generated.h"
 
 class UAugmentDefinition;
@@ -29,8 +30,13 @@ public:
 	UAugmentDefinition* FindDefinition(const FPrimaryAssetId& DefinitionId) const;
 
 	// 애셋 하나가 계열 하나
-	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
-	TArray<UAugmentDefinition*> GetAllDefinitions() const;
+	const TArray<TObjectPtr<UAugmentDefinition>>& GetAllDefinitions() const { return AllDefinitions; }
+
+	// 등급별로 미리 걸러둔 목록. 드래프트 후보 스캔 비용 절감용
+	const TArray<UAugmentDefinition*>& GetDefinitionsByTier(EAugmentTier Tier) const;
+
+	// 액티브 증강만 걸러둔 목록
+	const TArray<UAugmentDefinition*>& GetActiveDefinitions() const { return ActiveDefinitions; }
 
 private:
 	void StartAsyncLoad();
@@ -39,6 +45,15 @@ private:
 
 	UPROPERTY()
 	TMap<FPrimaryAssetId, TObjectPtr<UAugmentDefinition>> DefinitionsById;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UAugmentDefinition>> AllDefinitions;
+
+	// AllDefinitions 를 등급별로 나눈 색인
+	TMap<EAugmentTier, TArray<UAugmentDefinition*>> DefinitionsByTier;
+
+	// AllDefinitions 중 액티브만
+	TArray<UAugmentDefinition*> ActiveDefinitions;
 
 	TSharedPtr<FStreamableHandle> LoadHandle;
 

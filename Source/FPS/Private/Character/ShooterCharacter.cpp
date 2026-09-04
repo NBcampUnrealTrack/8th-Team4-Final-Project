@@ -1,25 +1,42 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Character/ShooterCharacter.h"
 
-#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
+#include "Character/FootstepComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Combat/LagCompensationComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "GameFlow/Round/BaseRoundGameMode.h"
-#include "GameFlow/Round/BaseRoundPlayerController.h"
+#include "EngineUtils.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterCharacter, Log, All);
 
+namespace
+{
+	// MM_CharacterOutliner 의 If 노드가 비교하는 상수와 같아야 한다.
+	constexpr int32 TeamOutlineStencilAlly = 1;
+	constexpr int32 TeamOutlineStencilEnemy = 2;
+	constexpr int32 TeamOutlineStencilEnemyRevealed = 3;
+
+}
+
 AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(ACharacter::CharacterMovementComponentName))
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(
+		  ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 
@@ -45,15 +62,208 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 
 	Combat = CreateDefaultSubobject<UCombatComponent>(TEXT("Combat"));
 	Combat->SetIsReplicated(true);
+
+	LagCompensation = CreateDefaultSubobject<ULagCompensationComponent>(TEXT("LagCompensation"));
+
+	Footstep = CreateDefaultSubobject<UFootstepComponent>(TEXT("Footstep"));
 }
 
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->GravityScale *= GravityScaleMultiplier;
+	}
+
 	if (HasAuthority())
 	{
 		InitializeDefaultWeaponLoadout();
+	}
+}
+
+void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnsubscribeTags();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void AShooterCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	UpdateTagSubscriptions();
+	RefreshTeamOutline();
+
+	// 부활 직후 무기 액터가 캐릭터보다 먼저 만들어지고 빙의가 뒤따르면, 무기 장착 시점에
+	// 캐릭터 메쉬/오너 참조가 아직 준비되지 않아 부착·표시가 누락될 수 있다. 여기서 다시 확정한다.
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
+}
+
+void AShooterCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	UpdateTagSubscriptions();
+	RefreshTeamOutline();
+
+	// 클라이언트에서도 PlayerState/오너 복제가 무기 복제보다 늦게 도착하는 경우를 대비해
+	// 장착 무기 표현을 다시 적용한다(멱등).
+	if (IsValid(Combat))
+	{
+		Combat->RefreshEquippedWeaponPresentation();
+	}
+}
+
+void AShooterCharacter::RefreshTeamOutline()
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* Mesh3P = GetMesh();
+	if (!IsValid(Mesh3P))
+	{
+		return;
+	}
+
+	TArray<USceneComponent*> OutlineTargets;
+	Mesh3P->GetChildrenComponents(true, OutlineTargets);
+	OutlineTargets.Add(Mesh3P);
+
+	const UWorld* World = GetWorld();
+	const APlayerController* ViewerController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	const ABaseTeamPlayerState* ViewerPlayerState = IsValid(ViewerController)
+		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const ABaseTeamPlayerState* OwnerPlayerState = GetPlayerState<ABaseTeamPlayerState>();
+
+	if (!IsValid(ViewerPlayerState)
+		|| !IsValid(OwnerPlayerState)
+		|| ViewerPlayerState == OwnerPlayerState
+		|| ViewerPlayerState->GetTeam() == EGameTeam::None
+		|| OwnerPlayerState->GetTeam() == EGameTeam::None)
+	{
+		for (USceneComponent* Target : OutlineTargets)
+		{
+			if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
+			{
+				Primitive->SetRenderCustomDepth(false);
+			}
+		}
+		return;
+	}
+
+	int32 StencilValue = TeamOutlineStencilAlly;
+	if (ViewerPlayerState->GetTeam() != OwnerPlayerState->GetTeam())
+	{
+		const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+		const bool bRevealed = IsValid(AbilitySystem)
+			&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_Revealed);
+
+		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
+	}
+
+	for (USceneComponent* Target : OutlineTargets)
+	{
+		if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
+		{
+			Primitive->SetCustomDepthStencilValue(StencilValue);
+			Primitive->SetRenderCustomDepth(true);
+		}
+	}
+}
+
+void AShooterCharacter::RefreshTeamOutlineForAll(UWorld* World)
+{
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	for (TActorIterator<AShooterCharacter> Iterator(World); Iterator; ++Iterator)
+	{
+		if (AShooterCharacter* Character = *Iterator)
+		{
+			Character->RefreshTeamOutline();
+		}
+	}
+}
+
+void AShooterCharacter::UpdateTagSubscriptions()
+{
+	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (SubscribedAbilitySystem.Get() == AbilitySystem)
+	{
+		return;
+	}
+
+	UnsubscribeTags();
+
+	if (!IsValid(AbilitySystem))
+	{
+		return;
+	}
+
+	SubscribedAbilitySystem = AbilitySystem;
+
+	RevealTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_Revealed,
+		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleRevealTagChanged);
+
+	UtilityHeldEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_UtilityHeld,
+		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleUtilityHeldChanged);
+
+	if (IsValid(Combat))
+	{
+		Combat->SetPresentationSuppressed(
+			AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_UtilityHeld));
+	}
+}
+
+void AShooterCharacter::UnsubscribeTags()
+{
+	if (UAbilitySystemComponent* AbilitySystem = SubscribedAbilitySystem.Get())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_Revealed,
+			EGameplayTagEventType::NewOrRemoved).Remove(RevealTagEventHandle);
+
+		AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_UtilityHeld,
+			EGameplayTagEventType::NewOrRemoved).Remove(UtilityHeldEventHandle);
+	}
+
+	RevealTagEventHandle.Reset();
+	UtilityHeldEventHandle.Reset();
+	SubscribedAbilitySystem.Reset();
+}
+
+void AShooterCharacter::HandleRevealTagChanged(const FGameplayTag, const int32)
+{
+	RefreshTeamOutline();
+}
+
+void AShooterCharacter::HandleUtilityHeldChanged(const FGameplayTag, const int32 NewCount)
+{
+	if (!IsValid(Combat))
+	{
+		return;
+	}
+
+	const bool bHeld = NewCount > 0;
+	Combat->SetPresentationSuppressed(bHeld);
+
+	if (!bHeld && HasAuthority())
+	{
+		Combat->ReEquipCurrentWeapon();
 	}
 }
 
@@ -69,25 +279,27 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 		return true;
 	}
 
-	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass))
+	if (!Combat->InitializeWeaponLoadout(DefaultPrimaryWeaponClass, DefaultSecondaryWeaponClass, DefaultMeleeWeaponClass))
 	{
 		UE_LOG(
 			LogShooterCharacter,
 			Error,
-			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s"),
+			TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 초기화 실패. Primary=%s Secondary=%s Melee=%s"),
 			*GetNameSafe(this),
 			*GetNameSafe(DefaultPrimaryWeaponClass.Get()),
-			*GetNameSafe(DefaultSecondaryWeaponClass.Get()));
+			*GetNameSafe(DefaultSecondaryWeaponClass.Get()),
+			*GetNameSafe(DefaultMeleeWeaponClass.Get()));
 		return false;
 	}
 
 	UE_LOG(
 		LogShooterCharacter,
 		Log,
-		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s"),
+		TEXT("[ShooterCharacter] %s: 기본 무기 로드아웃 준비 완료. Primary=%s Secondary=%s Melee=%s"),
 		*GetNameSafe(this),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
-		*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)));
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Primary)),
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Secondary)),
+			*GetNameSafe(Combat->GetWeaponInSlot(EWeaponSlot::Melee)));
 
 	return true;
 }
@@ -95,6 +307,60 @@ bool AShooterCharacter::InitializeDefaultWeaponLoadout()
 void AShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!IsValid(Movement))
+	{
+		return;
+	}
+
+	const bool bWasInAir = (PrevMovementMode == MOVE_Falling);
+	const bool bIsInAir  = (Movement->MovementMode == MOVE_Falling);
+	if (bWasInAir == bIsInAir)
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir, bIsInAir ? 1 : 0);
+	}
+}
+
+void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 1);
+	}
+}
+
+void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
+{
+	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 0);
+	}
+}
+
+void AShooterCharacter::CheckJumpInput(float DeltaTime)
+{
+	if (bPressedJump)
+	{
+		const ACharacter* DefaultCharacter = GetClass()->GetDefaultObject<ACharacter>();
+		JumpMaxCount = DefaultCharacter->JumpMaxCount + URogueAugmentStatResolver::GetExtraJumpCount(this);
+	}
+
+	Super::CheckJumpInput(DeltaTime);
 }
 
 UAbilitySystemComponent* AShooterCharacter::GetAbilitySystemComponent() const
@@ -129,7 +395,7 @@ AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
 	return IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 }
 
-void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
+void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Context)
 {
 	if (!HasAuthority())
 	{
@@ -138,11 +404,106 @@ void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 
 	AController* OwningController = GetController();
 	UWorld* World = GetWorld();
-	ABaseRoundGameMode* RoundGameMode = IsValid(World) ? World->GetAuthGameMode<ABaseRoundGameMode>() : nullptr;
-	if (IsValid(OwningController) && IsValid(RoundGameMode))
+	AShooterGameMode* ShooterGameMode = IsValid(World) ? World->GetAuthGameMode<AShooterGameMode>() : nullptr;
+	if (IsValid(OwningController) && IsValid(ShooterGameMode))
 	{
-		RoundGameMode->NotifyPlayerEliminated(OwningController);
+		ShooterGameMode->HandlePlayerEliminated(OwningController, Context);
 	}
+}
+
+UCombatHitZoneDefinition* AShooterCharacter::GetCombatHitZoneDefinition_Implementation() const
+{
+	return CombatHitZoneDefinition.Get();
+}
+
+void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction)
+{
+	if (bDeathStateApplied)
+	{
+		return;
+	}
+	bDeathStateApplied = true;
+
+	// 관성 저장
+	const FVector DeathVelocity = GetVelocity();
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->DisableMovement();
+	}
+
+	// 캡슐 콜리전 비활성화
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	// 충돌 설정
+	USkeletalMeshComponent* Mesh3P = GetMesh();
+	// 사망한 Pawn의 1인칭 표현은 모든 인스턴스에서 끄고, 오너에게도 3인칭 시체를 보인다.
+	Mesh1P->SetHiddenInGame(true, true);
+	Mesh3P->SetOwnerNoSee(false);
+	Mesh3P->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+	Mesh3P->SetCollisionObjectType(ECC_PhysicsBody);
+	Mesh3P->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Mesh3P->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+
+	// 피직스 에셋이 없는 경우
+	if (!Mesh3P->GetPhysicsAsset())
+	{
+		UE_LOG(
+			LogShooterCharacter,
+			Warning,
+			TEXT("[ShooterCharacter] %s: 3인칭 메시에 PhysicsAsset 이 없어 랙돌을 시작할 수 없습니다 (메시=%s)"),
+			*GetNameSafe(this),
+			*GetNameSafe(Mesh3P->GetSkinnedAsset()));
+	}
+
+	// 데디 서버는 랙돌 X
+	else if (GetNetMode() != NM_DedicatedServer)
+	{
+		Mesh3P->SetAllBodiesSimulatePhysics(true);
+		Mesh3P->SetSimulatePhysics(true);
+		Mesh3P->SetAllBodiesPhysicsBlendWeight(1.0f);
+		Mesh3P->WakeAllRigidBodies();
+		Mesh3P->SetAllPhysicsLinearVelocity(DeathVelocity);
+
+		ApplyDeathImpulse(*Mesh3P, Reaction);
+	}
+
+}
+
+void AShooterCharacter::ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const
+{
+	// 임펄스 방향이 없거나 속도가 0이면 적용하지 않는다
+	if (Reaction.Direction.IsNearlyZero() || DeathImpulseSpeed <= 0.f)
+	{
+		return;
+	}
+
+	// 임펄스를 적용할 본
+	const FName FallbackBone = Reaction.bHeadshot ? HeadshotDeathImpulseBoneName : DeathImpulseBoneName;
+
+	FName TargetBone = NAME_None;
+	for (const FName Candidate : { Reaction.HitBoneName, FallbackBone })
+	{
+		if (!Candidate.IsNone() && Mesh3P.GetBodyInstance(Candidate))
+		{
+			TargetBone = Candidate;
+			break;
+		}
+	}
+
+	FVector ImpulseDirection = Reaction.Direction;
+	ImpulseDirection.Z += DeathImpulseUpwardBias;
+	if (!ImpulseDirection.Normalize())
+	{
+		return;
+	}
+
+	const float ImpulseSpeed = DeathImpulseSpeed
+		* (Reaction.bHeadshot ? HeadshotDeathImpulseMultiplier : 1.f);
+
+	// 임펄스 적용
+	Mesh3P.AddImpulse(ImpulseDirection * ImpulseSpeed, TargetBone, true);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const
@@ -209,49 +570,16 @@ void AShooterCharacter::HandleSprintReleased()
 	}
 }
 
-void AShooterCharacter::HandleWeaponSlotPressed(const EWeaponSlot WeaponSlot)
+void AShooterCharacter::HandleCrouchPressed()
 {
-	if (HasAuthority())
-	{
-		TrySwitchWeaponSlot(WeaponSlot);
-		return;
-	}
-
-	ServerSwitchWeaponSlot(WeaponSlot);
+	HandleSprintReleased();
+	Crouch();
 }
 
-void AShooterCharacter::ServerSwitchWeaponSlot_Implementation(const EWeaponSlot WeaponSlot)
+void AShooterCharacter::HandleCrouchReleased()
 {
-	TrySwitchWeaponSlot(WeaponSlot);
+	UnCrouch();
 }
 
-bool AShooterCharacter::TrySwitchWeaponSlot(const EWeaponSlot WeaponSlot)
-{
-	if (!HasAuthority() || !IsValid(Combat))
-	{
-		return false;
-	}
-
-	const ABaseRoundPlayerController* RoundPlayerController = Cast<ABaseRoundPlayerController>(GetController());
-	if (IsValid(RoundPlayerController) && !RoundPlayerController->CanUseCombatInput())
-	{
-		return false;
-	}
-
-	const AWeaponBase* PreviousWeapon = Combat->GetCurrentWeapon();
-	if (!Combat->SwitchWeaponSlot(WeaponSlot))
-	{
-		return false;
-	}
-
-	if (Combat->GetCurrentWeapon() != PreviousWeapon)
-	{
-		FGameplayEventData Payload;
-		Payload.EventTag = RogueTags::Event_Weapon_Swap;
-		Payload.Instigator = this;
-		Payload.Target = this;
-		UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(this, RogueTags::Event_Weapon_Swap, Payload);
-	}
-
-	return true;
-}
+// 무기 슬롯 전환은 UGA_SwitchWeapon(GAS 어빌리티)이 담당한다 - Fire/Reload와 동일하게
+// 입력 태그 -> 어빌리티 경로를 타며, Character는 더 이상 스왑을 직접 호출하지 않는다.

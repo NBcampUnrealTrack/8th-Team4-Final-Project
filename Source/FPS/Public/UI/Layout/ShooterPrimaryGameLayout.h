@@ -2,10 +2,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "CommonActivatableWidget.h"
+#include "CommonUserWidget.h"
 #include "GameplayTagContainer.h"
 #include "ShooterPrimaryGameLayout.generated.h"
 
+class UCommonActivatableWidget;
 class UCommonActivatableWidgetStack;
 class UCommonActivatableWidgetContainerBase;
 
@@ -15,7 +16,7 @@ class UCommonActivatableWidgetContainerBase;
  * PushWidgetToLayer로 태그로 Stack을 찾아 화면을 Stack하고 PopWidgetFromLayer로 pop한다.
  */
 UCLASS(Abstract)
-class FPS_API UShooterPrimaryGameLayout : public UCommonActivatableWidget
+class FPS_API UShooterPrimaryGameLayout : public UCommonUserWidget
 {
 	GENERATED_BODY()
 
@@ -24,6 +25,8 @@ public:
 	
 	void PopWidgetFromLayer(FGameplayTag LayerTag);
 	
+	void RemoveWidgetFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Widget);
+
 	// 레이어 태그 전체 비우기. HUD 화면 정리 등에 필요
 	void ClearLayer(FGameplayTag LayerTag);
 	
@@ -36,6 +39,8 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Game;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonActivatableWidgetStack> Stack_GameMenu;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Menu;
 	UPROPERTY(meta = (BindWidget))

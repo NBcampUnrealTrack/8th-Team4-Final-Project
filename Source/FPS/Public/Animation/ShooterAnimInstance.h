@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
@@ -22,6 +22,12 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
+
+	// GA_RangedAttack이 발사 성공 시점에 직접 호출한다(Equip/Reload처럼 상태를 폴링해서 감지할 수 있는
+	// 지속 상태가 아니라 한 프레임짜리 이벤트라 폴링 대신 콜 사이트에서 직접 트리거하는 방식을 쓴다).
+	// 현재 장착 무기 태그로 WeaponData->WeaponMontages를 찾아 FireMontage가 있으면 재생한다 - 무기별로
+	// 애셋이 없으면(예: 샷건/저격 - 추후 추가 예정) 조용히 스킵한다.
+	void PlayFireMontageForCurrentWeapon();
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|References")
@@ -107,4 +113,5 @@ private:
 	float InterpAO_Yaw = 0.f;
 	TWeakObjectPtr<AWeaponBase> LastAnimationWeapon;
 	bool bWasReloading = false;
+	bool bWasUtilityHeld = false;
 };
