@@ -21,6 +21,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAugmentRerollRequested, int32, Sl
 // 보류 요청
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentSelectDismissRequested);
 
+UENUM(BlueprintType)
+enum class EAugmentSelectEntry : uint8
+{
+	// 현재 후보 묶음을 처음 표시할 때
+	Intro,
+	// 보류에서 복귀
+	Resume
+};
+
 /**
  * 증강 선택 화면으로 Modal 레이어에 올린다.
  */
@@ -36,6 +45,9 @@ public:
 	void SetOffers(const TArray<FAugmentInventoryEntry>& InOffers,
 	               const TArray<int32>& InRerollsRemaining);
 
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void SetEntryAnimation(EAugmentSelectEntry InEntry);
+	
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void SetDismissAvailable(bool bAvailable);
 	
@@ -88,6 +100,10 @@ protected:
 	// 화면 등장 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_Intro;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Resume;
+	
+	EAugmentSelectEntry EntryAnimation = EAugmentSelectEntry::Intro;
 
 	TArray<FAugmentInventoryEntry> Offers;
 

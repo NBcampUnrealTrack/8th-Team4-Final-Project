@@ -53,6 +53,11 @@ void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>
 	TryBuildCards();
 }
 
+void UShooterAugmentSelectScreen::SetEntryAnimation(EAugmentSelectEntry InEntry)
+{
+	EntryAnimation = InEntry;
+}
+
 void UShooterAugmentSelectScreen::SetDismissAvailable(bool bAvailable)
 {
 	if (Btn_PendingCard)
@@ -162,11 +167,19 @@ void UShooterAugmentSelectScreen::RefreshOfferWidgets()
 		return;
 	}
 	
-	if (bWasEmpty || bOfferCountChanged)
+	// 첫 묶음 상태인지 확인
+	const bool bWholeBatchReplaced = !ChangedSlots.IsEmpty() && ChangedSlots.Num() != 1;
+	
+	if (bWasEmpty || bOfferCountChanged || bWholeBatchReplaced)
 	{
-		if (Anim_Intro)
+		UWidgetAnimation* Anim = 
+			(EntryAnimation == EAugmentSelectEntry::Resume && Anim_Resume)
+			? Anim_Resume.Get()
+			: Anim_Intro.Get();
+		
+		if (Anim)
 		{
-			PlayAnimation(Anim_Intro);
+			PlayAnimation(Anim);
 		}
 	}
 	else

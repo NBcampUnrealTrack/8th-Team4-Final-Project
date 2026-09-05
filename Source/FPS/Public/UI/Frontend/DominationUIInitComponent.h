@@ -46,6 +46,7 @@ protected:
 
 	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) override;
 	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) override;
+	virtual EAugmentSelectEntry GetAugmentEntryAnimation() const override;
 	
 	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const override;
 	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const override;

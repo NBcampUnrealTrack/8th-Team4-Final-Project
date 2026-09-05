@@ -237,6 +237,10 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 	if (UShooterAugmentSelectScreen* AugmentScreen = GetAugmentSelectInstance();
 		IsValid(AugmentScreen) && AugmentScreen->IsActivated())
 	{
+		// 아래 Push 경로와 동일하게 진입 연출 상태를 먼저 갱신한다.
+		OnAugmentOffersPresented(InOffers);
+		AugmentScreen->SetEntryAnimation(GetAugmentEntryAnimation());
+		
 		AugmentScreen->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 		return;
 	}
@@ -265,7 +269,9 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 		&ThisClass::HandleAugmentRerollRequested);
 	
 	OnAugmentScreenCreated(AugmentScreen);
+	
 	OnAugmentOffersPresented(InOffers);
+	AugmentScreen->SetEntryAnimation(GetAugmentEntryAnimation());
 	
 	AugmentScreen->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 }
@@ -526,6 +532,11 @@ void UTeamMatchUIInitComponent::RemoveScreenFromLayer(
 	{
 		Screen->DeactivateWidget();
 	}
+}
+
+EAugmentSelectEntry UTeamMatchUIInitComponent::GetAugmentEntryAnimation() const
+{
+	return EAugmentSelectEntry::Intro;
 }
 
 TArray<int32> UTeamMatchUIInitComponent::BuildRerollsRemaining(

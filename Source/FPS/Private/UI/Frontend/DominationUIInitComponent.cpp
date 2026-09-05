@@ -528,13 +528,23 @@ void UDominationUIInitComponent::OnAugmentOffersPresented(const TArray<FAugmentI
 			}
 		}
 		
-		if (DifferentCount >= 2)
-		{
-			bHasDismissedThisSelection = false;
-		}
+		// 리롤은 한 슬롯만 바꾼다. 둘 이상이면 새 묶음이다
+		bIsNewSelection = (DifferentCount >= 2);
+	}
+	
+	if (bIsNewSelection)
+	{
+		bHasDismissedThisSelection = false;
 	}
 	
 	LastPresentedOfferIds = MoveTemp(CurrentOfferIds);
+}
+
+EAugmentSelectEntry UDominationUIInitComponent::GetAugmentEntryAnimation() const
+{
+	return bHasDismissedThisSelection
+		? EAugmentSelectEntry::Resume
+		: EAugmentSelectEntry::Intro;
 }
 
 TSubclassOf<UShooterInGameMenuScreen>
