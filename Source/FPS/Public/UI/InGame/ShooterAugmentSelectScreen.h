@@ -16,9 +16,10 @@ struct FStreamableHandle;
 
 // 고른 번호를 서버에 보낸다
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAugmentSelected, int32, OfferIndex);
-
 // 리롤할 슬롯 번호를 서버에 보냄
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAugmentRerollRequested, int32, SlotIndex);
+// 보류 요청
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentSelectDismissRequested);
 
 /**
  * 증강 선택 화면으로 Modal 레이어에 올린다.
@@ -35,11 +36,15 @@ public:
 	void SetOffers(const TArray<FAugmentInventoryEntry>& InOffers,
 	               const TArray<int32>& InRerollsRemaining);
 
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void SetDismissAvailable(bool bAvailable);
+	
 	UPROPERTY(BlueprintAssignable, Category = "UI")
 	FOnAugmentSelected OnAugmentSelected;
-
 	UPROPERTY(BlueprintAssignable, Category = "UI")
 	FOnAugmentRerollRequested OnAugmentRerollRequested;
+	UPROPERTY(BlueprintAssignable, Category = "UI")
+	FOnAugmentSelectDismissRequested OnDismissRequested;
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -58,9 +63,9 @@ protected:
 
 	void HandleIconsLoaded();
 	void HandleCardClicked(int32 InOfferIndex);
-
 	void HandleRerollButtonClicked(int32 InSlotIndex);
-
+	void HandlePendingCardClicked();
+	
 	UAugmentRegistrySubsystem* GetRegistry() const;
 
 	UPROPERTY(meta = (BindWidget))
@@ -76,6 +81,9 @@ protected:
 	TObjectPtr<UShooterRerollButton> RerollButton_1;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterRerollButton> RerollButton_2;
+	
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonButtonBase> Btn_PendingCard;
 	
 	// 화면 등장 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))

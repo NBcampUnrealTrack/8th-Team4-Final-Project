@@ -16,6 +16,9 @@ class UShooterPlayerHUD;
 class UShooterPrimaryGameLayout;
 class UShooterSurrenderVoteScreen;
 
+// 증강 보류 버튼
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentDismissStateChanged);
+
 /**
  * Domination의 전투 HUD 준비와 매치 페이즈별 공통 화면 허용 여부를 담당한다.
  */
@@ -26,13 +29,24 @@ class FPS_API UDominationUIInitComponent : public UTeamMatchUIInitComponent
 
 public:
 	UDominationUIInitComponent();
-
+	
+	// B키를 눌러 선택 보류
+	UFUNCTION(BlueprintCallable, Category = "Domination|UI")
+	void ToggleAugmentSelect();
+	UFUNCTION(BlueprintPure, Category = "Domination|UI")
+	bool IsAugmentSelectDismissed() const;
+	UPROPERTY(BlueprintAssignable, Category = "Domination|UI")
+	FOnAugmentDismissStateChanged OnAugmentDismissStateChanged;
+	
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual bool IsAugmentPresentationAllowed() const override;
 	virtual bool IsSurrenderRequestAllowed() const override;
 
+	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) override;
+	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) override;
+	
 	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const override;
 	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const override;
 	virtual TSubclassOf<UShooterAugmentSelectScreen> GetAugmentSelectWidgetClass() const override;
@@ -55,6 +69,14 @@ private:
 
 	UFUNCTION()
 	void HandleCombatClassChanged(EDominationCombatClass SelectedClass);
+	
+	// 새 라운드 진입 시 증강 선택 보류 상태를 초기화한다
+	UFUNCTION()
+	void HandleRewardRoundChanged(EGameTeam Team, int32 NewScore);
+	UFUNCTION()
+	void HandleAugmentDismissRequested();
+	
+	void SetAugmentSelectDismissed(bool bDismissed);
 
 	void RefreshDominationUI();
 	void RefreshClassSelectionPresentation(
@@ -109,4 +131,15 @@ private:
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 	FTimerHandle InitializationRetryTimerHandle;
+	
+	// 현재 보류 중인지
+	bool bAugmentSelectDismissed = false;
+	// 이번 띄운 후보 묶음에서 한번이라도 보류했는지
+	bool bHasDismissedThisSelection = false;
+	
+	TArray<FPrimaryAssetId> LastPresentedOfferIds;
+	
+	int32 LastObservedRewardRound = 0;
+	// 보류 상태 초기화 규칙을 위한 매치 시작시 한번 감지
+	EDominationMatchPhase LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
 };

@@ -11,6 +11,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/StreamableManager.h"
 #include "GameFramework/PlayerController.h"
+#include "CommonButtonBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
@@ -29,6 +30,11 @@ void UShooterAugmentSelectScreen::NativeOnInitialized()
 	{
 		Button->OnRerollButtonClicked.AddUObject(this, &ThisClass::HandleRerollButtonClicked);
 	}
+	
+	if (Btn_PendingCard)
+	{
+		Btn_PendingCard->OnClicked().AddUObject(this, &ThisClass::HandlePendingCardClicked);
+	}
 }
 
 void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>& InOffers,
@@ -45,6 +51,14 @@ void UShooterAugmentSelectScreen::SetOffers(const TArray<FAugmentInventoryEntry>
 	RerollsRemaining = InRerollsRemaining;
 	
 	TryBuildCards();
+}
+
+void UShooterAugmentSelectScreen::SetDismissAvailable(bool bAvailable)
+{
+	if (Btn_PendingCard)
+	{
+		Btn_PendingCard->SetVisibility(bAvailable ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UShooterAugmentSelectScreen::TryBuildCards()
@@ -194,6 +208,11 @@ void UShooterAugmentSelectScreen::HandleRerollButtonClicked(int32 InSlotIndex)
 	OnAugmentRerollRequested.Broadcast(InSlotIndex);
 }
 
+void UShooterAugmentSelectScreen::HandlePendingCardClicked()
+{
+	OnDismissRequested.Broadcast();
+}
+
 UAugmentRegistrySubsystem* UShooterAugmentSelectScreen::GetRegistry() const
 {
 	return GetGameInstance() ? GetGameInstance()->GetSubsystem<UAugmentRegistrySubsystem>() : nullptr;
@@ -220,16 +239,6 @@ void UShooterAugmentSelectScreen::NativeOnActivated()
 {
 	Super::NativeOnActivated();
 
-	if (APlayerController* PlayerController = GetOwningPlayer())
-	{
-		FInputModeGameAndUI InputModeData;
-		InputModeData.SetWidgetToFocus(TakeWidget());
-		InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputModeData.SetHideCursorDuringCapture(false);
-
-		PlayerController->SetInputMode(InputModeData);
-		PlayerController->SetShowMouseCursor(true);
-	}
 }
 
 void UShooterAugmentSelectScreen::NativeOnDeactivated()
@@ -241,13 +250,6 @@ void UShooterAugmentSelectScreen::NativeOnDeactivated()
 	}
 
 	LastDisplayedOffers.Reset();
-
-	// 증강 선택 후 커서를 숨기고 게임 입력 모드로 복귀
-	if (APlayerController* PlayerController = GetOwningPlayer())
-	{
-		PlayerController->SetShowMouseCursor(false);
-		PlayerController->SetInputMode(FInputModeGameOnly());
-	}
 
 	Super::NativeOnDeactivated();
 }

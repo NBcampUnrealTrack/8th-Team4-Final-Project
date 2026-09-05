@@ -263,6 +263,10 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 	AugmentScreen->OnAugmentRerollRequested.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleAugmentRerollRequested);
+	
+	OnAugmentScreenCreated(AugmentScreen);
+	OnAugmentOffersPresented(InOffers);
+	
 	AugmentScreen->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 }
 

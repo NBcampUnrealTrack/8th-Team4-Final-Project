@@ -65,9 +65,12 @@ protected:
 	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
-
+	
 	virtual bool IsAugmentPresentationAllowed() const
 		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsAugmentPresentationAllowed, return false;);
+	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) {};
+	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) {};
+
 	virtual bool IsSurrenderRequestAllowed() const
 		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsSurrenderRequestAllowed, return false;);
 	virtual void CloseModeSpecificScreensForModal() {}

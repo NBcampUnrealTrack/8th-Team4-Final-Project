@@ -18,11 +18,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Domination|Class")
 	void SelectCombatClass(EDominationCombatClass RequestedClass);
+	
+protected:
+	virtual void SetupInputComponent() override;
 
 private:
 	UFUNCTION(Server, Reliable)
 	void ServerSelectCombatClass(EDominationCombatClass RequestedClass);
 
+	void Input_ToggleAugmentSelect();
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UDominationUIInitComponent> UIInitComponent;
 };
