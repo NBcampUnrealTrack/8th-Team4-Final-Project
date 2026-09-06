@@ -7,6 +7,7 @@
 #include "UI/Common/ShooterAugmentCard.h"
 #include "ShooterAugmentSelectScreen.generated.h"
 
+class UShooterAugmentSelectBanner;
 class UShooterRerollButton;
 class UAugmentRegistrySubsystem;
 class UHorizontalBox;
@@ -96,6 +97,9 @@ protected:
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonButtonBase> Btn_PendingCard;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UShooterAugmentSelectBanner> Banner;
 	
 	// 화면 등장 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))

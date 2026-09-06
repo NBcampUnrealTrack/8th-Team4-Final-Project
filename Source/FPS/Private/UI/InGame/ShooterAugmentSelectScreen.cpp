@@ -12,6 +12,7 @@
 #include "Engine/StreamableManager.h"
 #include "GameFramework/PlayerController.h"
 #include "CommonButtonBase.h"
+#include "UI/Common/ShooterAugmentSelectBanner.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
@@ -34,6 +35,16 @@ void UShooterAugmentSelectScreen::NativeOnInitialized()
 	if (Btn_PendingCard)
 	{
 		Btn_PendingCard->OnClicked().AddUObject(this, &ThisClass::HandlePendingCardClicked);
+	}
+}
+
+void UShooterAugmentSelectScreen::NativeOnActivated()
+{
+	Super::NativeOnActivated();
+
+	if (Banner)
+	{
+		Banner->SetPresentationActive(true);
 	}
 }
 
@@ -247,15 +258,13 @@ void UShooterAugmentSelectScreen::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-// 증강 선택 UI가 활성화될 때 마우스 커서를 표시 (이동 입력은 유지)
-void UShooterAugmentSelectScreen::NativeOnActivated()
-{
-	Super::NativeOnActivated();
-
-}
-
 void UShooterAugmentSelectScreen::NativeOnDeactivated()
 {
+	if (Banner)
+	{
+		Banner->SetPresentationActive(false);
+	}
+	
 	if (IconLoadHandle.IsValid())
 	{
 		IconLoadHandle->CancelHandle();
