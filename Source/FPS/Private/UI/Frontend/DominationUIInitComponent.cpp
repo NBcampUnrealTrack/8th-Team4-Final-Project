@@ -16,6 +16,7 @@
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
 
@@ -73,6 +74,7 @@ void UDominationUIInitComponent::EndPlay(
 	ClearInitializationRetry();
 	UnbindFromPlayerState();
 	UnbindFromGameState();
+	UnbindModalContainer();
 	RemoveClassSelectionScreen();
 
 	if (IsValid(InitialWidgetInstance))
@@ -91,6 +93,11 @@ void UDominationUIInitComponent::EndPlay(
 
 void UDominationUIInitComponent::ToggleAugmentSelect()
 {
+	if (!IsAugmentPresentationSettled())
+	{
+		return;
+	}
+	
 	UAugmentInventoryComponent* Inv = GetBoundAugmentInventory();
 	if (!IsValid(Inv)
 		|| Inv->GetOffers().IsEmpty()
@@ -106,6 +113,25 @@ void UDominationUIInitComponent::ToggleAugmentSelect()
 bool UDominationUIInitComponent::IsAugmentSelectDismissed() const
 {
 	return bAugmentSelectDismissed;
+}
+
+bool UDominationUIInitComponent::IsAugmentPresentationSettled() const
+{
+	UCommonActivatableWidgetContainerBase* Modal = GetModalContainer();
+	if (!IsValid(Modal))
+	{
+		return false;
+	}
+	
+	const UCommonActivatableWidget* StackTop = Modal->GetActiveWidget();
+	const bool bStackShowsAugment = IsValid(StackTop) && StackTop->IsA<UShooterAugmentSelectScreen>();
+	const UAugmentInventoryComponent* Inv = GetBoundAugmentInventory();
+	const bool bShouldShowAugment = 
+		IsAugmentPresentationAllowed() 
+		&& IsValid(Inv)
+		&& !Inv->GetOffers().IsEmpty();
+	
+	return bStackShowsAugment == bShouldShowAugment;
 }
 
 void UDominationUIInitComponent::RefreshDominationUI()
@@ -190,6 +216,7 @@ void UDominationUIInitComponent::RefreshDominationUI()
 	}
 
 	InitializeTeamMatchUI(PlayerController, Inventory);
+	BindModalContainer();
 	ClearInitializationRetry();
 }
 
@@ -334,22 +361,43 @@ void UDominationUIInitComponent::HandleAugmentDismissRequested()
 	ToggleAugmentSelect();
 }
 
-void UDominationUIInitComponent::SetAugmentSelectDismissed(bool bDismissed)
+void UDominationUIInitComponent::HandleModalDisplayedWidgetChanged(UCommonActivatableWidget* DisplayedWidget)
 {
-	if (bAugmentSelectDismissed == bDismissed)
+	OnAugmentPresentationChanged.Broadcast();
+}
+
+void UDominationUIInitComponent::BindModalContainer()
+{
+	UCommonActivatableWidgetContainerBase* Modal = GetModalContainer();
+	
+	if (BoundModalContainer.Get() == Modal)
 	{
 		return;
 	}
 	
-	bAugmentSelectDismissed = bDismissed;
+	UnbindModalContainer();
 	
-	if (bDismissed)
+	if (!IsValid(Modal))
 	{
-		bHasDismissedThisSelection = true;
+		return;
 	}
 	
-	OnAugmentDismissStateChanged.Broadcast();
-	NotifyModeUIStateChanged();
+	BoundModalContainer = Modal;
+	
+	Modal->OnDisplayedWidgetChanged().AddUObject(
+		this,
+		&ThisClass::HandleModalDisplayedWidgetChanged);
+}
+
+void UDominationUIInitComponent::UnbindModalContainer()
+{
+	if (UCommonActivatableWidgetContainerBase* Modal =
+		BoundModalContainer.Get())
+	{
+		Modal->OnDisplayedWidgetChanged().RemoveAll(this);
+	}
+
+	BoundModalContainer.Reset();
 }
 
 void UDominationUIInitComponent::TryCaptureMatchResult()
@@ -568,6 +616,32 @@ UDominationUIInitComponent::GetAugmentSelectWidgetClass() const
 UShooterInGameMenuScreen* UDominationUIInitComponent::GetInGameMenuInstance() const
 {
 	return InGameMenuInstance;
+}
+
+UCommonActivatableWidgetContainerBase* UDominationUIInitComponent::GetModalContainer() const
+{
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	UShooterPrimaryGameLayout* Layout = IsValid(UIManager) ? UIManager->GetRootLayout() : nullptr;
+	
+	return IsValid(Layout) ? Layout->GetLayerContainer(UITags::UI_Layer_Modal) : nullptr;
+}
+
+void UDominationUIInitComponent::SetAugmentSelectDismissed(bool bDismissed)
+{
+	if (bAugmentSelectDismissed == bDismissed)
+	{
+		return;
+	}
+	
+	bAugmentSelectDismissed = bDismissed;
+	
+	if (bDismissed)
+	{
+		bHasDismissedThisSelection = true;
+	}
+	
+	OnAugmentDismissStateChanged.Broadcast();
+	NotifyModeUIStateChanged();
 }
 
 void UDominationUIInitComponent::SetInGameMenuInstance(

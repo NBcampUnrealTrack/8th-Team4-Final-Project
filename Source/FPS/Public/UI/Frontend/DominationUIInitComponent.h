@@ -15,9 +15,14 @@ class UShooterInGameMenuScreen;
 class UShooterPlayerHUD;
 class UShooterPrimaryGameLayout;
 class UShooterSurrenderVoteScreen;
+class UCommonActivatableWidget;
+class UCommonActivatableWidgetContainerBase;
 
 // 증강 보류 버튼
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentDismissStateChanged);
+// 증강 화면의 실제 표시 상태 바뀌었음을 알려줌
+// HUD 힌트 표시 타이밍을 CommonUI 전환 완료와 맞추기위함
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnAugmentPresentationChanged);
 
 /**
  * Domination의 전투 HUD 준비와 매치 페이즈별 공통 화면 허용 여부를 담당한다.
@@ -37,6 +42,14 @@ public:
 	bool IsAugmentSelectDismissed() const;
 	UPROPERTY(BlueprintAssignable, Category = "Domination|UI")
 	FOnAugmentDismissStateChanged OnAugmentDismissStateChanged;
+	
+	// 논리적으로 원하는 증강 화면 표시 상태와
+	// Modal Stack이 실제로 표시 중인 상태가 일치하는지 확인한다.
+	UFUNCTION(BlueprintPure, Category = "Domination|UI")
+	bool IsAugmentPresentationSettled() const;
+	// Modal Stack의 실제 표시 대상이 바뀌었음을 알린다.
+	UPROPERTY(BlueprintAssignable, Category = "Domination|UI")
+	FOnAugmentPresentationChanged OnAugmentPresentationChanged;
 	
 protected:
 	virtual void BeginPlay() override;
@@ -76,7 +89,11 @@ private:
 	void HandleRewardRoundChanged(EGameTeam Team, int32 NewScore);
 	UFUNCTION()
 	void HandleAugmentDismissRequested();
+	void HandleModalDisplayedWidgetChanged(UCommonActivatableWidget* DisplayedWidget);
 	
+	void BindModalContainer();
+	void UnbindModalContainer();
+	UCommonActivatableWidgetContainerBase* GetModalContainer() const;
 	void SetAugmentSelectDismissed(bool bDismissed);
 
 	void RefreshDominationUI();
@@ -131,6 +148,7 @@ private:
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
+	TWeakObjectPtr<UCommonActivatableWidgetContainerBase> BoundModalContainer;
 	FTimerHandle InitializationRetryTimerHandle;
 	
 	// 현재 보류 중인지
