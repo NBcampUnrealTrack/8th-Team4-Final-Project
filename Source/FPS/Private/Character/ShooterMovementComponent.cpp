@@ -8,7 +8,7 @@ UShooterMovementComponent::UShooterMovementComponent()
 {
 	MaxWalkSpeed = WalkSpeed;
 	MaxWalkSpeedCrouched = CrouchSpeed;
-	CrouchedHalfHeight = CrouchHalfHeight;
+	SetCrouchedHalfHeight(CrouchHalfHeight);
 	NavAgentProps.bCanCrouch = true;
 }
 
@@ -18,7 +18,7 @@ void UShooterMovementComponent::BeginPlay()
 
 	MaxWalkSpeed = WalkSpeed;
 	MaxWalkSpeedCrouched = CrouchSpeed;
-	CrouchedHalfHeight = CrouchHalfHeight;
+	SetCrouchedHalfHeight(CrouchHalfHeight);
 	NavAgentProps.bCanCrouch = true;
 }
 
