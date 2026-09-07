@@ -5,10 +5,11 @@
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterSurrenderVoteScreen.generated.h"
 
-class UCommonButtonBase;
+class UBorder;
 class UPanelWidget;
 class UShooterSurrenderVoterRow;
 class UTextBlock;
+class UWidget;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteSubmitted, bool);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderMenuRequested);
@@ -34,8 +35,12 @@ protected:
 	virtual bool NativeOnHandleBackAction() override;
 
 private:
+	UFUNCTION()
 	void HandleApproveClicked();
+
+	UFUNCTION()
 	void HandleRejectClicked();
+
 	void RebuildVoterRows();
 	void RefreshVoterRows();
 	void RefreshApprovalSummary();
@@ -51,17 +56,26 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_RemainingTime;
 
+	// 기존 CommonUI WBP와 자동 생성 UMG WBP를 모두 허용한다.
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UCommonButtonBase> Btn_Approve;
+	TObjectPtr<UWidget> Btn_Approve;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UCommonButtonBase> Btn_Reject;
+	TObjectPtr<UWidget> Btn_Reject;
 
+	// 기존 수동 WBP와의 에셋 호환을 위해 필드는 유지한다.
+	// 현재 투표자 행은 이 화면이 직접 구성하므로 런타임 생성에 사용하지 않는다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Surrender")
 	TSubclassOf<UShooterSurrenderVoterRow> VoterRowClass;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UShooterSurrenderVoterRow>> VoterRows;
+	TArray<TObjectPtr<UTextBlock>> VoterNameTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> VoterStatusTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> VoterStatusBadges;
 
 	FSurrenderVoteState VoteState;
 	TArray<FString> VoterNames;
