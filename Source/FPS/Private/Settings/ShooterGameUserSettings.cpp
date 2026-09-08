@@ -1,6 +1,7 @@
 #include "Settings/ShooterGameUserSettings.h"
 
 #include "Engine/Engine.h"
+#include "Internationalization/Internationalization.h"
 
 namespace ShooterGameUserSettings
 {
@@ -44,6 +45,9 @@ void UShooterGameUserSettings::SetToDefaults()
 	VoiceVolume = 1.0f;
 	bMasterAudioMuted = false;
 	bVoiceChatEnabled = true;
+	Language = EShooterOptionsLanguage::Korean;
+	ExperienceProfile = EShooterExperienceProfile::Balanced120;
+	PerformanceTargetFPS = 120.0f;
 	OnAudioSettingsChanged.Broadcast();
 }
 
@@ -69,6 +73,7 @@ void UShooterGameUserSettings::ValidateSettings()
 	SoundEffectsVolume = FMath::Clamp(SoundEffectsVolume, 0.0f, 1.0f);
 	UserInterfaceVolume = FMath::Clamp(UserInterfaceVolume, 0.0f, 1.0f);
 	VoiceVolume = FMath::Clamp(VoiceVolume, 0.0f, 1.0f);
+	PerformanceTargetFPS = FMath::Clamp(PerformanceTargetFPS, 30.0f, 1000.0f);
 }
 
 void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)
@@ -103,6 +108,22 @@ void UShooterGameUserSettings::SetAimSensitivityMultiplier(const float Multiplie
 void UShooterGameUserSettings::SetInvertVerticalLookEnabled(const bool bEnabled)
 {
 	bInvertVerticalLook = bEnabled;
+}
+
+FVector2D UShooterGameUserSettings::ApplyLookSensitivity(
+	const FVector2D RawLookInput,
+	const bool bAiming) const
+{
+	FVector2D Result(
+		RawLookInput.X * MouseHorizontalSensitivity,
+		RawLookInput.Y * MouseVerticalSensitivity * (bInvertVerticalLook ? -1.0f : 1.0f));
+
+	if (bAiming)
+	{
+		Result *= AimSensitivityMultiplier;
+	}
+
+	return Result;
 }
 
 float UShooterGameUserSettings::GetAudioVolume(const EShooterAudioChannel Channel) const
@@ -183,4 +204,23 @@ void UShooterGameUserSettings::SetVoiceChatEnabled(const bool bEnabled)
 
 	bVoiceChatEnabled = bEnabled;
 	OnAudioSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetLanguage(const EShooterOptionsLanguage NewLanguage)
+{
+	if (Language == NewLanguage)
+	{
+		return;
+	}
+
+	Language = NewLanguage;
+	ApplyLanguageCulture();
+}
+
+void UShooterGameUserSettings::ApplyLanguageCulture() const
+{
+	const FString CultureName = Language == EShooterOptionsLanguage::English
+		? TEXT("en")
+		: TEXT("ko-KR");
+	FInternationalization::Get().SetCurrentCulture(CultureName);
 }

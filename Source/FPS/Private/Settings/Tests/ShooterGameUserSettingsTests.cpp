@@ -63,6 +63,60 @@ bool FShooterInputSettingsValuesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShooterLookSensitivityApplicationTest,
+	"FPS.Settings.UserSettings.LookSensitivityApplication",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShooterLookSensitivityApplicationTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UShooterGameUserSettings> Settings(
+		NewObject<UShooterGameUserSettings>(GetTransientPackage(), NAME_None, RF_Transient));
+	Settings->SetToDefaults();
+	Settings->SetMouseHorizontalSensitivity(2.0f);
+	Settings->SetMouseVerticalSensitivity(3.0f);
+	Settings->SetAimSensitivityMultiplier(0.5f);
+	Settings->SetInvertVerticalLookEnabled(true);
+
+	const FVector2D Hip = Settings->ApplyLookSensitivity(FVector2D(1.0f, 2.0f), false);
+	TestEqual(TEXT("Hip look applies horizontal sensitivity"), Hip.X, 2.0);
+	TestEqual(TEXT("Hip look applies vertical sensitivity and invert-Y"), Hip.Y, -6.0);
+
+	const FVector2D Ads = Settings->ApplyLookSensitivity(FVector2D(1.0f, 2.0f), true);
+	TestEqual(TEXT("ADS look applies the ADS multiplier to X"), Ads.X, 1.0);
+	TestEqual(TEXT("ADS look applies the ADS multiplier to Y"), Ads.Y, -3.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FShooterSmartTuningSettingsTest,
+	"FPS.Settings.UserSettings.SmartTuning",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FShooterSmartTuningSettingsTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UShooterGameUserSettings> Settings(
+		NewObject<UShooterGameUserSettings>(GetTransientPackage(), NAME_None, RF_Transient));
+	Settings->SetToDefaults();
+
+	TestEqual(TEXT("Default language is Korean"), Settings->GetLanguage(), EShooterOptionsLanguage::Korean);
+	TestEqual(TEXT("Default tuning profile is Balanced120"), Settings->GetExperienceProfile(), EShooterExperienceProfile::Balanced120);
+	TestEqual(TEXT("Default performance target is 120 FPS"), Settings->GetPerformanceTargetFPS(), 120.0f);
+
+	Settings->SetPerformanceTargetFPS(10.0f);
+	TestEqual(TEXT("Performance target clamps to 30 FPS"), Settings->GetPerformanceTargetFPS(), 30.0f);
+	Settings->SetPerformanceTargetFPS(2000.0f);
+	TestEqual(TEXT("Performance target clamps to 1000 FPS"), Settings->GetPerformanceTargetFPS(), 1000.0f);
+	Settings->SetPerformanceTargetFPS(240.0f);
+	TestEqual(TEXT("Performance target keeps supported in-range values"), Settings->GetPerformanceTargetFPS(), 240.0f);
+
+	Settings->SetExperienceProfile(EShooterExperienceProfile::Competitive144);
+	TestEqual(TEXT("Experience profile stores independently from target FPS"), Settings->GetExperienceProfile(), EShooterExperienceProfile::Competitive144);
+	TestEqual(TEXT("Changing profile does not overwrite target FPS"), Settings->GetPerformanceTargetFPS(), 240.0f);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FShooterAudioSettingsChannelsTest,
 	"FPS.Settings.UserSettings.AudioChannels",
@@ -176,6 +230,9 @@ bool FShooterSettingsDefaultsTest::RunTest(const FString& Parameters)
 	}
 	Settings->SetMasterAudioMuted(true);
 	Settings->SetVoiceChatEnabled(false);
+	Settings->SetLanguage(EShooterOptionsLanguage::English);
+	Settings->SetExperienceProfile(EShooterExperienceProfile::MaxQuality);
+	Settings->SetPerformanceTargetFPS(360.0f);
 
 	int32 ChangeCount = 0;
 	bool bListenerSawAudioDefaults = false;
@@ -190,6 +247,7 @@ bool FShooterSettingsDefaultsTest::RunTest(const FString& Parameters)
 	});
 
 	Settings->SetToDefaults();
+	Settings->ApplyLanguageCulture();
 	TestEqual(TEXT("Reset emits one notification for the complete audio state"), ChangeCount, 1);
 	TestTrue(TEXT("Listener sees all audio defaults after reset"), bListenerSawAudioDefaults);
 	TestTrue(TEXT("Reset enables dynamic crosshair"), Settings->IsDynamicCrosshairEnabled());
@@ -205,6 +263,9 @@ bool FShooterSettingsDefaultsTest::RunTest(const FString& Parameters)
 	}
 	TestFalse(TEXT("Reset unmutes master audio"), Settings->IsMasterAudioMuted());
 	TestTrue(TEXT("Reset enables voice chat"), Settings->IsVoiceChatEnabled());
+	TestEqual(TEXT("Reset restores Korean language"), Settings->GetLanguage(), EShooterOptionsLanguage::Korean);
+	TestEqual(TEXT("Reset restores Balanced120 profile"), Settings->GetExperienceProfile(), EShooterExperienceProfile::Balanced120);
+	TestEqual(TEXT("Reset restores 120 FPS performance target"), Settings->GetPerformanceTargetFPS(), 120.0f);
 
 	Settings->OnAudioSettingsChanged.Remove(Handle);
 	return true;

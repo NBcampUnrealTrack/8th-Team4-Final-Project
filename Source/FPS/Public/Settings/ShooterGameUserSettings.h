@@ -14,6 +14,22 @@ enum class EShooterAudioChannel : uint8
 	Voice UMETA(DisplayName = "Voice")
 };
 
+UENUM(BlueprintType)
+enum class EShooterOptionsLanguage : uint8
+{
+	Korean UMETA(DisplayName = "한국어"),
+	English UMETA(DisplayName = "English")
+};
+
+UENUM(BlueprintType)
+enum class EShooterExperienceProfile : uint8
+{
+	Visual60 UMETA(DisplayName = "Visual 60"),
+	Balanced120 UMETA(DisplayName = "Balanced 120"),
+	Competitive144 UMETA(DisplayName = "Competitive 144"),
+	MaxQuality UMETA(DisplayName = "Max Quality")
+};
+
 DECLARE_MULTICAST_DELEGATE(FOnShooterAudioSettingsChanged);
 
 /** Setters change session values; the caller chooses when to SaveSettings. */
@@ -62,6 +78,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
 	void SetInvertVerticalLookEnabled(bool bEnabled);
 
+	/** Applies the saved X/Y sensitivity, invert-Y and ADS multiplier in one place. */
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
+	FVector2D ApplyLookSensitivity(FVector2D RawLookInput, bool bAiming) const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Audio")
 	float GetAudioVolume(EShooterAudioChannel Channel) const;
 
@@ -79,6 +99,27 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Audio")
 	void SetVoiceChatEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|General")
+	EShooterOptionsLanguage GetLanguage() const { return Language; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|General")
+	void SetLanguage(EShooterOptionsLanguage NewLanguage);
+
+	/** Applies the selected culture immediately. */
+	void ApplyLanguageCulture() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Smart Tuning")
+	EShooterExperienceProfile GetExperienceProfile() const { return ExperienceProfile; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Smart Tuning")
+	void SetExperienceProfile(EShooterExperienceProfile NewProfile) { ExperienceProfile = NewProfile; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Smart Tuning")
+	float GetPerformanceTargetFPS() const { return PerformanceTargetFPS; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Smart Tuning")
+	void SetPerformanceTargetFPS(float TargetFPS) { PerformanceTargetFPS = FMath::Clamp(TargetFPS, 30.0f, 1000.0f); }
 
 protected:
 	UPROPERTY(Config)
@@ -116,4 +157,14 @@ protected:
 
 	UPROPERTY(Config)
 	bool bVoiceChatEnabled = true;
+
+
+	UPROPERTY(Config)
+	EShooterOptionsLanguage Language = EShooterOptionsLanguage::Korean;
+
+	UPROPERTY(Config)
+	EShooterExperienceProfile ExperienceProfile = EShooterExperienceProfile::Balanced120;
+
+	UPROPERTY(Config, meta = (ClampMin = "30.0", ClampMax = "1000.0"))
+	float PerformanceTargetFPS = 120.0f;
 };
