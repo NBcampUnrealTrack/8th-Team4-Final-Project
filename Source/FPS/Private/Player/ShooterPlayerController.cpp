@@ -67,6 +67,11 @@ void AShooterPlayerController::BeginPlay()
 		return;
 	}
 
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->ApplyLanguageCulture();
+	}
+
 	InitializeAudioSettings();
 
 	if (GetTeamMatchUIInitComponent())
@@ -1125,19 +1130,9 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 
 		if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 		{
-			LookAxisVector.X *= Settings->GetMouseHorizontalSensitivity();
-			LookAxisVector.Y *= Settings->GetMouseVerticalSensitivity();
-
-			if (Settings->IsInvertVerticalLookEnabled())
-			{
-				LookAxisVector.Y *= -1.f;
-			}
-
 			const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
-			if (CombatComponent && CombatComponent->bAiming)
-			{
-				LookAxisVector *= Settings->GetAimSensitivityMultiplier();
-			}
+			const bool bAiming = CombatComponent && CombatComponent->bAiming;
+			LookAxisVector = Settings->ApplyLookSensitivity(LookAxisVector, bAiming);
 		}
 
 		ShooterCharacter->HandleLookInput(LookAxisVector);

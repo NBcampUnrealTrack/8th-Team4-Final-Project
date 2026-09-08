@@ -13,6 +13,7 @@ class UTextBlock;
 class UWidgetSwitcher;
 class UTextureRenderTarget2D;
 class USceneCaptureComponent2D;
+class UShooterOptionsPerformanceSubsystem;
 
 
 /**
@@ -209,6 +210,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Audio")
 	void SetVoiceChatEnabled(bool bEnabled);
 
+	// ----- Options / Language -----
+	UFUNCTION(BlueprintPure, Category = "UI|Options|General")
+	EShooterOptionsLanguage GetLanguage() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|General")
+	void SetLanguage(EShooterOptionsLanguage Language);
+
 	// 현재 해상도/창 모드는 유지하고 엔진 Video/Graphics 옵션을 초기화한다.
 	UFUNCTION(BlueprintCallable, Category = "UI|Options")
 	void ResetEngineSettingsToDefaults();
@@ -232,8 +240,10 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnActivated() override;
+	virtual void NativeOnDeactivated() override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 
@@ -254,15 +264,34 @@ private:
 	void StepResolution(int32 Delta);
 	void StepWindowMode(int32 Delta);
 	void StepFrameRate(int32 Delta);
+	void StepPerformanceTargetFPS(int32 Delta);
 	void StepOverallQuality(int32 Delta);
 	void StepQuality(EShooterScalabilitySetting Setting, int32 Delta);
 	void SetGeneratedText(FName WidgetName, const FText& Text) const;
 	void SetGeneratedToggleVisual(FName ButtonName, FName TextName, bool bEnabled) const;
+	void ApplyGeneratedLanguage();
+	FText Localize(const TCHAR* Korean, const TCHAR* English) const;
+
+	// Smart tuning / visual lab
+	void RefreshGeneratedLab();
+	void RefreshGeneratedAdvisor();
+	void CaptureGeneratedBaseline();
+	void ApplyExperienceProfile(EShooterExperienceProfile Profile);
+	void ApplyAdvisorRecommendation();
+	FText BuildGameplayImpactText(FName Option) const;
+	FText BuildPerformanceCostText(FName Option) const;
+	FText BuildOptionRecommendationText(FName Option) const;
+	FText BuildAdvisorRecommendationText() const;
+	int32 GetCurrentQualityForOption(FName Option) const;
+	UShooterOptionsPerformanceSubsystem* GetPerformanceSubsystem() const;
+	void InvalidatePerformanceSamples();
 
 	UFUNCTION() void HandleSideGraphics();
 	UFUNCTION() void HandleSideDisplay();
 	UFUNCTION() void HandleSideControls();
 	UFUNCTION() void HandleSideAudio();
+	UFUNCTION() void HandleSideSettings();
+	UFUNCTION() void HandleSideSmartTuning();
 	UFUNCTION() void HandleSave();
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleReset();
@@ -277,6 +306,8 @@ private:
 	UFUNCTION() void HandleWindowModeWindowed();
 	UFUNCTION() void HandleFrameRatePrev();
 	UFUNCTION() void HandleFrameRateNext();
+	UFUNCTION() void HandleTargetFPSPrev();
+	UFUNCTION() void HandleTargetFPSNext();
 	UFUNCTION() void HandleOverallPrev();
 	UFUNCTION() void HandleOverallNext();
 	UFUNCTION() void HandleViewDistancePrev();
@@ -315,6 +346,7 @@ private:
 	UFUNCTION() void HandleInfoEffects();
 	UFUNCTION() void HandleInfoFoliage();
 	UFUNCTION() void HandleInfoShading();
+	UFUNCTION() void HandleInfoLanguage();
 
 	UFUNCTION() void HandleVSyncToggle();
 	UFUNCTION() void HandleDynamicResolutionToggle();
@@ -332,6 +364,14 @@ private:
 	UFUNCTION() void HandleSfxVolumeChanged(float Value);
 	UFUNCTION() void HandleUiVolumeChanged(float Value);
 	UFUNCTION() void HandleVoiceVolumeChanged(float Value);
+	UFUNCTION() void HandleLanguagePrev();
+	UFUNCTION() void HandleLanguageNext();
+	UFUNCTION() void HandleCaptureBaseline();
+	UFUNCTION() void HandleProfileVisual60();
+	UFUNCTION() void HandleProfileBalanced120();
+	UFUNCTION() void HandleProfileCompetitive144();
+	UFUNCTION() void HandleProfileMaxQuality();
+	UFUNCTION() void HandleApplyAdvisorRecommendation();
 
 	UShooterGameUserSettings* GetGameUserSettings() const;
 	void RevertVideoModeInternal(bool bNotifySettingsChanged);
@@ -360,6 +400,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> GeneratedPreviewRenderTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> GeneratedBaselineRenderTarget;
+
+	bool bGeneratedLabHasBaseline = false;
+	float GeneratedLabBaselineFrameTimeMs = 0.0f;
+	float GeneratedLabRollingFrameTimeMs = 0.0f;
+	FName GeneratedLabBaselineOption = NAME_None;
+	FText GeneratedLabBaselineValue;
+
+	float SessionAverageFPS = 0.0f;
+	float SessionOnePercentLowFPS = 0.0f;
+	float SessionTargetMissPercent = 0.0f;
+	int32 SessionSampleCount = 0;
+	bool bSessionRecommendationApplied = false;
 
 	TWeakObjectPtr<USceneCaptureComponent2D> GeneratedPreviewCaptureComponent;
 	bool bGeneratedPreviewOwnsRenderTarget = false;

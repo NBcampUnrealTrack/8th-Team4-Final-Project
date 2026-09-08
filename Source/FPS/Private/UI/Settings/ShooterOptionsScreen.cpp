@@ -20,8 +20,34 @@
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Settings/ShooterGameUserSettings.h"
+#include "UI/Settings/ShooterOptionsPerformanceSubsystem.h"
 #include "UnrealClient.h"
 #include "UnrealEngine.h"
+
+namespace
+{
+	static constexpr float SmartTargetFPSChoices[] =
+	{
+		30.0f, 60.0f, 75.0f, 90.0f, 100.0f, 120.0f, 144.0f, 165.0f,
+		180.0f, 200.0f, 240.0f, 300.0f, 360.0f, 480.0f, 500.0f, 540.0f, 600.0f, 1000.0f
+	};
+
+	static int32 FindNearestSmartTargetIndex(const float TargetFPS)
+	{
+		int32 BestIndex = 0;
+		float BestDistance = TNumericLimits<float>::Max();
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(SmartTargetFPSChoices); ++Index)
+		{
+			const float Distance = FMath::Abs(TargetFPS - SmartTargetFPSChoices[Index]);
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				BestIndex = Index;
+			}
+		}
+		return BestIndex;
+	}
+}
 
 UShooterOptionsScreen::UShooterOptionsScreen()
 {
@@ -49,6 +75,8 @@ void UShooterOptionsScreen::RequestClose()
 
 void UShooterOptionsScreen::SaveOptions()
 {
+	// Never persist a temporary resolution/window preview.
+	RevertVideoModeInternal(true);
 	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
 	{
 		Settings->SaveSettings();
@@ -96,10 +124,38 @@ void UShooterOptionsScreen::NativeOnActivated()
 			Settings->SetResolutionScaleValueEx(FMath::Clamp(DefaultScale, MinScale, MaxScale));
 			Settings->ApplyNonResolutionSettings();
 		}
+
+		Settings->ApplyLanguageCulture();
+	}
+
+	// Snapshot the gameplay session before the menu's own frame cost contaminates it.
+	bSessionRecommendationApplied = false;
+	if (UShooterOptionsPerformanceSubsystem* Performance = GetPerformanceSubsystem())
+	{
+		const UShooterGameUserSettings* Settings = GetGameUserSettings();
+		const float TargetFPS = Settings ? Settings->GetPerformanceTargetFPS() : 120.0f;
+		SessionAverageFPS = Performance->GetAverageFPS();
+		SessionOnePercentLowFPS = Performance->GetOnePercentLowFPS();
+		SessionTargetMissPercent = Performance->GetTargetMissPercent(TargetFPS);
+		SessionSampleCount = Performance->GetSampleCount();
+		Performance->SetSamplingPaused(true);
 	}
 
 	Super::NativeOnActivated();
+	GeneratedLabRollingFrameTimeMs = 0.0f;
+	ApplyGeneratedLanguage();
 	RefreshGeneratedUI();
+}
+
+void UShooterOptionsScreen::NativeOnDeactivated()
+{
+	RevertVideoModeInternal(false);
+	ReleaseGeneratedPreviewCapture();
+	if (UShooterOptionsPerformanceSubsystem* Performance = GetPerformanceSubsystem())
+	{
+		Performance->SetSamplingPaused(false);
+	}
+	Super::NativeOnDeactivated();
 }
 
 bool UShooterOptionsScreen::NativeOnHandleBackAction()
@@ -112,7 +168,29 @@ void UShooterOptionsScreen::NativeDestruct()
 {
 	RevertVideoModeInternal(false);
 	ReleaseGeneratedPreviewCapture();
+	if (UShooterOptionsPerformanceSubsystem* Performance = GetPerformanceSubsystem())
+	{
+		Performance->SetSamplingPaused(false);
+	}
 	Super::NativeDestruct();
+}
+
+void UShooterOptionsScreen::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (FMath::IsFinite(InDeltaTime) && InDeltaTime > 0.0f && InDeltaTime < 0.5f)
+	{
+		const float FrameMs = InDeltaTime * 1000.0f;
+		GeneratedLabRollingFrameTimeMs = GeneratedLabRollingFrameTimeMs <= 0.0f
+			? FrameMs
+			: FMath::Lerp(GeneratedLabRollingFrameTimeMs, FrameMs, 0.08f);
+	}
+
+	if (ActiveGeneratedPage == 0)
+	{
+		RefreshGeneratedLab();
+	}
 }
 
 TArray<FIntPoint> UShooterOptionsScreen::GetSupportedResolutions() const
@@ -248,6 +326,7 @@ void UShooterOptionsScreen::ConfirmVideoMode()
 	Settings->SetFullscreenMode(ToEngineWindowMode(PendingWindowMode));
 	Settings->ApplyResolutionSettings(false);
 	Settings->ConfirmVideoMode();
+	InvalidatePerformanceSamples();
 
 	ClearVideoModeConfirmationTimeout();
 	bVideoModeConfirmationPending = false;
@@ -421,6 +500,7 @@ void UShooterOptionsScreen::SetResolutionScalePercent(const float Percent)
 	GetResolutionScaleRange(Min, Max);
 	Settings->SetResolutionScaleValueEx(FMath::Clamp(Percent, Min, Max));
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -440,6 +520,7 @@ void UShooterOptionsScreen::SetVSyncEnabled(const bool bEnabled)
 
 	Settings->SetVSyncEnabled(bEnabled);
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -460,6 +541,7 @@ void UShooterOptionsScreen::SetFrameRateLimit(const float FramesPerSecond)
 	// UGameUserSettings에서 0은 제한 없음이다.
 	Settings->SetFrameRateLimit(FMath::Max(0.0f, FramesPerSecond));
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -479,6 +561,7 @@ void UShooterOptionsScreen::SetDynamicResolutionEnabled(const bool bEnabled)
 
 	Settings->SetDynamicResolutionEnabled(bEnabled);
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -498,6 +581,7 @@ void UShooterOptionsScreen::SetOverallQualityLevel(const int32 QualityLevel)
 
 	Settings->SetOverallScalabilityLevel(FMath::Clamp(QualityLevel, 0, 4));
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -586,6 +670,7 @@ void UShooterOptionsScreen::SetQualityLevel(
 	}
 
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -599,6 +684,7 @@ void UShooterOptionsScreen::RunHardwareBenchmarkAndApply(const int32 WorkScale)
 
 	Settings->RunHardwareBenchmark(FMath::Max(1, WorkScale), 1.0f, 1.0f);
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -748,6 +834,25 @@ void UShooterOptionsScreen::SetVoiceChatEnabled(const bool bEnabled)
 	OnSettingsChanged.Broadcast();
 }
 
+EShooterOptionsLanguage UShooterOptionsScreen::GetLanguage() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return IsValid(Settings) ? Settings->GetLanguage() : EShooterOptionsLanguage::Korean;
+}
+
+void UShooterOptionsScreen::SetLanguage(const EShooterOptionsLanguage Language)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	Settings->SetLanguage(Language);
+	ApplyGeneratedLanguage();
+	OnSettingsChanged.Broadcast();
+}
+
 void UShooterOptionsScreen::ResetEngineSettingsToDefaults()
 {
 	UGameUserSettings* Settings = GetGameUserSettings();
@@ -776,6 +881,7 @@ void UShooterOptionsScreen::ResetEngineSettingsToDefaults()
 	}
 	Settings->SetResolutionScaleValueEx(FMath::Clamp(DefaultScale, ScaleMin, ScaleMax));
 	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -806,6 +912,9 @@ void UShooterOptionsScreen::ResetAllSettingsToDefaults()
 	}
 	Settings->SetResolutionScaleValueEx(FMath::Clamp(DefaultScale, ScaleMin, ScaleMax));
 	Settings->ApplyNonResolutionSettings();
+	Settings->ApplyLanguageCulture();
+	ApplyGeneratedLanguage();
+	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -817,14 +926,17 @@ FText UShooterOptionsScreen::FormatResolution(const FIntPoint Resolution)
 FText UShooterOptionsScreen::GetWindowModeDisplayText(
 	const EShooterWindowMode WindowMode)
 {
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	const bool bEnglish = Settings && Settings->GetLanguage() == EShooterOptionsLanguage::English;
+
 	switch (WindowMode)
 	{
 	case EShooterWindowMode::Fullscreen:
 	case EShooterWindowMode::WindowedFullscreen:
-		return NSLOCTEXT("ShooterOptions", "FullscreenSimple", "전체 화면");
+		return FText::FromString(bEnglish ? TEXT("Fullscreen") : TEXT("전체 화면"));
 	case EShooterWindowMode::Windowed:
 	default:
-		return NSLOCTEXT("ShooterOptions", "WindowedSimple", "창 모드");
+		return FText::FromString(bEnglish ? TEXT("Windowed") : TEXT("창 모드"));
 	}
 }
 
@@ -887,6 +999,8 @@ void UShooterOptionsScreen::BindGeneratedControls()
 	BIND_CLICK("Btn_Side_Display", HandleSideDisplay);
 	BIND_CLICK("Btn_Side_Controls", HandleSideControls);
 	BIND_CLICK("Btn_Side_Audio", HandleSideAudio);
+	BIND_CLICK("Btn_Side_Settings", HandleSideSettings);
+	BIND_CLICK("Btn_Side_SmartTuning", HandleSideSmartTuning);
 	BIND_CLICK("Btn_Save", HandleSave);
 	BIND_CLICK("Btn_Back", HandleBack);
 	BIND_CLICK("Btn_Reset", HandleReset);
@@ -900,6 +1014,8 @@ void UShooterOptionsScreen::BindGeneratedControls()
 	BIND_CLICK("Btn_WindowModeWindowed", HandleWindowModeWindowed);
 	BIND_CLICK("Btn_FrameRatePrev", HandleFrameRatePrev);
 	BIND_CLICK("Btn_FrameRateNext", HandleFrameRateNext);
+	BIND_CLICK("Btn_TargetFPSPrev", HandleTargetFPSPrev);
+	BIND_CLICK("Btn_TargetFPSNext", HandleTargetFPSNext);
 	BIND_CLICK("Btn_OverallPrev", HandleOverallPrev);
 	BIND_CLICK("Btn_OverallNext", HandleOverallNext);
 	BIND_CLICK("Btn_ViewDistancePrev", HandleViewDistancePrev);
@@ -922,6 +1038,14 @@ void UShooterOptionsScreen::BindGeneratedControls()
 	BIND_CLICK("Btn_FoliageNext", HandleFoliageNext);
 	BIND_CLICK("Btn_ShadingPrev", HandleShadingPrev);
 	BIND_CLICK("Btn_ShadingNext", HandleShadingNext);
+	BIND_CLICK("Btn_LanguagePrev", HandleLanguagePrev);
+	BIND_CLICK("Btn_LanguageNext", HandleLanguageNext);
+	BIND_CLICK("Btn_LabCaptureBaseline", HandleCaptureBaseline);
+	BIND_CLICK("Btn_Profile_Visual60", HandleProfileVisual60);
+	BIND_CLICK("Btn_Profile_Balanced120", HandleProfileBalanced120);
+	BIND_CLICK("Btn_Profile_Competitive144", HandleProfileCompetitive144);
+	BIND_CLICK("Btn_Profile_MaxQuality", HandleProfileMaxQuality);
+	BIND_CLICK("Btn_ApplyAdvisorRecommendation", HandleApplyAdvisorRecommendation);
 	BIND_FOCUS("Btn_Info_Resolution", HandleInfoResolution);
 	BIND_FOCUS("Btn_Info_WindowMode", HandleInfoWindowMode);
 	BIND_FOCUS("Btn_Info_FrameRate", HandleInfoFrameRate);
@@ -936,6 +1060,7 @@ void UShooterOptionsScreen::BindGeneratedControls()
 	BIND_FOCUS("Btn_Info_Effects", HandleInfoEffects);
 	BIND_FOCUS("Btn_Info_Foliage", HandleInfoFoliage);
 	BIND_FOCUS("Btn_Info_Shading", HandleInfoShading);
+	BIND_FOCUS("Btn_Info_Language", HandleInfoLanguage);
 
 	BIND_CLICK("Btn_VSyncToggle", HandleVSyncToggle);
 	BIND_CLICK("Btn_DynamicResolutionToggle", HandleDynamicResolutionToggle);
@@ -969,6 +1094,117 @@ void UShooterOptionsScreen::SetGeneratedText(const FName WidgetName, const FText
 	}
 }
 
+
+FText UShooterOptionsScreen::Localize(const TCHAR* Korean, const TCHAR* English) const
+{
+	return FText::FromString(GetLanguage() == EShooterOptionsLanguage::English ? English : Korean);
+}
+
+void UShooterOptionsScreen::ApplyGeneratedLanguage()
+{
+	const bool bEnglish = GetLanguage() == EShooterOptionsLanguage::English;
+	const auto Set = [this, bEnglish](const TCHAR* Name, const TCHAR* Korean, const TCHAR* English)
+	{
+		SetGeneratedText(FName(Name), FText::FromString(bEnglish ? English : Korean));
+	};
+
+	Set(TEXT("TXT_HeaderEyebrow"), TEXT("GAME SETTINGS"), TEXT("GAME SETTINGS"));
+	Set(TEXT("TXT_HeaderTitle"), TEXT("게임 옵션"), TEXT("Game Options"));
+
+	Set(TEXT("TXT_SideSection_Display"), TEXT("화면"), TEXT("DISPLAY"));
+	Set(TEXT("TXT_SideSection_Gameplay"), TEXT("게임플레이"), TEXT("GAMEPLAY"));
+	Set(TEXT("TXT_SideSection_Audio"), TEXT("오디오"), TEXT("AUDIO"));
+	Set(TEXT("TXT_SideSection_Options"), TEXT("설정"), TEXT("OPTIONS"));
+	Set(TEXT("TXT_SideSection_Smart"), TEXT("스마트 도구"), TEXT("SMART TOOLS"));
+
+	Set(TEXT("TXT_Btn_Side_Graphics"), TEXT("그래픽 설정"), TEXT("Graphics"));
+	Set(TEXT("TXT_Btn_Side_Display"), TEXT("화면 설정"), TEXT("Display"));
+	Set(TEXT("TXT_Btn_Side_Controls"), TEXT("조작 설정"), TEXT("Controls"));
+	Set(TEXT("TXT_Btn_Side_Audio"), TEXT("오디오 설정"), TEXT("Audio"));
+	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("옵션 설정"), TEXT("Options"));
+	Set(TEXT("TXT_Btn_Side_SmartTuning"), TEXT("스마트 튜닝"), TEXT("Smart Tuning"));
+
+	Set(TEXT("TXT_Section_GraphicsPreset"), TEXT("GRAPHICS PRESET"), TEXT("GRAPHICS PRESET"));
+	Set(TEXT("TXT_Section_Quality"), TEXT("QUALITY"), TEXT("QUALITY"));
+	Set(TEXT("TXT_Section_Display"), TEXT("DISPLAY"), TEXT("DISPLAY"));
+	Set(TEXT("TXT_Section_Look"), TEXT("LOOK"), TEXT("LOOK"));
+	Set(TEXT("TXT_Section_Gameplay"), TEXT("GAMEPLAY"), TEXT("GAMEPLAY"));
+	Set(TEXT("TXT_Section_Volume"), TEXT("VOLUME"), TEXT("VOLUME"));
+	Set(TEXT("TXT_Section_Voice"), TEXT("VOICE"), TEXT("VOICE"));
+	Set(TEXT("TXT_Section_Options"), TEXT("OPTIONS"), TEXT("OPTIONS"));
+	Set(TEXT("TXT_Section_TargetExperience"), TEXT("TARGET EXPERIENCE"), TEXT("TARGET EXPERIENCE"));
+	Set(TEXT("TXT_Section_SessionAdvisor"), TEXT("SESSION ADVISOR"), TEXT("SESSION ADVISOR"));
+	Set(TEXT("TXT_Label_TargetFPS"), TEXT("목표 프레임"), TEXT("Target FPS"));
+	Set(TEXT("TXT_TargetFPSHelp"), TEXT("목표 프레임은 성능 분석 기준입니다. 화면 설정의 FPS 제한과는 별개입니다."), TEXT("Target FPS is the advisor's analysis goal. It is independent from the display frame-rate limit."));
+
+	Set(TEXT("TXT_Label_Overall"), TEXT("전체 품질"), TEXT("Overall Quality"));
+	Set(TEXT("TXT_Label_ViewDistance"), TEXT("시야 거리"), TEXT("View Distance"));
+	Set(TEXT("TXT_Label_AntiAliasing"), TEXT("안티앨리어싱"), TEXT("Anti-Aliasing"));
+	Set(TEXT("TXT_Label_Shadow"), TEXT("그림자 품질"), TEXT("Shadow Quality"));
+	Set(TEXT("TXT_Label_GlobalIllumination"), TEXT("글로벌 일루미네이션"), TEXT("Global Illumination"));
+	Set(TEXT("TXT_Label_Reflection"), TEXT("반사 품질"), TEXT("Reflection Quality"));
+	Set(TEXT("TXT_Label_PostProcessing"), TEXT("포스트 프로세싱"), TEXT("Post Processing"));
+	Set(TEXT("TXT_Label_Texture"), TEXT("텍스처 품질"), TEXT("Texture Quality"));
+	Set(TEXT("TXT_Label_Effects"), TEXT("이펙트 품질"), TEXT("Effects Quality"));
+	Set(TEXT("TXT_Label_Foliage"), TEXT("폴리지 품질"), TEXT("Foliage Quality"));
+	Set(TEXT("TXT_Label_Shading"), TEXT("셰이딩 품질"), TEXT("Shading Quality"));
+
+	Set(TEXT("TXT_Label_Resolution"), TEXT("해상도"), TEXT("Resolution"));
+	Set(TEXT("TXT_Label_WindowMode"), TEXT("화면 모드"), TEXT("Window Mode"));
+	Set(TEXT("TXT_Label_ResolutionScale"), TEXT("해상도 스케일"), TEXT("Resolution Scale"));
+	Set(TEXT("TXT_Label_VSync"), TEXT("수직 동기화"), TEXT("VSync"));
+	Set(TEXT("TXT_Label_FrameRate"), TEXT("FPS 제한"), TEXT("Frame Rate Limit"));
+	Set(TEXT("TXT_Label_DynamicResolution"), TEXT("다이내믹 레졸루션"), TEXT("Dynamic Resolution"));
+
+	Set(TEXT("TXT_Label_HorizontalSensitivity"), TEXT("수평 감도"), TEXT("Horizontal Sensitivity"));
+	Set(TEXT("TXT_Label_VerticalSensitivity"), TEXT("수직 감도"), TEXT("Vertical Sensitivity"));
+	Set(TEXT("TXT_Label_AimSensitivity"), TEXT("ADS 감도 배율"), TEXT("ADS Sensitivity Multiplier"));
+	Set(TEXT("TXT_Label_InvertY"), TEXT("Y축 반전"), TEXT("Invert Y"));
+	Set(TEXT("TXT_Label_DynamicCrosshair"), TEXT("동적 크로스헤어"), TEXT("Dynamic Crosshair"));
+
+	Set(TEXT("TXT_Label_MasterVolume"), TEXT("마스터"), TEXT("Master"));
+	Set(TEXT("TXT_Label_MusicVolume"), TEXT("음악"), TEXT("Music"));
+	Set(TEXT("TXT_Label_SfxVolume"), TEXT("효과음"), TEXT("SFX"));
+	Set(TEXT("TXT_Label_UiVolume"), TEXT("UI"), TEXT("UI"));
+	Set(TEXT("TXT_Label_VoiceVolume"), TEXT("음성"), TEXT("Voice"));
+	Set(TEXT("TXT_Label_MasterMute"), TEXT("전체 음소거"), TEXT("Mute All"));
+	Set(TEXT("TXT_Label_VoiceChat"), TEXT("음성 채팅"), TEXT("Voice Chat"));
+	Set(TEXT("TXT_Label_Language"), TEXT("언어"), TEXT("Language"));
+
+	Set(TEXT("TXT_Btn_WindowModeFullscreen"), TEXT("전체 화면"), TEXT("Fullscreen"));
+	Set(TEXT("TXT_Btn_WindowModeWindowed"), TEXT("창 모드"), TEXT("Windowed"));
+
+	Set(TEXT("TXT_Btn_Reset"), TEXT("초기화"), TEXT("Reset"));
+	Set(TEXT("TXT_Btn_Save"), TEXT("저장"), TEXT("Save"));
+	Set(TEXT("TXT_Btn_Back"), TEXT("뒤로"), TEXT("Back"));
+	Set(TEXT("TXT_Btn_VideoKeep"), TEXT("유지"), TEXT("Keep"));
+	Set(TEXT("TXT_Btn_VideoRevert"), TEXT("취소"), TEXT("Revert"));
+
+	Set(TEXT("TXT_VideoConfirmTitle"), TEXT("변경한 화면 설정을 유지하시겠습니까?"), TEXT("Keep these display settings?"));
+	Set(TEXT("TXT_PreviewEyebrow"), TEXT("VISUAL PERFORMANCE LAB"), TEXT("VISUAL PERFORMANCE LAB"));
+	Set(TEXT("TXT_LabBaselineLabel"), TEXT("기준 화면"), TEXT("BASELINE"));
+	Set(TEXT("TXT_LabCurrentLabel"), TEXT("현재 화면"), TEXT("CURRENT"));
+	Set(TEXT("TXT_BaselineStatus"), TEXT("기준 화면을 캡처하세요"), TEXT("Capture a baseline"));
+	Set(TEXT("TXT_Btn_LabCaptureBaseline"), TEXT("기준 캡처"), TEXT("Capture Baseline"));
+	Set(TEXT("TXT_ExplainGameplayTitle"), TEXT("게임플레이 영향"), TEXT("GAMEPLAY IMPACT"));
+	Set(TEXT("TXT_ExplainPerformanceTitle"), TEXT("성능 비용"), TEXT("PERFORMANCE COST"));
+	Set(TEXT("TXT_ExplainRecommendationTitle"), TEXT("추천"), TEXT("RECOMMENDATION"));
+	Set(TEXT("TXT_AdvisorTargetLabel"), TEXT("목표 프레임"), TEXT("Target FPS"));
+	Set(TEXT("TXT_AdvisorAverageLabel"), TEXT("지난 세션 평균"), TEXT("Session Average"));
+	Set(TEXT("TXT_AdvisorOneLowLabel"), TEXT("1% Low"), TEXT("1% Low"));
+	Set(TEXT("TXT_AdvisorMissLabel"), TEXT("목표 미달 비율"), TEXT("Target Miss"));
+	Set(TEXT("TXT_Label_Btn_Profile_Visual60"), TEXT("비주얼 우선 · 화질 중심"), TEXT("Visual Priority · Fidelity First"));
+	Set(TEXT("TXT_Label_Btn_Profile_Balanced120"), TEXT("균형 · 화질/성능 균형"), TEXT("Balanced · Quality / Performance"));
+	Set(TEXT("TXT_Label_Btn_Profile_Competitive144"), TEXT("경쟁 · 가시성/프레임 우선"), TEXT("Competitive · Clarity / FPS First"));
+	Set(TEXT("TXT_Label_Btn_Profile_MaxQuality"), TEXT("최고 화질 · 최대 품질"), TEXT("Max Quality · Maximum Fidelity"));
+	Set(TEXT("TXT_Label_Btn_ApplyAdvisorRecommendation"), TEXT("세션 추천"), TEXT("Session Recommendation"));
+	Set(TEXT("TXT_Btn_Profile_Visual60"), TEXT("프로필 적용"), TEXT("Apply Profile"));
+	Set(TEXT("TXT_Btn_Profile_Balanced120"), TEXT("프로필 적용"), TEXT("Apply Profile"));
+	Set(TEXT("TXT_Btn_Profile_Competitive144"), TEXT("프로필 적용"), TEXT("Apply Profile"));
+	Set(TEXT("TXT_Btn_Profile_MaxQuality"), TEXT("프로필 적용"), TEXT("Apply Profile"));
+	Set(TEXT("TXT_Btn_ApplyAdvisorRecommendation"), TEXT("추천 적용"), TEXT("Apply Recommendation"));
+	Set(TEXT("TXT_ContextEyebrow"), TEXT("SETTING INFO"), TEXT("SETTING INFO"));
+}
 
 void UShooterOptionsScreen::SetGeneratedButtonTextColor(
 	const FName ButtonName,
@@ -1040,8 +1276,8 @@ void UShooterOptionsScreen::SetGeneratedToggleVisual(
 	}
 
 	SetGeneratedText(TextName, bEnabled
-		? NSLOCTEXT("ShooterOptions", "GeneratedOn", "켜짐")
-		: NSLOCTEXT("ShooterOptions", "GeneratedOff", "꺼짐"));
+		? Localize(TEXT("켜짐"), TEXT("ON"))
+		: Localize(TEXT("꺼짐"), TEXT("OFF")));
 }
 
 void UShooterOptionsScreen::RefreshGeneratedUI()
@@ -1052,6 +1288,7 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 	}
 
 	bRefreshingGeneratedUI = true;
+	ApplyGeneratedLanguage();
 
 	const FText ResolutionText = FormatResolution(GetScreenResolution());
 	const FText FrameLimitText = GetFrameRateLimitDisplayText(GetFrameRateLimit());
@@ -1061,11 +1298,20 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 	SetGeneratedText(TEXT("TXT_WindowModeValue"), GetWindowModeDisplayText(GetWindowMode()));
 	SetGeneratedText(TEXT("TXT_FrameRateValue"), FrameLimitText);
 	SetGeneratedText(TEXT("TXT_OverallValue"), OverallText);
+	SetGeneratedText(TEXT("TXT_LanguageValue"), GetLanguage() == EShooterOptionsLanguage::English ? FText::FromString(TEXT("English")) : FText::FromString(TEXT("한국어")));
+	SetGeneratedChoiceSegments(TEXT("Language"), GetLanguage() == EShooterOptionsLanguage::English ? 1 : 0, 2);
 
 	// Header is intentionally not navigation; it summarizes the current runtime state.
 	SetGeneratedText(TEXT("TXT_HeaderStatusValue_Display"), ResolutionText);
 	SetGeneratedText(TEXT("TXT_HeaderStatusValue_Quality"), OverallText);
 	SetGeneratedText(TEXT("TXT_HeaderStatusValue_FPS"), FrameLimitText);
+	if (const UShooterGameUserSettings* LocalSettings = GetGameUserSettings())
+	{
+		const float TargetFPS = LocalSettings->GetPerformanceTargetFPS();
+		SetGeneratedText(TEXT("TXT_HeaderStatusValue_Target"), FText::FromString(FString::Printf(TEXT("%.0f FPS"), TargetFPS)));
+		SetGeneratedText(TEXT("TXT_TargetFPSValue"), FText::FromString(FString::Printf(TEXT("%.0f FPS"), TargetFPS)));
+		SetGeneratedChoiceSegments(TEXT("TargetFPS"), FindNearestSmartTargetIndex(TargetFPS), UE_ARRAY_COUNT(SmartTargetFPSChoices));
+	}
 
 
 	// Show how many discrete choices each selector has and where the current value sits.
@@ -1182,22 +1428,23 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 	}
 	SetGeneratedText(
 		TEXT("TXT_VideoConfirmCountdown"),
-		FText::FromString(FString::Printf(TEXT("%.0f초 후 이전 설정으로 복구됩니다."), GetVideoModeConfirmationTimeoutSeconds())));
+		FText::Format(Localize(TEXT("{0}초 후 이전 설정으로 복구됩니다."), TEXT("Previous settings will be restored in {0} seconds.")), FText::AsNumber(FMath::RoundToInt(GetVideoModeConfirmationTimeoutSeconds()))));
 
 	if (UWidgetSwitcher* Switcher = Cast<UWidgetSwitcher>(GetWidgetFromName(TEXT("Switcher_MainPages"))))
 	{
-		Switcher->SetActiveWidgetIndex(FMath::Clamp(ActiveGeneratedPage, 0, 3));
+		Switcher->SetActiveWidgetIndex(FMath::Clamp(ActiveGeneratedPage, 0, 5));
 	}
 
 	RefreshGeneratedTabVisuals();
 	RefreshGeneratedOptionRowVisuals();
+	RefreshGeneratedAdvisor();
 	RefreshGeneratedDetailPanel();
 	bRefreshingGeneratedUI = false;
 }
 
 void UShooterOptionsScreen::ShowGeneratedPage(const int32 PageIndex)
 {
-	ActiveGeneratedPage = FMath::Clamp(PageIndex, 0, 3);
+	ActiveGeneratedPage = FMath::Clamp(PageIndex, 0, 5);
 	RefreshGeneratedUI();
 }
 
@@ -1214,6 +1461,8 @@ void UShooterOptionsScreen::RefreshGeneratedTabVisuals()
 		{TEXT("Btn_Side_Display"), TEXT("SB_SideAccent_Display")},
 		{TEXT("Btn_Side_Controls"), TEXT("SB_SideAccent_Controls")},
 		{TEXT("Btn_Side_Audio"), TEXT("SB_SideAccent_Audio")},
+		{TEXT("Btn_Side_Settings"), TEXT("SB_SideAccent_Settings")},
+		{TEXT("Btn_Side_SmartTuning"), TEXT("SB_SideAccent_SmartTuning")},
 	};
 
 	for (const auto& SideItem : SideItems)
@@ -1244,6 +1493,7 @@ void UShooterOptionsScreen::RefreshGeneratedOptionRowVisuals()
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"), TEXT("VoiceChat"),
+		TEXT("Language"),
 	};
 
 	for (const FName Prefix : Prefixes)
@@ -1278,8 +1528,8 @@ void UShooterOptionsScreen::SetGeneratedPerformanceSegments(
 	SetGeneratedText(
 		TEXT("TXT_PerformanceTitle"),
 		bRelevant
-			? FText::FromString(TEXT("예상 성능 영향도"))
-			: FText::FromString(TEXT("성능 영향도 없음")));
+			? Localize(TEXT("예상 성능 영향도"), TEXT("Estimated Performance Impact"))
+			: Localize(TEXT("성능 영향도 없음"), TEXT("No Performance Impact")));
 }
 
 void UShooterOptionsScreen::RefreshGeneratedPreview()
@@ -1324,8 +1574,9 @@ void UShooterOptionsScreen::RefreshGeneratedPreview()
 		if (PreviewStatus)
 		{
 			PreviewStatus->SetVisibility(ESlateVisibility::Visible);
-			PreviewStatus->SetText(FText::FromString(
-				TEXT("레벨에 SceneCapture2D를 배치하고\nCaptureComponent2D의 Component Tag를 OptionsPreview로 지정하세요.")));
+			PreviewStatus->SetText(Localize(
+				TEXT("레벨에 Shooter Options Preview Camera를 배치하거나\nSceneCapture2D의 Component Tag를 OptionsPreview로 지정하세요."),
+				TEXT("Place a Shooter Options Preview Camera in the level,\nor tag a SceneCapture2D component with OptionsPreview.")));
 		}
 		return;
 	}
@@ -1344,8 +1595,9 @@ void UShooterOptionsScreen::RefreshGeneratedPreview()
 		CaptureComponent->TextureTarget = GeneratedPreviewRenderTarget;
 		bGeneratedPreviewOwnsRenderTarget = true;
 	}
-	else
+	else if (CaptureComponent->TextureTarget != GeneratedPreviewRenderTarget)
 	{
+		// Refreshing our own target must preserve ownership for cleanup when closing.
 		GeneratedPreviewRenderTarget = CaptureComponent->TextureTarget;
 		bGeneratedPreviewOwnsRenderTarget = false;
 	}
@@ -1659,16 +1911,37 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 		else
 		{
 			Title = FText::FromString(TEXT("동적 크로스헤어"));
-			Body = FText::FromString(TEXT("이동과 사격 상태에 따라 크로스헤어 확산 표현을 동적으로 표시합니다."));
+			Body = FText::FromString(TEXT("인게임 크로스헤어의 동적 반응을 켜거나 끕니다."));
 			Value = FText::FromString(IsDynamicCrosshairEnabled() ? TEXT("켜짐") : TEXT("꺼짐"));
 			MetricLabel1 = FText::FromString(TEXT("선택"));
 			MetricValue1 = FText::FromString(TEXT("켜짐 / 꺼짐"));
 		}
 		Current = FText::Format(FText::FromString(TEXT("현재 {0}")), Value);
-		Help = FText::GetEmpty();
+		Help = FText::FromString(TEXT("감도·Y축 반전·ADS 배율은 플레이어 입력에 즉시 반영되며, 동적 크로스헤어는 인게임 레티클에 즉시 반영됩니다."));
 		MetricValue0 = Value;
 		MetricLabel2 = FText::FromString(TEXT("적용"));
-		MetricValue2 = FText::FromString(TEXT("즉시 / 로컬 플레이어"));
+		MetricValue2 = FText::FromString(TEXT("즉시"));
+	}
+	else if (Option == FName(TEXT("Language")))
+	{
+		Category = FText::FromString(TEXT("OPTIONS"));
+		Title = Localize(TEXT("언어"), TEXT("Language"));
+		const FText Value = GetLanguage() == EShooterOptionsLanguage::English
+			? FText::FromString(TEXT("English"))
+			: FText::FromString(TEXT("한국어"));
+		Current = FText::Format(Localize(TEXT("현재 {0}"), TEXT("Current: {0}")), Value);
+		Body = Localize(
+			TEXT("옵션 화면과 게임의 현재 문화권을 한국어 또는 영어로 전환합니다."),
+			TEXT("Switches the options interface and the current game culture between Korean and English."));
+		Help = Localize(
+			TEXT("게임 자체의 다른 텍스트도 번역하려면 프로젝트에 해당 Localization 리소스가 포함되어 있어야 합니다."),
+			TEXT("Other game text changes only when the project includes localization resources for the selected culture."));
+		MetricLabel0 = Localize(TEXT("현재 값"), TEXT("Current"));
+		MetricValue0 = Value;
+		MetricLabel1 = Localize(TEXT("선택"), TEXT("Choices"));
+		MetricValue1 = FText::FromString(TEXT("한국어 / English"));
+		MetricLabel2 = Localize(TEXT("저장"), TEXT("Persistence"));
+		MetricValue2 = Localize(TEXT("사용자별 저장"), TEXT("Per-user"));
 	}
 	else
 	{
@@ -1743,17 +2016,193 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 		else
 		{
 			Title = FText::FromString(TEXT("음성 채팅"));
-			Body = FText::FromString(TEXT("마이크 캡처와 다른 플레이어의 음성 패킷 재생을 함께 켜거나 끕니다."));
+			Body = FText::FromString(TEXT("음성 채팅 송수신 사용 여부를 제어하고, Voice 채널 재생에도 즉시 반영합니다."));
 			Value = FText::FromString(IsVoiceChatEnabled() ? TEXT("켜짐") : TEXT("꺼짐"));
-			Help = FText::FromString(TEXT("OFF 시 현재 캡처/재생을 중단하고 새 음성 처리를 막습니다. 음성 볼륨 슬라이더는 수신 음성 크기만 조절합니다."));
+			Help = FText::FromString(TEXT("끄면 진행 중인 마이크 캡처와 음성 재생을 중단하고, 다시 켜기 전까지 음성 송수신 시작을 막습니다."));
 			MetricLabel1 = FText::FromString(TEXT("OFF 시"));
-			MetricValue1 = FText::FromString(TEXT("캡처 + 재생 중단"));
+			MetricValue1 = FText::FromString(TEXT("연결된 음성 채널 음소거"));
 			MetricLabel2 = FText::FromString(TEXT("적용"));
 			MetricValue2 = FText::FromString(TEXT("즉시"));
 		}
 
 		Current = FText::Format(FText::FromString(TEXT("현재 {0}")), Value);
 		MetricValue0 = Value;
+	}
+
+	if (GetLanguage() == EShooterOptionsLanguage::English && Option != FName(TEXT("Language")))
+	{
+		MetricLabel0 = FText::FromString(TEXT("Current"));
+		MetricLabel1 = FText::FromString(TEXT("Choices"));
+		MetricLabel2 = FText::FromString(TEXT("Apply"));
+		MetricValue1 = FText::FromString(TEXT("--"));
+		MetricValue2 = FText::FromString(TEXT("Immediate"));
+		Help = FText::GetEmpty();
+
+		if (Option == FName(TEXT("Resolution")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("Resolution"));
+			Current = FText::Format(FText::FromString(TEXT("Current: {0}")), FormatResolution(GetScreenResolution()));
+			Body = FText::FromString(TEXT("Controls the number of pixels rendered to the display. Higher resolutions improve clarity but increase GPU workload."));
+			MetricLabel1 = FText::FromString(TEXT("Supported")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("15 sec confirm"));
+			MetricValue1 = FText::AsNumber(GetSupportedResolutions().Num());
+		}
+		else if (Option == FName(TEXT("WindowMode")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("Window Mode"));
+			Current = FText::Format(FText::FromString(TEXT("Current: {0}")), GetWindowModeDisplayText(GetWindowMode()));
+			Body = FText::FromString(TEXT("Choose between fullscreen and windowed presentation."));
+			MetricLabel1 = FText::FromString(TEXT("Choices")); MetricValue1 = FText::FromString(TEXT("Fullscreen / Windowed")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("15 sec confirm"));
+		}
+		else if (Option == FName(TEXT("ResolutionScale")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("Resolution Scale"));
+			Current = FText::FromString(FString::Printf(TEXT("Current: %.0f%%"), GetResolutionScalePercent()));
+			Body = FText::FromString(TEXT("Adjusts internal render resolution while keeping the output resolution unchanged."));
+			MetricLabel1 = FText::FromString(TEXT("Range")); MetricValue1 = FText::FromString(TEXT("50 ~ 100%")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("Immediate"));
+			Help = FText::FromString(TEXT("Lower values reduce GPU workload but can reduce image clarity."));
+		}
+		else if (Option == FName(TEXT("VSync")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("VSync"));
+			const FText V = IsVSyncEnabled() ? FText::FromString(TEXT("ON")) : FText::FromString(TEXT("OFF"));
+			Current = FText::Format(FText::FromString(TEXT("Current: {0}")), V); Body = FText::FromString(TEXT("Synchronizes frame presentation with the display refresh cycle to reduce tearing."));
+			MetricValue0 = V; MetricLabel1 = FText::FromString(TEXT("Choices")); MetricValue1 = FText::FromString(TEXT("ON / OFF")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("Immediate"));
+			Help = FText::FromString(TEXT("VSync can reduce tearing but may increase input latency."));
+		}
+		else if (Option == FName(TEXT("FrameRate")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("Frame Rate Limit")); const FText V = GetFrameRateLimitDisplayText(GetFrameRateLimit());
+			Current = FText::Format(FText::FromString(TEXT("Current: {0}")), V); Body = FText::FromString(TEXT("Caps the maximum frame rate. Unlimited removes the software cap.")); MetricValue0 = V; MetricLabel1 = FText::FromString(TEXT("Choices")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("Immediate"));
+			MetricValue1 = FText::FromString(TEXT("8 choices"));
+			Help = FText::FromString(TEXT("Choose a limit based on display refresh rate and measured game performance."));
+		}
+		else if (Option == FName(TEXT("DynamicResolution")))
+		{
+			Category = FText::FromString(TEXT("VIDEO")); Title = FText::FromString(TEXT("Dynamic Resolution")); const FText V = IsDynamicResolutionEnabled()?FText::FromString(TEXT("ON")):FText::FromString(TEXT("OFF"));
+			Current = FText::Format(FText::FromString(TEXT("Current: {0}")), V); Body = FText::FromString(TEXT("Allows supported renderers to adjust resolution dynamically to maintain performance.")); MetricValue0 = V; MetricLabel1 = FText::FromString(TEXT("Choices")); MetricValue1 = FText::FromString(TEXT("ON / OFF")); MetricLabel2 = FText::FromString(TEXT("Apply")); MetricValue2 = FText::FromString(TEXT("Immediate"));
+			Help = FText::FromString(TEXT("Requires dynamic-resolution support and configuration in the project renderer."));
+		}
+		else if (Option == FName(TEXT("Overall")))
+		{
+			Category=FText::FromString(TEXT("GRAPHICS")); Title=FText::FromString(TEXT("Overall Quality")); const FText V=GetQualityDisplayText(GetOverallQualityLevel()); Current=FText::Format(FText::FromString(TEXT("Current: {0}")),V); Body=FText::FromString(TEXT("Changes the major scalability groups together as a single preset.")); MetricValue0=V;
+			MetricValue1 = FText::FromString(TEXT("Low - Cinematic"));
+		}
+		else if (Option == FName(TEXT("ViewDistance")) || Option == FName(TEXT("AntiAliasing")) || Option == FName(TEXT("Shadow")) || Option == FName(TEXT("GlobalIllumination")) || Option == FName(TEXT("Reflection")) || Option == FName(TEXT("PostProcessing")) || Option == FName(TEXT("Texture")) || Option == FName(TEXT("Effects")) || Option == FName(TEXT("Foliage")) || Option == FName(TEXT("Shading")))
+		{
+			Category=FText::FromString(TEXT("GRAPHICS"));
+			if(Option==FName(TEXT("ViewDistance"))){Title=FText::FromString(TEXT("View Distance")); Body=FText::FromString(TEXT("Controls how far objects and scene details remain visible."));}
+			else if(Option==FName(TEXT("AntiAliasing"))){Title=FText::FromString(TEXT("Anti-Aliasing")); Body=FText::FromString(TEXT("Controls edge smoothing and temporal image stability."));}
+			else if(Option==FName(TEXT("Shadow"))){Title=FText::FromString(TEXT("Shadow Quality")); Body=FText::FromString(TEXT("Controls shadow resolution, distance, and detail."));}
+			else if(Option==FName(TEXT("GlobalIllumination"))){Title=FText::FromString(TEXT("Global Illumination")); Body=FText::FromString(TEXT("Controls indirect lighting quality, including Lumen-based bounce lighting."));}
+			else if(Option==FName(TEXT("Reflection"))){Title=FText::FromString(TEXT("Reflection Quality")); Body=FText::FromString(TEXT("Controls the precision and stability of environment reflections."));}
+			else if(Option==FName(TEXT("PostProcessing"))){Title=FText::FromString(TEXT("Post Processing")); Body=FText::FromString(TEXT("Controls bloom, ambient occlusion, color grading, and other post effects."));}
+			else if(Option==FName(TEXT("Texture"))){Title=FText::FromString(TEXT("Texture Quality")); Body=FText::FromString(TEXT("Controls texture streaming and mip quality, primarily affecting VRAM usage."));}
+			else if(Option==FName(TEXT("Effects"))){Title=FText::FromString(TEXT("Effects Quality")); Body=FText::FromString(TEXT("Controls particle and visual-effect quality."));}
+			else if(Option==FName(TEXT("Foliage"))){Title=FText::FromString(TEXT("Foliage Quality")); Body=FText::FromString(TEXT("Controls vegetation density and view distance."));}
+			else {Title=FText::FromString(TEXT("Shading Quality")); Body=FText::FromString(TEXT("Controls selected material and lighting shading quality."));}
+			MetricValue0 = GetQualityDisplayText(GetCurrentQualityForOption(Option));
+			MetricValue1 = FText::FromString(TEXT("Low - Cinematic"));
+			Help = BuildOptionRecommendationText(Option);
+		}
+		else if (Option == FName(TEXT("HorizontalSensitivity")) || Option == FName(TEXT("VerticalSensitivity")) || Option == FName(TEXT("AimSensitivity")) || Option == FName(TEXT("InvertY")) || Option == FName(TEXT("DynamicCrosshair")))
+		{
+			Category=FText::FromString(TEXT("CONTROLS"));
+			if(Option==FName(TEXT("HorizontalSensitivity"))){Title=FText::FromString(TEXT("Horizontal Sensitivity")); Body=FText::FromString(TEXT("Adjusts horizontal look sensitivity."));}
+			else if(Option==FName(TEXT("VerticalSensitivity"))){Title=FText::FromString(TEXT("Vertical Sensitivity")); Body=FText::FromString(TEXT("Adjusts vertical look sensitivity."));}
+			else if(Option==FName(TEXT("AimSensitivity"))){Title=FText::FromString(TEXT("ADS Sensitivity Multiplier")); Body=FText::FromString(TEXT("Multiplier applied to look sensitivity while aiming."));}
+			else if(Option==FName(TEXT("InvertY"))){Title=FText::FromString(TEXT("Invert Y")); Body=FText::FromString(TEXT("Reverses vertical look input."));}
+			else {Title=FText::FromString(TEXT("Dynamic Crosshair")); Body=FText::FromString(TEXT("Enables or disables dynamic behavior on the in-game crosshair."));}
+			Help = FText::FromString(TEXT("Sensitivity, invert-Y and ADS scaling are applied directly to player look input; dynamic crosshair is consumed by the in-game reticle."));
+			MetricLabel1 = FText::FromString(TEXT("Range"));
+			MetricValue1 = FText::FromString(TEXT("0.01 - 10.00"));
+			MetricValue2 = FText::FromString(TEXT("Immediate"));
+			if (Option == FName(TEXT("AimSensitivity")))
+			{
+				MetricValue1 = FText::FromString(TEXT("0.01 - 2.00"));
+			}
+			else if (Option == FName(TEXT("InvertY")))
+			{
+				MetricValue0 = FText::FromString(IsInvertVerticalLookEnabled() ? TEXT("ON") : TEXT("OFF"));
+				MetricLabel1 = FText::FromString(TEXT("Choices"));
+				MetricValue1 = FText::FromString(TEXT("ON / OFF"));
+			}
+			else if (Option == FName(TEXT("DynamicCrosshair")))
+			{
+				MetricValue0 = FText::FromString(IsDynamicCrosshairEnabled() ? TEXT("ON") : TEXT("OFF"));
+				MetricLabel1 = FText::FromString(TEXT("Choices"));
+				MetricValue1 = FText::FromString(TEXT("ON / OFF"));
+			}
+		}
+		else
+		{
+			Category=FText::FromString(TEXT("AUDIO"));
+			if(Option==FName(TEXT("MasterVolume"))){Title=FText::FromString(TEXT("Master Volume")); Body=FText::FromString(TEXT("Adjusts the overall game audio output."));}
+			else if(Option==FName(TEXT("MusicVolume"))){Title=FText::FromString(TEXT("Music Volume")); Body=FText::FromString(TEXT("Adjusts sounds assigned to the music channel."));}
+			else if(Option==FName(TEXT("SfxVolume"))){Title=FText::FromString(TEXT("SFX Volume")); Body=FText::FromString(TEXT("Adjusts weapon, footsteps, impacts, and other sound effects."));}
+			else if(Option==FName(TEXT("UiVolume"))){Title=FText::FromString(TEXT("UI Volume")); Body=FText::FromString(TEXT("Adjusts menu and interface feedback sounds."));}
+			else if(Option==FName(TEXT("VoiceVolume"))){Title=FText::FromString(TEXT("Voice Volume")); Body=FText::FromString(TEXT("Adjusts received voice-chat playback volume."));}
+			else if(Option==FName(TEXT("MasterMute"))){Title=FText::FromString(TEXT("Mute All")); Body=FText::FromString(TEXT("Mutes all game audio output without discarding stored channel volumes."));}
+			else {Title=FText::FromString(TEXT("Voice Chat")); Body=FText::FromString(TEXT("Enables or disables the game's voice-chat capture, transport and playback flow."));}
+			MetricLabel1 = FText::FromString(TEXT("Range"));
+			MetricValue1 = FText::FromString(TEXT("0 - 100%"));
+			Help = FText::FromString(TEXT("Category volumes require the corresponding SoundClass and SoundMix assignments in Project Settings."));
+			if (Option == FName(TEXT("MasterVolume")))
+			{
+				Help = FText::FromString(TEXT("Master volume controls the overall game audio output directly."));
+			}
+			else if (Option == FName(TEXT("VoiceVolume")))
+			{
+				Body = FText::FromString(TEXT("Adjusts playback routed through the configured Voice SoundClass."));
+				Help = FText::FromString(TEXT("This controls received voice playback volume, not microphone input sensitivity."));
+			}
+			else if (Option == FName(TEXT("MasterMute")))
+			{
+				MetricValue0 = FText::FromString(IsMasterAudioMuted() ? TEXT("ON") : TEXT("OFF"));
+				MetricLabel1 = FText::FromString(TEXT("Choices"));
+				MetricValue1 = FText::FromString(TEXT("ON / OFF"));
+				Help = FText::FromString(TEXT("Unmuting restores the stored master and category volume settings."));
+			}
+			else if (Option == FName(TEXT("VoiceChat")))
+			{
+				MetricValue0 = FText::FromString(IsVoiceChatEnabled() ? TEXT("ON") : TEXT("OFF"));
+				MetricLabel1 = FText::FromString(TEXT("When off"));
+				MetricValue1 = FText::FromString(TEXT("Voice channel muted"));
+				Help = FText::FromString(TEXT("When disabled, active capture/playback is stopped and new voice-chat transmission is blocked until re-enabled."));
+			}
+		}
+		Current = FText::Format(FText::FromString(TEXT("Current: {0}")), MetricValue0);
+	}
+
+	if (Option == FName(TEXT("Advisor")))
+	{
+		Category = FText::FromString(TEXT("SMART TUNING"));
+		Title = Localize(TEXT("세션 성능 어드바이저"), TEXT("Session Performance Advisor"));
+		const UShooterGameUserSettings* LocalSettings = GetGameUserSettings();
+		const float TargetFPS = LocalSettings ? LocalSettings->GetPerformanceTargetFPS() : 120.0f;
+		Current = FText::FromString(FString::Printf(TEXT("Target %.0f FPS"), TargetFPS));
+		Body = Localize(
+			TEXT("직전 플레이 세션의 평균 FPS, 1% Low, 목표 프레임 미달 비율을 바탕으로 설정 변경을 제안합니다. 자동으로 몰래 변경하지 않고 플레이어가 직접 적용을 승인합니다."),
+			TEXT("Uses the previous gameplay session's average FPS, 1% low and target-miss ratio to recommend changes. Nothing is changed silently; the player approves the recommendation."));
+		Help = BuildAdvisorRecommendationText();
+		MetricLabel0 = Localize(TEXT("평균 FPS"), TEXT("Average FPS"));
+		MetricValue0 = SessionAverageFPS > 0.0f ? FText::FromString(FString::Printf(TEXT("%.0f"), SessionAverageFPS)) : FText::FromString(TEXT("--"));
+		MetricLabel1 = FText::FromString(TEXT("1% Low"));
+		MetricValue1 = SessionOnePercentLowFPS > 0.0f ? FText::FromString(FString::Printf(TEXT("%.0f"), SessionOnePercentLowFPS)) : FText::FromString(TEXT("--"));
+		MetricLabel2 = Localize(TEXT("목표 미달"), TEXT("Target Miss"));
+		MetricValue2 = SessionSampleCount > 0 ? FText::FromString(FString::Printf(TEXT("%.1f%%"), SessionTargetMissPercent)) : FText::FromString(TEXT("--"));
+	}
+
+	const bool bGraphicsPage = ActiveGeneratedPage == 0;
+	SetGeneratedText(TEXT("TXT_DetailGameplayImpact"), bGraphicsPage ? BuildGameplayImpactText(Option) : FText::GetEmpty());
+	SetGeneratedText(TEXT("TXT_DetailPerformanceCost"), bGraphicsPage ? BuildPerformanceCostText(Option) : FText::GetEmpty());
+	SetGeneratedText(TEXT("TXT_DetailRecommendation"), bGraphicsPage ? BuildOptionRecommendationText(Option) : FText::GetEmpty());
+	const FName ExplainCards[] = { TEXT("Border_Explain_GameplayImpact"), TEXT("Border_Explain_PerformanceCost"), TEXT("Border_Explain_Recommendation") };
+	for (const FName ExplainCardName : ExplainCards)
+	{
+		if (UWidget* ExplainCard = GetWidgetFromName(ExplainCardName))
+		{
+			ExplainCard->SetVisibility(bGraphicsPage ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+		}
 	}
 
 	SetGeneratedText(TEXT("TXT_DetailCategory"), Category);
@@ -1768,7 +2217,6 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 	SetGeneratedText(TEXT("TXT_ContextLabel2"), MetricLabel2);
 	SetGeneratedText(TEXT("TXT_ContextValue2"), MetricValue2);
 
-	const bool bGraphicsPage = ActiveGeneratedPage == 0;
 	if (UWidgetSwitcher* DetailVisual = Cast<UWidgetSwitcher>(GetWidgetFromName(TEXT("Switcher_DetailVisual"))))
 	{
 		DetailVisual->SetActiveWidgetIndex(bGraphicsPage ? 0 : 1);
@@ -1778,6 +2226,379 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 	RefreshGeneratedPreview();
 }
 
+
+
+UShooterOptionsPerformanceSubsystem* UShooterOptionsScreen::GetPerformanceSubsystem() const
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		return GameInstance->GetSubsystem<UShooterOptionsPerformanceSubsystem>();
+	}
+	return nullptr;
+}
+
+void UShooterOptionsScreen::InvalidatePerformanceSamples()
+{
+	// A session measured with the previous rendering settings cannot justify
+	// another recommendation after the player applies a different configuration.
+	SessionAverageFPS = 0.0f;
+	SessionOnePercentLowFPS = 0.0f;
+	SessionTargetMissPercent = 0.0f;
+	SessionSampleCount = 0;
+	bSessionRecommendationApplied = false;
+	if (UShooterOptionsPerformanceSubsystem* Performance = GetPerformanceSubsystem())
+	{
+		Performance->ResetSamples();
+	}
+}
+
+int32 UShooterOptionsScreen::GetCurrentQualityForOption(const FName Option) const
+{
+	if (Option == TEXT("Overall")) return GetOverallQualityLevel();
+	if (Option == TEXT("ViewDistance")) return GetQualityLevel(EShooterScalabilitySetting::ViewDistance);
+	if (Option == TEXT("AntiAliasing")) return GetQualityLevel(EShooterScalabilitySetting::AntiAliasing);
+	if (Option == TEXT("Shadow")) return GetQualityLevel(EShooterScalabilitySetting::Shadow);
+	if (Option == TEXT("GlobalIllumination")) return GetQualityLevel(EShooterScalabilitySetting::GlobalIllumination);
+	if (Option == TEXT("Reflection")) return GetQualityLevel(EShooterScalabilitySetting::Reflection);
+	if (Option == TEXT("PostProcessing")) return GetQualityLevel(EShooterScalabilitySetting::PostProcessing);
+	if (Option == TEXT("Texture")) return GetQualityLevel(EShooterScalabilitySetting::Texture);
+	if (Option == TEXT("Effects")) return GetQualityLevel(EShooterScalabilitySetting::Effects);
+	if (Option == TEXT("Foliage")) return GetQualityLevel(EShooterScalabilitySetting::Foliage);
+	if (Option == TEXT("Shading")) return GetQualityLevel(EShooterScalabilitySetting::Shading);
+	return INDEX_NONE;
+}
+
+void UShooterOptionsScreen::RefreshGeneratedLab()
+{
+	if (!bGeneratedUIBound)
+	{
+		return;
+	}
+
+	const float CurrentMs = GeneratedLabRollingFrameTimeMs;
+	SetGeneratedText(
+		TEXT("TXT_LabCurrentFrameTime"),
+		CurrentMs > 0.0f
+			? FText::FromString(FString::Printf(TEXT("%.2f ms"), CurrentMs))
+			: FText::FromString(TEXT("--")));
+
+	SetGeneratedText(
+		TEXT("TXT_LabBaselineFrameTime"),
+		bGeneratedLabHasBaseline && GeneratedLabBaselineFrameTimeMs > 0.0f
+			? FText::FromString(FString::Printf(TEXT("%.2f ms"), GeneratedLabBaselineFrameTimeMs))
+			: FText::FromString(TEXT("--")));
+
+	if (bGeneratedLabHasBaseline && CurrentMs > 0.0f && GeneratedLabBaselineFrameTimeMs > 0.0f)
+	{
+		const float DeltaMs = CurrentMs - GeneratedLabBaselineFrameTimeMs;
+		SetGeneratedText(TEXT("TXT_LabDelta"), FText::FromString(FString::Printf(TEXT("%+.2f ms"), DeltaMs)));
+	}
+	else
+	{
+		SetGeneratedText(TEXT("TXT_LabDelta"), FText::FromString(TEXT("--")));
+	}
+
+	SetGeneratedText(
+		TEXT("TXT_LabBaselineValue"),
+		bGeneratedLabHasBaseline
+			? GeneratedLabBaselineValue
+			: Localize(TEXT("기준 미캡처"), TEXT("Not captured")));
+
+	const int32 CurrentQuality = GetCurrentQualityForOption(ActiveGeneratedOption);
+	SetGeneratedText(
+		TEXT("TXT_LabCurrentValue"),
+		CurrentQuality != INDEX_NONE
+			? GetQualityDisplayText(CurrentQuality)
+			: Localize(TEXT("현재 설정"), TEXT("Current")));
+}
+
+void UShooterOptionsScreen::CaptureGeneratedBaseline()
+{
+	if (ActiveGeneratedPage != 0)
+	{
+		return;
+	}
+
+	RefreshGeneratedPreview();
+	USceneCaptureComponent2D* CaptureComponent = GeneratedPreviewCaptureComponent.Get();
+	if (!CaptureComponent || !CaptureComponent->TextureTarget)
+	{
+		return;
+	}
+
+	if (!GeneratedBaselineRenderTarget)
+	{
+		GeneratedBaselineRenderTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("OptionsBaselineRuntimeRT"));
+		GeneratedBaselineRenderTarget->ClearColor = FLinearColor::Black;
+		GeneratedBaselineRenderTarget->RenderTargetFormat = RTF_RGBA8_SRGB;
+		GeneratedBaselineRenderTarget->bForceLinearGamma = false;
+		GeneratedBaselineRenderTarget->InitAutoFormat(640, 360);
+		GeneratedBaselineRenderTarget->UpdateResourceImmediate(true);
+	}
+
+	UTextureRenderTarget2D* CurrentTarget = CaptureComponent->TextureTarget;
+	const bool bWasCaptureEveryFrame = CaptureComponent->bCaptureEveryFrame;
+	CaptureComponent->bCaptureEveryFrame = false;
+	CaptureComponent->TextureTarget = GeneratedBaselineRenderTarget;
+	CaptureComponent->CaptureScene();
+	CaptureComponent->TextureTarget = CurrentTarget;
+	CaptureComponent->bCaptureEveryFrame = bWasCaptureEveryFrame;
+	CaptureComponent->CaptureScene();
+
+	if (UImage* BaselineImage = Cast<UImage>(GetWidgetFromName(TEXT("IMG_BaselinePreview"))))
+	{
+		FSlateBrush Brush = BaselineImage->GetBrush();
+		Brush.SetResourceObject(GeneratedBaselineRenderTarget);
+		Brush.ImageSize = FVector2D(640.0f, 360.0f);
+		BaselineImage->SetBrush(Brush);
+		BaselineImage->SetVisibility(ESlateVisibility::Visible);
+	}
+	if (UTextBlock* Status = Cast<UTextBlock>(GetWidgetFromName(TEXT("TXT_BaselineStatus"))))
+	{
+		Status->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	bGeneratedLabHasBaseline = true;
+	GeneratedLabBaselineFrameTimeMs = GeneratedLabRollingFrameTimeMs;
+	GeneratedLabBaselineOption = ActiveGeneratedOption;
+	const int32 Quality = GetCurrentQualityForOption(ActiveGeneratedOption);
+	GeneratedLabBaselineValue = Quality != INDEX_NONE
+		? GetQualityDisplayText(Quality)
+		: Localize(TEXT("현재 설정"), TEXT("Current"));
+	RefreshGeneratedLab();
+}
+
+void UShooterOptionsScreen::ApplyExperienceProfile(const EShooterExperienceProfile Profile)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!Settings)
+	{
+		return;
+	}
+
+	float ResolutionScale = 100.0f;
+
+	// The profile controls tuning bias only. Target FPS is configured independently so
+	// 60/120/144 are not hard-coded assumptions and high-refresh users can choose their own goal.
+	switch (Profile)
+	{
+	case EShooterExperienceProfile::Visual60:
+		Settings->SetOverallScalabilityLevel(3);
+		break;
+
+	case EShooterExperienceProfile::Balanced120:
+		Settings->SetViewDistanceQuality(3);
+		Settings->SetAntiAliasingQuality(3);
+		Settings->SetShadowQuality(2);
+		Settings->SetGlobalIlluminationQuality(2);
+		Settings->SetReflectionQuality(2);
+		Settings->SetPostProcessingQuality(2);
+		Settings->SetTextureQuality(3);
+		Settings->SetVisualEffectQuality(2);
+		Settings->SetFoliageQuality(2);
+		Settings->SetShadingQuality(2);
+		break;
+
+	case EShooterExperienceProfile::Competitive144:
+		Settings->SetViewDistanceQuality(3);
+		Settings->SetAntiAliasingQuality(2);
+		Settings->SetShadowQuality(1);
+		Settings->SetGlobalIlluminationQuality(1);
+		Settings->SetReflectionQuality(1);
+		Settings->SetPostProcessingQuality(1);
+		Settings->SetTextureQuality(3);
+		Settings->SetVisualEffectQuality(2);
+		Settings->SetFoliageQuality(1);
+		Settings->SetShadingQuality(2);
+		Settings->SetVSyncEnabled(false);
+		break;
+
+	case EShooterExperienceProfile::MaxQuality:
+	default:
+		Settings->SetOverallScalabilityLevel(4);
+		break;
+	}
+
+	float MinScale = 50.0f;
+	float MaxScale = 100.0f;
+	GetResolutionScaleRange(MinScale, MaxScale);
+	Settings->SetResolutionScaleValueEx(FMath::Clamp(ResolutionScale, MinScale, MaxScale));
+	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
+
+	Settings->SetExperienceProfile(Profile);
+	ActiveGeneratedOption = TEXT("Advisor");
+	OnSettingsChanged.Broadcast();
+}
+
+FText UShooterOptionsScreen::BuildAdvisorRecommendationText() const
+{
+	if (bSessionRecommendationApplied)
+	{
+		return Localize(
+			TEXT("추천을 적용했습니다. 옵션을 닫고 잠시 플레이한 뒤 다시 열어 결과를 확인하세요."),
+			TEXT("Recommendation applied. Close the options menu, play for a while, then reopen it to review the results."));
+	}
+
+	const UShooterGameUserSettings* LocalSettings = GetGameUserSettings();
+	const float TargetFPS = LocalSettings ? LocalSettings->GetPerformanceTargetFPS() : 120.0f;
+	if (SessionSampleCount < 60)
+	{
+		return Localize(
+			TEXT("플레이 데이터가 아직 부족합니다. 잠시 플레이한 뒤 다시 옵션을 열면 실제 세션 기반 추천을 받을 수 있습니다."),
+			TEXT("Not enough gameplay data yet. Play for a while and reopen the options menu for a session-based recommendation."));
+	}
+
+	if (SessionTargetMissPercent >= 25.0f)
+	{
+		return FText::Format(
+			Localize(
+				TEXT("목표 {0} FPS를 자주 놓쳤습니다. 그림자·GI·반사를 한 단계 낮추는 것을 추천합니다."),
+				TEXT("Your session frequently missed the {0} FPS target. Lower Shadow, GI and Reflection by one step.")),
+			FText::AsNumber(FMath::RoundToInt(TargetFPS)));
+	}
+	if (SessionTargetMissPercent >= 8.0f)
+	{
+		return Localize(
+			TEXT("목표 프레임에 간헐적인 흔들림이 있습니다. 반사와 포스트 프로세싱을 한 단계 낮추는 것을 추천합니다."),
+			TEXT("The target frame rate was intermittently missed. Lower Reflection and Post Processing by one step."));
+	}
+	if (SessionAverageFPS > TargetFPS * 1.20f && SessionTargetMissPercent < 3.0f)
+	{
+		return Localize(
+			TEXT("성능 여유가 있습니다. 그림자와 반사 품질을 각각 한 단계 높이는 것을 추천합니다. 적용 후 목표 프레임 유지 여부를 다시 확인하세요."),
+			TEXT("There is performance headroom. Raise Shadow and Reflection by one step each, then play again to check whether the target is maintained."));
+	}
+	return Localize(
+		TEXT("현재 설정이 목표 프레임과 잘 맞습니다. 큰 변경보다 현재 구성을 유지하는 것을 추천합니다."),
+		TEXT("The current settings match the target well. Keeping this configuration is recommended."));
+}
+
+void UShooterOptionsScreen::ApplyAdvisorRecommendation()
+{
+	if (bSessionRecommendationApplied || SessionSampleCount < 60)
+	{
+		return;
+	}
+
+	UGameUserSettings* Settings = GetGameUserSettings();
+	const UShooterGameUserSettings* LocalSettings = GetGameUserSettings();
+	if (!Settings || !LocalSettings)
+	{
+		return;
+	}
+
+	const float TargetFPS = LocalSettings->GetPerformanceTargetFPS();
+	if (SessionTargetMissPercent >= 25.0f)
+	{
+		Settings->SetShadowQuality(FMath::Max(0, Settings->GetShadowQuality() - 1));
+		Settings->SetGlobalIlluminationQuality(FMath::Max(0, Settings->GetGlobalIlluminationQuality() - 1));
+		Settings->SetReflectionQuality(FMath::Max(0, Settings->GetReflectionQuality() - 1));
+	}
+	else if (SessionTargetMissPercent >= 8.0f)
+	{
+		Settings->SetReflectionQuality(FMath::Max(0, Settings->GetReflectionQuality() - 1));
+		Settings->SetPostProcessingQuality(FMath::Max(0, Settings->GetPostProcessingQuality() - 1));
+	}
+	else if (SessionAverageFPS > TargetFPS * 1.20f && SessionTargetMissPercent < 3.0f)
+	{
+		Settings->SetShadowQuality(FMath::Min(4, Settings->GetShadowQuality() + 1));
+		Settings->SetReflectionQuality(FMath::Min(4, Settings->GetReflectionQuality() + 1));
+	}
+	else
+	{
+		return;
+	}
+
+	Settings->ApplyNonResolutionSettings();
+	InvalidatePerformanceSamples();
+	bSessionRecommendationApplied = true;
+	ActiveGeneratedOption = TEXT("Advisor");
+	OnSettingsChanged.Broadcast();
+}
+
+void UShooterOptionsScreen::RefreshGeneratedAdvisor()
+{
+	const UShooterGameUserSettings* LocalSettings = GetGameUserSettings();
+	const float TargetFPS = LocalSettings ? LocalSettings->GetPerformanceTargetFPS() : 120.0f;
+	SetGeneratedText(TEXT("TXT_AdvisorTargetValue"), FText::FromString(FString::Printf(TEXT("%.0f FPS"), TargetFPS)));
+	SetGeneratedText(TEXT("TXT_AdvisorAverageValue"), SessionAverageFPS > 0.0f ? FText::FromString(FString::Printf(TEXT("%.0f FPS"), SessionAverageFPS)) : FText::FromString(TEXT("--")));
+	SetGeneratedText(TEXT("TXT_AdvisorOneLowValue"), SessionOnePercentLowFPS > 0.0f ? FText::FromString(FString::Printf(TEXT("%.0f FPS"), SessionOnePercentLowFPS)) : FText::FromString(TEXT("--")));
+	SetGeneratedText(TEXT("TXT_AdvisorMissValue"), SessionSampleCount > 0 ? FText::FromString(FString::Printf(TEXT("%.1f%%"), SessionTargetMissPercent)) : FText::FromString(TEXT("--")));
+	SetGeneratedText(TEXT("TXT_AdvisorRecommendation"), BuildAdvisorRecommendationText());
+	if (UButton* ApplyButton = Cast<UButton>(GetWidgetFromName(TEXT("Btn_ApplyAdvisorRecommendation"))))
+	{
+		ApplyButton->SetIsEnabled(SessionSampleCount >= 60 && !bSessionRecommendationApplied);
+	}
+
+	// Keep profile rows semantically distinct even when the WBP was regenerated or
+	// the language changes at runtime. Only the final row is session-derived.
+	SetGeneratedText(TEXT("TXT_Label_Btn_Profile_Visual60"), Localize(TEXT("비주얼 우선 · 화질 중심"), TEXT("Visual Priority · Fidelity First")));
+	SetGeneratedText(TEXT("TXT_Label_Btn_Profile_Balanced120"), Localize(TEXT("균형 · 화질/성능 균형"), TEXT("Balanced · Quality / Performance")));
+	SetGeneratedText(TEXT("TXT_Label_Btn_Profile_Competitive144"), Localize(TEXT("경쟁 · 가시성/프레임 우선"), TEXT("Competitive · Clarity / FPS First")));
+	SetGeneratedText(TEXT("TXT_Label_Btn_Profile_MaxQuality"), Localize(TEXT("최고 화질 · 최대 품질"), TEXT("Max Quality · Maximum Fidelity")));
+	SetGeneratedText(TEXT("TXT_Label_Btn_ApplyAdvisorRecommendation"), Localize(TEXT("세션 추천"), TEXT("Session Recommendation")));
+	SetGeneratedText(TEXT("TXT_Btn_Profile_Visual60"), Localize(TEXT("프로필 적용"), TEXT("Apply Profile")));
+	SetGeneratedText(TEXT("TXT_Btn_Profile_Balanced120"), Localize(TEXT("프로필 적용"), TEXT("Apply Profile")));
+	SetGeneratedText(TEXT("TXT_Btn_Profile_Competitive144"), Localize(TEXT("프로필 적용"), TEXT("Apply Profile")));
+	SetGeneratedText(TEXT("TXT_Btn_Profile_MaxQuality"), Localize(TEXT("프로필 적용"), TEXT("Apply Profile")));
+	SetGeneratedText(TEXT("TXT_Btn_ApplyAdvisorRecommendation"), Localize(TEXT("추천 적용"), TEXT("Apply Recommendation")));
+
+	if (LocalSettings)
+	{
+		const struct { FName Name; EShooterExperienceProfile Profile; } ProfileButtons[] =
+		{
+			{ TEXT("Btn_Profile_Visual60"), EShooterExperienceProfile::Visual60 },
+			{ TEXT("Btn_Profile_Balanced120"), EShooterExperienceProfile::Balanced120 },
+			{ TEXT("Btn_Profile_Competitive144"), EShooterExperienceProfile::Competitive144 },
+			{ TEXT("Btn_Profile_MaxQuality"), EShooterExperienceProfile::MaxQuality }
+		};
+		for (const auto& Entry : ProfileButtons)
+		{
+			if (UButton* Button = Cast<UButton>(GetWidgetFromName(Entry.Name)))
+			{
+				Button->SetBackgroundColor(Entry.Profile == LocalSettings->GetExperienceProfile()
+					? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
+					: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
+			}
+		}
+	}
+}
+
+FText UShooterOptionsScreen::BuildGameplayImpactText(const FName Option) const
+{
+	if (Option == TEXT("ViewDistance")) return Localize(TEXT("멀리 있는 오브젝트와 환경 정보가 더 빨리 단순화되거나 사라질 수 있습니다. 경쟁 게임에서는 너무 낮은 값이 원거리 정보 인지에 영향을 줄 수 있습니다."), TEXT("Distant objects and scene information simplify or disappear sooner. In competitive games, very low values can reduce long-range readability."));
+	if (Option == TEXT("AntiAliasing")) return Localize(TEXT("게임 규칙은 바뀌지 않지만 얇은 구조물과 움직이는 가장자리의 안정성이 달라져 목표물 식별감에 영향을 줄 수 있습니다."), TEXT("Gameplay rules do not change, but thin geometry and moving edges can become less stable, affecting target readability."));
+	if (Option == TEXT("Shadow")) return Localize(TEXT("그림자의 선명도와 표시 거리가 달라집니다. 낮은 값은 깊이감과 위치 파악에 쓰이는 시각 단서를 줄일 수 있습니다."), TEXT("Changes shadow clarity and distance. Low values can reduce visual depth cues used for spatial awareness."));
+	if (Option == TEXT("GlobalIllumination")) return Localize(TEXT("간접광과 어두운 영역의 대비가 달라져 실내·그늘에서의 가시성 체감에 영향을 줄 수 있습니다."), TEXT("Changes indirect lighting and dark-area contrast, which can affect perceived visibility indoors and in shade."));
+	if (Option == TEXT("Reflection")) return Localize(TEXT("대부분 시각적 품질에 영향을 주며 게임 규칙에는 직접 영향이 적습니다."), TEXT("Primarily affects visual fidelity with little direct gameplay impact."));
+	if (Option == TEXT("PostProcessing")) return Localize(TEXT("블룸·AO·후처리 밀도가 달라집니다. 낮은 값이 일부 경쟁 환경에서는 화면을 더 또렷하게 느끼게 할 수 있습니다."), TEXT("Changes bloom, AO and post-effect density. Lower values can feel clearer in some competitive scenes."));
+	if (Option == TEXT("Texture")) return Localize(TEXT("표면 디테일이 달라지지만 충돌이나 실제 지오메트리는 바뀌지 않습니다."), TEXT("Changes surface detail without changing collision or actual geometry."));
+	if (Option == TEXT("Effects")) return Localize(TEXT("파티클과 이펙트 밀도가 달라질 수 있습니다. 프로젝트의 중요한 전투 신호는 어떤 품질에서도 읽히도록 설계해야 합니다."), TEXT("Particle and effect density may change. Important combat cues should remain readable at every quality level."));
+	if (Option == TEXT("Foliage")) return Localize(TEXT("식생 밀도와 표시 거리가 달라질 수 있어 맵의 시각적 복잡도와 은폐감에 영향을 줄 수 있습니다."), TEXT("Foliage density and distance can change, affecting visual complexity and perceived cover."));
+	if (Option == TEXT("Shading")) return Localize(TEXT("주로 재질과 조명 표현의 정교함에 영향을 줍니다."), TEXT("Primarily affects material and lighting fidelity."));
+	if (Option == TEXT("Overall")) return Localize(TEXT("여러 그래픽 품질을 동시에 바꾸므로 가시성·화질·성능이 함께 변합니다."), TEXT("Changes several graphics groups together, so readability, image quality and performance all move at once."));
+	return FText::GetEmpty();
+}
+
+FText UShooterOptionsScreen::BuildPerformanceCostText(const FName Option) const
+{
+	if (Option == TEXT("Texture")) return Localize(TEXT("GPU: 낮음 · VRAM: 높음"), TEXT("GPU: Low · VRAM: High"));
+	if (Option == TEXT("ViewDistance") || Option == TEXT("Foliage") || Option == TEXT("Effects")) return Localize(TEXT("GPU: 중간 · CPU: 중간"), TEXT("GPU: Medium · CPU: Medium"));
+	if (Option == TEXT("Shadow") || Option == TEXT("GlobalIllumination") || Option == TEXT("Reflection")) return Localize(TEXT("GPU: 높음"), TEXT("GPU: High"));
+	if (Option == TEXT("AntiAliasing") || Option == TEXT("PostProcessing") || Option == TEXT("Shading")) return Localize(TEXT("GPU: 중간~높음"), TEXT("GPU: Medium–High"));
+	if (Option == TEXT("Overall")) return Localize(TEXT("GPU/CPU/VRAM: 종합 영향"), TEXT("GPU/CPU/VRAM: Combined impact"));
+	return Localize(TEXT("프로젝트 구성에 따라 다름"), TEXT("Project dependent"));
+}
+
+FText UShooterOptionsScreen::BuildOptionRecommendationText(const FName Option) const
+{
+	if (Option == TEXT("Shadow") || Option == TEXT("GlobalIllumination") || Option == TEXT("Reflection")) return Localize(TEXT("프레임 확보가 우선이면 HIGH보다 먼저 이 항목을 한 단계 낮춰 비교해보세요."), TEXT("If frame rate matters, try lowering this option by one step before reducing overall quality."));
+	if (Option == TEXT("Texture")) return Localize(TEXT("VRAM 여유가 있다면 높은 값을 유지하는 편이 화질 대비 성능 효율이 좋습니다."), TEXT("If VRAM is available, keeping this high often offers good image quality for the performance cost."));
+	if (Option == TEXT("ViewDistance")) return Localize(TEXT("경쟁 게임에서는 원거리 정보 보존을 위해 MEDIUM 이상을 권장합니다."), TEXT("For competitive games, Medium or higher is recommended to preserve distant scene information."));
+	if (Option == TEXT("Overall")) return Localize(TEXT("먼저 목표 프레임 프로필을 선택한 뒤 개별 옵션을 미세 조정하는 방식을 권장합니다."), TEXT("Choose a target-experience profile first, then fine-tune individual settings."));
+	return Localize(TEXT("Live Lab에서 기준 화면을 캡처한 뒤 한 단계씩 바꾸며 차이를 확인하세요."), TEXT("Capture a baseline in the Live Lab, then change one step at a time and compare."));
+}
 
 void UShooterOptionsScreen::StepResolution(const int32 Delta)
 {
@@ -1832,6 +2653,28 @@ void UShooterOptionsScreen::StepFrameRate(const int32 Delta)
 	RefreshGeneratedUI();
 }
 
+void UShooterOptionsScreen::StepPerformanceTargetFPS(const int32 Delta)
+{
+	UShooterGameUserSettings* LocalSettings = GetGameUserSettings();
+	if (!LocalSettings)
+	{
+		return;
+	}
+
+	const int32 CurrentIndex = FindNearestSmartTargetIndex(LocalSettings->GetPerformanceTargetFPS());
+	const int32 NewIndex = FMath::Clamp(CurrentIndex + Delta, 0, UE_ARRAY_COUNT(SmartTargetFPSChoices) - 1);
+	LocalSettings->SetPerformanceTargetFPS(SmartTargetFPSChoices[NewIndex]);
+
+	if (UShooterOptionsPerformanceSubsystem* Performance = GetPerformanceSubsystem())
+	{
+		SessionTargetMissPercent = Performance->GetTargetMissPercent(LocalSettings->GetPerformanceTargetFPS());
+	}
+
+	ActiveGeneratedOption = TEXT("Advisor");
+	RefreshGeneratedAdvisor();
+	RefreshGeneratedUI();
+}
+
 void UShooterOptionsScreen::StepOverallQuality(const int32 Delta)
 {
 	int32 Level = GetOverallQualityLevel();
@@ -1856,6 +2699,8 @@ void UShooterOptionsScreen::HandleSideGraphics() { ActiveGeneratedSideButton = T
 void UShooterOptionsScreen::HandleSideDisplay() { ActiveGeneratedSideButton = TEXT("Btn_Side_Display"); ActiveGeneratedOption = TEXT("Resolution"); ShowGeneratedPage(1); }
 void UShooterOptionsScreen::HandleSideControls() { ActiveGeneratedSideButton = TEXT("Btn_Side_Controls"); ActiveGeneratedOption = TEXT("HorizontalSensitivity"); ShowGeneratedPage(2); }
 void UShooterOptionsScreen::HandleSideAudio() { ActiveGeneratedSideButton = TEXT("Btn_Side_Audio"); ActiveGeneratedOption = TEXT("MasterVolume"); ShowGeneratedPage(3); }
+void UShooterOptionsScreen::HandleSideSettings() { ActiveGeneratedSideButton = TEXT("Btn_Side_Settings"); ActiveGeneratedOption = TEXT("Language"); ShowGeneratedPage(4); }
+void UShooterOptionsScreen::HandleSideSmartTuning() { ActiveGeneratedSideButton = TEXT("Btn_Side_SmartTuning"); ActiveGeneratedOption = TEXT("Advisor"); ShowGeneratedPage(5); }
 void UShooterOptionsScreen::HandleSave() { SaveOptions(); }
 void UShooterOptionsScreen::HandleBack() { RequestClose(); }
 void UShooterOptionsScreen::HandleReset() { ResetAllSettingsToDefaults(); RefreshGeneratedUI(); }
@@ -1880,6 +2725,8 @@ void UShooterOptionsScreen::HandleWindowModeWindowed()
 }
 void UShooterOptionsScreen::HandleFrameRatePrev() { ActiveGeneratedOption = TEXT("FrameRate"); StepFrameRate(-1); }
 void UShooterOptionsScreen::HandleFrameRateNext() { ActiveGeneratedOption = TEXT("FrameRate"); StepFrameRate(1); }
+void UShooterOptionsScreen::HandleTargetFPSPrev() { StepPerformanceTargetFPS(-1); }
+void UShooterOptionsScreen::HandleTargetFPSNext() { StepPerformanceTargetFPS(1); }
 void UShooterOptionsScreen::HandleOverallPrev() { ActiveGeneratedOption = TEXT("Overall"); StepOverallQuality(-1); }
 void UShooterOptionsScreen::HandleOverallNext() { ActiveGeneratedOption = TEXT("Overall"); StepOverallQuality(1); }
 void UShooterOptionsScreen::HandleViewDistancePrev() { ActiveGeneratedOption = TEXT("ViewDistance"); StepQuality(EShooterScalabilitySetting::ViewDistance, -1); }
@@ -2001,6 +2848,34 @@ void UShooterOptionsScreen::HandleInfoShading()
 	RefreshGeneratedDetailPanel();
 }
 
+void UShooterOptionsScreen::HandleInfoLanguage()
+{
+	ActiveGeneratedOption = TEXT("Language");
+	RefreshGeneratedOptionRowVisuals();
+	RefreshGeneratedDetailPanel();
+}
+
+
+void UShooterOptionsScreen::HandleCaptureBaseline() { CaptureGeneratedBaseline(); }
+void UShooterOptionsScreen::HandleProfileVisual60() { ApplyExperienceProfile(EShooterExperienceProfile::Visual60); }
+void UShooterOptionsScreen::HandleProfileBalanced120() { ApplyExperienceProfile(EShooterExperienceProfile::Balanced120); }
+void UShooterOptionsScreen::HandleProfileCompetitive144() { ApplyExperienceProfile(EShooterExperienceProfile::Competitive144); }
+void UShooterOptionsScreen::HandleProfileMaxQuality() { ApplyExperienceProfile(EShooterExperienceProfile::MaxQuality); }
+void UShooterOptionsScreen::HandleApplyAdvisorRecommendation() { ApplyAdvisorRecommendation(); }
+
+void UShooterOptionsScreen::HandleLanguagePrev()
+{
+	ActiveGeneratedOption = TEXT("Language");
+	SetLanguage(GetLanguage() == EShooterOptionsLanguage::Korean
+		? EShooterOptionsLanguage::English
+		: EShooterOptionsLanguage::Korean);
+}
+
+void UShooterOptionsScreen::HandleLanguageNext()
+{
+	HandleLanguagePrev();
+}
+
 void UShooterOptionsScreen::HandleVSyncToggle() { ActiveGeneratedOption = TEXT("VSync"); SetVSyncEnabled(!IsVSyncEnabled()); RefreshGeneratedUI(); }
 void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveGeneratedOption = TEXT("DynamicResolution"); SetDynamicResolutionEnabled(!IsDynamicResolutionEnabled()); RefreshGeneratedUI(); }
 void UShooterOptionsScreen::HandleInvertYToggle() { ActiveGeneratedOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); RefreshGeneratedUI(); }
@@ -2110,8 +2985,9 @@ EShooterWindowMode UShooterOptionsScreen::FromEngineWindowMode(
 	switch (WindowMode)
 	{
 	case EWindowMode::Fullscreen:
-	case EWindowMode::WindowedFullscreen:
 		return EShooterWindowMode::Fullscreen;
+	case EWindowMode::WindowedFullscreen:
+		return EShooterWindowMode::WindowedFullscreen;
 	case EWindowMode::Windowed:
 	default:
 		return EShooterWindowMode::Windowed;
@@ -2124,8 +3000,9 @@ EWindowMode::Type UShooterOptionsScreen::ToEngineWindowMode(
 	switch (WindowMode)
 	{
 	case EShooterWindowMode::Fullscreen:
-	case EShooterWindowMode::WindowedFullscreen:
 		return EWindowMode::Fullscreen;
+	case EShooterWindowMode::WindowedFullscreen:
+		return EWindowMode::WindowedFullscreen;
 	case EShooterWindowMode::Windowed:
 	default:
 		return EWindowMode::Windowed;

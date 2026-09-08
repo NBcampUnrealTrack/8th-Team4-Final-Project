@@ -24,8 +24,10 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/WidgetSwitcher.h"
+#include "Containers/Ticker.h"
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
+#include "IAssetTools.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/MessageDialog.h"
@@ -56,6 +58,9 @@ namespace ShooterOptionsWbpGenerator
 	template <typename T>
 	T* NewWidget(UWidgetTree* Tree, const FName Name)
 	{
+		// Widgets created in a fresh WidgetTree do not need per-widget Modify() calls.
+		// Keeping creation side-effect free avoids editor transaction/reinstancing work while
+		// the hierarchy is still being assembled.
 		return Tree->ConstructWidget<T>(T::StaticClass(), Name);
 	}
 
@@ -267,7 +272,7 @@ namespace ShooterOptionsWbpGenerator
 		return Spacer;
 	}
 
-	static void AddSideSectionHeader(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Label)
+	static void AddSideSectionHeader(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Key, const FString& Label)
 	{
 		UHorizontalBox* H = NewWidget<UHorizontalBox>(Tree, NAME_None);
 		SetVBoxAuto(Parent->AddChild(H), FMargin(5.0f, 10.0f, 5.0f, 7.0f));
@@ -278,12 +283,12 @@ namespace ShooterOptionsWbpGenerator
 		SetHBoxAuto(H->AddChild(AccentSize), FMargin(0.0f, 0.0f, 8.0f, 0.0f), VAlign_Center);
 		AccentSize->SetContent(MakeBorder(Tree, NAME_None, CAccent));
 
-		UTextBlock* Text = MakeText(Tree, NAME_None, Label, 10, CMutedText, ETextJustify::Left, true);
+		UTextBlock* Text = MakeText(Tree, *FString::Printf(TEXT("TXT_SideSection_%s"), *Key), Label, 10, CMutedText, ETextJustify::Left, true);
 		SetHBoxFill(H->AddChild(Text), 1.0f, FMargin(0.0f), VAlign_Center);
 	}
 
 
-	static UTextBlock* AddSectionTitle(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Label)
+	static UTextBlock* AddSectionTitle(UWidgetTree* Tree, UVerticalBox* Parent, const FString& Key, const FString& Label)
 	{
 		UHorizontalBox* Header = NewWidget<UHorizontalBox>(Tree, NAME_None);
 		SetVBoxAuto(Parent->AddChild(Header), FMargin(4.0f, 8.0f, 4.0f, 8.0f));
@@ -294,7 +299,7 @@ namespace ShooterOptionsWbpGenerator
 		SetHBoxAuto(Header->AddChild(AccentSize), FMargin(0.0f, 0.0f, 10.0f, 0.0f), VAlign_Center);
 		AccentSize->SetContent(MakeBorder(Tree, NAME_None, CAccent));
 
-		UTextBlock* Title = MakeText(Tree, NAME_None, Label, 12, CSecondaryText, ETextJustify::Left, true);
+		UTextBlock* Title = MakeText(Tree, *FString::Printf(TEXT("TXT_Section_%s"), *Key), Label, 12, CSecondaryText, ETextJustify::Left, true);
 		SetHBoxFill(Header->AddChild(Title), 1.0f, FMargin(0.0f), VAlign_Center);
 		return Title;
 	}
@@ -558,11 +563,11 @@ namespace ShooterOptionsWbpGenerator
 		const FString& ButtonName,
 		const FString& ButtonLabel)
 	{
-		UBorder* Row = MakeRowShell(Tree, Parent, NAME_None);
+		UBorder* Row = MakeRowShell(Tree, Parent, *FString::Printf(TEXT("Border_Row_%s"), *ButtonName));
 		UHorizontalBox* H = NewWidget<UHorizontalBox>(Tree, NAME_None);
 		Row->SetContent(H);
 
-		UTextBlock* LabelText = MakeText(Tree, NAME_None, Label, 15, CPrimaryText);
+		UTextBlock* LabelText = MakeText(Tree, *FString::Printf(TEXT("TXT_Label_%s"), *ButtonName), Label, 15, CPrimaryText);
 		SetHBoxFill(H->AddChild(LabelText), 1.0f, FMargin(0.0f), VAlign_Center);
 
 		USizeBox* ControlColumn = NewWidget<USizeBox>(Tree, NAME_None);
@@ -811,6 +816,7 @@ namespace ShooterOptionsWbpGenerator
 		AddHeaderStatusCard(Tree, Top, TEXT("Display"), TEXT("DISPLAY"), TEXT("1920 x 1080"), 190.0f);
 		AddHeaderStatusCard(Tree, Top, TEXT("Quality"), TEXT("QUALITY"), TEXT("CUSTOM"), 170.0f);
 		AddHeaderStatusCard(Tree, Top, TEXT("FPS"), TEXT("FRAME LIMIT"), TEXT("UNLIMITED"), 170.0f);
+		AddHeaderStatusCard(Tree, Top, TEXT("Target"), TEXT("TARGET"), TEXT("120 FPS"), 150.0f);
 
 		// Body
 		UHorizontalBox* Body = NewWidget<UHorizontalBox>(Tree, TEXT("HB_Body"));
@@ -824,15 +830,21 @@ namespace ShooterOptionsWbpGenerator
 		UVerticalBox* Side = NewWidget<UVerticalBox>(Tree, TEXT("VB_LeftSidebarMenu"));
 		Left->SetContent(Side);
 
-		AddSideSectionHeader(Tree, Side, TEXT("화면"));
+		AddSideSectionHeader(Tree, Side, TEXT("Display"), TEXT("화면"));
 		AddSideButton(Tree, Side, TEXT("Graphics"), TEXT("그래픽 설정"), true);
 		AddSideButton(Tree, Side, TEXT("Display"), TEXT("화면 설정"), false);
 
-		AddSideSectionHeader(Tree, Side, TEXT("게임플레이"));
+		AddSideSectionHeader(Tree, Side, TEXT("Gameplay"), TEXT("게임플레이"));
 		AddSideButton(Tree, Side, TEXT("Controls"), TEXT("조작 설정"), false);
 
-		AddSideSectionHeader(Tree, Side, TEXT("오디오"));
+		AddSideSectionHeader(Tree, Side, TEXT("Audio"), TEXT("오디오"));
 		AddSideButton(Tree, Side, TEXT("Audio"), TEXT("오디오 설정"), false);
+
+		AddSideSectionHeader(Tree, Side, TEXT("Options"), TEXT("설정"));
+		AddSideButton(Tree, Side, TEXT("Settings"), TEXT("옵션 설정"), false);
+
+		AddSideSectionHeader(Tree, Side, TEXT("Smart"), TEXT("스마트 도구"));
+		AddSideButton(Tree, Side, TEXT("SmartTuning"), TEXT("스마트 튜닝"), false);
 
 		UWidgetSwitcher* Switcher = NewWidget<UWidgetSwitcher>(Tree, TEXT("Switcher_MainPages"));
 		SetHBoxFill(Body->AddChild(Switcher), 1.0f, FMargin(0.0f, 0.0f, 12.0f, 0.0f));
@@ -841,10 +853,10 @@ namespace ShooterOptionsWbpGenerator
 		// Graphics and quality live on one scrollable page. The overall preset stays at the top,
 		// while the detailed scalability rows continue below without clipping.
 		UVerticalBox* Graphics = MakePage(Tree, Switcher, TEXT("Page_Graphics"), true);
-		AddSectionTitle(Tree, Graphics, TEXT("GRAPHICS PRESET"));
+		AddSectionTitle(Tree, Graphics, TEXT("GraphicsPreset"), TEXT("GRAPHICS PRESET"));
 		AddSelectorRow(Tree, Graphics, TEXT("Overall"), TEXT("전체 품질"), TEXT("HIGH"), 5, 2);
 		AddSpacer(Tree, Graphics, 4.0f);
-		AddSectionTitle(Tree, Graphics, TEXT("QUALITY"));
+		AddSectionTitle(Tree, Graphics, TEXT("Quality"), TEXT("QUALITY"));
 		AddSelectorRow(Tree, Graphics, TEXT("ViewDistance"), TEXT("시야 거리"), TEXT("HIGH"), 5, 2);
 		AddSelectorRow(Tree, Graphics, TEXT("AntiAliasing"), TEXT("안티앨리어싱"), TEXT("HIGH"), 5, 2);
 		AddSelectorRow(Tree, Graphics, TEXT("Shadow"), TEXT("그림자 품질"), TEXT("HIGH"), 5, 2);
@@ -857,7 +869,7 @@ namespace ShooterOptionsWbpGenerator
 		AddSelectorRow(Tree, Graphics, TEXT("Shading"), TEXT("셰이딩 품질"), TEXT("HIGH"), 5, 2);
 
 		UVerticalBox* Video = MakePage(Tree, Switcher, TEXT("Page_Video"));
-		AddSectionTitle(Tree, Video, TEXT("DISPLAY"));
+		AddSectionTitle(Tree, Video, TEXT("Display"), TEXT("DISPLAY"));
 		AddSelectorRow(Tree, Video, TEXT("Resolution"), TEXT("해상도"), TEXT("1920 x 1080"), 8, 4);
 		AddWindowModeRow(Tree, Video);
 		AddSliderRow(Tree, Video, TEXT("ResolutionScale"), TEXT("해상도 스케일"), 50.0f, 100.0f, 100.0f, TEXT("100%"));
@@ -866,24 +878,63 @@ namespace ShooterOptionsWbpGenerator
 		AddToggleRow(Tree, Video, TEXT("DynamicResolution"), TEXT("다이내믹 레졸루션"), false);
 
 		UVerticalBox* Controls = MakePage(Tree, Switcher, TEXT("Page_Controls"));
-		AddSectionTitle(Tree, Controls, TEXT("LOOK"));
+		AddSectionTitle(Tree, Controls, TEXT("Look"), TEXT("LOOK"));
 		AddSliderRow(Tree, Controls, TEXT("HorizontalSensitivity"), TEXT("수평 감도"), 0.01f, 10.0f, 1.0f, TEXT("1.00"));
 		AddSliderRow(Tree, Controls, TEXT("VerticalSensitivity"), TEXT("수직 감도"), 0.01f, 10.0f, 1.0f, TEXT("1.00"));
 		AddSliderRow(Tree, Controls, TEXT("AimSensitivity"), TEXT("ADS 감도 배율"), 0.01f, 2.0f, 1.0f, TEXT("1.00"));
 		AddToggleRow(Tree, Controls, TEXT("InvertY"), TEXT("Y축 반전"), false);
-		AddSectionTitle(Tree, Controls, TEXT("GAMEPLAY"));
+		AddSectionTitle(Tree, Controls, TEXT("Gameplay"), TEXT("GAMEPLAY"));
 		AddToggleRow(Tree, Controls, TEXT("DynamicCrosshair"), TEXT("동적 크로스헤어"), true);
 
 		UVerticalBox* Audio = MakePage(Tree, Switcher, TEXT("Page_Audio"));
-		AddSectionTitle(Tree, Audio, TEXT("VOLUME"));
+		AddSectionTitle(Tree, Audio, TEXT("Volume"), TEXT("VOLUME"));
 		AddSliderRow(Tree, Audio, TEXT("MasterVolume"), TEXT("마스터"), 0.0f, 1.0f, 1.0f, TEXT("100"));
 		AddSliderRow(Tree, Audio, TEXT("MusicVolume"), TEXT("음악"), 0.0f, 1.0f, 1.0f, TEXT("100"));
 		AddSliderRow(Tree, Audio, TEXT("SfxVolume"), TEXT("효과음"), 0.0f, 1.0f, 1.0f, TEXT("100"));
 		AddSliderRow(Tree, Audio, TEXT("UiVolume"), TEXT("UI"), 0.0f, 1.0f, 1.0f, TEXT("100"));
 		AddSliderRow(Tree, Audio, TEXT("VoiceVolume"), TEXT("음성"), 0.0f, 1.0f, 1.0f, TEXT("100"));
-		AddSectionTitle(Tree, Audio, TEXT("VOICE"));
+		AddSectionTitle(Tree, Audio, TEXT("Voice"), TEXT("VOICE"));
 		AddToggleRow(Tree, Audio, TEXT("MasterMute"), TEXT("전체 음소거"), false);
 		AddToggleRow(Tree, Audio, TEXT("VoiceChat"), TEXT("음성 채팅"), true);
+
+		UVerticalBox* Settings = MakePage(Tree, Switcher, TEXT("Page_Settings"));
+		AddSectionTitle(Tree, Settings, TEXT("Options"), TEXT("OPTIONS"));
+		AddSelectorRow(Tree, Settings, TEXT("Language"), TEXT("언어"), TEXT("한국어"), 2, 0);
+
+		UVerticalBox* Smart = MakePage(Tree, Switcher, TEXT("Page_SmartTuning"), true);
+		AddSectionTitle(Tree, Smart, TEXT("TargetExperience"), TEXT("TARGET EXPERIENCE"));
+		AddSelectorRow(Tree, Smart, TEXT("TargetFPS"), TEXT("목표 프레임"), TEXT("120 FPS"), 18, 5);
+		UBorder* TargetHelpCard = MakeBorder(Tree, TEXT("Border_TargetFPSHelp"), FLinearColor(0.015f, 0.055f, 0.058f, 0.56f), FMargin(12.0f, 8.0f));
+		SetVBoxAuto(Smart->AddChild(TargetHelpCard), FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		UTextBlock* TargetHelp = MakeText(Tree, TEXT("TXT_TargetFPSHelp"), TEXT("목표 프레임은 성능 분석 기준입니다. 화면 설정의 FPS 제한과는 별개입니다."), 11, CSecondaryText, ETextJustify::Left, false);
+		TargetHelp->SetAutoWrapText(true);
+		TargetHelpCard->SetContent(TargetHelp);
+		AddActionRow(Tree, Smart, TEXT("비주얼 우선 · 화질 중심"), TEXT("Btn_Profile_Visual60"), TEXT("프로필 적용"));
+		AddActionRow(Tree, Smart, TEXT("균형 · 화질/성능 균형"), TEXT("Btn_Profile_Balanced120"), TEXT("프로필 적용"));
+		AddActionRow(Tree, Smart, TEXT("경쟁 · 가시성/프레임 우선"), TEXT("Btn_Profile_Competitive144"), TEXT("프로필 적용"));
+		AddActionRow(Tree, Smart, TEXT("최고 화질 · 최대 품질"), TEXT("Btn_Profile_MaxQuality"), TEXT("프로필 적용"));
+		AddSpacer(Tree, Smart, 8.0f);
+		AddSectionTitle(Tree, Smart, TEXT("SessionAdvisor"), TEXT("SESSION ADVISOR"));
+
+		auto AddAdvisorMetric = [Tree, Smart](const TCHAR* Key, const TCHAR* Label, const TCHAR* Initial)
+		{
+			UBorder* Row = MakeRowShell(Tree, Smart, *FString::Printf(TEXT("Border_Advisor_%s"), Key));
+			UHorizontalBox* H = NewWidget<UHorizontalBox>(Tree, NAME_None);
+			Row->SetContent(H);
+			SetHBoxFill(H->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Advisor%sLabel"), Key), Label, 13, CSecondaryText, ETextJustify::Left, true)), 1.0f, FMargin(0.0f), VAlign_Center);
+			SetHBoxAuto(H->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Advisor%sValue"), Key), Initial, 15, CPrimaryText, ETextJustify::Right, true)), FMargin(14.0f, 0.0f, 0.0f, 0.0f), VAlign_Center);
+		};
+		AddAdvisorMetric(TEXT("Target"), TEXT("목표 프레임"), TEXT("120 FPS"));
+		AddAdvisorMetric(TEXT("Average"), TEXT("지난 세션 평균"), TEXT("--"));
+		AddAdvisorMetric(TEXT("OneLow"), TEXT("1% Low"), TEXT("--"));
+		AddAdvisorMetric(TEXT("Miss"), TEXT("목표 미달 비율"), TEXT("--"));
+
+		UBorder* AdvisorCard = MakeBorder(Tree, TEXT("Border_AdvisorRecommendation"), FLinearColor(0.020f, 0.110f, 0.115f, 0.62f), FMargin(14.0f, 12.0f));
+		SetVBoxAuto(Smart->AddChild(AdvisorCard), FMargin(0.0f, 6.0f, 0.0f, 8.0f));
+		UTextBlock* AdvisorText = MakeText(Tree, TEXT("TXT_AdvisorRecommendation"), TEXT("플레이 데이터를 수집한 뒤 실제 세션 기준 추천을 제공합니다."), 13, CSecondaryText, ETextJustify::Left, false);
+		AdvisorText->SetAutoWrapText(true);
+		AdvisorCard->SetContent(AdvisorText);
+		AddActionRow(Tree, Smart, TEXT("세션 추천"), TEXT("Btn_ApplyAdvisorRecommendation"), TEXT("추천 적용"));
 
 		Switcher->SetActiveWidgetIndex(0);
 
@@ -891,10 +942,21 @@ namespace ShooterOptionsWbpGenerator
 		USizeBox* RightSize = NewWidget<USizeBox>(Tree, TEXT("SB_RightDetail"));
 		RightSize->SetWidthOverride(390.0f);
 		SetHBoxAuto(Body->AddChild(RightSize));
-		UBorder* Right = MakeBorder(Tree, TEXT("Border_RightDetailPanel"), FLinearColor(0.008f, 0.025f, 0.027f, 0.54f), FMargin(16.0f));
+		UBorder* Right = MakeBorder(Tree, TEXT("Border_RightDetailPanel"), FLinearColor(0.008f, 0.025f, 0.027f, 0.54f), FMargin(10.0f));
 		RightSize->SetContent(Right);
+		UScrollBox* DetailScroll = NewWidget<UScrollBox>(Tree, TEXT("Scroll_RightDetail"));
+		DetailScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+		DetailScroll->SetScrollbarThickness(FVector2D(3.0f, 3.0f));
+		DetailScroll->SetAnimateWheelScrolling(true);
+		DetailScroll->SetWheelScrollMultiplier(42.0f);
+		Right->SetContent(DetailScroll);
 		UVerticalBox* Detail = NewWidget<UVerticalBox>(Tree, TEXT("VB_RightDetail"));
-		Right->SetContent(Detail);
+		if (UScrollBoxSlot* DetailSlot = Cast<UScrollBoxSlot>(DetailScroll->AddChild(Detail)))
+		{
+			DetailSlot->SetPadding(FMargin(6.0f));
+			DetailSlot->SetHorizontalAlignment(HAlign_Fill);
+			DetailSlot->SetVerticalAlignment(VAlign_Top);
+		}
 
 		SetVBoxAuto(Detail->AddChild(MakeText(Tree, TEXT("TXT_DetailCategory"), TEXT("GRAPHICS"), 10, CAccent, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 3.0f));
 		SetVBoxAuto(Detail->AddChild(MakeText(Tree, TEXT("TXT_DetailTitle"), TEXT("전체 품질"), 25, CPrimaryText, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 5.0f));
@@ -905,7 +967,22 @@ namespace ShooterOptionsWbpGenerator
 
 		UTextBlock* DetailBody = MakeText(Tree, TEXT("TXT_DetailBody"), TEXT("여러 Scalability 항목을 하나의 프리셋으로 동시에 조절합니다."), 13, CSecondaryText);
 		DetailBody->SetAutoWrapText(true);
-		SetVBoxAuto(Detail->AddChild(DetailBody), FMargin(0.0f, 0.0f, 0.0f, 14.0f));
+		SetVBoxAuto(Detail->AddChild(DetailBody), FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+
+		auto AddExplainCard = [Tree, Detail](const TCHAR* Prefix, const TCHAR* Heading, const TCHAR* Initial)
+		{
+			UBorder* Card = MakeBorder(Tree, *FString::Printf(TEXT("Border_Explain_%s"), Prefix), FLinearColor(0.015f, 0.055f, 0.058f, 0.60f), FMargin(9.0f, 7.0f));
+			SetVBoxAuto(Detail->AddChild(Card), FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+			UVerticalBox* V = NewWidget<UVerticalBox>(Tree, NAME_None);
+			Card->SetContent(V);
+			SetVBoxAuto(V->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Explain%sTitle"), Prefix), Heading, 9, CAccent, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+			UTextBlock* Text = MakeText(Tree, *FString::Printf(TEXT("TXT_Detail%s"), Prefix), Initial, 11, CSecondaryText, ETextJustify::Left, false);
+			Text->SetAutoWrapText(true);
+			SetVBoxAuto(V->AddChild(Text));
+		};
+		AddExplainCard(TEXT("GameplayImpact"), TEXT("게임플레이 영향"), TEXT("플레이 상황에서 체감되는 변화를 설명합니다."));
+		AddExplainCard(TEXT("PerformanceCost"), TEXT("성능 비용"), TEXT("GPU / CPU / VRAM 영향"));
+		AddExplainCard(TEXT("Recommendation"), TEXT("추천"), TEXT("설정 선택 가이드를 제공합니다."));
 
 		UWidgetSwitcher* DetailVisual = NewWidget<UWidgetSwitcher>(Tree, TEXT("Switcher_DetailVisual"));
 		SetVBoxAuto(Detail->AddChild(DetailVisual), FMargin(0.0f, 0.0f, 0.0f, 14.0f));
@@ -917,28 +994,68 @@ namespace ShooterOptionsWbpGenerator
 		GraphicsVisual->SetContent(GraphicsVisualV);
 		SetVBoxAuto(GraphicsVisualV->AddChild(MakeText(Tree, TEXT("TXT_PreviewEyebrow"), TEXT("LIVE SCENE"), 10, CAccent, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 7.0f));
 
-		USizeBox* PreviewSize = NewWidget<USizeBox>(Tree, TEXT("SB_Preview"));
-		PreviewSize->SetHeightOverride(185.0f);
-		SetVBoxAuto(GraphicsVisualV->AddChild(PreviewSize), FMargin(0.0f, 0.0f, 0.0f, 10.0f));
-		UBorder* PreviewFrame = MakeBorder(Tree, TEXT("Border_PreviewFrame"), FLinearColor(0.030f, 0.300f, 0.285f, 0.32f), FMargin(6.0f));
-		PreviewSize->SetContent(PreviewFrame);
-		UBorder* Preview = MakeBorder(Tree, TEXT("Border_Preview"), FLinearColor(0.006f, 0.010f, 0.012f, 1.0f), FMargin(0.0f));
-		PreviewFrame->SetContent(Preview);
-		UOverlay* PreviewOverlay = NewWidget<UOverlay>(Tree, TEXT("OV_Preview"));
-		Preview->SetContent(PreviewOverlay);
-		UImage* PreviewImage = NewWidget<UImage>(Tree, TEXT("IMG_Preview"));
-		PreviewImage->SetVisibility(ESlateVisibility::Collapsed);
-		SetOverlayFill(PreviewOverlay->AddChild(PreviewImage));
-		UTextBlock* PreviewStatus = MakeText(
-			Tree,
-			TEXT("TXT_PreviewStatus"),
-			TEXT("OptionsPreview 카메라 연결 대기 중"),
-			12,
-			CSecondaryText,
-			ETextJustify::Center,
-			true);
-		PreviewStatus->SetAutoWrapText(true);
-		SetOverlayCenter(PreviewOverlay->AddChild(PreviewStatus));
+		// A/B Visual Performance Lab. Baseline is a frozen capture; Current stays live.
+		UHorizontalBox* LabImages = NewWidget<UHorizontalBox>(Tree, TEXT("HB_LabImages"));
+		SetVBoxAuto(GraphicsVisualV->AddChild(LabImages), FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+
+		auto AddLabImage = [Tree, LabImages](const TCHAR* Prefix, const TCHAR* Label, const bool bCurrent)
+		{
+			UVerticalBox* Column = NewWidget<UVerticalBox>(Tree, *FString::Printf(TEXT("VB_Lab%s"), Prefix));
+			SetHBoxFill(LabImages->AddChild(Column), 1.0f, FMargin(bCurrent ? 5.0f : 0.0f, 0.0f, bCurrent ? 0.0f : 5.0f, 0.0f), VAlign_Fill);
+			SetVBoxAuto(Column->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Lab%sLabel"), Prefix), Label, 10, CMutedText, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+
+			USizeBox* ImageSize = NewWidget<USizeBox>(Tree, *FString::Printf(TEXT("SB_Lab%sPreview"), Prefix));
+			ImageSize->SetHeightOverride(116.0f);
+			SetVBoxAuto(Column->AddChild(ImageSize));
+			UBorder* Frame = MakeBorder(Tree, *FString::Printf(TEXT("Border_Lab%sFrame"), Prefix), FLinearColor(0.030f, 0.300f, 0.285f, 0.32f), FMargin(4.0f));
+			ImageSize->SetContent(Frame);
+			UBorder* Inner = MakeBorder(Tree, *FString::Printf(TEXT("Border_Lab%sInner"), Prefix), FLinearColor(0.006f, 0.010f, 0.012f, 1.0f));
+			Frame->SetContent(Inner);
+			UOverlay* Overlay = NewWidget<UOverlay>(Tree, *FString::Printf(TEXT("OV_Lab%s"), Prefix));
+			Inner->SetContent(Overlay);
+
+			const FName ImageName = bCurrent ? TEXT("IMG_Preview") : TEXT("IMG_BaselinePreview");
+			UImage* Image = NewWidget<UImage>(Tree, ImageName);
+			Image->SetVisibility(ESlateVisibility::Collapsed);
+			SetOverlayFill(Overlay->AddChild(Image));
+
+			const FName StatusName = bCurrent ? TEXT("TXT_PreviewStatus") : TEXT("TXT_BaselineStatus");
+			UTextBlock* Status = MakeText(
+				Tree,
+				StatusName,
+				bCurrent ? TEXT("OptionsPreview 카메라 연결 대기 중") : TEXT("기준 화면을 캡처하세요"),
+				10,
+				CSecondaryText,
+				ETextJustify::Center,
+				true);
+			Status->SetAutoWrapText(true);
+			SetOverlayCenter(Overlay->AddChild(Status));
+
+			SetVBoxAuto(Column->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Lab%sValue"), Prefix), bCurrent ? TEXT("현재 설정") : TEXT("기준 미캡처"), 11, CPrimaryText, ETextJustify::Left, true)), FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+		};
+
+		AddLabImage(TEXT("Baseline"), TEXT("기준 화면"), false);
+		AddLabImage(TEXT("Current"), TEXT("현재 화면"), true);
+
+		UHorizontalBox* LabMetrics = NewWidget<UHorizontalBox>(Tree, TEXT("HB_LabMetrics"));
+		SetVBoxAuto(GraphicsVisualV->AddChild(LabMetrics), FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		auto AddLabMetric = [Tree, LabMetrics](const TCHAR* Key, const TCHAR* Label, const TCHAR* Initial)
+		{
+			UBorder* Metric = MakeBorder(Tree, *FString::Printf(TEXT("Border_LabMetric_%s"), Key), FLinearColor(0.015f, 0.050f, 0.053f, 0.70f), FMargin(7.0f, 5.0f));
+			SetHBoxFill(LabMetrics->AddChild(Metric), 1.0f, FMargin(2.0f), VAlign_Fill);
+			UVerticalBox* V = NewWidget<UVerticalBox>(Tree, NAME_None);
+			Metric->SetContent(V);
+			SetVBoxAuto(V->AddChild(MakeText(Tree, NAME_None, Label, 9, CMutedText, ETextJustify::Left, true)));
+			SetVBoxAuto(V->AddChild(MakeText(Tree, *FString::Printf(TEXT("TXT_Lab%s"), Key), Initial, 11, CPrimaryText, ETextJustify::Left, true)));
+		};
+		AddLabMetric(TEXT("BaselineFrameTime"), TEXT("BASELINE"), TEXT("--"));
+		AddLabMetric(TEXT("CurrentFrameTime"), TEXT("CURRENT"), TEXT("--"));
+		AddLabMetric(TEXT("Delta"), TEXT("DELTA"), TEXT("--"));
+
+		USizeBox* CaptureButtonSize = NewWidget<USizeBox>(Tree, TEXT("SB_LabCaptureBaseline"));
+		CaptureButtonSize->SetHeightOverride(32.0f);
+		SetVBoxAuto(GraphicsVisualV->AddChild(CaptureButtonSize), FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		CaptureButtonSize->SetContent(MakeButton(Tree, TEXT("Btn_LabCaptureBaseline"), TEXT("기준 캡처"), 11, CAccentSoft, CPrimaryText));
 
 		SetVBoxAuto(GraphicsVisualV->AddChild(MakeText(Tree, TEXT("TXT_PerformanceTitle"), TEXT("예상 성능 영향도"), 11, CSecondaryText, ETextJustify::Left, true)), FMargin(0.0f, 0.0f, 0.0f, 5.0f));
 		UHorizontalBox* Perf = NewWidget<UHorizontalBox>(Tree, TEXT("HB_PerformanceBars"));
@@ -1009,9 +1126,91 @@ namespace ShooterOptionsWbpGenerator
 	}
 
 
-	static void Generate()
+
+	static bool ValidateGeneratedWidgetTree(UWidgetBlueprint* Blueprint, FString& OutError)
 	{
-		const FString PackagePath = TEXT("/Game/UI/Settings");
+		if (!Blueprint || !Blueprint->WidgetTree || !Blueprint->WidgetTree->RootWidget)
+		{
+			OutError = TEXT("WidgetTree or RootWidget is missing.");
+			return false;
+		}
+
+		TSet<FName> WidgetNames;
+		bool bValid = true;
+		Blueprint->WidgetTree->ForEachWidget([&](UWidget* Widget)
+		{
+			if (!Widget || !bValid)
+			{
+				return;
+			}
+
+			const FName WidgetName = Widget->GetFName();
+			if (WidgetName.IsNone())
+			{
+				return;
+			}
+
+			if (WidgetNames.Contains(WidgetName))
+			{
+				OutError = FString::Printf(TEXT("Duplicate widget name: %s"), *WidgetName.ToString());
+				bValid = false;
+				return;
+			}
+			WidgetNames.Add(WidgetName);
+		});
+
+		return bValid;
+	}
+
+	static bool FinalizeGeneratedBlueprint(float, TWeakObjectPtr<UWidgetBlueprint> WeakBlueprint)
+	{
+		UWidgetBlueprint* Blueprint = WeakBlueprint.Get();
+		if (!Blueprint)
+		{
+			return false;
+		}
+
+		FString ValidationError;
+		if (!ValidateGeneratedWidgetTree(Blueprint, ValidationError))
+		{
+			Blueprint->RemoveFromRoot();
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
+				FString::Printf(TEXT("WBP validation failed. / WBP 생성 검증 실패\n\n%s"), *ValidationError)));
+			return false;
+		}
+
+		// Compile after the asset-creation command has returned.  UMG compilation performs
+		// skeleton/reinstancing work; deferring it one editor tick avoids compiling while
+		// AssetTools/WidgetBlueprintFactory are still on the creation stack.
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		FKismetEditorUtilities::CompileBlueprint(Blueprint);
+		if (Blueprint->Status == BS_Error)
+		{
+			Blueprint->RemoveFromRoot();
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
+				TEXT("WBP compilation failed; the asset was not saved. Check Message Log, fix the errors, and compile again. / WBP 컴파일 실패: Message Log를 확인하세요.")));
+			return false;
+		}
+
+		UPackage* Package = Blueprint->GetOutermost();
+		Package->MarkPackageDirty();
+		const FString Filename = FPackageName::LongPackageNameToFilename(
+			Package->GetName(), FPackageName::GetAssetPackageExtension());
+		FSavePackageArgs SaveArgs;
+		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+		SaveArgs.SaveFlags = SAVE_NoError;
+		const bool bSaved = UPackage::SavePackage(Package, Blueprint, *Filename, SaveArgs);
+		Blueprint->RemoveFromRoot();
+
+		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
+			bSaved
+				? FString::Printf(TEXT("Created and saved / 생성 및 저장 완료: %s"), *Package->GetName())
+				: FString(TEXT("WBP compiled, but package saving failed. Check Output Log and write permissions. / 패키지 저장 실패"))));
+		return false;
+	}
+
+	static void GenerateAtPath(const FString& PackagePath)
+	{
 		const FString AssetName = TEXT("WBP_OptionsScreen_Auto");
 		const FString LongPackageName = PackagePath + TEXT("/") + AssetName;
 		const FString ObjectPath = LongPackageName + TEXT(".") + AssetName;
@@ -1019,7 +1218,7 @@ namespace ShooterOptionsWbpGenerator
 		if (FindObject<UObject>(nullptr, *ObjectPath) || FPackageName::DoesPackageExist(LongPackageName))
 		{
 			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
-				TEXT("WBP_OptionsScreen_Auto가 이미 존재합니다. 기존 에셋을 지우거나 이름을 바꾼 뒤 다시 실행하세요.")));
+				FString::Printf(TEXT("An asset already exists at %s. Preserve your edits before renaming or removing it, then fix redirectors before regenerating. / 기존 에셋을 보존한 뒤 이름과 리디렉터를 정리하세요."), *LongPackageName)));
 			return;
 		}
 
@@ -1032,7 +1231,7 @@ namespace ShooterOptionsWbpGenerator
 		UWidgetBlueprint* Blueprint = Cast<UWidgetBlueprint>(NewAsset);
 		if (!Blueprint || !Blueprint->WidgetTree)
 		{
-			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("Widget Blueprint 생성에 실패했습니다.")));
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("Widget Blueprint creation failed. / Widget Blueprint 생성 실패")));
 			return;
 		}
 
@@ -1043,25 +1242,39 @@ namespace ShooterOptionsWbpGenerator
 		}
 
 		BuildWidgetTree(Blueprint);
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(Blueprint);
-		Blueprint->MarkPackageDirty();
+		if (!Blueprint->WidgetTree->RootWidget)
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("Widget tree creation failed. / Widget Tree 생성 실패")));
+			return;
+		}
 
-		UPackage* Package = Blueprint->GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		FSavePackageArgs SaveArgs;
-		SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-		SaveArgs.SaveFlags = SAVE_NoError;
-		UPackage::SavePackage(Package, Blueprint, *Filename, SaveArgs);
+		FString ValidationError;
+		if (!ValidateGeneratedWidgetTree(Blueprint, ValidationError))
+		{
+			FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
+				FString::Printf(TEXT("WBP validation failed. / WBP 생성 검증 실패\n\n%s"), *ValidationError)));
+			return;
+		}
 
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(
-			TEXT("생성 완료: /Game/UI/Settings/WBP_OptionsScreen_Auto\n\nOptions Screen Class에 이 WBP를 지정하면 됩니다.")));
+		// Hold the new asset until the deferred editor-tick compile/save completes.
+		Blueprint->AddToRoot();
+		const TWeakObjectPtr<UWidgetBlueprint> WeakBlueprint(Blueprint);
+		FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateLambda([WeakBlueprint](float DeltaTime)
+			{
+				return FinalizeGeneratedBlueprint(DeltaTime, WeakBlueprint);
+			}),
+			0.10f);
+	}
+
+	static void Generate()
+	{
+		GenerateAtPath(TEXT("/Game/UI/Settings"));
 	}
 
 	static FAutoConsoleCommand GenerateCommand(
 		TEXT("FPS.UI.GenerateOptionsWBP"),
-		TEXT("Creates /Game/UI/Settings/WBP_OptionsScreen_Auto using ShooterOptionsScreen as the parent class."),
+		TEXT("Creates /Game/UI/Settings/WBP_OptionsScreen_Auto using ShooterOptionsScreen as the parent class. Does not overwrite an existing asset."),
 		FConsoleCommandDelegate::CreateStatic(&Generate));
 }
 
