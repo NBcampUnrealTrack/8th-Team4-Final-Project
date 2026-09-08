@@ -47,6 +47,11 @@ protected:
 	// 스폰 직후 기폭을 시작할지 여부
 	virtual bool ShouldStartFuseOnBeginPlay() const { return bAutoDetonate; }
 
+	// 기폭 순간 재생할 GameplayCue. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag DetonateCueTag;
+
 	// 연출 훅. 기폭이 확정된 뒤 모든 클라이언트에서 실행
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Augment|Actor")
 	void OnDetonated();
@@ -102,6 +107,9 @@ private:
 
 	// 이번 기폭이 적용될 지점. 산포가 없으면 액터 위치
 	FVector ResolveDetonateOrigin() const;
+
+	// 기폭 큐 재생. 모든 클라이언트에서 각자 실행
+	void PlayDetonateCue(const FVector& Location) const;
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_Detonated(FVector_NetQuantize Location);
