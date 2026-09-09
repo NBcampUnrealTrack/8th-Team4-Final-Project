@@ -98,6 +98,13 @@ void UDominationUIInitComponent::ToggleAugmentSelect()
 		return;
 	}
 	
+	const UShooterAugmentSelectScreen* AS = GetAugmentSelectInstance();
+	if (IsAugmentSelectionRequestPending()
+		|| (IsValid(AS) && AS->IsOutroPlaying()))
+	{
+		return;
+	}
+		
 	UAugmentInventoryComponent* Inv = GetBoundAugmentInventory();
 	if (!IsValid(Inv)
 		|| Inv->GetOffers().IsEmpty()

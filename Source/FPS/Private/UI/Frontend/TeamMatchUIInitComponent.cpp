@@ -60,6 +60,7 @@ void UTeamMatchUIInitComponent::ShutdownTeamMatchUI()
 	RemoveInGameMenu();
 	RemoveSurrenderVote();
 	HideAugmentSelect();
+	ResetAugmentRequestContext();
 	HideScoreboard();
 
 	if (BoundInventory.IsValid())
@@ -267,6 +268,9 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 	AugmentScreen->OnAugmentRerollRequested.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleAugmentRerollRequested);
+	AugmentScreen->OnSelectionOutroFinished.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleSelectionOutroFinished);
 	
 	OnAugmentScreenCreated(AugmentScreen);
 	
@@ -290,8 +294,15 @@ void UTeamMatchUIInitComponent::HideAugmentSelect()
 	AugmentScreen->OnAugmentRerollRequested.RemoveDynamic(
 		this,
 		&ThisClass::HandleAugmentRerollRequested);
+	AugmentScreen->OnSelectionOutroFinished.RemoveDynamic(
+		this,
+		&ThisClass::HandleSelectionOutroFinished);
+	
 	RemoveScreenFromLayer(UITags::UI_Layer_Modal, AugmentScreen);
 	SetAugmentSelectInstance(nullptr);
+
+	// 화면 제거는 요청을 취소하지 않는다.
+	// 해제는 ResetAugmentRequestContext() 만 한다
 }
 
 void UTeamMatchUIInitComponent::ShowScoreboard()
@@ -350,7 +361,20 @@ void UTeamMatchUIInitComponent::RefreshModalPresentation()
 	const TArray<FAugmentInventoryEntry> Offers = BoundInventory.IsValid()
 		? BoundInventory->GetOffers()
 		: TArray<FAugmentInventoryEntry>();
-	const bool bShowAugment = IsAugmentPresentationAllowed() && !Offers.IsEmpty();
+	
+	if (bSelectionRequestPending 
+		&& !(Offers.IsValidIndex(RequestedOfferIndex)
+		&& Offers[RequestedOfferIndex].DefinitionId == RequestDefinitionId))
+	{
+		ResetAugmentRequestContext();
+	}
+	const UShooterAugmentSelectScreen* AugmentScreen = GetAugmentSelectInstance();
+	const bool bOutroPlaying = IsValid(AugmentScreen) && AugmentScreen->IsOutroPlaying();
+	
+	const bool bShowAugment = IsAugmentPresentationAllowed() 
+		&& !Offers.IsEmpty()
+		&& !bSelectionRequestPending
+		&& !bOutroPlaying;
 
 	if (bInGameMenuRequested)
 	{
@@ -376,11 +400,12 @@ void UTeamMatchUIInitComponent::RefreshModalPresentation()
 		CloseModeSpecificScreensForModal();
 		ShowAugmentSelect(Offers);
 	}
-	else
+	else if (!bOutroPlaying)
 	{
 		HideAugmentSelect();
 	}
 }
+
 
 bool UTeamMatchUIInitComponent::CanRequestSurrender() const
 {
@@ -476,11 +501,24 @@ void UTeamMatchUIInitComponent::HandleSurrenderVoteStartResult(
 
 void UTeamMatchUIInitComponent::HandleAugmentSelected(const int32 OfferIndex)
 {
-	if (BoundInventory.IsValid())
+	if (bSelectionRequestPending || !BoundInventory.IsValid())
 	{
-		BoundInventory->ServerSelectOffer(OfferIndex);
+		return;
 	}
-	HideAugmentSelect();
+	
+	const TArray<FAugmentInventoryEntry>& CurrentOffers = BoundInventory->GetOffers();
+	if (!CurrentOffers.IsValidIndex(OfferIndex))
+	{
+		return;
+	}
+	
+	// 상태를 바꾸고 보냄
+	bSelectionRequestPending =true;
+	RequestedOfferIndex = OfferIndex;
+	RequestDefinitionId = CurrentOffers[OfferIndex].DefinitionId;
+	
+	BoundInventory->ServerSelectOffer(OfferIndex);
+	// 화면은 아웃트로 끝나고 닫음.
 }
 
 void UTeamMatchUIInitComponent::HandleAugmentOffersChanged()
@@ -494,6 +532,13 @@ void UTeamMatchUIInitComponent::HandleAugmentRerollRequested(const int32 SlotInd
 	{
 		BoundInventory->ServerRerollOffer(SlotIndex);
 	}
+}
+
+void UTeamMatchUIInitComponent::HandleSelectionOutroFinished()
+{
+	HideAugmentSelect();
+	// 아웃트로 도중 도착한 다음 후보가 뜨기위함
+	ScheduleModalRefresh();
 }
 
 bool UTeamMatchUIInitComponent::IsTeamMatchUIReady() const
@@ -532,6 +577,18 @@ void UTeamMatchUIInitComponent::RemoveScreenFromLayer(
 	{
 		Screen->DeactivateWidget();
 	}
+}
+
+void UTeamMatchUIInitComponent::ResetAugmentRequestContext()
+{
+	bSelectionRequestPending = false;
+	RequestedOfferIndex = INDEX_NONE;
+	RequestDefinitionId = FPrimaryAssetId();
+}
+
+bool UTeamMatchUIInitComponent::IsAugmentSelectionRequestPending() const
+{
+	return bSelectionRequestPending;
 }
 
 EAugmentSelectEntry UTeamMatchUIInitComponent::GetAugmentEntryAnimation() const

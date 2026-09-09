@@ -67,6 +67,9 @@ protected:
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
 	
+	void ResetAugmentRequestContext();
+	bool IsAugmentSelectionRequestPending() const;
+	
 	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) {};
 	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) {};
 	virtual EAugmentSelectEntry GetAugmentEntryAnimation() const;
@@ -115,7 +118,7 @@ private:
 	void HandleSurrenderMenuRequested();
 	void HandleSurrenderVoteStateChanged();
 	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
-
+	
 	UFUNCTION()
 	void HandleAugmentSelected(int32 OfferIndex);
 
@@ -124,6 +127,9 @@ private:
 
 	UFUNCTION()
 	void HandleAugmentRerollRequested(int32 SlotIndex);
+	
+	UFUNCTION()
+	void HandleSelectionOutroFinished();
 
 	UPROPERTY(EditAnywhere, Category = "UI|Scoreboard")
 	TSubclassOf<UShooterScoreboard> ScoreboardClass;
@@ -137,4 +143,10 @@ private:
 	bool bInGameMenuRequested = false;
 	bool bLastObservedVoteActive = false;
 	bool bModalRefreshPending = false;
+	
+	// Offers가 비었다 - 카드가 적용 됐다는 뜻이 아님
+	bool bSelectionRequestPending = false;
+	
+	int32 RequestedOfferIndex = INDEX_NONE;
+	FPrimaryAssetId RequestDefinitionId;
 };
