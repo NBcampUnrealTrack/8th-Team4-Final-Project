@@ -145,17 +145,20 @@ void UDominationAugmentSelectHint::RefreshPresentation()
 		&& UIInit->IsAugmentSelectDismissed()
 		&& UIInit->IsAugmentPresentationSettled();
 	
-	if (bHasVisibilityState && bLastShouldShow == bShouldShow)
-	{
-		return;
-	}
+	const bool bVisibilityChanged = !bHasVisibilityState || bLastShouldShow != bShouldShow;
 	bHasVisibilityState = true;
 	bLastShouldShow = bShouldShow;
 	
-	SetVisibility(bShouldShow
-		? ESlateVisibility::HitTestInvisible
-		: ESlateVisibility::Collapsed);
+	if (bVisibilityChanged)
+	{
+		SetVisibility(bShouldShow
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+		
+		BP_OnHintVisibilityChanged(bShouldShow);
+	}
 	
+	// 보류 중에 다음 Draft가 이어 받기 위함 카운트다운은 계속 돌린다.
 	if (bShouldShow)
 	{
 		StartCountdown();
@@ -164,8 +167,6 @@ void UDominationAugmentSelectHint::RefreshPresentation()
 	{
 		StopCountdown();
 	}
-	
-	BP_OnHintVisibilityChanged(bShouldShow);
 }
 
 void UDominationAugmentSelectHint::RefreshCountdown()
