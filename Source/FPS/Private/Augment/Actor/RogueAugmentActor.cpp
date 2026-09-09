@@ -3,8 +3,10 @@
 
 #include "Augment/Actor/RogueAugmentActor.h"
 
+#include "AbilitySystemGlobals.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameplayCueManager.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -182,9 +184,31 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 	FollowUp->FinishSpawning(SpawnTransform);
 }
 
+void ARogueAugmentActor::PlayDetonateCue(const FVector& Location) const
+{
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!DetonateCueTag.IsValid() || !CueManager)
+	{
+		return;
+	}
+
+	AActor* Self = const_cast<ARogueAugmentActor*>(this);
+
+	FGameplayCueParameters CueParams;
+	CueParams.Location     = Location;
+	CueParams.Normal       = FVector::UpVector;
+	CueParams.Instigator   = GetInstigator();
+	CueParams.EffectCauser = Self;
+	CueParams.RawMagnitude = EffectRadius;
+
+	CueManager->HandleGameplayCue(Self, DetonateCueTag, EGameplayCueEvent::Executed, CueParams);
+}
+
 void ARogueAugmentActor::Multicast_Detonated_Implementation(const FVector_NetQuantize Location)
 {
 	LastDetonateLocation = Location;
+
+	PlayDetonateCue(Location);
 
 	OnDetonated();
 }

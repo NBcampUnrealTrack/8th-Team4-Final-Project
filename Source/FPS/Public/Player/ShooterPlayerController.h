@@ -25,6 +25,7 @@ class UTeamMatchUIInitComponent;
 class UInputMappingContext;
 class APlayerState;
 class USoundBase;
+class USoundMix;
 struct FInputActionValue;
 
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bRed면 빨간 X(헤드샷 또는 처치), 아니면 기본 X.
@@ -214,6 +215,9 @@ private:
 	void OnRep_SurrenderVoteState();
 
 	void SetSurrenderVoteState(const FSurrenderVoteState& NewState);
+	void InitializeAudioSettings();
+	void ShutdownAudioSettings();
+	void HandleAudioSettingsChanged();
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();
@@ -248,6 +252,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> ActiveUserSettingsSoundMix;
 
 	UPROPERTY()
 	TObjectPtr<UShooterSpectatorWidget> SpectatorWidget;

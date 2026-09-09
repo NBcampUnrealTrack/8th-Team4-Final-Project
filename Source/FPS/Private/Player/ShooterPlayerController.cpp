@@ -1,10 +1,14 @@
 #include "Player/ShooterPlayerController.h"
 
+#include "AudioDevice.h"
+
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
+#include "Combat/CombatComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -23,6 +27,9 @@
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
+#include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -59,6 +66,13 @@ void AShooterPlayerController::BeginPlay()
 	{
 		return;
 	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->ApplyLanguageCulture();
+	}
+
+	InitializeAudioSettings();
 
 	if (GetTeamMatchUIInitComponent())
 	{
@@ -102,6 +116,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		ShutdownAudioSettings();
 		HideSpectatorWidget();
 
 		if (GetTeamMatchUIInitComponent())
@@ -120,6 +135,124 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void AShooterPlayerController::InitializeAudioSettings()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	Settings->OnAudioSettingsChanged.AddUObject(this, &ThisClass::HandleAudioSettingsChanged);
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	ActiveUserSettingsSoundMix = AudioSettings->UserSettingsSoundMix.LoadSynchronous();
+	if (ensureMsgf(ActiveUserSettingsSoundMix,
+		TEXT("Assign UserSettingsSoundMix in Project Settings > Shooter Audio Settings.")))
+	{
+		UGameplayStatics::PushSoundMixModifier(this, ActiveUserSettingsSoundMix);
+	}
+
+	HandleAudioSettingsChanged();
+}
+
+void AShooterPlayerController::ShutdownAudioSettings()
+{
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.RemoveAll(this);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (FAudioDevice* AudioDevice = World->GetAudioDeviceRaw())
+		{
+			AudioDevice->SetTransientPrimaryVolume(1.0f);
+		}
+	}
+
+	if (ActiveUserSettingsSoundMix)
+	{
+		UGameplayStatics::PopSoundMixModifier(this, ActiveUserSettingsSoundMix);
+		ActiveUserSettingsSoundMix = nullptr;
+	}
+}
+
+void AShooterPlayerController::HandleAudioSettingsChanged()
+{
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	if (!Settings->IsVoiceChatEnabled())
+	{
+		if (SteamVoiceComponent->IsCapturingVoice())
+		{
+			StopVoiceTalking();
+		}
+		SteamVoiceComponent->StopPlayback();
+	}
+
+	const float MasterVolume = Settings->IsMasterAudioMuted()
+		? 0.0f
+		: Settings->GetAudioVolume(EShooterAudioChannel::Master);
+
+	// Master volume must work even when project SoundClass assets are not configured yet.
+	// Apply it at the world's audio-device output stage; channel sliders still use SoundMix/SoundClass.
+	if (UWorld* World = GetWorld())
+	{
+		if (FAudioDevice* AudioDevice = World->GetAudioDeviceRaw())
+		{
+			AudioDevice->SetTransientPrimaryVolume(FMath::Clamp(MasterVolume, 0.0f, 1.0f));
+		}
+	}
+
+	if (!ActiveUserSettingsSoundMix)
+	{
+		return;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	const auto SetClassVolume = [this](
+		const TSoftObjectPtr<USoundClass>& SoundClassReference,
+		const float Volume,
+		const bool bApplyToChildren)
+	{
+		USoundClass* SoundClass = SoundClassReference.LoadSynchronous();
+		if (!ensureMsgf(SoundClass,
+			TEXT("Assign every channel Sound Class in Project Settings > Shooter Audio Settings. Missing: %s"),
+			*SoundClassReference.ToString()))
+		{
+			return;
+		}
+
+		UGameplayStatics::SetSoundMixClassOverride(
+			this,
+			ActiveUserSettingsSoundMix,
+			SoundClass,
+			FMath::Clamp(Volume, 0.0f, 1.0f),
+			1.0f,
+			0.0f,
+			bApplyToChildren);
+	};
+
+	// Channel overrides are multiplied by the already-applied master value.
+	SetClassVolume(AudioSettings->MasterSoundClass, 1.0f, false);
+	SetClassVolume(AudioSettings->MusicSoundClass,
+		Settings->GetAudioVolume(EShooterAudioChannel::Music), true);
+	SetClassVolume(AudioSettings->SoundEffectsSoundClass,
+		Settings->GetAudioVolume(EShooterAudioChannel::SoundEffects), true);
+	SetClassVolume(AudioSettings->UserInterfaceSoundClass,
+		Settings->GetAudioVolume(EShooterAudioChannel::UserInterface), true);
+	SetClassVolume(AudioSettings->VoiceSoundClass,
+		Settings->IsVoiceChatEnabled()
+			? Settings->GetAudioVolume(EShooterAudioChannel::Voice)
+			: 0.0f,
+		true);
 }
 
 void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
@@ -215,12 +348,12 @@ void AShooterPlayerController::SetupInputComponent()
 			ETriggerEvent::Completed,
 			this,
 			&ThisClass::Input_HideScoreboard);
-		
+
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
 			ETriggerEvent::Canceled,
 			this,
-			&ThisClass::Input_HideScoreboard);	
+			&ThisClass::Input_HideScoreboard);
 	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
@@ -276,9 +409,20 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerController::StartVoiceTalking()
 {
-	if (IsLocalController() && SteamVoiceComponent)
+	if (!IsLocalController())
 	{
-		SteamVoiceComponent->StartCapture();
+		return;
+	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		!Settings || !Settings->IsVoiceChatEnabled())
+	{
+		return;
+	}
+
+	if (!SteamVoiceComponent || !SteamVoiceComponent->StartCapture())
+	{
+		return;
 	}
 
 	if (HasAuthority())
@@ -352,6 +496,7 @@ void AShooterPlayerController::ToggleDynamicCrosshair()
 	}
 
 	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
+	Settings->SaveSettings();
 }
 
 void AShooterPlayerController::TestHitIndicator()
@@ -704,6 +849,12 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		return;
 	}
 
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		!Settings || !Settings->IsVoiceChatEnabled())
+	{
+		return;
+	}
+
 	UVoiceChatSubsystem* VoiceChatSubsystem = nullptr;
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -975,7 +1126,16 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
-		ShooterCharacter->HandleLookInput(Value);
+		FVector2D LookAxisVector = Value.Get<FVector2D>();
+
+		if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+		{
+			const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
+			const bool bAiming = CombatComponent && CombatComponent->bAiming;
+			LookAxisVector = Settings->ApplyLookSensitivity(LookAxisVector, bAiming);
+		}
+
+		ShooterCharacter->HandleLookInput(LookAxisVector);
 	}
 }
 
