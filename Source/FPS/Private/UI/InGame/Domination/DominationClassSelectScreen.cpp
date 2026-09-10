@@ -12,7 +12,9 @@
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
 #include "TimerManager.h"
+#include "Components/Image.h"
 #include "UI/InGame/Domination/DominationClassInfoPanel.h"
+#include "UI/InGame/Domination/DominationClassPreviewStage.h"
 #include "UI/InGame/Domination/DominationPlayerSlot.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationClassSelectScreen, Log, All);
@@ -40,6 +42,8 @@ void UDominationClassSelectScreen::NativeOnActivated()
 			0.25f,
 			true);
 	}
+
+	SpawnPreviewStage();
 
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
 	const bool bIsJoinInProgressSelection = IsValid(PlayerState)
@@ -88,6 +92,7 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 
 	bLockInRequestPending = false;
 
+	DestroyPreviewStage();
 	ClearSlotEntries();
 	UnbindFromPlayerState();
 	ClearClassCards();
@@ -108,6 +113,10 @@ void UDominationClassSelectScreen::HandleCombatClassChanged(
 
 	// 델리게이트에 sender가 없어 어느 PlayerState가 바뀌었는지 알 수 없다. 전 슬롯을 갱신한다.
 	RefreshAllSlots();
+
+	// 늦참은 Preview 없이 확정만 오므로 여기서도 갱신해야 프리뷰가 뜬다.
+	// 확정 VFX는 여기서 재생하지 않는다 — 클릭 순간에 이미 재생했다.
+	RefreshPreviewStage();
 }
 
 void UDominationClassSelectScreen::HandlePreviewCombatClassChanged(
@@ -118,6 +127,7 @@ void UDominationClassSelectScreen::HandlePreviewCombatClassChanged(
 	RefreshClassInfoPanel();
 
 	RefreshAllSlots();
+	RefreshPreviewStage();
 }
 
 void UDominationClassSelectScreen::HandleClassCardClicked(
@@ -169,6 +179,13 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 
 	bLockInRequestPending = true;
 	RefreshLockInButton();
+
+	// 내가 마지막 확정자면 전원 확정 즉시 매치가 시작돼 화면이 사라진다.
+	// 복제를 기다리면 연출이 잘리므로 클릭 순간 로컬에서 재생한다.
+	if (IsValid(PreviewStage))
+	{
+		PreviewStage->PlayLockInEffect();
+	}
 
 	PlayerController->SelectCombatClass(PlayerState->GetPreviewCombatClass());
 }
@@ -346,6 +363,66 @@ void UDominationClassSelectScreen::ClearClassCards()
 	{
 		Panel_ClassCards->ClearChildren();
 	}
+}
+
+void UDominationClassSelectScreen::SpawnPreviewStage()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !ensure(PreviewStageClass))
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	PreviewStage = World->SpawnActor<ADominationClassPreviewStage>(
+		PreviewStageClass,
+		PreviewStageSpawnLocation,
+		FRotator::ZeroRotator,
+		SpawnParams);
+	if (!IsValid(PreviewStage))
+	{
+		return;
+	}
+
+	if (IsValid(Image_CharacterPreview))
+	{
+		UMaterialInstanceDynamic* PreviewMaterial = PreviewStage->GetPreviewMaterial();
+		if (IsValid(PreviewMaterial))
+		{
+			Image_CharacterPreview->SetBrushFromMaterial(PreviewMaterial);
+			Image_CharacterPreview->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		else
+		{
+			Image_CharacterPreview->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// 화면을 다시 열었을 때 이미 고른 클래스가 있으면 바로 반영한다.
+	RefreshPreviewStage();
+}
+
+void UDominationClassSelectScreen::DestroyPreviewStage()
+{
+	// 스테이지의 EndPlay가 Pawn과 무기까지 정리한다. 화면이 직접 지우지 않는다.
+	if (IsValid(PreviewStage))
+	{
+		PreviewStage->Destroy();
+	}
+	PreviewStage = nullptr;
+}
+
+void UDominationClassSelectScreen::RefreshPreviewStage()
+{
+	if (!IsValid(PreviewStage))
+	{
+		return;
+	}
+
+	PreviewStage->SetPreviewClass(GetDisplayCombatClass());
 }
 
 void UDominationClassSelectScreen::ReconcileSlots()

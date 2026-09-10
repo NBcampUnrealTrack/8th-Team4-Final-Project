@@ -5,12 +5,14 @@
 #include "UI/InGame/Domination/DominationClassSelectCard.h"
 #include "DominationClassSelectScreen.generated.h"
 
+class ADominationClassPreviewStage;
 class ADominationPlayerState;
 class UCommonButtonBase;
 class UCommonTextBlock;
 class UDominationClassInfoPanel;
 class UDominationPlayerSlot;
 class UHorizontalBox;
+class UImage;
 class UPanelWidget;
 class UTexture2D;
 
@@ -79,6 +81,11 @@ private:
 		bool bIsLocalPlayer);
 	void UnbindSlotPlayerState(FDominationPlayerSlotEntry& Entry);
 
+	// 캐릭터 프리뷰
+	void SpawnPreviewStage();
+	void DestroyPreviewStage();
+	void RefreshPreviewStage();
+
 	EDominationCombatClass GetDisplayCombatClass() const;
 
 private:
@@ -90,6 +97,9 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UPanelWidget> Panel_PlayerSlots;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_CharacterPreview;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonButtonBase> Button_LockIn;
@@ -106,6 +116,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<UDominationPlayerSlot> PlayerSlotWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
+	TSubclassOf<ADominationClassPreviewStage> PreviewStageClass;
+
+	// 게임 카메라에 안 보이기만 하면 됨
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
+	FVector PreviewStageSpawnLocation = FVector(500000.0f, 500000.0f, 0.0f);
+
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UDominationClassSelectCard>> ClassCards;
 	UPROPERTY(Transient)
@@ -117,6 +134,8 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FDominationPlayerSlotEntry> SlotEntries;
+	UPROPERTY(Transient)
+	TObjectPtr<ADominationClassPreviewStage> PreviewStage;
 
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 
