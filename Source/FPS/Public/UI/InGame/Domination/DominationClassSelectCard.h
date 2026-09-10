@@ -23,8 +23,8 @@ struct FPS_API FDominationClassCardPresentation
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Class Selection")
 	FText Description;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Class Selection")
-	TSoftObjectPtr<UTexture2D> Icon;
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> WeaponArt;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(
@@ -55,7 +55,7 @@ protected:
 
 private:
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Image_Icon;
+	TObjectPtr<UImage> Image_WeaponArt;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_ClassName;

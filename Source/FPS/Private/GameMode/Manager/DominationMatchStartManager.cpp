@@ -80,7 +80,9 @@ void UDominationMatchStartManager::RequestCombatClass(
 	ADominationPlayerState* DominationPlayerState =
 		PlayerController->GetPlayerState<ADominationPlayerState>();
 	if (!IsValid(DominationPlayerState)
-		|| !DominationPlayerState->TryConfirmCombatClass(RequestedClass))
+		|| !DominationPlayerState->HasPreviewCombatClass()
+		|| !DominationPlayerState->TryConfirmCombatClass(
+			DominationPlayerState->GetPreviewCombatClass()))
 	{
 		return;
 	}
@@ -265,7 +267,6 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 				GetDefault<UDominationClassSettings>();
 			if (IsValid(ClassSettings))
 			{
-				// 골라둔 사람이 엉뚱한 클래스로 스폰되면 안 된다.
 				// LOCK IN을 누르지 않아도 임시 선택이 그대로 확정된다.
 				const EDominationCombatClass FallbackClass =
 					PlayerState->HasPreviewCombatClass()

@@ -19,16 +19,16 @@ void UDominationClassSelectCard::SetClassData(
 		Text_Description->SetText(Presentation.Description);
 	}
 
-	if (IsValid(Image_Icon))
+	if (IsValid(Image_WeaponArt))
 	{
-		if (UTexture2D* IconTexture = Presentation.Icon.LoadSynchronous())
+		if (UTexture2D* WeaponArtTexture = Presentation.WeaponArt.Get())
 		{
-			Image_Icon->SetBrushFromTexture(IconTexture, true);
-			Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Image_WeaponArt->SetBrushFromTexture(WeaponArtTexture, true);
+			Image_WeaponArt->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 		else
 		{
-			Image_Icon->SetVisibility(ESlateVisibility::Collapsed);
+			Image_WeaponArt->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 }
