@@ -1,10 +1,15 @@
 #include "UI/InGame/Domination/DominationClassSelectScreen.h"
 
+#include "CommonButtonBase.h"
+#include "CommonTextBlock.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Engine/World.h"
 #include "GameMode/Settings/DominationClassSettings.h"
+#include "GameMode/State/DominationGameState.h"
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationClassSelectScreen, Log, All);
 
@@ -20,14 +25,37 @@ void UDominationClassSelectScreen::NativeOnActivated()
 	RebuildClassCards();
 	BindToPlayerState();
 
-	const EDominationCombatClass SelectedClass = BoundPlayerState.IsValid()
-		? BoundPlayerState->GetCombatClass()
-		: EDominationCombatClass::Unselected;
-	RefreshSelectionState(SelectedClass);
+	if (IsValid(Button_LockIn))
+	{
+		Button_LockIn->OnClicked().AddUObject(this, &ThisClass::HandleLockInClicked);
+	}
+
+	RefreshTimerText();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			TimerTextHandle,
+			this,
+			&ThisClass::RefreshTimerText,
+			0.10f,
+			true);
+	}
 }
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(TimerTextHandle);
+	}
+
+	if (IsValid(Button_LockIn))
+	{
+		Button_LockIn->OnClicked().RemoveAll(this);
+	}
+
+	bLockInRequestPending = false;
+
 	UnbindFromPlayerState();
 	ClearClassCards();
 
@@ -37,20 +65,55 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 void UDominationClassSelectScreen::HandleCombatClassChanged(
 	const EDominationCombatClass SelectedClass)
 {
-	RefreshSelectionState(SelectedClass);
+	RefreshSelectionState();
+	RefreshLockInButton();
+}
+
+void UDominationClassSelectScreen::HandlePreviewCombatClassChanged(
+	const EDominationCombatClass PreviewClass)
+{
+	RefreshSelectionState();
+	RefreshLockInButton();
 }
 
 void UDominationClassSelectScreen::HandleClassCardClicked(
 	const EDominationCombatClass RequestedClass)
 {
-	ADominationPlayerController* PlayerController =
-		Cast<ADominationPlayerController>(GetOwningPlayer());
+	// 확정 요청을 보낸 뒤에는 임시 선택도 바꾸지 못하게 함
+	if (bLockInRequestPending)
+	{
+		return;
+	}
+
+	ADominationPlayerController* PlayerController = Cast<ADominationPlayerController>(GetOwningPlayer());
 	if (!IsValid(PlayerController))
 	{
 		return;
 	}
 
-	PlayerController->SelectCombatClass(RequestedClass);
+	PlayerController->SetPreviewCombatClass(RequestedClass);
+}
+
+void UDominationClassSelectScreen::HandleLockInClicked()
+{
+	if (bLockInRequestPending)
+	{
+		return;
+	}
+
+	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+	ADominationPlayerController* PlayerController = Cast<ADominationPlayerController>(GetOwningPlayer());
+	if (!IsValid(PlayerState)
+		|| !IsValid(PlayerController)
+		|| !PlayerState->HasPreviewCombatClass())
+	{
+		return;
+	}
+
+	bLockInRequestPending = true;
+	RefreshLockInButton();
+
+	PlayerController->SelectCombatClass(PlayerState->GetPreviewCombatClass());
 }
 
 void UDominationClassSelectScreen::RebuildClassCards()
@@ -154,6 +217,13 @@ void UDominationClassSelectScreen::BindToPlayerState()
 	PlayerState->OnCombatClassChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleCombatClassChanged);
+	PlayerState->OnPreviewCombatClassChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandlePreviewCombatClassChanged);
+
+	// 이미 복제되어 있을 수 있으므로 직접 갱신
+	RefreshSelectionState();
+	RefreshLockInButton();
 }
 
 void UDominationClassSelectScreen::UnbindFromPlayerState()
@@ -163,19 +233,65 @@ void UDominationClassSelectScreen::UnbindFromPlayerState()
 		PlayerState->OnCombatClassChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleCombatClassChanged);
+		PlayerState->OnPreviewCombatClassChanged.RemoveDynamic(
+			this,
+			&ThisClass::HandlePreviewCombatClassChanged);
 	}
 
 	BoundPlayerState.Reset();
 }
 
-void UDominationClassSelectScreen::RefreshSelectionState(
-	const EDominationCombatClass SelectedClass)
+void UDominationClassSelectScreen::RefreshSelectionState()
 {
+	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+	const EDominationCombatClass PreviewClass = IsValid(PlayerState)
+		? PlayerState->GetPreviewCombatClass()
+		: EDominationCombatClass::Unselected;
+	const bool bLocked = IsValid(PlayerState) && PlayerState->HasSelectedCombatClass();
+
 	for (UDominationClassSelectCard* ClassCard : ClassCards)
 	{
 		if (IsValid(ClassCard))
 		{
-			ClassCard->SetSelectionState(SelectedClass);
+			ClassCard->SetSelectionState(PreviewClass, bLocked);
 		}
 	}
+}
+
+void UDominationClassSelectScreen::RefreshLockInButton()
+{
+	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+	const bool bLocked = IsValid(PlayerState) && PlayerState->HasSelectedCombatClass();
+	const bool bHasPreview = IsValid(PlayerState) && PlayerState->HasPreviewCombatClass();
+
+	if (IsValid(Button_LockIn))
+	{
+		// Preview 유무만 보면 확정 직후에도 버튼이 살아 있다.
+		Button_LockIn->SetIsEnabled(!bLocked && bHasPreview && !bLockInRequestPending);
+	}
+
+	UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
+}
+
+void UDominationClassSelectScreen::RefreshTimerText()
+{
+	if (!IsValid(Text_Timer))
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const ADominationGameState* DominationGameState = IsValid(World)
+		? World->GetGameState<ADominationGameState>()
+		: nullptr;
+	if (!IsValid(DominationGameState))
+	{
+		Text_Timer->SetText(FText::GetEmpty());
+		return;
+	}
+
+	const int32 TotalSeconds =
+		FMath::Max(0, FMath::CeilToInt(DominationGameState->GetPhaseTimeRemaining()));
+	Text_Timer->SetText(FText::FromString(
+		FString::Printf(TEXT("%02d:%02d"), TotalSeconds / 60, TotalSeconds % 60)));
 }

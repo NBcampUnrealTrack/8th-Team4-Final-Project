@@ -91,6 +91,28 @@ void UDominationMatchStartManager::RequestCombatClass(
 	}
 }
 
+void UDominationMatchStartManager::RequestPreviewCombatClass(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass RequestedClass)
+{
+	const ADominationGameState* DominationGameState = GetDominationGameState();
+	if (!IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::ClassSelecting
+		|| !IsInitialParticipant(PlayerController))
+	{
+		return;
+	}
+
+	ADominationPlayerState* DominationPlayerState =
+		PlayerController->GetPlayerState<ADominationPlayerState>();
+	if (!IsValid(DominationPlayerState))
+	{
+		return;
+	}
+
+	DominationPlayerState->TrySetPreviewCombatClass(RequestedClass);
+}
+
 void UDominationMatchStartManager::GetInitialParticipantPlayerStates(
 	TArray<ADominationPlayerState*>& OutPlayerStates) const
 {
@@ -243,7 +265,13 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 				GetDefault<UDominationClassSettings>();
 			if (IsValid(ClassSettings))
 			{
-				PlayerState->TryConfirmCombatClass(ClassSettings->DefaultCombatClass);
+				// 골라둔 사람이 엉뚱한 클래스로 스폰되면 안 된다.
+				// LOCK IN을 누르지 않아도 임시 선택이 그대로 확정된다.
+				const EDominationCombatClass FallbackClass =
+					PlayerState->HasPreviewCombatClass()
+						? PlayerState->GetPreviewCombatClass()
+						: ClassSettings->DefaultCombatClass;
+				PlayerState->TryConfirmCombatClass(FallbackClass);
 			}
 		}
 	}

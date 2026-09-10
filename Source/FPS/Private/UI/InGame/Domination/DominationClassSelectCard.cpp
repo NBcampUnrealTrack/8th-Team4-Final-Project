@@ -34,14 +34,13 @@ void UDominationClassSelectCard::SetClassData(
 }
 
 void UDominationClassSelectCard::SetSelectionState(
-	const EDominationCombatClass SelectedClass)
+	const EDominationCombatClass PreviewClass,
+	const bool bClassLocked)
 {
-	const bool bSelectionLocked =
-		SelectedClass != EDominationCombatClass::Unselected;
-	const bool bIsSelected = bSelectionLocked && SelectedClass == CombatClass;
+	const bool bIsPreviewed = PreviewClass == CombatClass;
 
-	SetIsEnabled(!bSelectionLocked);
-	UpdateSelectionPresentation(bIsSelected, bSelectionLocked);
+	SetIsEnabled(!bClassLocked);
+	UpdateSelectionPresentation(bIsPreviewed, bClassLocked);
 }
 
 void UDominationClassSelectCard::NativeOnClicked()

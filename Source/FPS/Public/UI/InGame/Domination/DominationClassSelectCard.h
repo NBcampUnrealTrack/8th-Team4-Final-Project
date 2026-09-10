@@ -42,7 +42,8 @@ class FPS_API UDominationClassSelectCard : public UCommonButtonBase
 
 public:
 	void SetClassData(const FDominationClassCardPresentation& Presentation);
-	void SetSelectionState(EDominationCombatClass SelectedClass);
+	// PreviewClass는 임시 선택, bLocked는 확정 여부다
+	void SetSelectionState(EDominationCombatClass PreviewClass, bool bClassLocked);
 
 	FOnDominationClassCardClicked OnClassCardClicked;
 

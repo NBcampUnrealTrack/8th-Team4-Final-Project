@@ -268,6 +268,28 @@ void ADominationGameMode::RequestCombatClass(
 	TryJoinPlayerInProgress(PlayerController, RequestedClass);
 }
 
+void ADominationGameMode::RequestPreviewCombatClass(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass RequestedClass)
+{
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	// WaitingForMatchStart가 아니면 아무것도 하지 않는다
+	if (!HasAuthority()
+		|| !IsValid(PlayerState)
+		|| PlayerState->GetParticipationState()
+			!= EPlayerParticipationState::WaitingForMatchStart)
+	{
+		return;
+	}
+
+	if (IsValid(MatchStartManager))
+	{
+		MatchStartManager->RequestPreviewCombatClass(PlayerController, RequestedClass);
+	}
+}
+
 UDominationLoadoutManager* ADominationGameMode::GetLoadoutManager() const
 {
 	return LoadoutManager.Get();
