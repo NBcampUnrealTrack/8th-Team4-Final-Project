@@ -110,12 +110,7 @@ void UDominationClassSelectScreen::HandleCombatClassChanged(
 	RefreshSelectionState();
 	RefreshLockInButton();
 	RefreshClassInfoPanel();
-
-	// 델리게이트에 sender가 없어 어느 PlayerState가 바뀌었는지 알 수 없다. 전 슬롯을 갱신한다.
 	RefreshAllSlots();
-
-	// 늦참은 Preview 없이 확정만 오므로 여기서도 갱신해야 프리뷰가 뜬다.
-	// 확정 VFX는 여기서 재생하지 않는다 — 클릭 순간에 이미 재생했다.
 	RefreshPreviewStage();
 }
 
@@ -125,7 +120,6 @@ void UDominationClassSelectScreen::HandlePreviewCombatClassChanged(
 	RefreshSelectionState();
 	RefreshLockInButton();
 	RefreshClassInfoPanel();
-
 	RefreshAllSlots();
 	RefreshPreviewStage();
 }
@@ -161,6 +155,46 @@ void UDominationClassSelectScreen::HandleClassCardClicked(
 	}
 }
 
+void UDominationClassSelectScreen::HandleClassCardHovered(
+	const EDominationCombatClass HoveredClass,
+	const bool bHovered)
+{
+	if (!bHovered || bLockInRequestPending)
+	{
+		CardHoverController.SetHovered(INDEX_NONE);
+		return;
+	}
+
+	const int32 HoveredIndex = ClassCards.IndexOfByPredicate(
+		[HoveredClass](const UDominationClassSelectCard* Card)
+		{
+			return IsValid(Card) && Card->GetCombatClass() == HoveredClass;
+		});
+
+	CardHoverController.SetHovered(HoveredIndex);
+}
+
+void UDominationClassSelectScreen::NativeTick(
+	const FGeometry& MyGeometry,
+	const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!CardHoverController.Tick(InDeltaTime, CardHoverSettings))
+	{
+		return;
+	}
+
+	const TArray<FDominationCardHoverState>& States = CardHoverController.GetStates();
+	for (int32 Index = 0; Index < ClassCards.Num(); ++Index)
+	{
+		if (States.IsValidIndex(Index) && IsValid(ClassCards[Index]))
+		{
+			ClassCards[Index]->ApplyHoverState(States[Index]);
+		}
+	}
+}
+
 void UDominationClassSelectScreen::HandleLockInClicked()
 {
 	if (bLockInRequestPending)
@@ -179,6 +213,9 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 
 	bLockInRequestPending = true;
 	RefreshLockInButton();
+
+	// 확정 순간 hover 중이던 카드도 기본 배치로 되돌린다.
+	CardHoverController.SetHovered(INDEX_NONE);
 
 	// 내가 마지막 확정자면 전원 확정 즉시 매치가 시작돼 화면이 사라진다.
 	// 복제를 기다리면 연출이 잘리므로 클릭 순간 로컬에서 재생한다.
@@ -333,6 +370,9 @@ void UDominationClassSelectScreen::RebuildClassCards()
 		ClassCard->OnClassCardClicked.AddUObject(
 			this,
 			&ThisClass::HandleClassCardClicked);
+		ClassCard->OnClassCardHovered.AddUObject(
+			this,
+			&ThisClass::HandleClassCardHovered);
 
 		UHorizontalBoxSlot* ClassCardSlot =
 			Panel_ClassCards->AddChildToHorizontalBox(ClassCard);
@@ -346,6 +386,8 @@ void UDominationClassSelectScreen::RebuildClassCards()
 
 		ClassCards.Add(ClassCard);
 	}
+
+	CardHoverController.Reset(ClassCards.Num());
 }
 
 void UDominationClassSelectScreen::ClearClassCards()
@@ -355,10 +397,13 @@ void UDominationClassSelectScreen::ClearClassCards()
 		if (IsValid(ClassCard))
 		{
 			ClassCard->OnClassCardClicked.RemoveAll(this);
+			ClassCard->OnClassCardHovered.RemoveAll(this);
 		}
 	}
 
 	ClassCards.Reset();
+	CardHoverController.Reset(0);
+
 	if (IsValid(Panel_ClassCards))
 	{
 		Panel_ClassCards->ClearChildren();

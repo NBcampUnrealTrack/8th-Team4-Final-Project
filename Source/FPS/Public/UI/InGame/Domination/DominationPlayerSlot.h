@@ -1,3 +1,4 @@
+// DominationPlayerSlot.h
 #pragma once
 
 #include "CoreMinimal.h"
@@ -42,6 +43,8 @@ public:
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
 	void UpdateSlotPresentation(EDominationSlotState State, bool bIsLocalSlot);
+	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
+	void OnSlotStateChanged(EDominationSlotState NewState, EDominationSlotState OldState);
 
 private:
 	void RefreshClassNameText();
@@ -57,10 +60,11 @@ private:
 
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 
-	// PlayerState가 파괴돼도 이탈 슬롯을 그리려면 표시값이 남아 있어야 한다.
 	FString CachedPlayerName;
 	int32 CachedPlayerId = INDEX_NONE;
 	EDominationCombatClass CachedDisplayClass = EDominationCombatClass::Unselected;
+	// 슬롯 상태 전환 연출
+	EDominationSlotState LastPresentedState = EDominationSlotState::Disconnected;
 
 	bool bIsLocalPlayer = false;
 	bool bForcedDisconnected = false;

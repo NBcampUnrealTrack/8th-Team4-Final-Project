@@ -43,6 +43,18 @@ void UDominationClassSelectCard::SetSelectionState(
 	UpdateSelectionPresentation(bIsPreviewed, bClassLocked);
 }
 
+void UDominationClassSelectCard::ApplyHoverState(const FDominationCardHoverState& State)
+{
+	SetRenderTranslation(State.Translation);
+	SetRenderScale(FVector2D(State.Scale));
+	SetRenderOpacity(State.Opacity);
+}
+
+EDominationCombatClass UDominationClassSelectCard::GetCombatClass() const
+{
+	return CombatClass;
+}
+
 void UDominationClassSelectCard::NativeOnClicked()
 {
 	Super::NativeOnClicked();
@@ -50,5 +62,25 @@ void UDominationClassSelectCard::NativeOnClicked()
 	if (CombatClass != EDominationCombatClass::Unselected)
 	{
 		OnClassCardClicked.Broadcast(CombatClass);
+	}
+}
+
+void UDominationClassSelectCard::NativeOnHovered()
+{
+	Super::NativeOnHovered();
+
+	if (CombatClass != EDominationCombatClass::Unselected)
+	{
+		OnClassCardHovered.Broadcast(CombatClass, true);
+	}
+}
+
+void UDominationClassSelectCard::NativeOnUnhovered()
+{
+	Super::NativeOnUnhovered();
+
+	if (CombatClass != EDominationCombatClass::Unselected)
+	{
+		OnClassCardHovered.Broadcast(CombatClass, false);
 	}
 }

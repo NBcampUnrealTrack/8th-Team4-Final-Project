@@ -1,3 +1,4 @@
+// DominationPlayerSlot.cpp
 #include "UI/InGame/Domination/DominationPlayerSlot.h"
 
 #include "CommonTextBlock.h"
@@ -13,6 +14,9 @@ void UDominationPlayerSlot::SetPlayerState(
 	BoundPlayerState = InPlayerState;
 	bIsLocalPlayer = bInIsLocalPlayer;
 	bForcedDisconnected = false;
+
+	// 슬롯이 다른 플레이어에게 재할당될 수 있음
+	LastPresentedState = EDominationSlotState::Disconnected;
 
 	RefreshFromPlayerState();
 }
@@ -91,6 +95,14 @@ void UDominationPlayerSlot::RefreshFromPlayerState()
 	RefreshClassNameText();
 
 	UpdateSlotPresentation(State, bIsLocalPlayer);
+
+	if (State != LastPresentedState)
+	{
+		const EDominationSlotState OldState = LastPresentedState;
+		LastPresentedState = State;
+
+		OnSlotStateChanged(State, OldState);
+	}
 }
 
 void UDominationPlayerSlot::RefreshClassNameText()

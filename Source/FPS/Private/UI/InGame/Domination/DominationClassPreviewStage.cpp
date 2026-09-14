@@ -47,7 +47,7 @@ ADominationClassPreviewStage::ADominationClassPreviewStage()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 스폰 위치만 잡는 빈 루트. 프리뷰 Pawn은 부착하지 않고 따로 스폰한다.
+	//  프리뷰 Pawn은 부착하지 않고 따로 스폰
 	USceneComponent* SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
@@ -56,7 +56,6 @@ ADominationClassPreviewStage::ADominationClassPreviewStage()
 
 	ChangeEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ChangeEffect"));
 	ChangeEffect->SetupAttachment(SceneRoot);
-	// 기본값 true를 끄지 않으면 스테이지가 스폰되는 순간 두 VFX가 한 번씩 터짐
 	ChangeEffect->bAutoActivate = false;
 
 	LockInEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("LockInEffect"));
@@ -68,7 +67,7 @@ void ADominationClassPreviewStage::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 클라이언트마다 프리뷰 화면이 섞이지 않도록 RenderTarget을 따로 만든다.
+	// 클라이언트마다 프리뷰 화면이 섞이지 않도록 RenderTarget을 따로 만듦
 	RenderTarget = NewObject<UTextureRenderTarget2D>(this);
 	RenderTarget->RenderTargetFormat = RTF_RGBA16f;
 	RenderTarget->InitAutoFormat(256, 512);
@@ -80,11 +79,11 @@ void ADominationClassPreviewStage::BeginPlay()
 		PreviewMID->SetTextureParameterValue(TEXT("PreviewRT"), RenderTarget);
 	}
 
-	// ShowOnly에 등록한 프리뷰 오브젝트만 캡처한다.
+	// ShowOnly에 등록한 프리뷰 오브젝트들만 캡처
 	SceneCapture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 	// RGB에는 SceneColor, A에는 반전된 Opacity를 캡처한다.
 	SceneCapture->CaptureSource = ESceneCaptureSource::SCS_SceneColorHDR;
-	// 매 프레임 갱신하므로 이동 시 별도 캡처는 사용하지 않는다.
+	// 매 프레임 갱신하므로 이동 시 별도 캡처는 사용하지 않음
 	SceneCapture->bCaptureEveryFrame = true;
 	SceneCapture->bCaptureOnMovement = false;
 
@@ -109,8 +108,6 @@ void ADominationClassPreviewStage::SetPreviewClass(const EDominationCombatClass 
 
 	DestroyPreviewPawn();
 
-	// 이전 Pawn을 이미 지웠으므로 중간에 실패해도 옛 클래스로 되돌아가지 않는다.
-	// Unselected로 두어야 같은 클래스를 다시 요청했을 때 재시도된다.
 	CurrentPreviewClass = EDominationCombatClass::Unselected;
 
 	UWorld* World = GetWorld();
@@ -195,7 +192,7 @@ void ADominationClassPreviewStage::CollectPreviewWeapons()
 		return;
 	}
 
-	// 화면에 보이지 않는 무기도 복제 차단과 정리를 위해 모두 수집한다.
+	// 화면에 보이지 않는 무기도 복제 차단과 정리를 위해 모두 수집
 	static const EWeaponSlot PreviewSlots[] = {
 		EWeaponSlot::Primary,
 		EWeaponSlot::Secondary,

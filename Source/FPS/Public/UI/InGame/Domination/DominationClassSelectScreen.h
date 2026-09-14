@@ -46,6 +46,7 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -54,11 +55,11 @@ protected:
 private:
 	UFUNCTION()
 	void HandleCombatClassChanged(EDominationCombatClass SelectedClass);
-
 	UFUNCTION()
 	void HandlePreviewCombatClassChanged(EDominationCombatClass PreviewClass);
 
 	void HandleClassCardClicked(EDominationCombatClass RequestedClass);
+	void HandleClassCardHovered(EDominationCombatClass HoveredClass, bool bHovered);
 	void HandleLockInClicked();
 	void BuildIconCache();
 	void RebuildClassCards();
@@ -114,6 +115,9 @@ private:
 	FMargin ClassCardPadding = FMargin(8.0f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
+	FDominationCardHoverSettings CardHoverSettings;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<UDominationPlayerSlot> PlayerSlotWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
@@ -136,6 +140,8 @@ private:
 	TArray<FDominationPlayerSlotEntry> SlotEntries;
 	UPROPERTY(Transient)
 	TObjectPtr<ADominationClassPreviewStage> PreviewStage;
+
+	FDominationCardHoverController CardHoverController;
 
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 
