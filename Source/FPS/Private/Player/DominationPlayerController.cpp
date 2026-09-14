@@ -1,5 +1,7 @@
 #include "Player/DominationPlayerController.h"
 
+#include "EnhancedInputComponent.h"
+#include "Input/ShooterInputConfig.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/DominationGameMode.h"
@@ -41,6 +43,47 @@ void ADominationPlayerController::SelectCombatClass(
 	ServerSelectCombatClass(RequestedClass);
 }
 
+void ADominationPlayerController::SetPreviewCombatClass(
+	const EDominationCombatClass RequestedClass)
+{
+	if (HasAuthority())
+	{
+		ServerSetPreviewCombatClass_Implementation(RequestedClass);
+		return;
+	}
+
+	ServerSetPreviewCombatClass(RequestedClass);
+}
+
+void ADominationPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+	
+	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
+	if (!EnhancedInputComponent || !InputConfig)
+	{
+		return;
+	}
+	
+	if (InputConfig->MoveAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ToggleAugmentSelectAction,
+			ETriggerEvent::Started, 
+			this, 
+			&ThisClass::Input_ToggleAugmentSelect);
+	}
+}
+
+void ADominationPlayerController::Input_ToggleAugmentSelect()
+{
+	if (UDominationUIInitComponent* UIInit =
+			FindComponentByClass<UDominationUIInitComponent>())
+	{
+		UIInit->ToggleAugmentSelect();
+	}
+}
+
 void ADominationPlayerController::ServerSelectCombatClass_Implementation(
 	const EDominationCombatClass RequestedClass)
 {
@@ -50,5 +93,17 @@ void ADominationPlayerController::ServerSelectCombatClass_Implementation(
 	if (IsValid(DominationGameMode))
 	{
 		DominationGameMode->RequestCombatClass(this, RequestedClass);
+	}
+}
+
+void ADominationPlayerController::ServerSetPreviewCombatClass_Implementation(
+	const EDominationCombatClass RequestedClass)
+{
+	ADominationGameMode* DominationGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ADominationGameMode>()
+		: nullptr;
+	if (IsValid(DominationGameMode))
+	{
+		DominationGameMode->RequestPreviewCombatClass(this, RequestedClass);
 	}
 }

@@ -136,7 +136,6 @@ namespace RogueTags
 
 	// 상호 배타 효과 그룹
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Field_Shield, "Effect.Field.Shield", "필드 보호막 킷. 재획득 시 기존 것을 제거하고 다시 부여");
 
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");

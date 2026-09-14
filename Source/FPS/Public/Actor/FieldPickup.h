@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "GameplayTagContainer.h"
 #include "FieldPickup.generated.h"
 
 class UGameplayEffect;
@@ -111,11 +110,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Effect",
 		meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float PickupMagnitude = 50.0f;
-
-	// 제거할 GE 태그
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Effect",
-		meta = (AllowPrivateAccess = "true"))
-	FGameplayTag RemoveEffectsWithTagBeforeApply;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Respawn",
 		meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))

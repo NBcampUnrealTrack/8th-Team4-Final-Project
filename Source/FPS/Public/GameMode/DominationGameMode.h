@@ -51,6 +51,9 @@ public:
 	void RequestCombatClass(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
+	void RequestPreviewCombatClass(
+		ADominationPlayerController* PlayerController,
+		EDominationCombatClass RequestedClass);
 	UDominationLoadoutManager* GetLoadoutManager() const;
 	void GetInitialParticipantPlayerStates(
 		TArray<ADominationPlayerState*>& OutPlayerStates) const;
