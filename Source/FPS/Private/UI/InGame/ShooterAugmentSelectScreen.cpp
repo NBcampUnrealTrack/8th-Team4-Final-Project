@@ -13,6 +13,8 @@
 #include "UI/Common/ShooterAugmentSelectBanner.h"
 #include "Components/Overlay.h"
 #include "Animation/WidgetAnimation.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
@@ -198,6 +200,11 @@ void UShooterAugmentSelectScreen::HandleCardHovered(int32 InOfferIndex, bool bHo
 {
 	if (bHovered)
 	{
+		if (!IsOutroPlaying() && Offers.IsValidIndex(InOfferIndex) && IsValid(CardHoverSound))
+		{
+			UGameplayStatics::PlaySound2D(this, CardHoverSound);
+		}
+
 		SetHoveredCard(InOfferIndex);
 	}
 	else if (Layout.GetHoveredIndex() == InOfferIndex)

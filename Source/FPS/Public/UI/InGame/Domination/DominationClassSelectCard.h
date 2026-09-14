@@ -64,7 +64,7 @@ protected:
 	virtual void NativeOnUnhovered() override;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
-	void UpdateSelectionPresentation(bool bIsSelected, bool bSelectionLocked);
+	void BP_UpdateSelectionPresentation(bool bIsSelected, bool bSelectionLocked);
 
 
 private:
