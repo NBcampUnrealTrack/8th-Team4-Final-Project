@@ -36,6 +36,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void ClearLayer(FGameplayTag LayerTag);
 	
+	UShooterPrimaryGameLayout* GetRootLayout() const;
+	
 protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterPrimaryGameLayout> RootLayoutInstance; 

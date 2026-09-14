@@ -85,3 +85,8 @@ void UShooterUIManagerSubsystem::ClearLayer(FGameplayTag LayerTag){
 	
 	RootLayoutInstance->ClearLayer(LayerTag);
 }
+
+UShooterPrimaryGameLayout* UShooterUIManagerSubsystem::GetRootLayout() const
+{
+	return RootLayoutInstance;
+}

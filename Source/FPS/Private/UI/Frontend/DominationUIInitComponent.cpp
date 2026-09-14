@@ -16,6 +16,7 @@
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
 
@@ -73,6 +74,7 @@ void UDominationUIInitComponent::EndPlay(
 	ClearInitializationRetry();
 	UnbindFromPlayerState();
 	UnbindFromGameState();
+	UnbindModalContainer();
 	RemoveClassSelectionScreen();
 
 	if (IsValid(InitialWidgetInstance))
@@ -87,6 +89,56 @@ void UDominationUIInitComponent::EndPlay(
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void UDominationUIInitComponent::ToggleAugmentSelect()
+{
+	if (!IsAugmentPresentationSettled())
+	{
+		return;
+	}
+	
+	const UShooterAugmentSelectScreen* AS = GetAugmentSelectInstance();
+	if (IsAugmentSelectionRequestPending()
+		|| (IsValid(AS) && AS->IsOutroPlaying()))
+	{
+		return;
+	}
+		
+	UAugmentInventoryComponent* Inv = GetBoundAugmentInventory();
+	if (!IsValid(Inv)
+		|| Inv->GetOffers().IsEmpty()
+		|| !BoundGameState.IsValid()
+		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
+	{
+		return;
+	}
+	
+	SetAugmentSelectDismissed(!bAugmentSelectDismissed);
+}
+
+bool UDominationUIInitComponent::IsAugmentSelectDismissed() const
+{
+	return bAugmentSelectDismissed;
+}
+
+bool UDominationUIInitComponent::IsAugmentPresentationSettled() const
+{
+	UCommonActivatableWidgetContainerBase* Modal = GetModalContainer();
+	if (!IsValid(Modal))
+	{
+		return false;
+	}
+	
+	const UCommonActivatableWidget* StackTop = Modal->GetActiveWidget();
+	const bool bStackShowsAugment = IsValid(StackTop) && StackTop->IsA<UShooterAugmentSelectScreen>();
+	const UAugmentInventoryComponent* Inv = GetBoundAugmentInventory();
+	const bool bShouldShowAugment = 
+		IsAugmentPresentationAllowed() 
+		&& IsValid(Inv)
+		&& !Inv->GetOffers().IsEmpty();
+	
+	return bStackShowsAugment == bShouldShowAugment;
 }
 
 void UDominationUIInitComponent::RefreshDominationUI()
@@ -171,6 +223,7 @@ void UDominationUIInitComponent::RefreshDominationUI()
 	}
 
 	InitializeTeamMatchUI(PlayerController, Inventory);
+	BindModalContainer();
 	ClearInitializationRetry();
 }
 
@@ -256,6 +309,31 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 void UDominationUIInitComponent::HandleMatchStateChanged()
 {
 	TryCaptureMatchResult();
+	
+	// 새 매치가 InProgress 로 진입하는 순간, 이전 매치에서 남은
+	// 증강 선택 보류 상태와 진입 연출 이력을 초기화한다.
+	if (!BoundGameState.IsValid())
+	{
+		return;
+	}
+	
+	const EDominationMatchPhase Phase = BoundGameState->GetDominationPhase();
+	if (Phase == LastObservedMatchPhase)
+	{
+		return;
+	}
+	LastObservedMatchPhase = Phase;
+
+	// 진입 순간에만 초기화
+	if (Phase != EDominationMatchPhase::InProgress)
+	{
+		return;                     
+	}
+
+	SetAugmentSelectDismissed(false);
+	bHasDismissedThisSelection = false;
+	LastPresentedOfferIds.Reset();
+	LastObservedRewardRound = 0;
 }
 
 void UDominationUIInitComponent::HandleParticipationStateChanged(
@@ -268,6 +346,65 @@ void UDominationUIInitComponent::HandleCombatClassChanged(
 	const EDominationCombatClass)
 {
 	RefreshDominationUI();
+}
+
+void UDominationUIInitComponent::HandleRewardRoundChanged(EGameTeam Team, int32 NewScore)
+{
+	const int32 Round = BoundGameState.IsValid()
+		? BoundGameState->GetCurrentRoundNumber()
+		: 0;
+	if (Round == LastObservedRewardRound)
+	{
+		return;
+	}
+	
+	LastObservedRewardRound = Round;
+	
+	SetAugmentSelectDismissed(false);
+}
+
+void UDominationUIInitComponent::HandleAugmentDismissRequested()
+{
+	ToggleAugmentSelect();
+}
+
+void UDominationUIInitComponent::HandleModalDisplayedWidgetChanged(UCommonActivatableWidget* DisplayedWidget)
+{
+	OnAugmentPresentationChanged.Broadcast();
+}
+
+void UDominationUIInitComponent::BindModalContainer()
+{
+	UCommonActivatableWidgetContainerBase* Modal = GetModalContainer();
+	
+	if (BoundModalContainer.Get() == Modal)
+	{
+		return;
+	}
+	
+	UnbindModalContainer();
+	
+	if (!IsValid(Modal))
+	{
+		return;
+	}
+	
+	BoundModalContainer = Modal;
+	
+	Modal->OnDisplayedWidgetChanged().AddUObject(
+		this,
+		&ThisClass::HandleModalDisplayedWidgetChanged);
+}
+
+void UDominationUIInitComponent::UnbindModalContainer()
+{
+	if (UCommonActivatableWidgetContainerBase* Modal =
+		BoundModalContainer.Get())
+	{
+		Modal->OnDisplayedWidgetChanged().RemoveAll(this);
+	}
+
+	BoundModalContainer.Reset();
 }
 
 void UDominationUIInitComponent::TryCaptureMatchResult()
@@ -330,6 +467,9 @@ void UDominationUIInitComponent::BindToGameState(
 	DominationGameState->OnMatchStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleMatchStateChanged);
+	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(
+		this, 
+		&ThisClass::HandleRewardRoundChanged);
 }
 
 void UDominationUIInitComponent::UnbindFromGameState()
@@ -338,6 +478,7 @@ void UDominationUIInitComponent::UnbindFromGameState()
 	{
 		BoundGameState->OnDominationFlowStateChanged.RemoveAll(this);
 		BoundGameState->OnMatchStateChanged.RemoveAll(this);
+		BoundGameState->OnTeamScoreChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
 }
@@ -383,13 +524,82 @@ void UDominationUIInitComponent::UnbindFromPlayerState()
 bool UDominationUIInitComponent::IsAugmentPresentationAllowed() const
 {
 	return BoundGameState.IsValid()
-		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
+		&& !bAugmentSelectDismissed;
 }
 
 bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const
 {
 	return BoundGameState.IsValid()
 		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+}
+
+void UDominationUIInitComponent::OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen)
+{
+	Super::OnAugmentScreenCreated(Screen);
+	
+	if (!IsValid(Screen))
+	{
+		return;
+	}
+	
+	Screen->OnDismissRequested.AddUniqueDynamic(this, &ThisClass::HandleAugmentDismissRequested);
+	Screen->SetDismissAvailable(true);
+}
+
+void UDominationUIInitComponent::OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers)
+{
+	Super::OnAugmentOffersPresented(InOffers);
+	
+	TArray<FPrimaryAssetId> CurrentOfferIds;
+	CurrentOfferIds.Reserve(InOffers.Num());
+	
+	for (const FAugmentInventoryEntry& Offer : InOffers)
+	{
+		CurrentOfferIds.Add(Offer.DefinitionId);
+	}
+	
+	bool bIsNewSelection = false;
+	
+	if (LastPresentedOfferIds.IsEmpty())
+	{
+		// 비었으면 첫 등장
+		bIsNewSelection = true;
+	}
+	else if (LastPresentedOfferIds.Num() != CurrentOfferIds.Num())
+	{
+		// 후보 수가 달라도 첫 등장
+		bIsNewSelection = true;
+	}
+	else
+	{
+		// 후보 개수는 같으므로 슬롯별 변경 개수로 리로/새 묶음을 구분한다.
+		int32 DifferentCount = 0;
+		for (int32 i = 0; i < CurrentOfferIds.Num(); ++i)
+		{
+			if (CurrentOfferIds[i] != LastPresentedOfferIds[i])
+			{
+				++DifferentCount;
+			}
+		}
+		
+		// 리롤은 한 슬롯만 바꾼다. 둘 이상이면 새 묶음이다
+		bIsNewSelection = (DifferentCount >= 2);
+	}
+	
+	if (bIsNewSelection)
+	{
+		bHasDismissedThisSelection = false;
+	}
+	
+	LastPresentedOfferIds = MoveTemp(CurrentOfferIds);
+}
+
+EAugmentSelectEntry UDominationUIInitComponent::GetAugmentEntryAnimation() const
+{
+	return bHasDismissedThisSelection
+		? EAugmentSelectEntry::Resume
+		: EAugmentSelectEntry::Intro;
 }
 
 TSubclassOf<UShooterInGameMenuScreen>
@@ -413,6 +623,32 @@ UDominationUIInitComponent::GetAugmentSelectWidgetClass() const
 UShooterInGameMenuScreen* UDominationUIInitComponent::GetInGameMenuInstance() const
 {
 	return InGameMenuInstance;
+}
+
+UCommonActivatableWidgetContainerBase* UDominationUIInitComponent::GetModalContainer() const
+{
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	UShooterPrimaryGameLayout* Layout = IsValid(UIManager) ? UIManager->GetRootLayout() : nullptr;
+	
+	return IsValid(Layout) ? Layout->GetLayerContainer(UITags::UI_Layer_Modal) : nullptr;
+}
+
+void UDominationUIInitComponent::SetAugmentSelectDismissed(bool bDismissed)
+{
+	if (bAugmentSelectDismissed == bDismissed)
+	{
+		return;
+	}
+	
+	bAugmentSelectDismissed = bDismissed;
+	
+	if (bDismissed)
+	{
+		bHasDismissedThisSelection = true;
+	}
+	
+	OnAugmentDismissStateChanged.Broadcast();
+	NotifyModeUIStateChanged();
 }
 
 void UDominationUIInitComponent::SetInGameMenuInstance(

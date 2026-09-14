@@ -6,6 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "TeamMatchUIInitComponent.generated.h"
 
+enum class EAugmentSelectEntry : uint8;
 class AShooterPlayerController;
 class UAugmentInventoryComponent;
 class UCommonActivatableWidget;
@@ -66,7 +67,14 @@ protected:
 	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
-
+	
+	void ResetAugmentRequestContext();
+	bool IsAugmentSelectionRequestPending() const;
+	
+	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) {};
+	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) {};
+	virtual EAugmentSelectEntry GetAugmentEntryAnimation() const;
+	
 	virtual bool IsAugmentPresentationAllowed() const
 		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsAugmentPresentationAllowed, return false;);
 	virtual bool IsSurrenderRequestAllowed() const
@@ -115,7 +123,7 @@ private:
 	void HandleSurrenderMenuRequested();
 	void HandleSurrenderVoteStateChanged();
 	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
-
+	
 	UFUNCTION()
 	void HandleAugmentSelected(int32 OfferIndex);
 
@@ -124,6 +132,9 @@ private:
 
 	UFUNCTION()
 	void HandleAugmentRerollRequested(int32 SlotIndex);
+	
+	UFUNCTION()
+	void HandleSelectionOutroFinished();
 
 	// 모든 팀 매치가 공통으로 사용하는 옵션 화면. 파생 UI Init BP에서 WBP_OptionsScreen을 지정한다.
 	UPROPERTY(EditAnywhere, Category = "UI|System Menu")
@@ -144,4 +155,10 @@ private:
 	bool bInGameMenuRequested = false;
 	bool bLastObservedVoteActive = false;
 	bool bModalRefreshPending = false;
+	
+	// Offers가 비었다 - 카드가 적용 됐다는 뜻이 아님
+	bool bSelectionRequestPending = false;
+	
+	int32 RequestedOfferIndex = INDEX_NONE;
+	FPrimaryAssetId RequestDefinitionId;
 };
