@@ -44,7 +44,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
 	void UpdateSlotPresentation(EDominationSlotState State, bool bIsLocalSlot);
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
-	void OnSlotStateChanged(EDominationSlotState NewState, EDominationSlotState OldState);
+	void BP_OnSlotStateChanged(EDominationSlotState NewState, EDominationSlotState OldState, bool bIsLocalSlot);
 
 private:
 	void RefreshClassNameText();

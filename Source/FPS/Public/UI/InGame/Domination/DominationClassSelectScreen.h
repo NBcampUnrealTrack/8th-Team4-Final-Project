@@ -15,6 +15,8 @@ class UHorizontalBox;
 class UImage;
 class UPanelWidget;
 class UTexture2D;
+class USoundBase;
+class UAudioComponent;
 
 USTRUCT()
 struct FDominationPlayerSlotEntry
@@ -109,23 +111,29 @@ private:
 	TObjectPtr<UCommonTextBlock> Text_Timer;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
-	TSubclassOf<UDominationClassSelectCard> ClassCardWidgetClass;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	FMargin ClassCardPadding = FMargin(8.0f);
-
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	FDominationCardHoverSettings CardHoverSettings;
-
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
+	TSubclassOf<UDominationClassSelectCard> ClassCardWidgetClass;
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<UDominationPlayerSlot> PlayerSlotWidgetClass;
-
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<ADominationClassPreviewStage> PreviewStageClass;
 
 	// 게임 카메라에 안 보이기만 하면 됨
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	FVector PreviewStageSpawnLocation = FVector(500000.0f, 500000.0f, 0.0f);
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
+	TObjectPtr<USoundBase> ClassSelectBGM;
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
+	TObjectPtr<USoundBase> LockInSound;
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
+	TObjectPtr<USoundBase> TeammateLockInSound;
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> BGMComponent;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UDominationClassSelectCard>> ClassCards;

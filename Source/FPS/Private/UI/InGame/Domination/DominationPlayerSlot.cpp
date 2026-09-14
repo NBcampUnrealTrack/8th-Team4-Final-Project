@@ -101,7 +101,7 @@ void UDominationPlayerSlot::RefreshFromPlayerState()
 		const EDominationSlotState OldState = LastPresentedState;
 		LastPresentedState = State;
 
-		OnSlotStateChanged(State, OldState);
+		BP_OnSlotStateChanged(State, OldState, bIsLocalPlayer);
 	}
 }
 
