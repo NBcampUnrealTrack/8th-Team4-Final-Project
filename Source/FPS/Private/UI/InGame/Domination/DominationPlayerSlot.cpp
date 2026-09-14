@@ -94,7 +94,7 @@ void UDominationPlayerSlot::RefreshFromPlayerState()
 
 	RefreshClassNameText();
 
-	UpdateSlotPresentation(State, bIsLocalPlayer);
+	BP_UpdateSlotPresentation(State, bIsLocalPlayer);
 
 	if (State != LastPresentedState)
 	{

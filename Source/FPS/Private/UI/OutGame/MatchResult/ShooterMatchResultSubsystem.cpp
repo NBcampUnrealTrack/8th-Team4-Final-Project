@@ -84,6 +84,8 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(
 		return;
 	}
 
+	Snapshot.Reset();
+
 	Snapshot.LocalTeam = LocalTeam;
 	Snapshot.MatchWinner = MatchGameState->GetMatchWinner();
 	Snapshot.TeamAScore = MatchGameState->GetTeamAScore();
@@ -102,7 +104,7 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(
 
 		if (Team == EGameTeam::None)
 		{
-			return;
+			continue;
 		}
 
 		FShooterMatchResultRow Row;

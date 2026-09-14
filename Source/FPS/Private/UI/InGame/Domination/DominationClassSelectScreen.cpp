@@ -772,7 +772,7 @@ void UDominationClassSelectScreen::RefreshLockInButton()
 		Button_LockIn->SetIsEnabled(!bLocked && bHasPreview && !bLockInRequestPending);
 	}
 
-	UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
+	BP_UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
 }
 
 void UDominationClassSelectScreen::RefreshTimerText()

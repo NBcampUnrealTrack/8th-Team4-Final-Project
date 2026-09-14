@@ -16,6 +16,7 @@ class UUniformGridPanel;
 class UWidgetAnimation;
 class UCurveFloat;
 class UOverlay;
+class USoundBase;
 struct FStreamableHandle;
 
 // 고른 번호를 서버에 보낸다
@@ -138,6 +139,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Layout")
 	FAugmentCardLayoutSettings LayoutSettings;
+
+	// 버튼 소리로 두면 사라지는 카드에서도 나므로 화면 가드 뒤에서 재생
+	UPROPERTY(EditDefaultsOnly, Category = "Audio")
+	TObjectPtr<USoundBase> CardHoverSound;
 	
 	// 화면 등장 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))

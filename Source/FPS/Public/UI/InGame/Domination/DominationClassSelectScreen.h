@@ -52,7 +52,7 @@ protected:
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
-	void UpdateLockInPresentation(bool bLocked, bool bHasPreview, bool bRequestPending);
+	void BP_UpdateLockInPresentation(bool bLocked, bool bHasPreview, bool bRequestPending);
 
 private:
 	UFUNCTION()
@@ -130,8 +130,6 @@ private:
 	TObjectPtr<USoundBase> ClassSelectBGM;
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
 	TObjectPtr<USoundBase> LockInSound;
-	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
-	TObjectPtr<USoundBase> TeammateLockInSound;
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> BGMComponent;
 

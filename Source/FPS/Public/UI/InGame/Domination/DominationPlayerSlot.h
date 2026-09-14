@@ -42,7 +42,7 @@ public:
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
-	void UpdateSlotPresentation(EDominationSlotState State, bool bIsLocalSlot);
+	void BP_UpdateSlotPresentation(EDominationSlotState State, bool bIsLocalSlot);
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
 	void BP_OnSlotStateChanged(EDominationSlotState NewState, EDominationSlotState OldState, bool bIsLocalSlot);
 
