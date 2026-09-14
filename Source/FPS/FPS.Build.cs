@@ -29,7 +29,8 @@ public class FPS : ModuleRules
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
 			"OnlineSubsystemUtils",
-		});
+            "HairStrandsCore",
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{

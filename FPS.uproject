@@ -69,6 +69,10 @@
 		{
 			"Name": "NarshaMCP",
 			"Enabled": true
+		},
+		{
+			"Name": "MultiUserClient",
+			"Enabled": true
 		}
 	]
 }
