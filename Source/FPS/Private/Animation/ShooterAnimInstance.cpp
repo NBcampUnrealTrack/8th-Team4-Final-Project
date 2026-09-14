@@ -6,6 +6,7 @@
 #include "Data/WeaponData.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -157,7 +158,10 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 		return;
 	}
 
-	if (const FPlayerAnims* PlayerAnims = WeaponData->FindPlayerAnims(CurrentWeaponType, bFirstPersonAnimation))
+	if (const FPlayerAnims* PlayerAnims = WeaponData->FindPlayerAnims(
+		CurrentWeaponType,
+		bFirstPersonAnimation,
+		GetCurrentCombatClass()))
 	{
 		CurrentIdleAnim = PlayerAnims->IdleAnim;
 		CurrentAimIdleAnim = PlayerAnims->AimIdleAnim;
@@ -263,6 +267,22 @@ void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
 	}
 
 	Montage_Play(MontageData->FireMontage);
+}
+
+EDominationCombatClass UShooterAnimInstance::GetCurrentCombatClass() const
+{
+	if (!IsValid(ShooterCharacter))
+	{
+		return EDominationCombatClass::Unselected;
+	}
+
+	const ADominationPlayerState* PlayerState = ShooterCharacter->GetPlayerState<ADominationPlayerState>();
+	if (!IsValid(PlayerState))
+	{
+		return EDominationCombatClass::Unselected;
+	}
+
+	return PlayerState->GetCombatClass();
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)
