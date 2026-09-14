@@ -68,7 +68,11 @@
 		},
 		{
 			"Name": "NarshaMCP",
-			"Enabled": true
+			"Enabled": true,
+			"Optional": true,
+			"TargetAllowList": [
+				"Editor"
+			]
 		}
 	]
 }
