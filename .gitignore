@@ -26,3 +26,10 @@ Logs and temp
 service/
 Docs/
 dev/
+.claude/settings.local.json
+.cursor/mcp.json
+.claude/skills/routing.json
+.claude/agents/unreal-specialist.md
+.antigravity/rules.md
+AGENTS.md
+.mcp.json

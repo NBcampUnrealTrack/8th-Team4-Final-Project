@@ -21,6 +21,7 @@
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Killcam/KillcamReplaySubsystem.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/NetworkTimeSyncComponent.h"
@@ -65,6 +66,14 @@ void AShooterPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			KillcamSubsystem->SetUpForWorld(GetWorld());
+		}
 	}
 
 	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
@@ -116,6 +125,14 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+		{
+			if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+			{
+				KillcamSubsystem->ReleaseWorld(GetWorld());
+			}
+		}
+
 		ShutdownAudioSettings();
 		HideSpectatorWidget();
 

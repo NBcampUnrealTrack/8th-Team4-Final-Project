@@ -32,7 +32,12 @@ public class FPS : ModuleRules
             "HairStrandsCore",
         });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara" });
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Niagara",
+			"NetworkReplayStreaming",
+			"InMemoryNetworkReplayStreaming"
+		});
 
 		if (Target.bBuildEditor)
 		{
