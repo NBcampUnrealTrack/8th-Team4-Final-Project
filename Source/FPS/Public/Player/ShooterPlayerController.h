@@ -7,6 +7,7 @@
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "GAS/Damage/RogueDamageTypes.h"
 #include "TimerManager.h"
 #include "Voice/VoiceChatSubsystem.h"
 
@@ -24,12 +25,16 @@ class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
 class UInputMappingContext;
 class APlayerState;
-class USoundBase;
 class USoundMix;
 struct FInputActionValue;
 
-// 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. bRed면 빨간 X(헤드샷 또는 처치), 아니면 기본 X.
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnHitMarker, bool /*bRed*/);
+// 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. Type으로 부위별(바디/쉴드/헤드샷) 색상을,
+// bKill로 처치 강조(빨간색)를 결정한다.
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/, bool /*bKill*/);
+// 크로스헤어(UShooterReticle)가 구독해서 중앙 킬 이펙트(해골 등)를 재생. ClientPlayKillSound와 같은 시점에
+// 발신되며, ShooterGameMode가 자살/팀킬을 걸러낸 뒤의 확정된 처치에만 발신하므로 OnHitMarker의 bKill보다
+// 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
+DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteStartResult, ESurrenderVoteStartResult);
 
@@ -44,6 +49,9 @@ public:
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
 	FOnHitMarker OnHitMarker;
+
+	// 크로스헤어가 이 델리게이트를 구독해 중앙 킬 이펙트를 표시
+	FOnKillEffect OnKillEffect;
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
@@ -113,13 +121,14 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
 
-	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커를 재생.
+	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커(시각+효과음)를 재생.
 	UFUNCTION(Client, Reliable)
-	void ClientPlayHitMarker(bool bRed);
+	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill);
 
-	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드를 재생
+	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드 + 중앙 킬 이펙트(OnKillEffect)를 재생.
+	// KillStreak: 이번 킬이 몇 연속킬인지(1=일반 킬, 2=더블킬, 3=트리플킬, 4 이상=쿼드라킬).
 	UFUNCTION(Client, Reliable)
-	void ClientPlayKillSound();
+	void ClientPlayKillSound(int32 KillStreak);
 
 	UFUNCTION(Client, Reliable)
 	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
@@ -198,9 +207,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Feedback")
-	TObjectPtr<USoundBase> LocalKillSound;
 
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 	void SetMappingContextEnabled(

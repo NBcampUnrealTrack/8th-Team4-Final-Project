@@ -740,17 +740,71 @@ void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 	HideLoadingScreen();
 }
 
-void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRed)
+void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill)
 {
-	OnHitMarker.Broadcast(bRed);
+	OnHitMarker.Broadcast(Type, bKill);
+
+	// 사운드는 PlayerController 하위 클래스마다 따로 두지 않고 UShooterAudioSettings 하나로 통합돼 있다.
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+
+	// 처치 강조 사운드가 지정돼 있으면 그걸 우선 재생하고, 없으면 부위별 사운드로 대체한다.
+	USoundBase* Sound = bKill ? AudioSettings->HitMarkerSound_Kill.LoadSynchronous() : nullptr;
+	if (!Sound)
+	{
+		switch (Type)
+		{
+		case ERogueHitMarkerType::Headshot:
+			Sound = AudioSettings->HitMarkerSound_Headshot.LoadSynchronous();
+			break;
+		case ERogueHitMarkerType::Shield:
+			Sound = AudioSettings->HitMarkerSound_Shield.LoadSynchronous();
+			break;
+		case ERogueHitMarkerType::Body:
+		default:
+			Sound = AudioSettings->HitMarkerSound_Body.LoadSynchronous();
+			break;
+		}
+	}
+
+	if (Sound)
+	{
+		UGameplayStatics::PlaySound2D(this, Sound);
+	}
 }
 
-void AShooterPlayerController::ClientPlayKillSound_Implementation()
+void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 KillStreak)
 {
-	if (LocalKillSound)
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+
+	// 스트릭별 사운드가 지정돼 있으면 그걸 우선 재생하고, 없으면 기본 킬 사운드로 대체한다.
+	USoundBase* Sound = nullptr;
+	switch (KillStreak)
 	{
-		UGameplayStatics::PlaySound2D(this, LocalKillSound);
+	case 2:
+		Sound = AudioSettings->DoubleKillSound.LoadSynchronous();
+		break;
+	case 3:
+		Sound = AudioSettings->TripleKillSound.LoadSynchronous();
+		break;
+	default:
+		if (KillStreak >= 4)
+		{
+			Sound = AudioSettings->QuadraKillSound.LoadSynchronous();
+		}
+		break;
 	}
+
+	if (!Sound)
+	{
+		Sound = AudioSettings->LocalKillSound.LoadSynchronous();
+	}
+
+	if (Sound)
+	{
+		UGameplayStatics::PlaySound2D(this, Sound);
+	}
+
+	OnKillEffect.Broadcast();
 }
 
 void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
