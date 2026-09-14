@@ -34,6 +34,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
 
@@ -45,6 +46,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Deployable",
 		meta = (Categories = "GameplayCue"))
 	FGameplayTag DestroyedCueTag;
+
+	// 초당 전진 거리(cm). 0 이면 정지
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Deployable", meta = (ClampMin = "0.0"))
+	float MoveSpeed = 0.f;
+
+	// 시선의 상하 성분을 버리고 수평으로만 전진
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Deployable",
+		meta = (EditCondition = "MoveSpeed > 0", EditConditionHides))
+	bool bMoveHorizontally = true;
 
 	// 파괴 GameplayCue 재생을 위한 유예
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Deployable", meta = (ClampMin = "0.0"))
@@ -61,6 +71,8 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rogue|Deployable",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URogueHealthComponent> HealthComponent;
+
+	FVector MoveDirection = FVector::ZeroVector;
 
 	bool bDestroyHandled = false;
 };

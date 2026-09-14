@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Augment/Actor/RogueDeployableActor.h"
@@ -19,6 +19,9 @@ ARogueDeployableActor::ARogueDeployableActor()
 
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 	bAutoDetonate = false;
+
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 }
 
 UAbilitySystemComponent* ARogueDeployableActor::GetAbilitySystemComponent() const
@@ -59,7 +62,28 @@ void ARogueDeployableActor::BeginPlay()
 		AbilitySystemComponent->SetNumericAttributeBase(URogueVitalAttributeSet::GetHealthAttribute(), Health);
 	}
 
+	// 이동은 예측
+	MoveDirection = bMoveHorizontally
+		? GetActorForwardVector().GetSafeNormal2D()
+		: GetActorForwardVector();
+
+	SetActorTickEnabled(MoveSpeed > 0.f && !MoveDirection.IsNearlyZero());
+
 	Super::BeginPlay();
+}
+
+void ARogueDeployableActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	FHitResult Hit;
+	AddActorWorldOffset(MoveDirection * MoveSpeed * DeltaSeconds, /*bSweep*/ true, &Hit);
+
+	// 벽에 닿으면 멈춤
+	if (Hit.bBlockingHit)
+	{
+		SetActorTickEnabled(false);
+	}
 }
 
 void ARogueDeployableActor::HandleDeath_Implementation(const FRogueDeathContext& Context)
