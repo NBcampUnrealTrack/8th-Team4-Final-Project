@@ -84,8 +84,3 @@ void ARogueDeployableActor::HandleDeath_Implementation(const FRogueDeathContext&
 	SetActorHiddenInGame(true);
 	SetLifeSpan(FMath::Max(KINDA_SMALL_NUMBER, DestroyDelaySeconds));
 }
-
-UCombatHitZoneDefinition* ARogueDeployableActor::GetCombatHitZoneDefinition_Implementation() const
-{
-	return nullptr;
-}

@@ -36,7 +36,6 @@ protected:
 	virtual void BeginPlay() override;
 
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
-	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
 
 	// 스폰 시 최대 체력
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Deployable", meta = (ClampMin = "1.0"))
