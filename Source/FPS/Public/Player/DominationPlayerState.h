@@ -20,19 +20,31 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Domination|Class")
 	EDominationCombatClass GetCombatClass() const;
-
+	UFUNCTION(BlueprintPure, Category = "Domination|Class")
+	EDominationCombatClass GetPreviewCombatClass() const;
+	
 	UFUNCTION(BlueprintPure, Category = "Domination|Class")
 	bool HasSelectedCombatClass() const;
-
+	UFUNCTION(BlueprintPure, Category = "Domination|Class")
+	bool HasPreviewCombatClass() const;
+	
 	bool TryConfirmCombatClass(EDominationCombatClass RequestedClass);
-
+	// 확정 전 임시 선택
+	bool TrySetPreviewCombatClass(EDominationCombatClass RequestedClass);
+	
 	UPROPERTY(BlueprintAssignable, Category = "Domination|Class")
 	FOnDominationCombatClassChangedSignature OnCombatClassChanged;
+	UPROPERTY(BlueprintAssignable, Category = "Domination|Class")
+	FOnDominationCombatClassChangedSignature OnPreviewCombatClassChanged;
 
 private:
 	UFUNCTION()
 	void OnRep_CombatClass();
+	UFUNCTION()
+	void OnRep_PreviewCombatClass();
 
 	UPROPERTY(ReplicatedUsing = OnRep_CombatClass, VisibleInstanceOnly, Category = "Domination|Class")
 	EDominationCombatClass CombatClass = EDominationCombatClass::Unselected;
+	UPROPERTY(ReplicatedUsing = OnRep_PreviewCombatClass, VisibleInstanceOnly, Category = "Domination|Class")
+	EDominationCombatClass PreviewCombatClass = EDominationCombatClass::Unselected;
 };

@@ -19,29 +19,40 @@ void UDominationClassSelectCard::SetClassData(
 		Text_Description->SetText(Presentation.Description);
 	}
 
-	if (IsValid(Image_Icon))
+	if (IsValid(Image_WeaponArt))
 	{
-		if (UTexture2D* IconTexture = Presentation.Icon.LoadSynchronous())
+		if (UTexture2D* WeaponArtTexture = Presentation.WeaponArt.Get())
 		{
-			Image_Icon->SetBrushFromTexture(IconTexture, true);
-			Image_Icon->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Image_WeaponArt->SetBrushFromTexture(WeaponArtTexture, true);
+			Image_WeaponArt->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 		else
 		{
-			Image_Icon->SetVisibility(ESlateVisibility::Collapsed);
+			Image_WeaponArt->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 }
 
 void UDominationClassSelectCard::SetSelectionState(
-	const EDominationCombatClass SelectedClass)
+	const EDominationCombatClass PreviewClass,
+	const bool bClassLocked)
 {
-	const bool bSelectionLocked =
-		SelectedClass != EDominationCombatClass::Unselected;
-	const bool bIsSelected = bSelectionLocked && SelectedClass == CombatClass;
+	const bool bIsPreviewed = PreviewClass == CombatClass;
 
-	SetIsEnabled(!bSelectionLocked);
-	UpdateSelectionPresentation(bIsSelected, bSelectionLocked);
+	SetIsEnabled(!bClassLocked);
+	UpdateSelectionPresentation(bIsPreviewed, bClassLocked);
+}
+
+void UDominationClassSelectCard::ApplyHoverState(const FDominationCardHoverState& State)
+{
+	SetRenderTranslation(State.Translation);
+	SetRenderScale(FVector2D(State.Scale));
+	SetRenderOpacity(State.Opacity);
+}
+
+EDominationCombatClass UDominationClassSelectCard::GetCombatClass() const
+{
+	return CombatClass;
 }
 
 void UDominationClassSelectCard::NativeOnClicked()
@@ -51,5 +62,25 @@ void UDominationClassSelectCard::NativeOnClicked()
 	if (CombatClass != EDominationCombatClass::Unselected)
 	{
 		OnClassCardClicked.Broadcast(CombatClass);
+	}
+}
+
+void UDominationClassSelectCard::NativeOnHovered()
+{
+	Super::NativeOnHovered();
+
+	if (CombatClass != EDominationCombatClass::Unselected)
+	{
+		OnClassCardHovered.Broadcast(CombatClass, true);
+	}
+}
+
+void UDominationClassSelectCard::NativeOnUnhovered()
+{
+	Super::NativeOnUnhovered();
+
+	if (CombatClass != EDominationCombatClass::Unselected)
+	{
+		OnClassCardHovered.Broadcast(CombatClass, false);
 	}
 }

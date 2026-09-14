@@ -73,6 +73,9 @@ public:
 	// 준비 단계에서 상점 화면을 열고 닫는 로컬 UI 입력이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> ToggleShopAction;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> ToggleAugmentSelectAction;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> ToggleInGameMenuAction;
