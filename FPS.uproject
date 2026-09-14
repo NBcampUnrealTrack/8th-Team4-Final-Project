@@ -65,6 +65,10 @@
 				"Linux",
 				"Android"
 			]
+		},
+		{
+			"Name": "NarshaMCP",
+			"Enabled": true
 		}
 	]
 }
