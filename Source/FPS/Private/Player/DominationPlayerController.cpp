@@ -43,6 +43,18 @@ void ADominationPlayerController::SelectCombatClass(
 	ServerSelectCombatClass(RequestedClass);
 }
 
+void ADominationPlayerController::SetPreviewCombatClass(
+	const EDominationCombatClass RequestedClass)
+{
+	if (HasAuthority())
+	{
+		ServerSetPreviewCombatClass_Implementation(RequestedClass);
+		return;
+	}
+
+	ServerSetPreviewCombatClass(RequestedClass);
+}
+
 void ADominationPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -81,5 +93,17 @@ void ADominationPlayerController::ServerSelectCombatClass_Implementation(
 	if (IsValid(DominationGameMode))
 	{
 		DominationGameMode->RequestCombatClass(this, RequestedClass);
+	}
+}
+
+void ADominationPlayerController::ServerSetPreviewCombatClass_Implementation(
+	const EDominationCombatClass RequestedClass)
+{
+	ADominationGameMode* DominationGameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ADominationGameMode>()
+		: nullptr;
+	if (IsValid(DominationGameMode))
+	{
+		DominationGameMode->RequestPreviewCombatClass(this, RequestedClass);
 	}
 }

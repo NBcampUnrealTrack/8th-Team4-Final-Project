@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "CommonButtonBase.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "UI/InGame/Domination/DominationCardHoverController.h"
 #include "DominationClassSelectCard.generated.h"
 
 class UCommonTextBlock;
@@ -23,13 +24,18 @@ struct FPS_API FDominationClassCardPresentation
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Class Selection")
 	FText Description;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Class Selection")
-	TSoftObjectPtr<UTexture2D> Icon;
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> WeaponArt;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(
 	FOnDominationClassCardClicked,
 	EDominationCombatClass);
+
+DECLARE_MULTICAST_DELEGATE_TwoParams(
+	FOnDominationClassCardHovered,
+	EDominationCombatClass,
+	bool /*bHovered*/);
 
 /**
  * 전투 클래스 하나를 표시하는 선택 카드다.
@@ -42,19 +48,28 @@ class FPS_API UDominationClassSelectCard : public UCommonButtonBase
 
 public:
 	void SetClassData(const FDominationClassCardPresentation& Presentation);
-	void SetSelectionState(EDominationCombatClass SelectedClass);
+	// PreviewClass는 임시 선택, bLocked는 확정 여부
+	void SetSelectionState(EDominationCombatClass PreviewClass, bool bClassLocked);
+	void ApplyHoverState(const FDominationCardHoverState& State);
+
+	// 화면이 hover 인덱스를 찾을 때 사용
+	EDominationCombatClass GetCombatClass() const;
 
 	FOnDominationClassCardClicked OnClassCardClicked;
+	FOnDominationClassCardHovered OnClassCardHovered;
 
 protected:
 	virtual void NativeOnClicked() override;
+	virtual void NativeOnHovered() override;
+	virtual void NativeOnUnhovered() override;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
 	void UpdateSelectionPresentation(bool bIsSelected, bool bSelectionLocked);
 
+
 private:
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Image_Icon;
+	TObjectPtr<UImage> Image_WeaponArt;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_ClassName;

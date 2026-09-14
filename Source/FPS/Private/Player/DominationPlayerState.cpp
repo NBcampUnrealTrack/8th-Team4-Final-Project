@@ -9,6 +9,7 @@ void ADominationPlayerState::GetLifetimeReplicatedProps(
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(ADominationPlayerState, CombatClass);
+	DOREPLIFETIME(ADominationPlayerState, PreviewCombatClass);
 }
 
 EDominationCombatClass ADominationPlayerState::GetCombatClass() const
@@ -16,9 +17,19 @@ EDominationCombatClass ADominationPlayerState::GetCombatClass() const
 	return CombatClass;
 }
 
+EDominationCombatClass ADominationPlayerState::GetPreviewCombatClass() const
+{
+	return PreviewCombatClass;
+}
+
 bool ADominationPlayerState::HasSelectedCombatClass() const
 {
 	return CombatClass != EDominationCombatClass::Unselected;
+}
+
+bool ADominationPlayerState::HasPreviewCombatClass() const
+{
+	return PreviewCombatClass != EDominationCombatClass::Unselected;
 }
 
 bool ADominationPlayerState::TryConfirmCombatClass(
@@ -41,7 +52,36 @@ bool ADominationPlayerState::TryConfirmCombatClass(
 	return true;
 }
 
+bool ADominationPlayerState::TrySetPreviewCombatClass(const EDominationCombatClass RequestedClass)
+{
+	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
+	const bool bIsSelectableClass = IsValid(ClassSettings) && ClassSettings->IsSelectableClass(RequestedClass);
+	if (!HasAuthority()
+		|| HasSelectedCombatClass()
+		|| PreviewCombatClass == RequestedClass
+		|| !bIsSelectableClass)
+	{
+		return false;
+	}
+
+	PreviewCombatClass = RequestedClass;
+	OnRep_PreviewCombatClass();
+	ForceNetUpdate();
+	return true;
+}
+
 void ADominationPlayerState::OnRep_CombatClass()
 {
 	OnCombatClassChanged.Broadcast(CombatClass);
 }
+
+void ADominationPlayerState::OnRep_PreviewCombatClass()
+{
+	OnPreviewCombatClassChanged.Broadcast(PreviewCombatClass);
+}
+
+
+
+
+
+
