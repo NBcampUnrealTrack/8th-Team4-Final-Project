@@ -9,6 +9,7 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "Tags/GameplayTags.h"
 
 ARogueDeployableActor::ARogueDeployableActor()
 {
@@ -50,6 +51,8 @@ void ARogueDeployableActor::BeginPlay()
 				SetOwner(CasterState);
 			}
 		}
+
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Combat_Deployable, 1);
 
 		const float Health = FMath::Max(1.f, DeployHealth);
 		AbilitySystemComponent->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxHealthAttribute(), Health);

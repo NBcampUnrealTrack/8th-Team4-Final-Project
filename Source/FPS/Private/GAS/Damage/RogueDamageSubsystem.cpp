@@ -465,8 +465,13 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Result.ShieldDamage);
 	}
 
+	// 설치물 파괴는 처치가 아니다. "처치 시" 조건 증강이 오발동한다
+	const UAbilitySystemComponent* TgtASC = ResolveASC(Tgt);
+	const bool bDeployableTarget =
+		TgtASC && TgtASC->HasMatchingGameplayTag(RogueTags::State_Combat_Deployable);
+
 	// 사망 이벤트 발신
-	if (Result.bHealthDepleted)
+	if (Result.bHealthDepleted && !bDeployableTarget)
 	{
 		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
 		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);
