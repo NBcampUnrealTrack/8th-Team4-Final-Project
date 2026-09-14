@@ -75,13 +75,15 @@ public:
 	FTransform FabricSocketTransform;
 
 	void HandleMoveInput(const FInputActionValue& Value);
-	void HandleLookInput(const FInputActionValue& Value);
+	void HandleLookInput(const FVector2D& LookAxisVector);
 	void HandleJumpPressed();
 	void HandleJumpReleased();
 	void HandleSprintPressed();
 	void HandleSprintReleased();
 	void HandleCrouchPressed();
 	void HandleCrouchReleased();
+
+	UCombatComponent* GetCombatComponent() const { return Combat; }
 
 protected:
 	bool InitializeDefaultWeaponLoadout();

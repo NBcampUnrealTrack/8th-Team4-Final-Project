@@ -11,6 +11,7 @@ class UAugmentInventoryComponent;
 class UCommonActivatableWidget;
 class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
+class UShooterOptionsScreen;
 class UShooterSurrenderVoteScreen;
 class UShooterUIManagerSubsystem;
 class UShooterScoreboard;
@@ -94,7 +95,9 @@ protected:
 
 private:
 	void PresentInGameMenu();
+	void PresentOptionsScreen();
 	void RemoveInGameMenu();
+	void RemoveOptionsScreen();
 	void PresentSurrenderVote();
 	void RemoveSurrenderVote();
 	void ScheduleModalRefresh();
@@ -103,6 +106,8 @@ private:
 	TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 
 	void HandleResumeRequested();
+	void HandleOptionsRequested();
+	void HandleOptionsCloseRequested();
 	void HandleReturnToLobbyRequested();
 	void HandleQuitGameRequested();
 	void HandleSurrenderRequested();
@@ -119,6 +124,13 @@ private:
 
 	UFUNCTION()
 	void HandleAugmentRerollRequested(int32 SlotIndex);
+
+	// 모든 팀 매치가 공통으로 사용하는 옵션 화면. 파생 UI Init BP에서 WBP_OptionsScreen을 지정한다.
+	UPROPERTY(EditAnywhere, Category = "UI|System Menu")
+	TSubclassOf<UShooterOptionsScreen> OptionsScreenClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterOptionsScreen> OptionsScreenInstance;
 
 	UPROPERTY(EditAnywhere, Category = "UI|Scoreboard")
 	TSubclassOf<UShooterScoreboard> ScoreboardClass;

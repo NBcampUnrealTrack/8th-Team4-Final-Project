@@ -5,6 +5,8 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Sound/SoundClass.h"
 #include "Sound/SoundGroups.h"
 #include "Sound/SoundNode.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -19,32 +21,37 @@ USteamVoiceComponent::USteamVoiceComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void USteamVoiceComponent::StartCapture()
+bool USteamVoiceComponent::StartCapture()
 {
 	if (!SteamUser())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=null Owner=%s"), *GetNameSafe(GetOwner()));
-		return;
+		return false;
 	}
 
 	if (bCapturingVoice)
 	{
-		return;
+		return true;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return false;
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=valid Owner=%s"), *GetNameSafe(GetOwner()));
 	SteamUser()->StartVoiceRecording();
 	bCapturingVoice = true;
 
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().SetTimer(
-			VoiceCaptureTimerHandle,
-			this,
-			&ThisClass::PollVoiceCapture,
-			FMath::Max(0.01f, CapturePollInterval),
-			true);
-	}
+	World->GetTimerManager().SetTimer(
+		VoiceCaptureTimerHandle,
+		this,
+		&ThisClass::PollVoiceCapture,
+		FMath::Max(0.01f, CapturePollInterval),
+		true);
+
+	return true;
 }
 
 void USteamVoiceComponent::StopCapture()
@@ -159,18 +166,13 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 void USteamVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopCapture();
+	StopPlayback();
 
 	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
 	{
 		if (PlaybackSlot.AudioComponent)
 		{
-			PlaybackSlot.AudioComponent->Stop();
 			PlaybackSlot.AudioComponent->DestroyComponent();
-		}
-
-		if (PlaybackSlot.SoundWave)
-		{
-			PlaybackSlot.SoundWave->ResetAudio();
 		}
 	}
 
@@ -179,11 +181,39 @@ void USteamVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void USteamVoiceComponent::StopPlayback()
+{
+	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
+	{
+		if (PlaybackSlot.AudioComponent)
+		{
+			PlaybackSlot.AudioComponent->Stop();
+		}
+
+		if (PlaybackSlot.SoundWave)
+		{
+			PlaybackSlot.SoundWave->ResetAudio();
+		}
+	}
+}
+
 void USteamVoiceComponent::PollVoiceCapture()
 {
+	const auto StopOwnerVoiceTalking = [this]()
+	{
+		if (AShooterPlayerController* PlayerController = GetOwnerShooterPlayerController())
+		{
+			PlayerController->StopVoiceTalking();
+		}
+		else
+		{
+			StopCapture();
+		}
+	};
+
 	if (!bCapturingVoice || !SteamUser())
 	{
-		StopCapture();
+		StopOwnerVoiceTalking();
 		return;
 	}
 
@@ -191,7 +221,7 @@ void USteamVoiceComponent::PollVoiceCapture()
 	const EVoiceResult AvailableResult = SteamUser()->GetAvailableVoice(&AvailableCompressedBytes);
 	if (AvailableResult == k_EVoiceResultNotRecording)
 	{
-		StopCapture();
+		StopOwnerVoiceTalking();
 		return;
 	}
 
@@ -217,6 +247,12 @@ void USteamVoiceComponent::PollVoiceCapture()
 		CompressedVoiceData.GetData(),
 		BufferSize,
 		&BytesWritten);
+
+	if (VoiceResult == k_EVoiceResultNotRecording)
+	{
+		StopOwnerVoiceTalking();
+		return;
+	}
 
 	if (VoiceResult != k_EVoiceResultOK || BytesWritten == 0)
 	{
@@ -304,6 +340,12 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	SoundWave->SampleByteSize = sizeof(int16);
 	SoundWave->Duration = INDEFINITELY_LOOPING_DURATION;
 	SoundWave->SoundGroup = SOUNDGROUP_Voice;
+	SoundWave->SoundClassObject = GetDefault<UShooterAudioSettings>()->VoiceSoundClass.LoadSynchronous();
+	if (!ensureMsgf(SoundWave->SoundClassObject,
+		TEXT("Assign VoiceSoundClass in Project Settings > Shooter Audio Settings before playing voice.")))
+	{
+		return nullptr;
+	}
 
 	UAudioComponent* AudioComponent = NewObject<UAudioComponent>(OwnerActor);
 	if (!IsValid(AudioComponent))

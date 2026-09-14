@@ -35,11 +35,13 @@ class FPS_API USteamVoiceComponent : public UActorComponent
 public:
 	USteamVoiceComponent();
 
-	void StartCapture();
+	/** Starts Steam voice capture. Returns false when capture cannot be started. */
+	bool StartCapture();
 	void StopCapture();
 	bool IsCapturingVoice() const { return bCapturingVoice; }
 
 	void PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
+	void StopPlayback();
 
 private:
 	bool DecompressVoicePacket(

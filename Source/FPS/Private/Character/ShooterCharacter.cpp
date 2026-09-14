@@ -537,9 +537,8 @@ void AShooterCharacter::HandleMoveInput(const FInputActionValue& Value)
 	AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y), MovementVector.X);
 }
 
-void AShooterCharacter::HandleLookInput(const FInputActionValue& Value)
+void AShooterCharacter::HandleLookInput(const FVector2D& LookAxisVector)
 {
-	const FVector2D LookAxisVector = Value.Get<FVector2D>();
 	AddControllerYawInput(LookAxisVector.X);
 	AddControllerPitchInput(LookAxisVector.Y);
 }
