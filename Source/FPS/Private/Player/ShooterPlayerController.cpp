@@ -1,6 +1,9 @@
 #include "Player/ShooterPlayerController.h"
 
 #include "AudioDevice.h"
+#include "Camera/PlayerCameraManager.h"
+#include "CollisionQueryParams.h"
+#include "CollisionShape.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -23,6 +26,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
@@ -331,6 +335,10 @@ void AShooterPlayerController::SetupInputComponent()
 	if (InputConfig->OpenChatAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->OpenChatAction, ETriggerEvent::Started, this, &ThisClass::Input_OpenChat);
+	}
+	if (InputConfig->PingAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->PingAction, ETriggerEvent::Started, this, &ThisClass::Input_Ping);
 	}
 	if (InputConfig->ToggleInGameMenuAction)
 	{
@@ -1053,6 +1061,59 @@ void AShooterPlayerController::ClientReceiveChatMessage_Implementation(const FCh
 	OnChatMessageReceived.Broadcast(Message);
 }
 
+void AShooterPlayerController::ServerSendPing_Implementation(const FVector_NetQuantize Location, const EShooterPingType Type)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastPingServerTime >= 0.0 && Now - LastPingServerTime < ShooterPingLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+	LastPingServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
+	if (!IsValid(TeamGameState))
+	{
+		return;
+	}
+
+	FPingEvent Ping;
+	Ping.Location = Location;
+	Ping.Type = Type;
+
+	// 핑도 팀 전용이라 채팅의 Team 채널 라우팅(같은 팀 전원, 본인 포함)을 그대로 재사용한다.
+	TeamGameState->ForEachChatRecipient(PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
+	{
+		Recipient->ClientReceivePing(Ping);
+	});
+}
+
+void AShooterPlayerController::ClientReceivePing_Implementation(const FPingEvent& Ping)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+
+	USoundBase* Sound = Ping.Type == EShooterPingType::Enemy
+		? AudioSettings->PingSound_Enemy.LoadSynchronous()
+		: nullptr;
+	if (!Sound)
+	{
+		Sound = AudioSettings->PingSound_Location.LoadSynchronous();
+	}
+
+	if (Sound)
+	{
+		// 위치 핑 특성상 방향을 듣고 찾아갈 수 있어야 하므로 2D가 아니라 핑 찍힌 지점에서
+		// 나는 3D 사운드로 재생한다. 감쇠(Attenuation)는 사운드 에셋 쪽 설정을 따른다.
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Ping.Location);
+	}
+
+	OnPingReceived.Broadcast(Ping);
+}
+
 void AShooterPlayerController::RegisterWhisperTarget(const FString& PlayerName)
 {
 	RecentWhisperTargets.RemoveAll([&PlayerName](const FString& Existing)
@@ -1441,6 +1502,53 @@ void AShooterPlayerController::CloseChatInput()
 	{
 		UIInitComponent->CloseChat();
 	}
+}
+
+void AShooterPlayerController::Input_Ping()
+{
+	if (!IsLocalController() || !CanProcessActionInput() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	APawn* MyPawn = GetPawn();
+	if (!MyPawn || !PlayerCameraManager)
+	{
+		return;
+	}
+
+	const FVector TraceStart = PlayerCameraManager->GetCameraLocation();
+	const FVector TraceEnd =
+		TraceStart + PlayerCameraManager->GetCameraRotation().Vector() * ShooterPingLimits::TraceDistance;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(Ping), false, MyPawn);
+
+	// 순수 라인트레이스 대신 작은 반경의 스피어로 스윕한다 - 크로스헤어가 캐릭터를 정확히
+	// 안 맞추고 살짝 빗나가도 적 핑으로 잡히도록(오차 허용).
+	const FCollisionShape SphereShape = FCollisionShape::MakeSphere(ShooterPingLimits::EnemyPingToleranceRadius);
+
+	FHitResult Hit;
+	if (!GetWorld() || !GetWorld()->SweepSingleByChannel(
+		Hit, TraceStart, TraceEnd, FQuat::Identity, ECC_Visibility, SphereShape, QueryParams))
+	{
+		return;
+	}
+
+	EShooterPingType Type = EShooterPingType::Location;
+
+	if (const AShooterCharacter* HitCharacter = Cast<AShooterCharacter>(Hit.GetActor()))
+	{
+		const ABaseTeamPlayerState* HitTeamState = HitCharacter->GetPlayerState<ABaseTeamPlayerState>();
+		const ABaseTeamPlayerState* MyTeamState = GetPlayerState<ABaseTeamPlayerState>();
+		if (HitTeamState && MyTeamState
+			&& HitTeamState->GetTeam() != EGameTeam::None
+			&& HitTeamState->GetTeam() != MyTeamState->GetTeam())
+		{
+			Type = EShooterPingType::Enemy;
+		}
+	}
+
+	ServerSendPing(Hit.Location, Type);
 }
 
 void AShooterPlayerController::HandleChatSubmit(const FString& RawText)

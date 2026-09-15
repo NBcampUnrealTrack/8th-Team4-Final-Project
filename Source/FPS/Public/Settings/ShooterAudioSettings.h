@@ -68,4 +68,12 @@ public:
 	// 4연킬 이상은 전부 이 사운드로 재생(펜타킬 등 그 이상 전용 사운드는 없음).
 	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
 	TSoftObjectPtr<USoundBase> QuadraKillSound;
+
+	// 팀원이 위치를 핑 찍었을 때(크로스헤어가 지형/오브젝트를 맞춤) 재생.
+	UPROPERTY(Config, EditAnywhere, Category = "Ping")
+	TSoftObjectPtr<USoundBase> PingSound_Location;
+
+	// 팀원이 적을 핑 찍었을 때(크로스헤어가 적 캐릭터를 맞춤) 재생. 비어있으면 PingSound_Location으로 대체.
+	UPROPERTY(Config, EditAnywhere, Category = "Ping")
+	TSoftObjectPtr<USoundBase> PingSound_Enemy;
 };

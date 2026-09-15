@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "GAS/Damage/RogueDamageTypes.h"
+#include "Ping/PingTypes.h"
 #include "TimerManager.h"
 #include "Voice/VoiceChatSubsystem.h"
 
@@ -32,6 +33,9 @@ struct FInputActionValue;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
+
+// 핑 인디케이터 레이어가 구독해서 월드에 마커를 띄운다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPingEvent&, Ping);
 
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. Type으로 부위별(바디/쉴드/헤드샷) 색상을,
 // bKill로 처치 강조(빨간색)를 결정한다.
@@ -180,6 +184,10 @@ public:
 	// 최근 귓말 큐를 갱신해, 그 뒤로는 "/w 이름" 없이 메시지만 쳐도 이 사람에게 간다.
 	void RegisterWhisperTarget(const FString& PlayerName);
 
+	// 핑 인디케이터 레이어(UPingIndicatorLayer)가 구독해서 마커를 띄운다.
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Ping")
+	FOnPingReceivedSignature OnPingReceived;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -236,6 +244,14 @@ protected:
 	UFUNCTION(Client, Reliable)
 	void ClientReceiveChatMessage(const FChatMessage& Message);
 
+	// 레이트리밋 재검증 후 GameState::ForEachChatRecipient(Team)로 같은 팀에게만 전달한다.
+	// 핑도 팀 전용이라 채팅의 팀 라우팅 로직을 그대로 재사용한다.
+	UFUNCTION(Server, Reliable)
+	void ServerSendPing(FVector_NetQuantize Location, EShooterPingType Type);
+
+	UFUNCTION(Client, Reliable)
+	void ClientReceivePing(const FPingEvent& Ping);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
@@ -279,6 +295,7 @@ private:
 	void Input_PushToTalkReleased();
 	void Input_OpenChat();
 	void CloseChatInput();
+	void Input_Ping();
 	void Input_ToggleInGameMenu();
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
@@ -326,4 +343,5 @@ private:
 
 	// 서버 전용 레이트리밋 상태. 리플리케이트하지 않는다.
 	double LastChatMessageServerTime = -1.0;
+	double LastPingServerTime = -1.0;
 };
