@@ -1,11 +1,16 @@
 #include "Training/TrainingSessionSubsystem.h"
 
-#include "Engine/World.h"
-#include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Combat/Hitscan/HitscanResolverSubsystem.h"
+#include "GameFramework/PlayerState.h"
+#include "Sound/SoundBase.h"
+#include "Sound/SoundAttenuation.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Training/AI/TrainingCombatAI.h"
 #include "Training/TrainingArena.h"
+#include "Training/TrainingCharacter.h"
+#include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingScenario.h"
 #include "Training/TrainingTarget.h"
 
@@ -21,7 +26,7 @@ bool UTrainingSessionSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UTrainingSessionSubsystem::Deinitialize()
 {
-    EndSession();
+    StopSession(true);
     Super::Deinitialize();
 }
 
@@ -40,7 +45,7 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     }
     if (State != ETrainingSessionState::Idle || bStopping)
     {
-        OutFailure = LOCTEXT("Busy", "Another training session is already active.");
+        OutFailure = LOCTEXT("Busy", "Another training session is already active or counting down.");
         return false;
     }
     const APawn* ParticipantPawn = InParticipant.GetPawn();
@@ -55,83 +60,149 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
         OutFailure = LOCTEXT("Distance", "The selected training distance is invalid.");
         return false;
     }
+
+    UClass* BotClass = nullptr;
     switch (Mode)
     {
-    case ETrainingMode::TargetAcquisition:
-        if (!InArena.TargetClass || InArena.TargetClass->HasAnyClassFlags(CLASS_Abstract))
-        {
-            OutFailure = LOCTEXT("TargetClass", "Assign a concrete Training Target Blueprint to the arena.");
-            return false;
-        }
-        if (!InArena.TargetClass.GetDefaultObject()->DisplayMesh->GetStaticMesh())
-        {
-            OutFailure = LOCTEXT("TargetMesh", "Assign a Static Mesh to the Training Target Blueprint's DisplayMesh component.");
-            return false;
-        }
-        ActiveScenario = NewObject<UTargetAcquisitionScenario>(this);
-        State = ETrainingSessionState::TargetAcquisitionActive;
-        break;
-    case ETrainingMode::CombatResponse:
-        if (!InArena.CombatAIClass || InArena.CombatAIClass->HasAnyClassFlags(CLASS_Abstract)
-            || !InArena.CombatAIClass.GetDefaultObject()->HasConfiguredBehavior())
-        {
-            OutFailure = LOCTEXT("AIClass", "Assign a Combat AI Blueprint with a Training AI Controller and compiled StateTree.");
-            return false;
-        }
-        if (!InArena.CombatAIClass.GetDefaultObject()->GetMesh()->GetSkeletalMeshAsset()
-            || !InArena.CombatAIClass.GetDefaultObject()->GetMesh()->GetPhysicsAsset()
-            || !InArena.CombatAIClass.GetDefaultObject()->DissolveMaterial)
-        {
-            OutFailure = LOCTEXT("AIVisuals", "Assign a Skeletal Mesh, Physics Asset and DissolveMaterial to the Combat AI Blueprint.");
-            return false;
-        }
-        ActiveScenario = NewObject<UCombatResponseScenario>(this);
-        State = ETrainingSessionState::CombatResponseActive;
-        break;
+    case ETrainingMode::TargetAcquisition: BotClass = InArena.TargetClass.Get(); break;
+    case ETrainingMode::CombatResponse: BotClass = InArena.CombatAIClass.Get(); break;
     default:
         OutFailure = LOCTEXT("Mode", "The selected training mode is invalid.");
         return false;
     }
+    if (!BotClass || BotClass->HasAnyClassFlags(CLASS_Abstract))
+    {
+        OutFailure = LOCTEXT("BotClass", "Assign a concrete Target / Combat AI Blueprint to the Training Arena.");
+        return false;
+    }
+    const ATrainingCharacter* BotDefaults = Cast<ATrainingCharacter>(BotClass->GetDefaultObject());
+    if (!BotDefaults || !BotDefaults->GetMesh()->GetSkeletalMeshAsset())
+    {
+        OutFailure = LOCTEXT("BotMesh", "Assign a Skeletal Mesh (for example Manny) to the training bot. Recreate the old static Target Blueprint.");
+        return false;
+    }
+    if (!BotDefaults->DissolveMaterial)
+    {
+        OutFailure = LOCTEXT("BotMaterial", "Assign a Dissolve Material to the Target / Combat AI Blueprint.");
+        return false;
+    }
+    FVector ProbePosition;
+    if (Mode == ETrainingMode::TargetAcquisition)
+    {
+        if (!InArena.FindGroundSpawn(Band, ProbePosition))
+        {
+            OutFailure = LOCTEXT("TargetGround", "No valid WorldStatic floor in this distance band. Check the arena center, floor collision and ground probe height.");
+            return false;
+        }
+    }
+    else
+    {
+        const ATrainingCombatAI* CombatDefaults = Cast<ATrainingCombatAI>(BotDefaults);
+        if (!CombatDefaults || !CombatDefaults->HasConfiguredBehavior())
+        {
+            OutFailure = LOCTEXT("CombatTree", "Assign a Training Combat AI Controller Blueprint with a compiled Strafe State Tree to the Combat AI.");
+            return false;
+        }
+        if (!InArena.FindNavSpawn(Band, CombatDefaults->GetNavAgentPropertiesRef(), ProbePosition))
+        {
+            OutFailure = LOCTEXT("CombatNavigation", "No valid NavMesh in the selected distance band. Add/build NavMeshBoundsVolume over the combat training floor.");
+            return false;
+        }
+    }
 
+    ActiveScenario = Mode == ETrainingMode::TargetAcquisition
+        ? static_cast<UTrainingScenario*>(NewObject<UTargetAcquisitionScenario>(this))
+        : static_cast<UTrainingScenario*>(NewObject<UCombatResponseScenario>(this));
     Arena = &InArena;
     Participant = &InParticipant;
+    PendingMode = Mode;
+    Stats = FTrainingSessionStats();
+    SessionDurationSeconds = Mode == ETrainingMode::TargetAcquisition
+        ? TrainingRules::TargetDurationSeconds
+        : (FMath::IsFinite(InArena.CombatDurationSeconds) ? FMath::Max(0.0f, InArena.CombatDurationSeconds) : 0.0f);
     SessionId = SessionId == MAX_int32 ? 1 : SessionId + 1;
-    SessionStartSeconds = GetWorld()->GetTimeSeconds();
+    SessionStartSeconds = 0.0;
     ActiveScenario->Initialize(InArena, InParticipant, Band);
+    ActiveScenario->OnBotSpawned.AddUObject(this, &ThisClass::HandleBotSpawned);
+    ActiveScenario->OnBotHit.AddUObject(this, &ThisClass::HandleBotHit);
+    State = ETrainingSessionState::Countdown;
     InArena.SetSessionState(State);
 
-    FTimerManager& Timers = GetWorld()->GetTimerManager();
-    const bool bTargets = Mode == ETrainingMode::TargetAcquisition;
-    const float Interval = bTargets ? TrainingRules::TargetIntervalSeconds : TrainingRules::CombatIntervalSeconds;
-    Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick, Interval, true);
-    if (bTargets)
-    {
-        Timers.SetTimer(DurationTimer, this, &ThisClass::EndSession,
-            TrainingRules::TargetDurationSeconds, false);
-    }
-    HandleSpawnTick(); // t=0, followed by the normal interval. Death never schedules a replacement.
+    GetWorld()->GetTimerManager().SetTimer(CountdownTimer, this, &ThisClass::BeginActiveSession,
+        TrainingRules::CountdownSeconds, false);
+    UE_LOG(LogTemp, Log,
+        TEXT("[Training] Session %d: countdown %.1fs, mode=%s, band=%.0f-%.0fcm. No bots spawn during countdown."),
+        SessionId, TrainingRules::CountdownSeconds,
+        Mode == ETrainingMode::TargetAcquisition ? TEXT("TargetAcquisition") : TEXT("CombatResponse"),
+        Band.MinCentimeters, Band.MaxCentimeters);
+    NotifyParticipant(ETrainingFeedbackPhase::Countdown, GetWorld()->GetTimeSeconds());
     return true;
+}
+
+void UTrainingSessionSubsystem::BeginActiveSession()
+{
+    if (bStopping || State != ETrainingSessionState::Countdown)
+    {
+        return;
+    }
+    if (!Arena.IsValid() || !Participant.IsValid() || !ActiveScenario)
+    {
+        StopSession(true);
+        return;
+    }
+    State = PendingMode == ETrainingMode::TargetAcquisition
+        ? ETrainingSessionState::TargetAcquisitionActive : ETrainingSessionState::CombatResponseActive;
+    SessionStartSeconds = GetWorld()->GetTimeSeconds();
+    ShotResolver = GetWorld()->GetSubsystem<UHitscanResolverSubsystem>();
+    if (ShotResolver.IsValid())
+    {
+        ShotResolvedHandle = ShotResolver->OnServerShotResolved.AddUObject(this, &ThisClass::HandleShotResolved);
+    }
+    Arena->SetSessionState(State);
+    UE_LOG(LogTemp, Log, TEXT("[Training] Session %d: START. Spawn timers begin now."), SessionId);
+    NotifyParticipant(ETrainingFeedbackPhase::Started, SessionStartSeconds);
+
+    FTimerManager& Timers = GetWorld()->GetTimerManager();
+    const bool bTargets = State == ETrainingSessionState::TargetAcquisitionActive;
+    Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
+        bTargets ? TrainingRules::TargetIntervalSeconds : TrainingRules::CombatIntervalSeconds, true);
+    if (SessionDurationSeconds > 0.0f)
+    {
+        Timers.SetTimer(DurationTimer, this, &ThisClass::EndSession, SessionDurationSeconds, false);
+    }
+    HandleSpawnTick();
 }
 
 void UTrainingSessionSubsystem::HandleSpawnTick()
 {
-    if (bStopping || State == ETrainingSessionState::Idle)
+    if (bStopping || !TrainingRules::IsRunningState(State))
     {
         return;
     }
-    // A destroyed controller means disconnect/leave. Pawn death/replacement deliberately does not.
     if (!Arena.IsValid() || !Participant.IsValid() || !ActiveScenario)
+    {
+        StopSession(true);
+        return;
+    }
+    if (SessionDurationSeconds > 0.0f
+        && GetWorld()->GetTimeSeconds() - SessionStartSeconds >= SessionDurationSeconds)
     {
         EndSession();
         return;
     }
-    if (State == ETrainingSessionState::TargetAcquisitionActive
-        && GetWorld()->GetTimeSeconds() - SessionStartSeconds >= TrainingRules::TargetDurationSeconds)
-    {
-        EndSession(); // Do not create an extra target at the 60-second deadline.
-        return;
-    }
     ActiveScenario->SpawnNext();
+}
+
+void UTrainingSessionSubsystem::NotifyParticipant(const ETrainingFeedbackPhase Phase,
+    const double PhaseStartServerSeconds)
+{
+    if (APlayerController* ParticipantPlayer = Participant.Get())
+    {
+        if (UTrainingPlayerComponent* Bridge = ParticipantPlayer->FindComponentByClass<UTrainingPlayerComponent>())
+        {
+            Bridge->NotifySessionPhase(SessionId, Phase, PhaseStartServerSeconds, PendingMode, SessionDurationSeconds);
+        }
+    }
 }
 
 bool UTrainingSessionSubsystem::RequestEndSession(APlayerController& RequestingPlayer,
@@ -150,7 +221,7 @@ void UTrainingSessionSubsystem::EndSessionForParticipant(const APlayerController
 {
     if (LeavingParticipant && Participant.Get() == LeavingParticipant)
     {
-        EndSession();
+        StopSession(true);
     }
 }
 
@@ -158,25 +229,118 @@ void UTrainingSessionSubsystem::EndSessionForArena(const ATrainingArena* EndingA
 {
     if (EndingArena && Arena.Get() == EndingArena)
     {
-        EndSession();
+        StopSession(true);
     }
 }
 
 void UTrainingSessionSubsystem::EndSession()
+{
+    StopSession(false);
+}
+
+bool UTrainingSessionSubsystem::IsInsideScoringWindow() const
+{
+    return !bStopping && TrainingRules::IsRunningState(State) && ActiveScenario && Participant.IsValid()
+        && (SessionDurationSeconds <= 0.0f
+            || GetWorld()->GetTimeSeconds() - SessionStartSeconds < SessionDurationSeconds);
+}
+
+bool UTrainingSessionSubsystem::IsParticipantActor(const AActor* Candidate) const
+{
+    const APlayerController* Player = Participant.Get();
+    if (!Candidate || !Player) { return false; }
+    const APawn* SourcePawn = Cast<APawn>(Candidate);
+    return Candidate == Player || Candidate == Player->PlayerState
+        || (SourcePawn && SourcePawn->GetController() == Player);
+}
+
+void UTrainingSessionSubsystem::HandleBotSpawned(ATrainingCharacter& Bot)
+{
+    if (!IsInsideScoringWindow()) { return; }
+    if (UTrainingPlayerComponent* Bridge = Participant->FindComponentByClass<UTrainingPlayerComponent>())
+    {
+        Bridge->NotifyBotSound(SessionId, Bot.SpawnSound, Bot.BotSoundAttenuation,
+            Bot.GetActorLocation(), Bot.BotSoundVolume);
+    }
+}
+
+void UTrainingSessionSubsystem::HandleBotHit(ATrainingCharacter& Bot, const AActor* InstigatorActor,
+    const float Damage, const bool bKilled)
+{
+    if (!IsInsideScoringWindow() || !ActiveScenario->OwnsActor(&Bot)) { return; }
+    UTrainingPlayerComponent* Bridge = Participant->FindComponentByClass<UTrainingPlayerComponent>();
+    if (Bridge && bKilled)
+    {
+        Bridge->NotifyBotSound(SessionId, Bot.DeathSound, Bot.BotSoundAttenuation,
+            Bot.GetActorLocation(), Bot.BotSoundVolume);
+    }
+    if (!IsParticipantActor(InstigatorActor)) { return; }
+    if (bKilled) { ++Stats.Kills; }
+    if (Bridge)
+    {
+        Bridge->NotifySessionHit(SessionId, Stats.Kills,
+            PendingMode == ETrainingMode::CombatResponse ? Damage : 0.0f,
+            bKilled, Bot.GetActorLocation());
+    }
+}
+
+void UTrainingSessionSubsystem::HandleShotResolved(const FHitscanShotRequest& Shot,
+    const TArray<TWeakObjectPtr<AActor>>& AppliedTargets)
+{
+    if (!IsInsideScoringWindow() || !IsParticipantActor(Shot.InstigatorActor)) { return; }
+    const bool bHitTrainingBot = AppliedTargets.ContainsByPredicate([this](const TWeakObjectPtr<AActor>& Target)
+    {
+        return ActiveScenario->OwnsActor(Target.Get());
+    });
+    Stats.RecordShot(bHitTrainingBot);
+}
+
+void UTrainingSessionSubsystem::UnbindShotObserver()
+{
+    if (ShotResolver.IsValid() && ShotResolvedHandle.IsValid())
+    {
+        ShotResolver->OnServerShotResolved.Remove(ShotResolvedHandle);
+    }
+    ShotResolvedHandle.Reset();
+    ShotResolver.Reset();
+}
+
+void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
 {
     if (bStopping)
     {
         return;
     }
     bStopping = true;
+    const bool bShowResult = !bImmediate && TrainingRules::IsRunningState(State);
+    FTrainingSessionResult Result;
+    Result.SessionId = SessionId;
+    Result.Mode = PendingMode;
+    Result.Stats = Stats;
+    if (bShowResult && GetWorld())
+    {
+        Result.ElapsedSeconds = static_cast<float>(FMath::Max(0.0, GetWorld()->GetTimeSeconds() - SessionStartSeconds));
+        Result.bCompleted = SessionDurationSeconds > 0.0f && Result.ElapsedSeconds >= SessionDurationSeconds;
+        if (SessionDurationSeconds > 0.0f) { Result.ElapsedSeconds = FMath::Min(Result.ElapsedSeconds, SessionDurationSeconds); }
+    }
+    TWeakObjectPtr<UTrainingPlayerComponent> ResultBridge = Participant.IsValid()
+        ? Participant->FindComponentByClass<UTrainingPlayerComponent>() : nullptr;
+    UnbindShotObserver();
     if (UWorld* ActiveWorld = GetWorld())
     {
+        ActiveWorld->GetTimerManager().ClearTimer(CountdownTimer);
         ActiveWorld->GetTimerManager().ClearTimer(SpawnTimer);
         ActiveWorld->GetTimerManager().ClearTimer(DurationTimer);
     }
+    if (State != ETrainingSessionState::Idle)
+    {
+        UE_LOG(LogTemp, Log, TEXT("[Training] Session %d: stopped (immediate cleanup=%s)."),
+            SessionId, bImmediate ? TEXT("true") : TEXT("false"));
+        NotifyParticipant(ETrainingFeedbackPhase::Stopped, 0.0);
+    }
     if (ActiveScenario)
     {
-        ActiveScenario->Stop();
+        ActiveScenario->Stop(bImmediate);
         ActiveScenario = nullptr;
     }
     if (ATrainingArena* PreviousArena = Arena.Get())
@@ -186,8 +350,12 @@ void UTrainingSessionSubsystem::EndSession()
     Arena.Reset();
     Participant.Reset();
     SessionStartSeconds = 0.0;
+    PendingMode = ETrainingMode::TargetAcquisition;
     State = ETrainingSessionState::Idle;
+    SessionDurationSeconds = 0.0f;
+    Stats = FTrainingSessionStats();
     bStopping = false;
+    if (bShowResult && ResultBridge.IsValid()) { ResultBridge->NotifySessionFinished(Result); }
 }
 
 #undef LOCTEXT_NAMESPACE

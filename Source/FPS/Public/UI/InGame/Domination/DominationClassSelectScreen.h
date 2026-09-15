@@ -40,7 +40,6 @@ class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 
 public:
 	UDominationClassSelectScreen();
-	// A rejected Training spawn must release the lock-in button for a retry.
 	void NotifySelectionFailed(const FText& Reason);
 
 	UTexture2D* GetCachedClassIcon(EDominationCombatClass CombatClass) const;

@@ -7,10 +7,10 @@
 #include "TrainingInteractionActor.generated.h"
 
 class ATrainingArena;
+class USoundBase;
 class UBoxComponent;
 class UStaticMeshComponent;
 
-// Two placed Blueprint instances: Entrance and ControlPanel. Neither binds input.
 UCLASS()
 class FPS_API ATrainingInteractionActor : public AActor, public IRogueInteractable
 {
@@ -20,6 +20,12 @@ public:
     ATrainingInteractionActor();
     virtual bool CanInteract(const APlayerController& RequestingPlayer) const override;
     virtual void Interact(APlayerController& RequestingPlayer) override;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Audio")
+    TObjectPtr<USoundBase> InteractionSound;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
+    float InteractionSoundVolume = 1.0f;
 
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Training")
     TObjectPtr<ATrainingArena> Arena;

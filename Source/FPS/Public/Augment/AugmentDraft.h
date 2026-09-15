@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -92,6 +92,10 @@ struct FAugmentOfferResult
 // 증강 드래프트 관련 함수
 namespace RogueAugmentDraft
 {
+    FPS_API bool MeetsUnlockRequirements(
+        const UAugmentDefinition& Definition,
+        const FGameplayTagContainer& UnlockTags);
+
 	// 이번 라운드에 한 팀이 받을 등급
 	FPS_API EAugmentTier ResolveTier(
 		const FAugmentDraftRules& Rules,

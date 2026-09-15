@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "Training/TrainingTypes.h"
+#include "Augment/AugmentTypes.h"
 #include "Styling/SlateTypes.h"
 #include "TrainingDialogWidget.generated.h"
 
@@ -11,8 +12,9 @@ class UButton;
 class USpinBox;
 class UTextBlock;
 class UImage;
+class UWidgetSwitcher;
+class UTrainingAugmentSelectionWidget;
 
-// WBP supplies all visuals. These functions are the only button-to-gameplay contract.
 UCLASS(Abstract, Blueprintable)
 class FPS_API UTrainingDialogWidget : public UShooterActivatableWidget
 {
@@ -23,6 +25,11 @@ public:
     void InitializeDialog(UTrainingPlayerComponent& InBridge, ETrainingDialogKind InKind, int32 InRequestId);
     void DetachRequest();
     void ReceiveRequestFailure(const FText& Failure);
+    void SetAppliedAugments(const TArray<FAugmentInventoryEntry>& Entries);
+    void ReceiveAugmentResult(bool bSuccess, const TArray<FAugmentInventoryEntry>& Entries, const FText& Failure);
+
+    UFUNCTION(BlueprintCallable, Category = "Training")
+    void OpenAugmentSelection();
     int32 GetRequestId() const { return RequestId; }
 
     UFUNCTION(BlueprintCallable, Category = "Training")
@@ -43,7 +50,6 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Training")
     bool bRequestPending = false;
 
-    // Opt-in: existing hand-authored WBP event graphs continue to work unchanged.
     UPROPERTY(EditDefaultsOnly, Category = "Training|Generated UI")
     bool bAutoBindGeneratedUI = false;
 
@@ -75,7 +81,6 @@ protected:
     void OnRequestFailed(const FText& Failure);
 
 private:
-    // Optional names are the generator contract, not a runtime-created layout.
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Primary;
 
@@ -126,6 +131,16 @@ private:
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UImage> Img_CombatSelected;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UButton> Btn_Augments;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_AugmentSummary;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidgetSwitcher> Switch_TrainingPages;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTrainingAugmentSelectionWidget> AugmentSelection;
+    UPROPERTY(Transient) TArray<FAugmentInventoryEntry> AppliedAugments;
+    bool bChoosingAugments = false;
+    void HandleAugmentApply(const TArray<FPrimaryAssetId>& Selection);
+    void HandleAugmentBack();
+    void RefreshAugmentSummary();
 
     void BindGeneratedControls();
     void UnbindGeneratedControls();

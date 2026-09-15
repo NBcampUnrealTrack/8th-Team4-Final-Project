@@ -350,6 +350,12 @@ void UTeamMatchUIInitComponent::HideAugmentSelect()
 
 void UTeamMatchUIInitComponent::ShowScoreboard()
 {
+	// Guard the creation entry point too: BP/direct callers may bypass input bindings.
+	if (!SupportsScoreboard())
+	{
+		return;
+	}
+
 	if (IsValid(ScoreboardInstance))
 	{
 		return;

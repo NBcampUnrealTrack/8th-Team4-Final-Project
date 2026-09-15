@@ -38,7 +38,6 @@ bool UTrainingUIInitComponent::CanInitializeCombatHUD(const ADominationPlayerSta
 
 bool UTrainingUIInitComponent::ShouldPresentClassSelection(const ADominationPlayerState& ClassState) const
 {
-    // Keep the same PICKED/lock-in presentation until the server has equipped the real pawn.
     return ClassState.GetParticipationState() == EPlayerParticipationState::WaitingForMatchStart;
 }
 
@@ -51,7 +50,7 @@ bool UTrainingUIInitComponent::IsAugmentModeActive() const
 
 bool UTrainingUIInitComponent::IsSurrenderRequestAllowed() const
 {
-    return false; // No teams competing for a match result in Training.
+    return false;
 }
 
 void UTrainingUIInitComponent::OnClassSelectionPresented()
@@ -69,7 +68,6 @@ void UTrainingUIInitComponent::CompleteLocalLoading()
 {
     if (AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(GetOwner()))
     {
-        // The presentation has actually been created; do not hide loading at an arbitrary delay.
         LocalController->HideLoadingScreen();
     }
 }

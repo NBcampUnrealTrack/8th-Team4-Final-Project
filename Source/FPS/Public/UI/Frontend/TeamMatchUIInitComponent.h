@@ -47,6 +47,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void HideAugmentSelect();
 	
+	// UI policy, available before PlayerState/UI initialization and on clients.
+	UFUNCTION(BlueprintPure, Category = "UI|Scoreboard")
+	virtual bool SupportsScoreboard() const { return true; }
+
 	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
 	void ShowScoreboard();
 	

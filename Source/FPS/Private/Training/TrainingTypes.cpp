@@ -16,7 +16,6 @@ bool FTrainingDistanceBand::ContainsSegment(const FVector& Center,
         return false;
     }
 
-    // Checking endpoints alone would accept a NavMesh path cutting through the inner circle.
     const FVector2D A(Start.X - Center.X, Start.Y - Center.Y);
     const FVector2D B(End.X - Center.X, End.Y - Center.Y);
     const FVector2D Segment = B - A;
@@ -48,7 +47,6 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
         return false;
     }
 
-    // Prototype choice: the effective band is also bounded by 5m..50m.
     OutBand.MinCentimeters = FMath::Max(5.0f, NominalMeters - 2.0f) * 100.0f;
     OutBand.MaxCentimeters = FMath::Min(50.0f, NominalMeters + 2.0f) * 100.0f;
     return true;
@@ -57,4 +55,44 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
 bool TrainingRules::CanSpawnCombatAI(const int32 LivingCount)
 {
     return LivingCount >= 0 && LivingCount < MaxLivingCombatAI;
+}
+
+bool TrainingRules::IsRunningState(const ETrainingSessionState State)
+{
+    return State == ETrainingSessionState::TargetAcquisitionActive
+        || State == ETrainingSessionState::CombatResponseActive;
+}
+
+float TrainingRules::FeedbackOpacity(const float Elapsed, const float Duration,
+    const float FadeIn, const float FadeOut)
+{
+    if (Duration <= 0.0f || Elapsed < 0.0f || Elapsed >= Duration)
+    {
+        return 0.0f;
+    }
+    const float InLength = FMath::Clamp(FadeIn, 0.0f, Duration * 0.5f);
+    const float OutLength = FMath::Clamp(FadeOut, 0.0f, Duration * 0.5f);
+    const float InAlpha = InLength > KINDA_SMALL_NUMBER
+        ? FMath::Clamp(Elapsed / InLength, 0.0f, 1.0f) : 1.0f;
+    const float OutAlpha = OutLength > KINDA_SMALL_NUMBER
+        ? FMath::Clamp((Duration - Elapsed) / OutLength, 0.0f, 1.0f) : 1.0f;
+    const float LinearAlpha = FMath::Min(InAlpha, OutAlpha);
+    return LinearAlpha * LinearAlpha * (3.0f - 2.0f * LinearAlpha);
+}
+
+void FTrainingSessionStats::RecordShot(const bool bHitTrainingBot)
+{
+    ++ShotsFired;
+    if (bHitTrainingBot) { ++ShotsHit; }
+}
+
+float FTrainingSessionStats::GetAccuracyPercent() const
+{
+    return ShotsFired > 0
+        ? 100.0f * static_cast<float>(FMath::Clamp(ShotsHit, 0, ShotsFired)) / ShotsFired : 0.0f;
+}
+
+int32 TrainingRules::RemainingWholeSeconds(const float Duration, const float Elapsed)
+{
+    return FMath::CeilToInt(FMath::Max(0.0f, Duration - FMath::Max(0.0f, Elapsed)));
 }

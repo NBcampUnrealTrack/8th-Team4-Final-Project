@@ -6,11 +6,14 @@
 #include "Training/TrainingTypes.h"
 #include "TrainingSessionSubsystem.generated.h"
 
+class AActor;
 class APlayerController;
 class ATrainingArena;
 class UTrainingScenario;
+class ATrainingCharacter;
+class UHitscanResolverSubsystem;
+struct FHitscanShotRequest;
 
-// One authoritative session per UWorld, shared by every arena/participant in that world.
 UCLASS()
 class FPS_API UTrainingSessionSubsystem : public UWorldSubsystem
 {
@@ -32,7 +35,16 @@ public:
     int32 GetSessionId() const { return SessionId; }
 
 private:
+    void BeginActiveSession();
+    bool IsInsideScoringWindow() const;
+    bool IsParticipantActor(const AActor* Candidate) const;
+    void HandleBotSpawned(ATrainingCharacter& Bot);
+    void HandleBotHit(ATrainingCharacter& Bot, const AActor* InstigatorActor, float Damage, bool bKilled);
+    void HandleShotResolved(const FHitscanShotRequest& Shot, const TArray<TWeakObjectPtr<AActor>>& AppliedTargets);
+    void UnbindShotObserver();
     void HandleSpawnTick();
+    void StopSession(bool bImmediate);
+    void NotifyParticipant(ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds);
     void EndSession();
 
     UPROPERTY(Transient)
@@ -41,8 +53,14 @@ private:
     TWeakObjectPtr<ATrainingArena> Arena;
     TWeakObjectPtr<APlayerController> Participant;
     ETrainingSessionState State = ETrainingSessionState::Idle;
+    ETrainingMode PendingMode = ETrainingMode::TargetAcquisition;
+    FTimerHandle CountdownTimer;
     FTimerHandle SpawnTimer;
     FTimerHandle DurationTimer;
+    FTrainingSessionStats Stats;
+    TWeakObjectPtr<UHitscanResolverSubsystem> ShotResolver;
+    FDelegateHandle ShotResolvedHandle;
+    float SessionDurationSeconds = 0.0f;
     double SessionStartSeconds = 0.0;
     int32 SessionId = 0;
     bool bStopping = false;

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -41,6 +41,11 @@ public:
 	// 매치 초기화. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	void RemoveAllAugments();
+
+    // Server-only full loadout replacement. The caller owns access/selection policy.
+    // Reuses the existing assembler, owned handles, replication and conditional-rule cache.
+    // Not an RPC: callers must validate the requesting player's authority/context first.
+    bool ReplaceLoadout(const TArray<FAugmentInventoryEntry>& RequestedEntries, FText& OutFailure);
 
 	// 드래프트 매니저가 추첨한 결과를 후보로 저장, 서버 전용
 	// SlotCards 는 슬롯별 카드 체인, 각 체인의 첫 장이 이번에 제시할 후보

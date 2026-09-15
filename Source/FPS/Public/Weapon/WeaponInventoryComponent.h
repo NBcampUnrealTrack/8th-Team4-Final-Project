@@ -60,6 +60,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Inventory")
 	FGameplayTag GetEquippedPrimaryTag() const { return EquippedPrimaryTag; }
 
+    // Read-only projection of the same unlock rules used by SyncUnlockTags.
+    // Safe on the owning client after WeaponStates replication; does not grant GAS tags.
+    void GetAugmentUnlockTags(FGameplayTagContainer& OutTags) const;
+
 	// --- 서버 변경. 게임 흐름 순서대로 ---
 
 	// 1. 경기 시작. 권총/칼만 소지, 둘 다 미해금, 주무기 없음.

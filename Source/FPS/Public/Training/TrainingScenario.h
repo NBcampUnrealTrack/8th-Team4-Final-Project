@@ -3,13 +3,15 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingCharacter.h"
 #include "TrainingScenario.generated.h"
 
 class AActor;
 class APlayerController;
 class ATrainingArena;
 
-// Owns spawned actors, not session timers or UI. Dead AI stays here until destroyed.
+DECLARE_MULTICAST_DELEGATE_OneParam(FTrainingBotSpawned, ATrainingCharacter&);
+
 UCLASS(Abstract)
 class FPS_API UTrainingScenario : public UObject
 {
@@ -19,7 +21,10 @@ public:
     void Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
         const FTrainingDistanceBand& InBand);
     virtual void SpawnNext() PURE_VIRTUAL(UTrainingScenario::SpawnNext, );
-    void Stop();
+    void Stop(bool bImmediate = false);
+    bool OwnsActor(const AActor* Candidate) const;
+    FTrainingBotSpawned OnBotSpawned;
+    FTrainingBotHit OnBotHit;
 
 protected:
     void TrackActor(AActor& SpawnedActor);
@@ -29,6 +34,8 @@ protected:
     TArray<TWeakObjectPtr<AActor>> OwnedActors;
 
 private:
+    void HandleBotHit(ATrainingCharacter& Bot, const AActor* InstigatorActor, float Damage, bool bKilled);
+
     UFUNCTION()
     void HandleActorDestroyed(AActor* DestroyedActor);
 
@@ -51,4 +58,7 @@ class FPS_API UCombatResponseScenario : public UTrainingScenario
 public:
     virtual void SpawnNext() override;
     int32 GetLivingAICount() const;
+
+private:
+    void SpawnCombatBot();
 };

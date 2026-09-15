@@ -53,7 +53,7 @@ void ATrainingPlayerController::SetPreviewCombatClass(const EDominationCombatCla
 
 float ATrainingPlayerController::GetCombatClassSelectionTimeRemaining() const
 {
-    return -1.0f; // Training has no class-selection deadline or minimum-player wait.
+    return -1.0f;
 }
 
 void ATrainingPlayerController::ServerSelectCombatClass_Implementation(const EDominationCombatClass RequestedClass)

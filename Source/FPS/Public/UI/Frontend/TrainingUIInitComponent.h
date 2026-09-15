@@ -13,6 +13,7 @@ class FPS_API UTrainingUIInitComponent : public UCombatUIInitComponent
     GENERATED_BODY()
 public:
     UTrainingUIInitComponent();
+    virtual bool SupportsScoreboard() const override { return false; }
 protected:
     virtual bool PrepareModeBindings() override;
     virtual bool CanInitializeCombatHUD(const ADominationPlayerState& ClassState) const override;
@@ -24,10 +25,8 @@ protected:
 private:
     void HideRuleOnlyWidgets(UUserWidget& RootWidget);
     void CompleteLocalLoading();
-    // Per-instance filtering: the original Domination HUD asset is not edited or duplicated.
     UPROPERTY(EditDefaultsOnly, Category = "Training|HUD")
     TArray<TSubclassOf<UWidget>> SuppressedHUDWidgetClasses;
-    // For project-specific BP-only score/round panels with no native rule-widget parent.
     UPROPERTY(EditDefaultsOnly, Category = "Training|HUD")
     TArray<FName> SuppressedHUDWidgetNames;
 };

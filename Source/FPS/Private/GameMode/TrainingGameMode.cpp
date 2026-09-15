@@ -20,9 +20,8 @@ ATrainingGameMode::ATrainingGameMode()
 {
     GameStateClass = ABaseTeamGameState::StaticClass();
     PlayerControllerClass = ATrainingPlayerController::StaticClass();
-    // This existing state contains only combat-class/preview data on top of ShooterPlayerState.
     PlayerStateClass = ADominationPlayerState::StaticClass();
-    DefaultPawnClass = nullptr; // Selected class resolves the actual existing character BP.
+    DefaultPawnClass = nullptr;
     bDelayedStart = true;
     LoadoutManager = CreateDefaultSubobject<UDominationLoadoutManager>(TEXT("LoadoutManager"));
     AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
@@ -33,7 +32,7 @@ void ATrainingGameMode::BeginPlay()
 {
     Super::BeginPlay();
     const UDominationClassSettings* Classes = GetDefault<UDominationClassSettings>();
-    AugmentDraftManager->Initialize(this, bEnableAugmentDraft, AugmentDraftProfile);
+    AugmentDraftManager->Initialize(this, bEnableAugmentDraft && !bUseManualAugmentSelection, AugmentDraftProfile);
     AugmentDraftManager->OnDependenciesReady.AddUObject(this, &ThisClass::HandleAugmentDependenciesReady);
     RespawnProtection->Initialize(GetWorld(), RespawnProtectionDuration);
 
@@ -48,7 +47,6 @@ void ATrainingGameMode::BeginPlay()
             TEXT("Training startup stopped: check Domination Classes (Pawn BPs), Weapon Registry, Training controller, class PlayerState, and Augment Registry."));
         return;
     }
-    // Ready RPCs can arrive before BeginPlay during a level transition.
     for (const TWeakObjectPtr<ATrainingPlayerController>& Entry : InitializedPlayers)
     {
         TryOpenClassSelection(Entry.Get());
@@ -62,8 +60,6 @@ void ATrainingGameMode::HandleStartingNewPlayer_Implementation(APlayerController
         ? JoiningPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
     if (!IsValid(ClassState) || InitializedPlayers.Contains(JoiningPlayer)) { return; }
 
-    // Do not call the auto-spawning parent path: class selection is the spawn gate.
-    // Reuse existing state, inventory reset and pawn-removal operations.
     InitializedPlayers.Add(JoiningPlayer);
     ClassState->SetTeam(EGameTeam::TeamA);
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForNextSpawn);
@@ -86,7 +82,6 @@ void ATrainingGameMode::TryOpenClassSelection(ATrainingPlayerController* ReadyPl
         || !InitializedPlayers.Contains(ReadyPlayer) || !ClassState->IsLoadedIntoMatch()
         || ClassState->HasSelectedCombatClass()) { return; }
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForMatchStart);
-    // The local UI hides loading only after its class-selection screen is actually created.
 }
 
 bool ATrainingGameMode::RequestCombatClass(ATrainingPlayerController* Requester,
@@ -144,7 +139,6 @@ bool ATrainingGameMode::PlayerCanRestart_Implementation(APlayerController* Reque
 {
     const ADominationPlayerState* ClassState = IsValid(Requester)
         ? Requester->GetPlayerState<ADominationPlayerState>() : nullptr;
-    // AGameMode::StartMatch must not spawn other players before they have selected a class.
     return bConfigurationReady && IsValid(ClassState) && ClassState->HasSelectedCombatClass()
         && ClassState->GetParticipationState() == EPlayerParticipationState::Active
         && Super::PlayerCanRestart_Implementation(Requester);
@@ -157,7 +151,7 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
     if (!IsValid(ClassState) || !ClassState->HasSelectedCombatClass()) { return false; }
 
     UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer);
-    RestartPlayer(WaitingPlayer); // Normal PlayerStart. No capture-point/spawn-volume dependency.
+    RestartPlayer(WaitingPlayer);
     APawn* CombatPawn = WaitingPlayer->GetPawn();
     if (!IsValid(CombatPawn) || CombatPawn->GetController() != WaitingPlayer) { return false; }
     ClassState->ServerRespawnReset();
@@ -175,14 +169,12 @@ void ATrainingGameMode::GrantInitialAugments(ATrainingPlayerController* ReadyPla
 {
     ADominationPlayerState* ClassState = IsValid(ReadyPlayer)
         ? ReadyPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (!bEnableAugmentDraft || !AugmentDraftManager->AreDependenciesReady()
+    if (bUseManualAugmentSelection || !bEnableAugmentDraft || !AugmentDraftManager->AreDependenciesReady()
         || !IsValid(ClassState) || !ClassState->HasSelectedCombatClass()
         || ClassState->GetParticipationState() != EPlayerParticipationState::Active
         || InitialAugmentsGranted.Contains(ReadyPlayer)) { return; }
 
     InitialAugmentsGranted.Add(ReadyPlayer);
-    // Same opening loadout as Domination: Slot1 active + passive, once per joining player.
-    // No capture/round timer is introduced just to grant these rewards.
     AugmentDraftManager->GrantToPlayer(ClassState, EAugmentRewardPool::Active, 1,
         FGameplayTag::RequestGameplayTag(FName(TEXT("InputTag.Ability.Slot1"))));
     AugmentDraftManager->GrantToPlayer(ClassState, EAugmentRewardPool::Passive, 1);
@@ -215,7 +207,6 @@ void ATrainingGameMode::NotifyPlayerEliminatedBy(AController* EliminatedControll
         FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnTimer,
             TWeakObjectPtr<ATrainingPlayerController>(WaitingPlayer)),
         FMath::Max(0.1f, RespawnDelay), false);
-    // The training session deliberately survives player death and pawn replacement.
 }
 
 void ATrainingGameMode::HandleRespawnTimer(const TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer)
@@ -235,7 +226,7 @@ void ATrainingGameMode::HandleRespawnTimer(const TWeakObjectPtr<ATrainingPlayerC
         return;
     }
     GrantInitialAugments(WaitingPlayer.Get());
-    if (bEnableAugmentDraft)
+    if (bEnableAugmentDraft && !bUseManualAugmentSelection)
     {
         AugmentDraftManager->ServeNextReward(WaitingPlayer->GetPlayerState<ADominationPlayerState>());
     }

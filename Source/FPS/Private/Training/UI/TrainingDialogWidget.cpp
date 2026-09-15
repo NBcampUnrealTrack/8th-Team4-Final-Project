@@ -5,6 +5,8 @@
 #include "Components/Image.h"
 #include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
+#include "Components/WidgetSwitcher.h"
+#include "Training/UI/TrainingAugmentSelectionWidget.h"
 
 #define LOCTEXT_NAMESPACE "TrainingDialog"
 
@@ -16,7 +18,11 @@ UTrainingDialogWidget::UTrainingDialogWidget()
 void UTrainingDialogWidget::InitializeDialog(UTrainingPlayerComponent& InBridge,
     const ETrainingDialogKind InKind, const int32 InRequestId)
 {
+    bChoosingAugments = false;
+    if (AugmentSelection) { AugmentSelection->EndSelection(); }
+    if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(0); }
     Bridge = &InBridge;
+    InBridge.ApplyButtonSounds(*this);
     DialogKind = InKind;
     RequestId = InRequestId;
     if (bAutoBindGeneratedUI && Txt_Error)
@@ -27,10 +33,13 @@ void UTrainingDialogWidget::InitializeDialog(UTrainingPlayerComponent& InBridge,
     SetRequestPending(false);
     OnDialogPrepared();
     RefreshGeneratedControls();
+    InBridge.ApplyButtonSounds(*this);
 }
 
 void UTrainingDialogWidget::DetachRequest()
 {
+    if (AugmentSelection) { AugmentSelection->EndSelection(); }
+    bChoosingAugments = false;
     Bridge.Reset();
     RequestId = 0;
 }
@@ -57,6 +66,7 @@ void UTrainingDialogWidget::SetRequestPending(const bool bPending)
         Txt_Error->SetVisibility(ESlateVisibility::Collapsed);
     }
     RefreshGeneratedControls();
+    if (AugmentSelection && bChoosingAugments) { AugmentSelection->SetPending(bPending); }
     OnRequestPendingChanged(bPending);
 }
 
@@ -72,7 +82,7 @@ void UTrainingDialogWidget::ConfirmDialog()
 void UTrainingDialogWidget::StartSelectedMode(const ETrainingMode Mode,
     const ETrainingDistancePreset Preset, const float CustomMeters)
 {
-    if (!bRequestPending && Bridge.IsValid() && DialogKind == ETrainingDialogKind::SelectMode)
+    if (!bRequestPending && !bChoosingAugments && Bridge.IsValid() && DialogKind == ETrainingDialogKind::SelectMode)
     {
         SetRequestPending(true);
         Bridge->SubmitMode(RequestId, Mode, Preset, CustomMeters);
@@ -92,6 +102,8 @@ void UTrainingDialogWidget::ReceiveRequestFailure(const FText& Failure)
 
 void UTrainingDialogWidget::CancelDialog()
 {
+    if (bRequestPending) { return; }
+    if (bChoosingAugments) { HandleAugmentBack(); return; }
     if (Bridge.IsValid())
     {
         Bridge->DismissDialog(RequestId);
@@ -104,6 +116,7 @@ void UTrainingDialogWidget::CancelDialog()
 
 void UTrainingDialogWidget::NativeDestruct()
 {
+    if (AugmentSelection) { AugmentSelection->EndSelection(); }
     UnbindGeneratedControls();
     if (Bridge.IsValid())
     {
@@ -114,7 +127,6 @@ void UTrainingDialogWidget::NativeDestruct()
 
 bool UTrainingDialogWidget::NativeOnHandleBackAction()
 {
-    // Do not dismiss a confirmation after its authoritative request was sent.
     if (bAutoBindGeneratedUI && bRequestPending)
     {
         return true;
@@ -123,10 +135,10 @@ bool UTrainingDialogWidget::NativeOnHandleBackAction()
     return true;
 }
 
-
 void UTrainingDialogWidget::NativeConstruct()
 {
     Super::NativeConstruct();
+    if (Bridge.IsValid()) { Bridge->ApplyButtonSounds(*this); }
     if (!bAutoBindGeneratedUI)
     {
         return;
@@ -136,6 +148,16 @@ void UTrainingDialogWidget::NativeConstruct()
         DialogKind = GeneratedDialogKind;
     }
     BindGeneratedControls();
+    if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(bChoosingAugments ? 1 : 0); }
+    if (UTextBlock* TargetDescription = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Description"))))
+    {
+        TargetDescription->SetText(LOCTEXT("StationaryTargetDescription",
+            "Stationary targets. One new target every 2 seconds.\nOne hit removes a target. 60-second session."));
+    }
+    if (UTextBlock* TargetFooter = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Foot"))))
+    {
+        TargetFooter->SetText(LOCTEXT("StationaryTargetFooter", "ONE HIT   /   STATIONARY   /   AUTO END"));
+    }
     if (Spin_CustomMeters)
     {
         SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), 5.0f, 50.0f);
@@ -145,7 +167,7 @@ void UTrainingDialogWidget::NativeConstruct()
 
 UWidget* UTrainingDialogWidget::NativeGetDesiredFocusTarget() const
 {
-    // Ending training is destructive; put initial keyboard/gamepad focus on Back.
+    if (bChoosingAugments && AugmentSelection) { return AugmentSelection->GetInitialFocusTarget(); }
     if (bAutoBindGeneratedUI)
     {
         if ((RequestId > 0 ? DialogKind : GeneratedDialogKind) == ETrainingDialogKind::EndSession && Btn_Cancel)
@@ -166,7 +188,14 @@ void UTrainingDialogWidget::BindGeneratedControls()
     {
         return;
     }
-    // AddUnique permits a CommonUI widget to be constructed again without duplicate clicks.
+    if (Btn_Augments) { Btn_Augments->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenAugmentSelection); }
+    if (AugmentSelection)
+    {
+        AugmentSelection->OnApplyRequested.RemoveAll(this);
+        AugmentSelection->OnBackRequested.RemoveAll(this);
+        AugmentSelection->OnApplyRequested.AddUObject(this, &ThisClass::HandleAugmentApply);
+        AugmentSelection->OnBackRequested.AddUObject(this, &ThisClass::HandleAugmentBack);
+    }
     if (Btn_Primary) Btn_Primary->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleGeneratedPrimary);
     if (Btn_Cancel) Btn_Cancel->OnClicked.AddUniqueDynamic(this, &ThisClass::CancelDialog);
     if (Btn_Close) Btn_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::CancelDialog);
@@ -184,6 +213,12 @@ void UTrainingDialogWidget::UnbindGeneratedControls()
     if (!bAutoBindGeneratedUI)
     {
         return;
+    }
+    if (Btn_Augments) { Btn_Augments->OnClicked.RemoveDynamic(this, &ThisClass::OpenAugmentSelection); }
+    if (AugmentSelection)
+    {
+        AugmentSelection->OnApplyRequested.RemoveAll(this);
+        AugmentSelection->OnBackRequested.RemoveAll(this);
     }
     if (Btn_Primary) Btn_Primary->OnClicked.RemoveDynamic(this, &ThisClass::HandleGeneratedPrimary);
     if (Btn_Cancel) Btn_Cancel->OnClicked.RemoveDynamic(this, &ThisClass::CancelDialog);
@@ -203,6 +238,7 @@ void UTrainingDialogWidget::RefreshGeneratedControls()
     {
         return;
     }
+    RefreshAugmentSummary();
     if (Txt_Prompt) Txt_Prompt->SetText(GetPromptText());
     if (Txt_Primary)
     {
@@ -210,7 +246,7 @@ void UTrainingDialogWidget::RefreshGeneratedControls()
     }
     UButton* Buttons[] = { Btn_Primary.Get(), Btn_Cancel.Get(), Btn_Close.Get(),
         Btn_ModeTarget.Get(), Btn_ModeCombat.Get(), Btn_Distance10.Get(),
-        Btn_Distance20.Get(), Btn_Distance30.Get(), Btn_DistanceCustom.Get() };
+        Btn_Distance20.Get(), Btn_Distance30.Get(), Btn_DistanceCustom.Get(), Btn_Augments.Get() };
     for (UButton* ChoiceButton : Buttons)
     {
         if (ChoiceButton) ChoiceButton->SetIsEnabled(!bRequestPending);
@@ -225,6 +261,7 @@ void UTrainingDialogWidget::RefreshGeneratedControls()
     ApplyChoice(Btn_Distance20.Get(), SelectedPreset == ETrainingDistancePreset::TwentyMeters);
     ApplyChoice(Btn_Distance30.Get(), SelectedPreset == ETrainingDistancePreset::ThirtyMeters);
     ApplyChoice(Btn_DistanceCustom.Get(), SelectedPreset == ETrainingDistancePreset::Custom);
+    if (Bridge.IsValid()) { Bridge->ApplyButtonSounds(*this); }
     if (Img_TargetSelected)
     {
         Img_TargetSelected->SetVisibility(SelectedMode == ETrainingMode::TargetAcquisition
@@ -252,8 +289,8 @@ void UTrainingDialogWidget::RefreshGeneratedControls()
     if (Txt_SessionHint)
     {
         Txt_SessionHint->SetText(SelectedMode == ETrainingMode::TargetAcquisition
-            ? LOCTEXT("TargetHint", "60-second session  /  One target every 2 seconds")
-            : LOCTEXT("CombatHint", "Manual end  /  One AI every 5 seconds  /  Max 10 alive"));
+            ? LOCTEXT("TargetHint", "3s countdown  /  60s session  /  One target every 2s")
+            : LOCTEXT("CombatHint", "3s countdown  /  One AI every 5s  /  Max 10 alive"));
     }
 }
 
@@ -261,7 +298,6 @@ void UTrainingDialogWidget::HandleGeneratedPrimary()
 {
     if (DialogKind == ETrainingDialogKind::SelectMode)
     {
-        // Read the final committed value rather than relying on the last slider event.
         const float CustomValue = Spin_CustomMeters ? Spin_CustomMeters->GetValue() : SelectedCustomMeters;
         StartSelectedMode(SelectedMode, SelectedPreset, FMath::Clamp(CustomValue, 5.0f, 50.0f));
     }

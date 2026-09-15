@@ -12,7 +12,6 @@ class UBoxComponent;
 class USphereComponent;
 struct FNavAgentProperties;
 
-// Geometry/configuration only. Session state and all timers belong to the session subsystem.
 UCLASS()
 class FPS_API ATrainingArena : public AActor
 {
@@ -32,6 +31,8 @@ public:
     ETrainingSessionState GetSessionState() const { return SessionState; }
 
     bool IsInMovementArea(const AActor& Participant) const;
+    bool ProjectGroundPosition(const FVector& Candidate, const FTrainingDistanceBand& Band,
+        FVector& OutGroundPosition) const;
     bool FindGroundSpawn(const FTrainingDistanceBand& Band, FVector& OutGroundPosition) const;
     bool FindNavSpawn(const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
         FVector& OutNavPosition) const;
@@ -42,10 +43,12 @@ public:
 
     void SetSessionState(ETrainingSessionState NewState);
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Rules", meta = (ClampMin = "0.0", Units = "s"))
+    float CombatDurationSeconds = 0.0f;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training|Geometry")
     TObjectPtr<UArrowComponent> CenterPoint;
 
-    // Arrow origin = pawn/capsule origin at arrival, NOT a ground contact point.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training|Geometry")
     TObjectPtr<UArrowComponent> TrainingEntryPoint;
 
@@ -58,14 +61,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Classes")
     TSubclassOf<ATrainingCombatAI> CombatAIClass;
 
-    // Disable only when the level supplies equivalent Pawn-only boundary collision.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Geometry")
     bool bEnableMovementBoundary = true;
 
-    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0"))
+    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0", Units = "cm"))
     float GroundProbeUpCentimeters = 500.0f;
 
-    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0"))
+    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0", Units = "cm"))
     float GroundProbeDownCentimeters = 2000.0f;
 
     UPROPERTY(EditAnywhere, Category = "Training|Placement")

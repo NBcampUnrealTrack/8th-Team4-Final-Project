@@ -54,7 +54,6 @@ void ATrainingCombatAIController::RefreshParticipantFocus()
     }
     else
     {
-        // A missing/replaced player Pawn does not terminate this prototype's session.
         ClearFocus(EAIFocusPriority::Gameplay);
     }
 }
@@ -84,32 +83,51 @@ bool ATrainingCombatAIController::RequestStrafeStep(const bool bClockwise)
     MoveRequest.SetUsePathfinding(true);
     MoveRequest.SetCanStrafe(true);
     const FPathFollowingRequestResult RequestResult = MoveTo(MoveRequest);
-    if (RequestResult.Code == EPathFollowingRequestResult::Failed)
+    if (RequestResult.Code == EPathFollowingRequestResult::AlreadyAtGoal)
     {
-        return false;
+        return true;
     }
-    return ValidateCurrentMove();
+    return RequestResult.Code == EPathFollowingRequestResult::RequestSuccessful
+        && ValidateCurrentMove();
 }
 
 bool ATrainingCombatAIController::ValidateCurrentMove()
 {
     const ATrainingCombatAI* TrainingPawn = Cast<ATrainingCombatAI>(GetPawn());
     const ATrainingArena* Arena = TrainingPawn ? TrainingPawn->GetTrainingArena() : nullptr;
-    const FNavPathSharedPtr CurrentPath = GetPathFollowingComponent()->GetPath();
-    if (!TrainingPawn || !Arena || !CurrentPath.IsValid())
+    const UPathFollowingComponent* PathFollower = GetPathFollowingComponent();
+    if (!TrainingPawn || !TrainingPawn->IsAlive() || !Arena || !PathFollower)
     {
+        StopMovement();
         return false;
     }
-    const FTrainingDistanceBand& Band = TrainingPawn->GetDistanceBand();
-    FVector PreviousPoint = TrainingPawn->GetActorLocation();
-    for (const FNavPathPoint& PathPoint : CurrentPath->GetPathPoints())
+    const FNavPathSharedPtr CurrentPath = PathFollower->GetPath();
+    if (!CurrentPath.IsValid())
     {
-        if (!Band.ContainsSegment(Arena->GetCenterLocation(), PreviousPoint, PathPoint.Location))
+        StopMovement();
+        return false;
+    }
+
+    const TArray<FNavPathPoint>& PathPoints = CurrentPath->GetPathPoints();
+    const int32 NextPointIndex = static_cast<int32>(PathFollower->GetNextPathIndex());
+    if (!PathPoints.IsValidIndex(NextPointIndex))
+    {
+        StopMovement();
+        return false;
+    }
+
+    const FTrainingDistanceBand& Band = TrainingPawn->GetDistanceBand();
+    const FVector Center = Arena->GetCenterLocation();
+    FVector PreviousPoint = TrainingPawn->GetActorLocation();
+    for (int32 PointIndex = NextPointIndex; PointIndex < PathPoints.Num(); ++PointIndex)
+    {
+        const FVector& NextPoint = PathPoints[PointIndex].Location;
+        if (!Band.ContainsSegment(Center, PreviousPoint, NextPoint))
         {
             StopMovement();
             return false;
         }
-        PreviousPoint = PathPoint.Location;
+        PreviousPoint = NextPoint;
     }
     return true;
 }

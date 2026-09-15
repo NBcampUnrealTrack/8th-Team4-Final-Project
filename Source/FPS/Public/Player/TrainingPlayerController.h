@@ -7,7 +7,6 @@
 
 class UTrainingUIInitComponent;
 
-// A sibling of DominationPlayerController: all shooting input still lives in ShooterPlayerController.
 UCLASS()
 class FPS_API ATrainingPlayerController : public AShooterPlayerController, public IRogueCombatClassSelector
 {

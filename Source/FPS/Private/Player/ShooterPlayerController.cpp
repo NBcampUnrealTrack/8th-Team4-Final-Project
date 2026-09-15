@@ -356,7 +356,8 @@ void AShooterPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
-	if (InputConfig->ShowScoreboardAction)
+	const UTeamMatchUIInitComponent* ScoreboardUI = GetTeamMatchUIInitComponent();
+	if (InputConfig->ShowScoreboardAction && ScoreboardUI && ScoreboardUI->SupportsScoreboard())
 	{
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
@@ -422,8 +423,6 @@ void AShooterPlayerController::Input_InteractPressed(const FInputActionValue& Va
 		return;
 	}
 
-	// Preserve the existing hold-to-install/defuse ability when there is no common interactable.
-	// Its own WaitInputRelease flow receives the release below; Training never implements DataJack.
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
 		if (AbilityInput.InputAction == InputConfig->InteractAction && AbilityInput.InputTag.IsValid())

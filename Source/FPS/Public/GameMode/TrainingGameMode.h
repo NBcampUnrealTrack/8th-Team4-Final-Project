@@ -13,7 +13,6 @@ class UAugmentDraftProfile;
 class UDominationLoadoutManager;
 class UPlayerRespawnProtection;
 
-// Owns player entry/respawn only. TrainingSessionSubsystem owns target/AI sessions and timers.
 UCLASS()
 class FPS_API ATrainingGameMode : public AShooterGameMode
 {
@@ -26,6 +25,7 @@ public:
     virtual void NotifyPlayerReadyForGameFlow(APlayerController* ReadyPlayer) override;
     bool RequestCombatClass(ATrainingPlayerController* Requester,
         EDominationCombatClass RequestedClass, FText& OutFailure);
+    bool UsesManualAugmentSelection() const { return bUseManualAugmentSelection; }
     void RequestPreviewCombatClass(ATrainingPlayerController* Requester,
         EDominationCombatClass RequestedClass);
 protected:
@@ -46,6 +46,8 @@ private:
     UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn", meta = (ClampMin = "0.0", Units = "s"))
     float RespawnProtectionDuration = 2.0f;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment")
+    bool bUseManualAugmentSelection = true;
+    UPROPERTY(EditDefaultsOnly, Category = "Training|Augment", meta = (EditCondition = "!bUseManualAugmentSelection"))
     bool bEnableAugmentDraft = true;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment", meta = (EditCondition = "bEnableAugmentDraft"))
     TObjectPtr<UAugmentDraftProfile> AugmentDraftProfile;

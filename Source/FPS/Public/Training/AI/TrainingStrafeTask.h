@@ -11,7 +11,6 @@ struct FPS_API FTrainingStrafeTaskInstanceData
 {
     GENERATED_BODY()
 
-    // Bind this to Context > AIController in the StateTree AI Component schema.
     UPROPERTY(EditAnywhere, Category = "Context")
     TObjectPtr<AAIController> AIController = nullptr;
 

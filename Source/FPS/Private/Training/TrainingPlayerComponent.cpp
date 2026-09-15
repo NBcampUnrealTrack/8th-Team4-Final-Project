@@ -5,12 +5,20 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/GameStateBase.h"
 #include "Input/ShooterInteractionComponent.h"
 #include "Tags/UITags.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingInteractionActor.h"
 #include "Training/TrainingSessionSubsystem.h"
 #include "Training/UI/TrainingDialogWidget.h"
+#include "Training/UI/TrainingStartFeedbackWidget.h"
+#include "Training/UI/TrainingSessionHUDWidget.h"
+#include "Training/UI/TrainingResultsWidget.h"
+#include "UI/TrainingWidgetLayout.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundBase.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "TrainingPlayer"
@@ -24,7 +32,6 @@ UTrainingPlayerComponent::UTrainingPlayerComponent()
 void UTrainingPlayerComponent::BeginPlay()
 {
     Super::BeginPlay();
-    // Existing game modes use seamless travel; a controller can survive its old world.
     WorldTearDownHandle = FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &ThisClass::HandleWorldLeaving);
     SeamlessTravelHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(this, &ThisClass::HandleSeamlessTravel);
 }
@@ -88,11 +95,13 @@ void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interact
     PendingSessionId = Sessions->GetSessionId();
     PendingKind = Kind;
     PendingInteractable = &Interactable;
-    ClientOpenDialog(Kind, PendingRequestId);
+    ClientOpenDialog(Kind, PendingRequestId, Interactable.InteractionSound, Interactable.InteractionSoundVolume, GetAugmentSnapshot());
 }
 
-void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDialogKind Kind, const int32 RequestId)
+void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDialogKind Kind, const int32 RequestId,
+    USoundBase* InteractionSound, const float SoundVolume, const TArray<FAugmentInventoryEntry>& AugmentSnapshot)
 {
+    CloseResults();
     CloseActiveDialog();
     UShooterUIManagerSubsystem* UIManager = GetUIManager();
     TSubclassOf<UTrainingDialogWidget> WidgetClass = Kind == ETrainingDialogKind::SelectMode
@@ -116,7 +125,10 @@ void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDi
         return;
     }
     ActiveDialog = NewDialog;
+    NewDialog->SetAppliedAugments(AugmentSnapshot);
     NewDialog->InitializeDialog(*this, Kind, RequestId);
+    USoundBase* OpenSound = InteractionSound ? InteractionSound : WidgetOpenSound.Get();
+    if (OpenSound) { UGameplayStatics::PlaySound2D(this, OpenSound, InteractionSound ? FMath::Max(0.0f, SoundVolume) : 1.0f); }
 }
 
 void UTrainingPlayerComponent::SubmitConfirmation(const int32 RequestId)
@@ -248,6 +260,104 @@ void UTrainingPlayerComponent::ClientNotify_Implementation(const FText& Message)
     OnTrainingMessage.Broadcast(Message);
 }
 
+void UTrainingPlayerComponent::NotifySessionPhase(const int32 SessionId,
+    const ETrainingFeedbackPhase Phase, const double PhaseStartServerSeconds,
+    const ETrainingMode Mode, const float DurationSeconds)
+{
+    const APlayerController* ParticipantPlayer = GetParticipantController();
+    if (ParticipantPlayer && ParticipantPlayer->HasAuthority())
+    {
+        if (Phase == ETrainingFeedbackPhase::Stopped) { ClearPendingRequest(); }
+        ClientSessionPhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
+    }
+}
+
+void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 SessionId,
+    const ETrainingFeedbackPhase Phase, const double PhaseStartServerSeconds,
+    const ETrainingMode Mode, const float DurationSeconds)
+{
+    APlayerController* LocalController = GetParticipantController();
+    if (!LocalController || !LocalController->IsLocalController()) { return; }
+    if (Phase == ETrainingFeedbackPhase::Stopped)
+    {
+        if (SessionId == FeedbackSessionId)
+        {
+            LastStoppedSessionId = SessionId;
+            ClearSessionFeedback();
+            CloseActiveDialog();
+        }
+        return;
+    }
+    if (Phase == ETrainingFeedbackPhase::Countdown)
+    {
+        ClearSessionFeedback();
+        CloseResults();
+        LastStoppedSessionId = 0;
+        FeedbackSessionId = SessionId;
+    }
+    else if (FeedbackSessionId != SessionId)
+    {
+        return;
+    }
+    if (Phase == ETrainingFeedbackPhase::Started)
+    {
+        if (!SessionHUDWidget)
+        {
+            UClass* HUDClass = SessionHUDWidgetClass ? SessionHUDWidgetClass.Get() : UTrainingSessionHUDWidget::StaticClass();
+            SessionHUDWidget = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDClass);
+        }
+        if (SessionHUDWidget)
+        {
+            if (!SessionHUDWidget->IsInViewport()) { SessionHUDWidget->AddToPlayerScreen(19); }
+            SessionHUDWidget->StartSession(Mode, PhaseStartServerSeconds, DurationSeconds);
+        }
+    }
+    if (!StartFeedbackWidget)
+    {
+        UClass* FeedbackClass = StartFeedbackWidgetClass
+            ? StartFeedbackWidgetClass.Get() : UTrainingStartFeedbackWidget::StaticClass();
+        StartFeedbackWidget = CreateWidget<UTrainingStartFeedbackWidget>(LocalController, FeedbackClass);
+    }
+    if (!StartFeedbackWidget)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Training] Could not create the start feedback widget."));
+        return;
+    }
+    if (!StartFeedbackWidget->IsInViewport() && !StartFeedbackWidget->AddToPlayerScreen(20))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Training] Could not add start feedback to the local player's viewport."));
+        return;
+    }
+    const AGameStateBase* WorldGameState = GetWorld()->GetGameState();
+    const float Elapsed = WorldGameState
+        ? static_cast<float>(FMath::Max(0.0, WorldGameState->GetServerWorldTimeSeconds() - PhaseStartServerSeconds))
+        : 0.0f;
+    if (Phase == ETrainingFeedbackPhase::Countdown)
+    {
+        StartFeedbackWidget->ShowCountdown(Elapsed);
+    }
+    else
+    {
+        StartFeedbackWidget->ShowStarted(Elapsed);
+    }
+}
+
+void UTrainingPlayerComponent::ClearSessionFeedback()
+{
+    if (SessionHUDWidget)
+    {
+        SessionHUDWidget->RemoveFromParent();
+        SessionHUDWidget = nullptr;
+    }
+    if (StartFeedbackWidget)
+    {
+        StartFeedbackWidget->ClearFeedback();
+        StartFeedbackWidget->RemoveFromParent();
+        StartFeedbackWidget = nullptr;
+    }
+    FeedbackSessionId = 0;
+}
+
 void UTrainingPlayerComponent::ClearPendingRequest()
 {
     PendingInteractable.Reset();
@@ -268,13 +378,13 @@ void UTrainingPlayerComponent::DismissDialog(const int32 RequestId)
     ServerCancel(RequestId);
     if (ActiveDialog.IsValid() && ActiveDialog->GetRequestId() == RequestId)
     {
+        if (WidgetCloseSound) { UGameplayStatics::PlaySound2D(this, WidgetCloseSound); }
         CloseActiveDialog();
     }
 }
 
 void UTrainingPlayerComponent::NotifyDialogRemoved(UTrainingDialogWidget& Dialog)
 {
-    // Called from destruction: do not re-enter RemoveWidgetFromLayer while it is removing this widget.
     ServerCancel(Dialog.GetRequestId());
     if (ActiveDialog.Get() == &Dialog)
     {
@@ -289,7 +399,7 @@ void UTrainingPlayerComponent::CloseActiveDialog()
     ActiveDialog.Reset();
     if (Dialog)
     {
-        Dialog->DetachRequest(); // Deactivation must not issue another cancel for a newer request.
+        Dialog->DetachRequest();
         if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
         {
             UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Dialog);
@@ -323,7 +433,10 @@ void UTrainingPlayerComponent::HandleWorldLeaving(UWorld* DepartingWorld)
         }
     }
     CloseActiveDialog();
+    CloseResults();
+    ClearSessionFeedback();
     ClearPendingRequest();
+    LastStoppedSessionId = 0;
 }
 
 void UTrainingPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -334,6 +447,121 @@ void UTrainingPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     SeamlessTravelHandle.Reset();
     HandleWorldLeaving(GetWorld());
     Super::EndPlay(EndPlayReason);
+}
+
+void UTrainingPlayerComponent::ApplyButtonSounds(UUserWidget& Widget) const
+{
+    TrainingWidgetLayout::ApplyButtonSounds(Widget, ButtonHoverSound, ButtonClickSound);
+}
+
+void UTrainingPlayerComponent::NotifySessionHit(const int32 SessionId, const int32 Kills,
+    const float Damage, const bool bKilled, const FVector& WorldPosition)
+{
+    if (GetOwner()->HasAuthority()) { ClientSessionHit(SessionId, Kills, Damage, bKilled, WorldPosition); }
+}
+
+void UTrainingPlayerComponent::ClientSessionHit_Implementation(const int32 SessionId, const int32 Kills,
+    const float Damage, const bool bKilled, const FVector WorldPosition)
+{
+    if (SessionId == FeedbackSessionId && SessionHUDWidget)
+    {
+        SessionHUDWidget->PresentHit(Kills, Damage, bKilled, WorldPosition);
+    }
+}
+
+void UTrainingPlayerComponent::NotifyBotSound(const int32 SessionId, USoundBase* Sound,
+    USoundAttenuation* Attenuation, const FVector& WorldPosition, const float Volume)
+{
+    if (GetOwner()->HasAuthority() && Sound && Volume > 0.0f)
+    {
+        ClientPlayBotSound(SessionId, Sound, Attenuation, WorldPosition, Volume);
+    }
+}
+
+void UTrainingPlayerComponent::ClientPlayBotSound_Implementation(const int32 SessionId, USoundBase* Sound,
+    USoundAttenuation* Attenuation, const FVector WorldPosition, const float Volume)
+{
+    APlayerController* LocalController = GetParticipantController();
+    if (!LocalController || !LocalController->IsLocalController() || SessionId != FeedbackSessionId || !Sound) { return; }
+    if (!Attenuation)
+    {
+        if (!DefaultBotAttenuation)
+        {
+            DefaultBotAttenuation = NewObject<USoundAttenuation>(this);
+            FSoundAttenuationSettings& Settings = DefaultBotAttenuation->Attenuation;
+            Settings.bAttenuate = true;
+            Settings.bSpatialize = true;
+            Settings.DistanceAlgorithm = EAttenuationDistanceModel::Linear;
+            Settings.bEnableListenerFocus = false;
+            Settings.bEnableOcclusion = false;
+            Settings.bApplyNormalizationToStereoSounds = true;
+            Settings.SpatializationAlgorithm = SPATIALIZATION_Default;
+            Settings.AttenuationShape = EAttenuationShape::Sphere;
+            Settings.AttenuationShapeExtents = FVector(1000.0, 0.0, 0.0);
+            Settings.FalloffDistance = 6000.0f;
+            Settings.NonSpatializedRadiusStart = 0.0f;
+            Settings.NonSpatializedRadiusEnd = 0.0f;
+            Settings.StereoSpread = 0.0f;
+        }
+        Attenuation = DefaultBotAttenuation;
+    }
+    UGameplayStatics::PlaySoundAtLocation(this, Sound, WorldPosition, FRotator::ZeroRotator,
+        FMath::Clamp(Volume, 0.0f, 4.0f), 1.0f, 0.0f, Attenuation);
+}
+
+void UTrainingPlayerComponent::NotifySessionFinished(const FTrainingSessionResult& Result)
+{
+    if (GetOwner()->HasAuthority()) { ClientSessionFinished(Result); }
+}
+
+void UTrainingPlayerComponent::ClientSessionFinished_Implementation(const FTrainingSessionResult& Result)
+{
+    APlayerController* LocalController = GetParticipantController();
+    if (!LocalController || !LocalController->IsLocalController() || Result.SessionId != LastStoppedSessionId) { return; }
+    CloseActiveDialog();
+    CloseResults();
+    UShooterUIManagerSubsystem* UIManager = GetUIManager();
+    if (!UIManager || !UIManager->IsUIInitialized())
+    {
+        ClientNotify_Implementation(LOCTEXT("ResultsNoLayout", "Training results require the existing PrimaryGameLayout modal layer."));
+        return;
+    }
+    UClass* ResultClass = ResultsWidgetClass ? ResultsWidgetClass.Get() : UTrainingResultsWidget::StaticClass();
+    UTrainingResultsWidget* NewResults = Cast<UTrainingResultsWidget>(
+        UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ResultClass));
+    if (!NewResults)
+    {
+        ClientNotify_Implementation(LOCTEXT("ResultsFailed", "Could not create Training Results. Check Results Widget Class and the Modal layer."));
+        return;
+    }
+    ResultsWidget = NewResults;
+    NewResults->InitializeResults(*this, Result);
+    if (WidgetOpenSound) { UGameplayStatics::PlaySound2D(this, WidgetOpenSound); }
+}
+
+void UTrainingPlayerComponent::DismissResults(UTrainingResultsWidget& Widget)
+{
+    if (ResultsWidget.Get() == &Widget) { CloseResults(true); }
+}
+
+void UTrainingPlayerComponent::NotifyResultsRemoved(UTrainingResultsWidget& Widget)
+{
+    if (ResultsWidget.Get() == &Widget) { ResultsWidget.Reset(); }
+    Widget.DetachBridge();
+}
+
+void UTrainingPlayerComponent::CloseResults(const bool bPlayCloseSound)
+{
+    UTrainingResultsWidget* CurrentResults = ResultsWidget.Get();
+    ResultsWidget.Reset();
+    if (!CurrentResults) { return; }
+    CurrentResults->DetachBridge();
+    if (bPlayCloseSound && WidgetCloseSound) { UGameplayStatics::PlaySound2D(this, WidgetCloseSound); }
+    if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
+    {
+        UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, CurrentResults);
+    }
+    else { CurrentResults->DeactivateWidget(); }
 }
 
 #undef LOCTEXT_NAMESPACE

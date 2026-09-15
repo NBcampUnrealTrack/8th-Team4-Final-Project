@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Training/AI/TrainingCombatAI.h"
+#include "Training/TrainingCharacter.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingTarget.h"
 
@@ -22,31 +23,124 @@ void UTrainingScenario::TrackActor(AActor& SpawnedActor)
 {
     OwnedActors.Add(&SpawnedActor);
     SpawnedActor.OnDestroyed.AddDynamic(this, &ThisClass::HandleActorDestroyed);
+    if (ATrainingCharacter* Bot = Cast<ATrainingCharacter>(&SpawnedActor))
+    {
+        Bot->OnTrainingHit.AddUObject(this, &ThisClass::HandleBotHit);
+        OnBotSpawned.Broadcast(*Bot);
+    }
+}
+
+bool UTrainingScenario::OwnsActor(const AActor* Candidate) const
+{
+    return Candidate && OwnedActors.ContainsByPredicate([Candidate](const TWeakObjectPtr<AActor>& Entry)
+    {
+        return Entry.Get() == Candidate;
+    });
+}
+
+void UTrainingScenario::HandleBotHit(ATrainingCharacter& Bot, const AActor* InstigatorActor,
+    const float Damage, const bool bKilled)
+{
+    OnBotHit.Broadcast(Bot, InstigatorActor, Damage, bKilled);
 }
 
 void UTrainingScenario::HandleActorDestroyed(AActor* DestroyedActor)
 {
+    if (ATrainingCharacter* Bot = Cast<ATrainingCharacter>(DestroyedActor))
+    {
+        Bot->OnTrainingHit.RemoveAll(this);
+    }
     OwnedActors.RemoveAll([DestroyedActor](const TWeakObjectPtr<AActor>& Entry)
     {
         return !Entry.IsValid() || Entry.Get() == DestroyedActor;
     });
 }
 
-void UTrainingScenario::Stop()
+void UTrainingScenario::Stop(const bool bImmediate)
 {
-    // Empty ownership before Destroy() invokes EndPlay/delegates; no re-entrant array mutation.
-    TArray<TWeakObjectPtr<AActor>> ActorsToDestroy = MoveTemp(OwnedActors);
+    OnBotSpawned.Clear();
+    OnBotHit.Clear();
+    TArray<TWeakObjectPtr<AActor>> ActorsToRemove = MoveTemp(OwnedActors);
     OwnedActors.Reset();
-    for (const TWeakObjectPtr<AActor>& Entry : ActorsToDestroy)
+    for (const TWeakObjectPtr<AActor>& Entry : ActorsToRemove)
     {
         if (AActor* SpawnedActor = Entry.Get())
         {
             SpawnedActor->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleActorDestroyed);
-            SpawnedActor->Destroy();
+            ATrainingCharacter* TrainingBot = Cast<ATrainingCharacter>(SpawnedActor);
+            if (TrainingBot) { TrainingBot->OnTrainingHit.RemoveAll(this); }
+            if (!bImmediate && TrainingBot)
+            {
+                TrainingBot->BeginDissolveRemoval();
+            }
+            else
+            {
+                SpawnedActor->Destroy();
+            }
         }
     }
     Arena.Reset();
     Participant.Reset();
+}
+
+void UCombatResponseScenario::SpawnCombatBot()
+{
+    ATrainingArena* ActiveArena = GetArena();
+    APlayerController* ActiveParticipant = GetParticipant();
+    if (!ActiveArena || !ActiveParticipant || !ActiveArena->CombatAIClass)
+    {
+        return;
+    }
+    const TSubclassOf<ATrainingCombatAI> BotClass = ActiveArena->CombatAIClass;
+    const TCHAR* ModeLabel = TEXT("Combat AI");
+    const ATrainingCombatAI* BotDefaults = BotClass.GetDefaultObject();
+    FVector NavigationPosition;
+    if (!ActiveArena->FindNavSpawn(DistanceBand, BotDefaults->GetNavAgentPropertiesRef(), NavigationPosition))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Training] %s spawn failed: no valid NavMesh in %.0f-%.0f cm band around %s."),
+            ModeLabel, DistanceBand.MinCentimeters, DistanceBand.MaxCentimeters,
+            *ActiveArena->GetCenterLocation().ToCompactString());
+        return;
+    }
+    const FVector SpawnPosition = NavigationPosition + FVector(0.0, 0.0,
+        BotDefaults->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.0f);
+    const FRotator SpawnRotation(0.0, (ActiveArena->GetCenterLocation() - SpawnPosition).Rotation().Yaw, 0.0);
+    FActorSpawnParameters SpawnParameters;
+    SpawnParameters.Owner = ActiveArena;
+    SpawnParameters.Instigator = ActiveParticipant->GetPawn();
+    SpawnParameters.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
+    ATrainingCombatAI* SpawnedBot = ActiveArena->GetWorld()->SpawnActor<ATrainingCombatAI>(
+        BotClass, SpawnPosition, SpawnRotation, SpawnParameters);
+    if (!SpawnedBot)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Training] %s spawn failed: SpawnActor rejected %s at %s."),
+            ModeLabel, *GetNameSafe(BotClass.Get()), *SpawnPosition.ToCompactString());
+        return;
+    }
+    FVector ValidatedNavigation;
+    if (!DistanceBand.Contains(ActiveArena->GetCenterLocation(), SpawnedBot->GetActorLocation())
+        || !ActiveArena->ProjectNavPosition(SpawnedBot->GetActorLocation() - FVector(0.0, 0.0,
+                SpawnedBot->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()), DistanceBand,
+            SpawnedBot->GetNavAgentPropertiesRef(), ValidatedNavigation)
+        || FVector::DistSquared2D(SpawnedBot->GetActorLocation(), ValidatedNavigation) > FMath::Square(25.0))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Training] %s spawn rejected after collision/NavMesh adjustment: %s."),
+            ModeLabel, *SpawnedBot->GetActorLocation().ToCompactString());
+        SpawnedBot->Destroy();
+        return;
+    }
+    if (!SpawnedBot->InitializeForTraining(*ActiveArena, *ActiveParticipant, DistanceBand))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[Training] %s could not start StateTree on %s. Check controller, schema and Context bindings."),
+            ModeLabel, *GetNameSafe(SpawnedBot));
+        SpawnedBot->Destroy();
+        return;
+    }
+    TrackActor(*SpawnedBot);
+    UE_LOG(LogTemp, Log, TEXT("[Training] %s spawned: %s at %s"),
+        ModeLabel, *GetNameSafe(SpawnedBot), *SpawnedBot->GetActorLocation().ToCompactString());
 }
 
 void UTargetAcquisitionScenario::SpawnNext()
@@ -61,48 +155,42 @@ void UTargetAcquisitionScenario::SpawnNext()
     if (!ActiveArena->FindGroundSpawn(DistanceBand, GroundPosition))
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[Training] Target spawn failed: no valid ground in %.0f-%.0f cm band around %s."),
+            TEXT("[Training] Target spawn failed: no valid WorldStatic ground in %.0f-%.0f cm around %s. StateTree/NavMesh are NOT used by targets."),
             DistanceBand.MinCentimeters, DistanceBand.MaxCentimeters,
             *ActiveArena->GetCenterLocation().ToCompactString());
-        return; // Retry on the next regular tick, never spawn at an invalid fallback location.
+        return;
     }
     const ATrainingTarget* TargetDefaults = ActiveArena->TargetClass.GetDefaultObject();
-    const FVector SpawnPosition = GroundPosition + FVector(0.0, 0.0, TargetDefaults->GetGroundOffsetCentimeters());
+    const FVector SpawnPosition = GroundPosition + FVector(0.0, 0.0,
+        TargetDefaults->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.0f);
     const FRotator SpawnRotation(0.0, (ActiveArena->GetCenterLocation() - SpawnPosition).Rotation().Yaw, 0.0);
     FActorSpawnParameters SpawnParameters;
     SpawnParameters.Owner = ActiveArena;
     SpawnParameters.Instigator = ActiveParticipant->GetPawn();
-    // A target is intentionally placed just above the traced ground.  Using DontSpawnIfColliding
-    // is too strict here because Unreal's spawn encroachment test can reject a valid placement
-    // that is only touching/very close to the floor.  Allow the engine to make a small adjustment,
-    // then validate the final radial distance again below.
     SpawnParameters.SpawnCollisionHandlingOverride =
         ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
-
     ATrainingTarget* SpawnedTarget = ActiveArena->GetWorld()->SpawnActor<ATrainingTarget>(
         ActiveArena->TargetClass, SpawnPosition, SpawnRotation, SpawnParameters);
     if (!SpawnedTarget)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[Training] Target spawn failed: SpawnActor rejected class %s at %s. Check blocking geometry/collision."),
-            *GetNameSafe(ActiveArena->TargetClass.Get()), *SpawnPosition.ToCompactString());
+        UE_LOG(LogTemp, Warning, TEXT("[Training] Target spawn failed: collision at %s."),
+            *SpawnPosition.ToCompactString());
         return;
     }
-
-    if (!DistanceBand.Contains(ActiveArena->GetCenterLocation(), SpawnedTarget->GetActorLocation()))
+    FVector AdjustedGround;
+    const FVector FinalPosition = SpawnedTarget->GetActorLocation();
+    const float HalfHeight = SpawnedTarget->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+    if (!ActiveArena->ProjectGroundPosition(FinalPosition, DistanceBand, AdjustedGround)
+        || FMath::Abs(FinalPosition.Z - HalfHeight - AdjustedGround.Z) > 5.0)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[Training] Target spawn rejected after collision adjustment. Final=%s Center=%s Band=%.0f-%.0f cm."),
-            *SpawnedTarget->GetActorLocation().ToCompactString(),
-            *ActiveArena->GetCenterLocation().ToCompactString(),
-            DistanceBand.MinCentimeters, DistanceBand.MaxCentimeters);
+        UE_LOG(LogTemp, Warning, TEXT("[Training] Target rejected after collision adjustment: %s."),
+            *FinalPosition.ToCompactString());
         SpawnedTarget->Destroy();
         return;
     }
-
-    UE_LOG(LogTemp, Log, TEXT("[Training] Target spawned: %s at %s"),
-        *GetNameSafe(SpawnedTarget), *SpawnedTarget->GetActorLocation().ToCompactString());
     TrackActor(*SpawnedTarget);
+    UE_LOG(LogTemp, Log, TEXT("[Training] Stationary target spawned: %s at %s"),
+        *GetNameSafe(SpawnedTarget), *FinalPosition.ToCompactString());
 }
 
 int32 UCombatResponseScenario::GetLivingAICount() const
@@ -121,35 +209,11 @@ int32 UCombatResponseScenario::GetLivingAICount() const
 
 void UCombatResponseScenario::SpawnNext()
 {
-    ATrainingArena* ActiveArena = GetArena();
-    APlayerController* ActiveParticipant = GetParticipant();
-    if (!ActiveArena || !ActiveParticipant || !ActiveArena->CombatAIClass
-        || !TrainingRules::CanSpawnCombatAI(GetLivingAICount()))
+    if (GetArena())
     {
-        return;
-    }
-    const ATrainingCombatAI* AIDefaults = ActiveArena->CombatAIClass.GetDefaultObject();
-    FVector NavigationPosition;
-    if (!ActiveArena->FindNavSpawn(DistanceBand, AIDefaults->GetNavAgentPropertiesRef(), NavigationPosition))
-    {
-        return;
-    }
-    const FVector SpawnPosition = NavigationPosition + FVector(0.0, 0.0,
-        AIDefaults->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 2.0f);
-    const FRotator SpawnRotation(0.0, (ActiveArena->GetCenterLocation() - SpawnPosition).Rotation().Yaw, 0.0);
-    FActorSpawnParameters SpawnParameters;
-    SpawnParameters.Owner = ActiveArena;
-    SpawnParameters.Instigator = ActiveParticipant->GetPawn();
-    SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding;
-    ATrainingCombatAI* SpawnedAI = ActiveArena->GetWorld()->SpawnActor<ATrainingCombatAI>(
-        ActiveArena->CombatAIClass, SpawnPosition, SpawnRotation, SpawnParameters);
-    if (SpawnedAI)
-    {
-        TrackActor(*SpawnedAI);
-        if (!DistanceBand.Contains(ActiveArena->GetCenterLocation(), SpawnedAI->GetActorLocation())
-            || !SpawnedAI->InitializeForTraining(*ActiveArena, *ActiveParticipant, DistanceBand))
+        if (TrainingRules::CanSpawnCombatAI(GetLivingAICount()))
         {
-            SpawnedAI->Destroy();
+            SpawnCombatBot();
         }
     }
 }

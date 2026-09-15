@@ -29,7 +29,6 @@ public:
 	bool HasPreviewCombatClass() const;
 	
 	bool TryConfirmCombatClass(EDominationCombatClass RequestedClass);
-	// Reused by Training when entering a new map or rolling back a failed initial spawn.
 	void ResetCombatClassSelection();
 	// 확정 전 임시 선택
 	bool TrySetPreviewCombatClass(EDominationCombatClass RequestedClass);

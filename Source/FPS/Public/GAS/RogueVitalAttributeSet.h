@@ -26,6 +26,10 @@ public:
 
 	bool IsDeathDeclared() const { return bDeathDeclared; }
 
+	// Server-only rule-driven death (e.g. one-hit targets). Reuses TryDeclareDeath and HealthComponent.
+	// Call only after the normal damage/permission pipeline has accepted the hit.
+	void ServerForceDeath(const FGameplayEffectContextHandle& Context);
+
 	// 라운드 시작 / 부활 시 반드시 호출
 	void ClearDeathDeclared() { bDeathDeclared = false; }
 

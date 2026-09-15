@@ -49,7 +49,6 @@ ATrainingArena::ATrainingArena()
 void ATrainingArena::OnConstruction(const FTransform& Transform)
 {
     Super::OnConstruction(Transform);
-    // Geometry uses world centimeters; scale the level art, not the arena coordinate frame.
     SetActorScale3D(FVector::OneVector);
     SetActorRotation(FRotator(0.0, GetActorRotation().Yaw, 0.0));
     MovementArea->SetSphereRadius(TrainingRules::MovementRadiusCentimeters);
@@ -104,27 +103,35 @@ FVector ATrainingArena::MakeRadialCandidate(const FTrainingDistanceBand& Band) c
     return GetCenterLocation() + FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, 0.0);
 }
 
-bool ATrainingArena::FindGroundSpawn(const FTrainingDistanceBand& Band, FVector& OutGroundPosition) const
+bool ATrainingArena::ProjectGroundPosition(const FVector& Candidate,
+    const FTrainingDistanceBand& Band, FVector& OutGroundPosition) const
 {
-    const UWorld* World = GetWorld();
-    if (!World)
+    if (!Band.Contains(GetCenterLocation(), Candidate))
     {
         return false;
     }
+    const FVector ProbeBase(Candidate.X, Candidate.Y, GetCenterLocation().Z);
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(TrainingTargetGround), false, this);
+    FHitResult GroundHit;
+    if (!GetWorld()->LineTraceSingleByObjectType(GroundHit,
+        ProbeBase + FVector(0.0, 0.0, FMath::Max(1.0f, GroundProbeUpCentimeters)),
+        ProbeBase - FVector(0.0, 0.0, FMath::Max(1.0f, GroundProbeDownCentimeters)),
+        FCollisionObjectQueryParams(ECC_WorldStatic), QueryParams)
+        || GroundHit.bStartPenetrating || GroundHit.ImpactNormal.Z < 0.7f
+        || !Band.Contains(GetCenterLocation(), GroundHit.ImpactPoint))
+    {
+        return false;
+    }
+    OutGroundPosition = GroundHit.ImpactPoint;
+    return true;
+}
 
-    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(TrainingGround), false, this);
+bool ATrainingArena::FindGroundSpawn(const FTrainingDistanceBand& Band, FVector& OutGroundPosition) const
+{
     for (int32 Attempt = 0; Attempt < 16; ++Attempt)
     {
-        const FVector Candidate = MakeRadialCandidate(Band);
-        FHitResult GroundHit;
-        if (World->LineTraceSingleByObjectType(GroundHit,
-            Candidate + FVector(0.0, 0.0, GroundProbeUpCentimeters),
-            Candidate - FVector(0.0, 0.0, GroundProbeDownCentimeters),
-            FCollisionObjectQueryParams(ECC_WorldStatic), QueryParams)
-            && GroundHit.ImpactNormal.Z >= 0.7
-            && Band.Contains(GetCenterLocation(), GroundHit.ImpactPoint))
+        if (ProjectGroundPosition(MakeRadialCandidate(Band), Band, OutGroundPosition))
         {
-            OutGroundPosition = GroundHit.ImpactPoint;
             return true;
         }
     }
