@@ -7,6 +7,7 @@
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Data/WeaponDamageData.h" 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
@@ -545,6 +546,11 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
+		if (!ImpactEffect.bHasHit)
+		{
+			continue;
+		}
+
 		LastImpactPoint = ImpactEffect.ImpactPoint;
 		LastImpactNormal = ImpactEffect.ImpactNormal;
 		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
@@ -687,8 +693,21 @@ void AWeaponBase::ResolveHitscanShot(
 	// 신규 대미지는 WeaponDamageData와 ExecCalc_Damage에서 결정한다.
 	(void)ShotDamage;
 
+	// MaximumRangeMeters를 넘어가도 대미지는 0이 아니라 MinimumDamage로 수렴
+	// EffectiveTraceRange 자체를 바꾸면 이펙트 종료 지점도 같이 늘어나 예광탄이
+	// 1km 밖까지 날아가는 것처럼 보이므로 로컬 변수로만 분리
+	float PhysicalTraceRangeCentimeters = EffectiveTraceRange;
+	if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
+	{
+		if (DamageEntry->MaximumRangeMeters > 0.f)
+		{
+			constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
+			PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+		}
+	}
+
 	FHitscanShotRequest Request;
-	HitscanDefinition->ConfigureShotRequest(Request, EffectiveTraceRange);
+	HitscanDefinition->ConfigureShotRequest(Request, PhysicalTraceRangeCentimeters);
 
 	// 좌/우 공격이 서로 다른 Weapon.Type.* 태그를 쓰는 무기(칼 등)는 ConfigureShotRequest가 채운
 	// 기본 태그를 강공격 태그로 덮어써야 한다. AltWeaponTag가 비어있으면 GetWeaponTag가 기본 태그를
