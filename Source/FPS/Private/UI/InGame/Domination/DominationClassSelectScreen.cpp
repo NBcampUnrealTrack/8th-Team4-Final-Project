@@ -12,7 +12,9 @@
 #include "Player/DominationPlayerController.h"
 #include "Player/DominationPlayerState.h"
 #include "TimerManager.h"
+#include "Components/AudioComponent.h"
 #include "Components/Image.h"
+#include "Kismet/GameplayStatics.h"
 #include "UI/InGame/Domination/DominationClassInfoPanel.h"
 #include "UI/InGame/Domination/DominationClassPreviewStage.h"
 #include "UI/InGame/Domination/DominationPlayerSlot.h"
@@ -27,6 +29,14 @@ UDominationClassSelectScreen::UDominationClassSelectScreen()
 void UDominationClassSelectScreen::NativeOnActivated()
 {
 	Super::NativeOnActivated();
+	
+	if (IsValid(ClassSelectBGM))
+	{
+		BGMComponent = UGameplayStatics::SpawnSound2D(
+			this,
+			ClassSelectBGM
+		);
+	}
 
 	BuildIconCache();
 	RebuildClassCards();
@@ -79,6 +89,12 @@ void UDominationClassSelectScreen::NativeOnActivated()
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	if (IsValid(BGMComponent))
+	{
+		BGMComponent->FadeOut(0.3f, 0.0f);
+		BGMComponent = nullptr;
+	}
+	
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(TimerTextHandle);
@@ -201,7 +217,7 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	{
 		return;
 	}
-
+	
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
 	ADominationPlayerController* PlayerController = Cast<ADominationPlayerController>(GetOwningPlayer());
 	if (!IsValid(PlayerState)
@@ -217,8 +233,10 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	// 확정 순간 hover 중이던 카드도 기본 배치로 되돌린다.
 	CardHoverController.SetHovered(INDEX_NONE);
 
-	// 내가 마지막 확정자면 전원 확정 즉시 매치가 시작돼 화면이 사라진다.
-	// 복제를 기다리면 연출이 잘리므로 클릭 순간 로컬에서 재생한다.
+	if (IsValid(LockInSound))
+	{
+		UGameplayStatics::PlaySound2D(this, LockInSound);
+	}
 	if (IsValid(PreviewStage))
 	{
 		PreviewStage->PlayLockInEffect();
@@ -754,7 +772,7 @@ void UDominationClassSelectScreen::RefreshLockInButton()
 		Button_LockIn->SetIsEnabled(!bLocked && bHasPreview && !bLockInRequestPending);
 	}
 
-	UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
+	BP_UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
 }
 
 void UDominationClassSelectScreen::RefreshTimerText()

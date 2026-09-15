@@ -94,14 +94,14 @@ void UDominationPlayerSlot::RefreshFromPlayerState()
 
 	RefreshClassNameText();
 
-	UpdateSlotPresentation(State, bIsLocalPlayer);
+	BP_UpdateSlotPresentation(State, bIsLocalPlayer);
 
 	if (State != LastPresentedState)
 	{
 		const EDominationSlotState OldState = LastPresentedState;
 		LastPresentedState = State;
 
-		OnSlotStateChanged(State, OldState);
+		BP_OnSlotStateChanged(State, OldState, bIsLocalPlayer);
 	}
 }
 
