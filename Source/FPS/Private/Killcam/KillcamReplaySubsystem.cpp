@@ -11,6 +11,7 @@
 #include "NetworkReplayStreaming.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "UI/Killcam/KillcamWidget.h"
 
 void UKillcamReplaySubsystem::Deinitialize()
 {
@@ -44,6 +45,12 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 
 	World->GetTimerManager().ClearTimer(PostDeathTimerHandle);
 	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
+	if (IsValid(PlaybackWidget))
+	{
+		PlaybackWidget->RemoveFromParent();
+		PlaybackWidget = nullptr;
+	}
+	PlaybackElimination = FShooterEliminationEvent();
 
 	if (IsValid(BoundGameState))
 	{
@@ -77,7 +84,7 @@ bool UKillcamReplaySubsystem::IsPlaying() const
 void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent)
 {
 	AShooterPlayerController* PlayerController = GetPlayerController();
-	if (!IsValid(PlayerController)
+	if (bPlaying || !IsValid(PlayerController)
 		|| PlayerController->GetPlayerState<AShooterPlayerState>() != EliminationEvent.VictimPlayerState
 		|| !IsValid(EliminationEvent.KillerPlayerState)
 		|| EliminationEvent.KillerPlayerState == EliminationEvent.VictimPlayerState)
@@ -99,6 +106,7 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	}
 
 	KillerActorGuid = RecordingDriver->GetGUIDForActor(KillerPawn);
+	PlaybackElimination = EliminationEvent;
 	VictimActorGuid = RecordingDriver->GetGUIDForActor(VictimPawn);
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
 	if (!KillerActorGuid.IsValid() || !VictimActorGuid.IsValid())
@@ -291,11 +299,26 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 	SourceCollection->SetIsVisible(false);
 	DuplicateCollection->SetIsVisible(true);
 	PlayerController->SetViewTarget(KillerActor);
+	if (UClass* Class = WidgetClass.LoadSynchronous())
+	{
+		PlaybackWidget = CreateWidget<UKillcamWidget>(PlayerController, Class);
+		if (IsValid(PlaybackWidget))
+		{
+			PlaybackWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+			PlaybackWidget->SetReplay(PlaybackElimination, Cast<APawn>(KillerActor), Cast<APawn>(GetReplayActor(VictimActorGuid)));
+			PlaybackWidget->AddToPlayerScreen(100);
+		}
+	}
 	return true;
 }
 
 void UKillcamReplaySubsystem::StopPlayback()
 {
+	if (IsValid(PlaybackWidget))
+	{
+		PlaybackWidget->RemoveFromParent();
+		PlaybackWidget = nullptr;
+	}
 	UWorld* World = SourceWorld.Get();
 	if (!IsValid(World))
 	{

@@ -10,8 +10,9 @@ class ABaseTeamGameState;
 class AShooterPlayerController;
 class UDemoNetDriver;
 class UWorld;
+class UKillcamWidget;
 
-UCLASS()
+UCLASS(Config = Game)
 class FPS_API UKillcamReplaySubsystem : public ULocalPlayerSubsystem
 {
 	GENERATED_BODY()
@@ -42,6 +43,15 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<ABaseTeamGameState> BoundGameState;
+
+	UPROPERTY(Config)
+	TSoftClassPtr<UKillcamWidget> WidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UKillcamWidget> PlaybackWidget;
+
+	UPROPERTY(Transient)
+	FShooterEliminationEvent PlaybackElimination;
 
 	TWeakObjectPtr<UWorld> SourceWorld;
 	TWeakObjectPtr<AActor> SavedLiveViewTarget;
