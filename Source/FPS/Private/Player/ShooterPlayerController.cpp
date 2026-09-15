@@ -552,6 +552,35 @@ void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
 	ServerSetLobbyTeam(RequestedTeam);
 }
 
+void AShooterPlayerController::RequestStartRoomGame()
+{
+	if (HasAuthority())
+	{
+		ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
+		if (!IsValid(LobbyGameMode) || !LobbyGameMode->RequestStartRoomGame(this))
+		{
+			ClientNotifyLobbyStartFailed();
+		}
+		return;
+	}
+
+	ServerRequestStartRoomGame();
+}
+
+void AShooterPlayerController::RequestLobbyMatchMode(const ELobbyMatchMode RequestedMatchMode)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyMatchMode(this, RequestedMatchMode);
+		}
+		return;
+	}
+
+	ServerRequestLobbyMatchMode(RequestedMatchMode);
+}
+
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 {
 	if (!IsLocalController())
@@ -1005,6 +1034,21 @@ void AShooterPlayerController::ServerSetLobbyTeam_Implementation(const EGameTeam
 	{
 		LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
 	}
+}
+
+void AShooterPlayerController::ServerRequestStartRoomGame_Implementation()
+{
+	RequestStartRoomGame();
+}
+
+void AShooterPlayerController::ServerRequestLobbyMatchMode_Implementation(const ELobbyMatchMode RequestedMatchMode)
+{
+	RequestLobbyMatchMode(RequestedMatchMode);
+}
+
+void AShooterPlayerController::ClientNotifyLobbyStartFailed_Implementation()
+{
+	OnLobbyStartFailed.Broadcast();
 }
 
 bool AShooterPlayerController::CanProcessGameplayInput() const

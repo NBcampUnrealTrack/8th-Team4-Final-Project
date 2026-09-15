@@ -20,6 +20,31 @@ ALobbyGameMode::ALobbyGameMode()
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 }
 
+void ALobbyGameMode::InitGameState()
+{
+	Super::InitGameState();
+
+	ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!IsValid(LobbyGameState) || !IsValid(GameInstance))
+	{
+		return;
+	}
+
+	const USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>();
+	if (!IsValid(SessionSubsystem))
+	{
+		return;
+	}
+
+	FLobbyRoomSettings NewSettings;
+	NewSettings.RoomName = SessionSubsystem->GetRoomName();
+	NewSettings.MaxPlayers = SessionSubsystem->GetMaxPlayers();
+	NewSettings.MaxPlayersPerTeam = MaxPlayersPerTeam;
+	NewSettings.MinimumPlayersToStart = MinimumPlayersToStart;
+	LobbyGameState->SetRoomSettings(NewSettings);
+}
+
 void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -119,6 +144,7 @@ bool ALobbyGameMode::RequestStartRoomGame(
 
 	PendingGameMapPath = ResolveMapPathFromName(SelectedMapName);
 	bStartRoomGamePending = true;
+	NotifyLobbyPlayerListChanged();
 	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStartRoomGameComplete);
@@ -132,6 +158,36 @@ bool ALobbyGameMode::CanStartRoomGame() const
 		&& AreAllClientsReady()
 		&& HasMinimumPlayersToStart()
 		&& CanFinalizeTeamsForMatchStart();
+}
+
+FLobbyStartState ALobbyGameMode::BuildStartState() const
+{
+	FLobbyStartState Result;
+	CountClientReady(Result.ReadyCount, Result.ReadyRequired);
+
+	// 위에서부터 먼저 걸리는 사유 하나만 남겨 순서가 화면 문구의 우선순위
+	if (bStartRoomGamePending || bTravelingToGameMap)
+	{
+		Result.Blocker = ELobbyStartBlocker::Starting;
+	}
+	else if (!HasMinimumPlayersToStart())
+	{
+		Result.Blocker = ELobbyStartBlocker::NotEnoughPlayers;
+	}
+	else if (!CanFinalizeTeamsForMatchStart())
+	{
+		Result.Blocker = ELobbyStartBlocker::TeamsCannotBeFinalized;
+	}
+	else if (Result.ReadyCount < Result.ReadyRequired)
+	{
+		Result.Blocker = ELobbyStartBlocker::WaitingForReady;
+	}
+	else
+	{
+		Result.Blocker = ELobbyStartBlocker::None;
+	}
+
+	return Result;
 }
 
 bool ALobbyGameMode::RequestLobbyMatchMode(
@@ -192,6 +248,11 @@ void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
 
 	HostPlayerState = NewPlayer->PlayerState;
 
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
+	}
+
 	// Keep the initial room advertisement aligned with the default Bomb selection.
 	UpdateSessionAdvertisementForMatchMode(GetSelectedMatchMode());
 }
@@ -241,6 +302,11 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 		HostPlayerState = FallbackHostPlayerState;
 	}
 
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
+	}
+
 	if (!HostPlayerState.IsValid())
 	{
 		UE_LOG(LogLobbyGameMode, Warning, TEXT("Lobby seamless travel completed without a valid host player."));
@@ -273,8 +339,14 @@ void ALobbyGameMode::ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlaye
 		if (IsValid(PlayerState) && PlayerState != ExitingPlayerState)
 		{
 			HostPlayerState = PlayerState;
-			return;
+			break;
 		}
+	}
+
+	// 새 호스트를 못 찾으면 nullptr 을 넣어 나간 플레이어를 가리키지 않게 함
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
 	}
 }
 
@@ -458,38 +530,39 @@ void ALobbyGameMode::NotifyLobbyPlayerListChanged()
 
 bool ALobbyGameMode::AreAllClientsReady() const
 {
+	int32 ReadyCount = 0;
+	int32 TotalCount = 0;
+	CountClientReady(ReadyCount, TotalCount);
+	return ReadyCount == TotalCount;
+}
+
+void ALobbyGameMode::CountClientReady(int32& OutReady, int32& OutTotal) const
+{
+	OutReady = 0;
+	OutTotal = 0;
+
 	const AGameStateBase* CurrentGameState = GameState;
 	if (!IsValid(CurrentGameState))
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check failed: GameState is invalid."));
-		return false;
+		return;
 	}
 
 	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
 	{
-		if (!IsValid(PlayerState))
+		// Pressing Start is the host's readiness confirmation.
+		if (!IsValid(PlayerState) || IsHostPlayerState(PlayerState))
 		{
-			UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check: invalid PlayerState in PlayerArray."));
 			continue;
 		}
 
-		// Pressing Start is the host's readiness confirmation.
-		if (IsHostPlayerState(PlayerState))
-		{
-			continue;
-		}
+		++OutTotal;
 
 		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
-		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
+		if (IsValid(ShooterPlayerState) && ShooterPlayerState->IsLobbyReady())
 		{
-			UE_LOG(LogLobbyGameMode, Warning,
-				TEXT("Ready check failed: Player=%s Ready=false"),
-				*GetNameSafe(PlayerState));
-			return false;
+			++OutReady;
 		}
 	}
-
-	return true;
 }
 
 bool ALobbyGameMode::HasMinimumPlayersToStart() const
@@ -717,5 +790,17 @@ void ALobbyGameMode::HandleStartRoomGameComplete(const bool bWasSuccessful)
 	if (bWasSuccessful)
 	{
 		TravelToPendingGameMap();
+		return;
+	}
+
+	NotifyLobbyPlayerListChanged();
+
+	if (const APlayerState* HostState = HostPlayerState.Get())
+	{
+		if (AShooterPlayerController* HostController =
+			Cast<AShooterPlayerController>(HostState->GetOwningController()))
+		{
+			HostController->ClientNotifyLobbyStartFailed();
+		}
 	}
 }
