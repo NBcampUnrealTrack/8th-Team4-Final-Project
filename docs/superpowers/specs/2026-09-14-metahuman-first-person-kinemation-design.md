@@ -1,146 +1,111 @@
-# MetaHuman First-Person KINEMATION Integration Design
+# MetaHuman First-Person TR15 Integration Design
 
 ## Goal
 
-Display the existing `SKM_MetaHuman_Arms` mesh in first person while preserving the Tactical Shooter Pack's procedural idle, walk, sprint, jump, aiming, sway, recoil, and weapon-action animation behavior.
+Integrate the Tactical Shooter Pack TR15 presentation into the existing rifle gameplay without replacing gameplay authority. Ranger, Trooper, and Vanguard share `SKM_MetaHuman_Arms_Skeleton`, so one retargeted first-person arm set is reused by all three classes.
 
-The first milestone targets the WK-11 Viper pistol. After that path is verified, the same integration can be extended to the remaining weapon sets.
+The integration reuses as much marketplace content as is practical: TR15 arm actions, weapon body animation, magazine animation, sights and attachments, action sounds where compatible, and the existing project ADS input/state.
 
-## Existing Structure
+## Verified Source Assets
 
-- `BP_MHRanger.Mesh1P` displays `SKM_MetaHuman_Arms`.
-- `Mesh1P` currently runs `MH_ABP_FirstPerson`, derived from `UShooterAnimInstance`.
-- `UShooterAnimInstance` reads movement, aim, weapon, reload, and cycling state from `AShooterCharacter` and `UCombatComponent`.
-- Tactical Shooter Pack animations target its UE5 Manny skeleton.
-- `ABP_TacticalShooter_UE5` combines static/additive sequences with animation curves and procedural IK layers. Individual locomotion sequences are not complete visible poses by themselves.
-- The project's `WeaponData` selects first-person idle, aim-idle, equip, reload, and fire assets per gameplay tag.
+- Character source skeleton: `SKM_Manny_Skeleton`.
+- Target skeleton: `SKM_MetaHuman_Arms_Skeleton`.
+- TR15 character sequences are ordinary non-additive bone animations and can be baked through an IK Retargeter.
+- TR15 character actions: draw, holster, inspect, magazine check, tactical reload, empty reload, and two idle variants.
+- TR15 has no standalone character fire, aim-idle, walk, or sprint action sequence.
+- Locomotion and ADS in the marketplace demo are procedural; a plain sequence retarget does not reproduce them.
+- The source `BP_TR15` assembles `SKM_TR15_Body`, `SKM_Mag_TR15`, front/rear sight components, and attachments. It uses `ABP_TR15` for the body and `ABP_Mag_TR15` for the magazine.
 
 ## Chosen Architecture
 
-Use a hidden Manny skeletal mesh as a first-person animation driver and transfer its evaluated final pose to `SKM_MetaHuman_Arms` through a runtime IK Retargeter.
+Keep `AWeaponBase`, GAS abilities, `UCombatComponent`, and `DA_WeaponData` authoritative. Add a presentation bridge that plays matching arm and weapon animations only after gameplay has accepted an action.
 
 ```text
-AShooterCharacter / UCombatComponent
-                |
-                v
-KINEMATION adapter values
-                |
-                v
-Hidden Manny driver mesh
-ABP_TacticalShooter_UE5-compatible AnimBP
-                |
-                v
-Runtime IK Retargeter
-Manny -> MetaHuman Arms
-                |
-                v
-Visible BP_MHRanger.Mesh1P
-MH_ABP_FirstPerson
+Right mouse / Fire / Reload / Equip
+                 |
+                 v
+Existing GAS + Combat gameplay state
+                 |
+       +---------+----------+
+       |                    |
+       v                    v
+MetaHuman Mesh1P       Current Weapon Mesh1P
+retargeted montage     TR15 weapon montage
+       |                    |
+       +---------+----------+
+                 |
+       synchronized timing
 ```
 
-This keeps the KINEMATION source assets unchanged, preserves curve-driven procedural motion, and allows later MetaHuman arm variants to reuse the same source driver.
+## MetaHuman Arm Assets
 
-## Assets and Components
+Create project-owned assets under `Content/MetaHumans/Anim/KINEMATION/TR15`:
 
-### Source Driver
+- Source Manny IK Rig.
+- Target MetaHuman Arms IK Rig.
+- Manny-to-MetaHuman-Arms IK Retargeter.
+- Retargeted TR15 idle pose/loop.
+- Retargeted draw, tactical reload, empty reload, inspect, magazine-check, and holster sequences/montages.
 
-Add a dedicated skeletal mesh component to the shooter character or `BP_MHRanger`:
+Retarget chains cover root/pelvis, spine, clavicles, arms, hands, and fingers. Target pose corrections are made in the retargeter instead of changing marketplace source assets.
 
-- Name: `KinemationDriver1P`
-- Skeletal mesh: Tactical Shooter Pack UE5 Manny
-- Animation class: a project-owned duplicate/adaptation of `ABP_TacticalShooter_UE5`
-- Rendering: hidden, no shadows, no collision
-- Animation ticking: Always Tick Pose and Refresh Bones
+## TR15 Weapon Presentation
 
-The driver remains separate from `Mesh1P`. It exists only to evaluate the source skeleton and procedural graph.
+`BP_Weapon_AR` remains an `AWeaponBase` weapon. Its first-person visual composition mirrors the source `BP_TR15`:
 
-### Retarget Assets
+- Body: `SKM_TR15_Body`, using `ABP_TR15`.
+- Magazine: `SKM_Mag_TR15`, using `ABP_Mag_TR15`.
+- Front and rear iron sights from the TR15 asset folder.
+- Existing project muzzle/tracer/damage behavior remains untouched.
 
-Create project-owned assets outside the marketplace directory:
+The weapon actor receives optional first-person presentation montages for equip, reload, and fire. Arm actions and weapon actions start from the same accepted gameplay event. The weapon montage never changes ammunition, RPM, hit detection, replication, or reload completion.
 
-- Manny source IK Rig
-- MetaHuman Arms target IK Rig
-- Manny-to-MetaHuman-Arms IK Retargeter
+Tactical reload is the first reload variant because the current gameplay/DA has one reload slot. Empty reload support is retained as a follow-up data field only if the gameplay state exposes an empty-magazine branch cleanly.
 
-The target rig maps the common root, pelvis, spine, clavicle, arm, hand, and finger chains that exist in `SKM_MetaHuman_Arms`. Retarget pose adjustments compensate for shoulder width, arm length, wrist rotation, and hand placement.
+## ADS / Right Mouse
 
-### Visible MetaHuman Arms
+Right mouse already activates `UGA_ADS` and sets `UCombatComponent::bAiming`. No new input binding is added.
 
-Duplicate `MH_ABP_FirstPerson` for the integration work. Its base pose comes from `Retarget Pose From Mesh`, sourcing `KinemationDriver1P`. Project-owned slots or final camera-space corrections may remain after the retarget node when they are still needed.
+TR15 does not contain a standalone ADS montage. ADS presentation therefore uses:
 
-## State Adapter
+- The current `bAiming` transition in `MH_ABP_FirstPerson`.
+- Existing MetaHuman `MH_FP_MM_RifleAim` initially, because it is already targeted to the shared arms skeleton.
+- TR15 body and sight alignment through the first-person grip offset.
+- Existing camera FOV interpolation from `UCombatComponent`.
 
-The marketplace AnimBP must not depend directly on the demo character or demo weapon system. A project-owned adapter maps existing game state into the values needed by the KINEMATION graph.
+After the action set is stable, the marketplace procedural IK/ADS layers can be adapted into `MH_ABP_FirstPerson` as a separate milestone. This prevents the action retarget from being blocked by a full procedural AnimBP port.
 
-Initial mappings:
+## Camera Animation
 
-| KINEMATION input | Project source |
-| --- | --- |
-| Velocity/direction | `AShooterCharacter::GetVelocity()` transformed to local space |
-| Is In Air | `UCharacterMovementComponent::IsFalling()` |
-| Aim pitch/yaw | control rotation minus actor rotation |
-| Is Firing | `State.Combat.IsFiring` or the existing ranged-attack trigger |
-| Is Aiming | `UCombatComponent::bAiming` |
-| Reloading | `AWeaponBase::IsReloading()` |
-| Weapon ready/cycling | existing `UCombatComponent` state |
+TR15 camera sequences use a dedicated camera skeleton and are not directly playable as character montages. The initial integration keeps the project's existing FOV and recoil camera behavior. Marketplace camera sequences are evaluated in a later isolated milestone, either by converting their transforms into project camera-animation assets or by using a hidden camera-animation driver. They must not be attached directly to the gameplay camera without blend-in/out and ADS cancellation handling.
 
-The first milestone maps only the values required to demonstrate pistol idle, walk, sprint, jump, aim, and fire. Reload/equip integration follows after locomotion and retarget pose quality are verified.
+## Data Ownership
 
-## Weapon Actions
+- `DA_WeaponData.FirstPersonAnims[Weapon.Type.Rifle]` selects MetaHuman idle/aim/sprint assets.
+- `DA_WeaponData.FirstPersonMontages[Weapon.Type.Rifle]` selects MetaHuman arm equip/reload/fire montages.
+- `BP_Weapon_AR` owns TR15 visual components and weapon-body presentation montages.
+- `AWeaponBase` exposes the small presentation API used by `UShooterAnimInstance`.
 
-The current `WeaponData` remains authoritative for gameplay timing and weapon selection. KINEMATION animation playback is presentation-only and must not change fire rate, reload duration, ammo state, replication, or ability activation.
+This keeps character-skeleton assets in the DA and weapon-skeleton assets on the weapon that owns those meshes.
 
-For the WK-11 Viper milestone:
+## Known Existing Issue
 
-- Idle and procedural locomotion run continuously on the driver.
-- Fire is triggered from the existing successful ranged-attack path.
-- Reload and equip continue to use existing gameplay state; their KINEMATION presentation is connected after the basic retarget test passes.
-
-## Tick and Visibility Rules
-
-- `KinemationDriver1P` must update even while not rendered.
-- `Mesh1P` must evaluate after the driver so it receives the current-frame source pose.
-- Establish an explicit tick prerequisite from `Mesh1P` to `KinemationDriver1P` if component attachment does not guarantee the order.
-- The driver must never become visible in shipping gameplay.
-
-## Failure Handling and Diagnostics
-
-- If the target remains in reference pose, verify that the runtime retarget node has a valid source mesh and retargeter.
-- If the pose updates one frame late, verify the component tick prerequisite.
-- If shoulders, wrists, or hands are distorted, adjust the target retarget pose rather than editing marketplace animations.
-- If locomotion states do not change, debug the adapted velocity and in-air values on the live animation instance.
-- If procedural movement is absent while states change, verify curve propagation and the KINEMATION linked IK layers on the source driver.
-- Missing MetaHuman-only bones remain controlled by the target reference pose or its post-process graph.
+`MH_FP_AM_Rifle_Fire` currently represents 0.167 seconds while its referenced sequence is 0.292 seconds. The segment must be updated and resaved or replaced before using it as the final fire montage.
 
 ## Verification
 
-### Milestone 1: Pose Transfer
+- Ranger, Trooper, and Vanguard reuse the same retargeted TR15 arm set.
+- Equip and tactical reload start arm and weapon-body montages together.
+- Weapon magazine motion stays synchronized during reload.
+- Right mouse transitions to the existing MetaHuman aim pose and aligns the TR15 sights.
+- Successful fire triggers the arm fire fallback and TR15 weapon fire montage once per accepted shot.
+- Reload duration, ammunition completion, fire rate, damage, replication, first/third-person visibility, and third-person animation remain unchanged.
+- Marketplace source assets remain unmodified.
 
-- MetaHuman arms display the KINEMATION pistol idle pose.
-- Source Manny remains invisible.
-- No reference-pose snapping occurs during PIE.
+## Deferred Scope
 
-### Milestone 2: Procedural Locomotion
-
-- Walking, sprinting, and jumping produce the same weapon/camera motion as the Tactical Shooter demo.
-- Jump start, loop, and end states respond to the live character movement state.
-
-### Milestone 3: Combat
-
-- ADS aligns the pistol sights.
-- Successful fire triggers the expected KINEMATION presentation once per shot.
-- Reload/equip presentation follows existing gameplay timing without changing ammo or ability behavior.
-
-### Regression Checks
-
-- Third-person `ABP_MetaHuman` behavior remains unchanged.
-- Other character classes continue to use their existing meshes and animation blueprints.
-- Multiplayer visibility rules still show only first-person arms to the owning player.
-- Existing weapon gameplay and replication tests continue to pass.
-
-## Non-Goals
-
-- Replacing third-person locomotion in this phase.
-- Editing marketplace source assets.
-- Retargeting and baking every source sequence.
-- Supporting every Tactical Shooter weapon before the WK-11 Viper path is verified.
+- Full KINEMATION procedural idle/walk/sprint/jump graph port.
+- Converted skeletal-camera action animations.
+- Inspect and magazine-check gameplay inputs.
+- Empty-versus-tactical reload selection.
+- Third-person TR15 presentation.
