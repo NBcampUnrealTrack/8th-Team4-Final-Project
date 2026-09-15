@@ -7,6 +7,7 @@
 #include "DominationClassSettings.generated.h"
 
 class AShooterCharacter;
+class USoundBase;
 class UTexture2D;
 
 /**
@@ -47,6 +48,9 @@ struct FPS_API FDominationCombatClassDefinition
 	// 클래스 선택 카드의 큰 무기 렌더
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
 	TSoftObjectPtr<UTexture2D> WeaponArt;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
+	TSoftObjectPtr<USoundBase> SelectionVoice;
 };
 
 /**
