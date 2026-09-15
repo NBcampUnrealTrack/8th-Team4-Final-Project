@@ -42,6 +42,8 @@ void ARogueAugmentActor::BeginPlay()
 
 	ScatterAnchor = GetActorLocation();
 
+	PlaySpawnCue();
+
 	if (!HasAuthority())
 	{
 		return;
@@ -202,6 +204,26 @@ void ARogueAugmentActor::PlayDetonateCue(const FVector& Location) const
 	CueParams.RawMagnitude = EffectRadius;
 
 	CueManager->HandleGameplayCue(Self, DetonateCueTag, EGameplayCueEvent::Executed, CueParams);
+}
+
+void ARogueAugmentActor::PlaySpawnCue() const
+{
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!SpawnCueTag.IsValid() || !CueManager)
+	{
+		return;
+	}
+
+	AActor* Self = const_cast<ARogueAugmentActor*>(this);
+
+	FGameplayCueParameters CueParams;
+	CueParams.Location     = GetActorLocation();
+	CueParams.Normal       = FVector::UpVector;
+	CueParams.Instigator   = GetInstigator();
+	CueParams.EffectCauser = Self;
+	CueParams.RawMagnitude = EffectRadius;
+
+	CueManager->HandleGameplayCue(Self, SpawnCueTag, EGameplayCueEvent::Executed, CueParams);
 }
 
 void ARogueAugmentActor::Multicast_Detonated_Implementation(const FVector_NetQuantize Location)

@@ -52,6 +52,11 @@ protected:
 		meta = (Categories = "GameplayCue"))
 	FGameplayTag DetonateCueTag;
 
+	// 스폰 순간 재생할 GameplayCue. 지속형 설치물의 유지 연출용. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag SpawnCueTag;
+
 	// 연출 훅. 기폭이 확정된 뒤 모든 클라이언트에서 실행
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Augment|Actor")
 	void OnDetonated();
@@ -110,6 +115,9 @@ private:
 
 	// 기폭 큐 재생. 모든 클라이언트에서 각자 실행
 	void PlayDetonateCue(const FVector& Location) const;
+
+	// 스폰 큐 재생. 액터가 복제되므로 각 클라이언트의 BeginPlay 에서 실행
+	void PlaySpawnCue() const;
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_Detonated(FVector_NetQuantize Location);
