@@ -1,6 +1,8 @@
 #include "GameMode/State/BaseTeamGameState.h"
 
 #include "Net/UnrealNetwork.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 
 ABaseTeamGameState::ABaseTeamGameState()
 {
@@ -99,6 +101,36 @@ void ABaseTeamGameState::BroadcastPlayerEliminated(const FShooterEliminationEven
 void ABaseTeamGameState::Multicast_PlayerEliminated_Implementation(const FShooterEliminationEvent& EliminationEvent)
 {
 	OnPlayerEliminated.Broadcast(EliminationEvent);
+}
+
+void ABaseTeamGameState::ForEachChatRecipient(
+	const APlayerState* Sender, const EChatChannel Channel, TFunctionRef<void(AShooterPlayerController*)> Visitor) const
+{
+	if (!HasAuthority() || !IsValid(Sender))
+	{
+		return;
+	}
+
+	const EGameTeam SenderTeam = Channel == EChatChannel::Team
+		? (IsValid(Cast<ABaseTeamPlayerState>(Sender)) ? Cast<ABaseTeamPlayerState>(Sender)->GetTeam() : EGameTeam::None)
+		: EGameTeam::None;
+
+	for (APlayerState* PlayerState : PlayerArray)
+	{
+		if (Channel == EChatChannel::Team)
+		{
+			const ABaseTeamPlayerState* RecipientTeamState = Cast<ABaseTeamPlayerState>(PlayerState);
+			if (!IsValid(RecipientTeamState) || RecipientTeamState->GetTeam() != SenderTeam)
+			{
+				continue;
+			}
+		}
+
+		if (AShooterPlayerController* RecipientController = Cast<AShooterPlayerController>(PlayerState->GetPlayerController()))
+		{
+			Visitor(RecipientController);
+		}
+	}
 }
 
 void ABaseTeamGameState::OnRep_TeamAScore()

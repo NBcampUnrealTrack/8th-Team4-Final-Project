@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/ChatTypes.h"
 #include "GameMode/Types/SurrenderVoteTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
@@ -18,6 +19,7 @@ class URogueHealthComponent;
 class ULoadingScreenSubsystem;
 class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
+class UShooterChatInputBox;
 class UShooterSpectatorWidget;
 class UShooterInputConfig;
 class USteamVoiceComponent;
@@ -27,6 +29,9 @@ class UInputMappingContext;
 class APlayerState;
 class USoundMix;
 struct FInputActionValue;
+
+// 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
 
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. Type으로 부위별(바디/쉴드/헤드샷) 색상을,
 // bKill로 처치 강조(빨간색)를 결정한다.
@@ -155,6 +160,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Input")
 	virtual bool CanProcessActionInput() const;
 
+	// 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
+	FOnChatMessageReceivedSignature OnChatMessageReceived;
+
+	// 채팅 입력창(UShooterChatInputBox)이 NativeConstruct에서 자기 자신을 등록한다.
+	void RegisterChatInputWidget(UShooterChatInputBox* InWidget);
+
+	UFUNCTION(BlueprintPure, Category = "Shooter|Chat")
+	bool IsChatInputOpen() const { return bIsChatInputOpen; }
+
+	// 채팅 입력창이 Enter(텍스트 있음)를 감지하면 호출한다. 로컬 검증 후 서버로 전송하고 입력창을 닫는다.
+	void HandleChatSubmit(const FString& RawText);
+
+	// 채팅 입력창이 Enter(빈 텍스트) 또는 Esc를 감지하면 호출한다. 전송 없이 입력창만 닫는다.
+	void HandleChatCancel();
+
+	// 채팅 입력창이 Tab을 감지하면 호출한다. 입력 중이던 텍스트는 유지한 채 채널만 토글한다.
+	void HandleChatChannelSwitchRequested();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -199,6 +223,13 @@ protected:
 	UFUNCTION(Client, Reliable)
 	void ClientNotifySurrenderVoteStartResult(ESurrenderVoteStartResult Result);
 
+	// 레이트리밋/길이 재검증 후 GameState::ForEachChatRecipient로 팀/전체 필터링해 전달한다.
+	UFUNCTION(Server, Reliable)
+	void ServerSendChatMessage(const FString& MessageText, EChatChannel Channel);
+
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveChatMessage(const FChatMessage& Message);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Loading")
 	TSubclassOf<ULoadingScreenWidget> LoadingScreenWidgetClass;
 
@@ -240,6 +271,8 @@ private:
 	void Input_CrouchReleased();
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
+	void Input_OpenChat();
+	void CloseChatInput();
 	void Input_ToggleInGameMenu();
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
@@ -270,4 +303,11 @@ private:
 
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
+
+	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
+	bool bIsChatInputOpen = false;
+	EChatChannel CurrentChatChannel = EChatChannel::Team;
+
+	// 서버 전용 레이트리밋 상태. 리플리케이트하지 않는다.
+	double LastChatMessageServerTime = -1.0;
 };

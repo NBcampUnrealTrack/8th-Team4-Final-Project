@@ -34,6 +34,7 @@
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
+#include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
@@ -326,6 +327,10 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Completed, this, &ThisClass::Input_PushToTalkReleased);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Canceled, this, &ThisClass::Input_PushToTalkReleased);
+	}
+	if (InputConfig->OpenChatAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->OpenChatAction, ETriggerEvent::Started, this, &ThisClass::Input_OpenChat);
 	}
 	if (InputConfig->ToggleInGameMenuAction)
 	{
@@ -933,6 +938,54 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
 }
 
+void AShooterPlayerController::ServerSendChatMessage_Implementation(const FString& MessageText, const EChatChannel Channel)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastChatMessageServerTime >= 0.0 && Now - LastChatMessageServerTime < ShooterChatLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+
+	FString Trimmed = MessageText;
+	Trimmed.TrimStartAndEndInline();
+	if (Trimmed.IsEmpty())
+	{
+		return;
+	}
+	if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+	{
+		Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+	}
+
+	LastChatMessageServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
+	if (!IsValid(TeamGameState))
+	{
+		return;
+	}
+
+	FChatMessage Message;
+	Message.SenderName = PlayerState->GetPlayerName();
+	Message.MessageText = Trimmed;
+	Message.Channel = Channel;
+
+	TeamGameState->ForEachChatRecipient(PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
+	{
+		Recipient->ClientReceiveChatMessage(Message);
+	});
+}
+
+void AShooterPlayerController::ClientReceiveChatMessage_Implementation(const FChatMessage& Message)
+{
+	OnChatMessageReceived.Broadcast(Message);
+}
+
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
 {
 	AShooterGameMode* ShooterGameMode = nullptr;
@@ -1148,7 +1201,8 @@ bool AShooterPlayerController::CanProcessMovementInput() const
 
 bool AShooterPlayerController::CanProcessActionInput() const
 {
-	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+	// 채팅창이 열려있는 동안은 오버워치처럼 이동은 계속 허용하고 사격/어빌리티 입력만 막는다.
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock() && !bIsChatInputOpen;
 }
 
 bool AShooterPlayerController::HasDataJackInteractionInputBlock() const
@@ -1264,6 +1318,75 @@ void AShooterPlayerController::Input_PushToTalkPressed()
 void AShooterPlayerController::Input_PushToTalkReleased()
 {
 	StopVoiceTalking();
+}
+
+void AShooterPlayerController::Input_OpenChat()
+{
+	if (!IsLocalController() || bIsChatInputOpen || !ChatInputWidget.IsValid())
+	{
+		return;
+	}
+
+	bIsChatInputOpen = true;
+	ChatInputWidget->OpenForChannel(CurrentChatChannel);
+}
+
+void AShooterPlayerController::CloseChatInput()
+{
+	if (!bIsChatInputOpen)
+	{
+		return;
+	}
+
+	bIsChatInputOpen = false;
+
+	if (ChatInputWidget.IsValid())
+	{
+		ChatInputWidget->CloseAndClearText();
+	}
+}
+
+void AShooterPlayerController::RegisterChatInputWidget(UShooterChatInputBox* InWidget)
+{
+	ChatInputWidget = InWidget;
+}
+
+void AShooterPlayerController::HandleChatSubmit(const FString& RawText)
+{
+	FString Trimmed = RawText;
+	Trimmed.TrimStartAndEndInline();
+
+	if (!Trimmed.IsEmpty())
+	{
+		if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+		{
+			Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+		}
+
+		ServerSendChatMessage(Trimmed, CurrentChatChannel);
+	}
+
+	CloseChatInput();
+}
+
+void AShooterPlayerController::HandleChatCancel()
+{
+	CloseChatInput();
+}
+
+void AShooterPlayerController::HandleChatChannelSwitchRequested()
+{
+	if (!bIsChatInputOpen)
+	{
+		return;
+	}
+
+	CurrentChatChannel = CurrentChatChannel == EChatChannel::Team ? EChatChannel::Match : EChatChannel::Team;
+
+	if (ChatInputWidget.IsValid())
+	{
+		ChatInputWidget->SetChannel(CurrentChatChannel);
+	}
 }
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)

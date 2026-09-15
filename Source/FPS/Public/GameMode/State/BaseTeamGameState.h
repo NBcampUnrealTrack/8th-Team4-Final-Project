@@ -1,11 +1,14 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/ChatTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/GameState.h"
 #include "GameplayTagContainer.h"
+#include "Templates/Function.h"
 #include "BaseTeamGameState.generated.h"
 
+class AShooterPlayerController;
 class AShooterPlayerState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTeamScoreChangedSignature, EGameTeam, Team, int32, NewScore);
@@ -58,6 +61,12 @@ public:
 
 	// 서버 전용. 모든 머신의 OnPlayerEliminated로 이어진다.
 	void BroadcastPlayerEliminated(const FShooterEliminationEvent& EliminationEvent);
+
+	// 서버 전용. Channel==Match면 PlayerArray 전원, Channel==Team이면 Sender와 같은 팀의
+	// 컨트롤러에 대해서만 Visitor를 호출한다. 적팀 컨트롤러는 아예 호출되지 않으므로
+	// 텍스트 채팅 데이터 자체가 적팀 클라이언트로 전송되지 않는다.
+	void ForEachChatRecipient(
+		const APlayerState* Sender, EChatChannel Channel, TFunctionRef<void(AShooterPlayerController*)> Visitor) const;
 
 protected:
 	UFUNCTION(NetMulticast, Reliable)
