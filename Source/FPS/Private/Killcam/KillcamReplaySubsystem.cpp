@@ -356,16 +356,22 @@ void UKillcamReplaySubsystem::CleanPlaybackWorld()
 		}
 
 		World->DestroyDemoNetDriver();
-		DuplicateCollection->SetDemoNetDriver(nullptr);
-	}
 
-	DuplicateCollection->SetIsVisible(false);
-	for (ULevel* Level : DuplicateCollection->GetLevels())
-	{
-		if (IsValid(Level) && Level->bIsVisible)
+		for (ULevel* Level : DuplicateCollection->GetLevels())
 		{
-			World->RemoveFromWorld(Level);
+			if (!IsValid(Level))
+			{
+				continue;
+			}
+
+			while (Level->bIsVisible)
+			{
+				World->RemoveFromWorld(Level);
+			}
 		}
+
+		DuplicateCollection->SetDemoNetDriver(nullptr);
+		DuplicateCollection->SetIsVisible(false);
 	}
 }
 
