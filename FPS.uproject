@@ -68,7 +68,11 @@
 		},
 		{
 			"Name": "NarshaMCP",
-			"Enabled": false
+			"Enabled": true,
+			"Optional": true,
+			"TargetAllowList": [
+				"Editor"
+			]
 		},
 		{
 			"Name": "MultiUserClient",

@@ -40,7 +40,7 @@ void UDominationClassSelectCard::SetSelectionState(
 	const bool bIsPreviewed = PreviewClass == CombatClass;
 
 	SetIsEnabled(!bClassLocked);
-	UpdateSelectionPresentation(bIsPreviewed, bClassLocked);
+	BP_UpdateSelectionPresentation(bIsPreviewed, bClassLocked);
 }
 
 void UDominationClassSelectCard::ApplyHoverState(const FDominationCardHoverState& State)
