@@ -31,11 +31,52 @@ static void SetSlotPosition(UWidget* Widget, const FVector2D& Position)
 	{
 		return;
 	}
-	
+
 	if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget->Slot))
 	{
 		Slot->SetPosition(Position);
 	}
+}
+
+// Offset 벡터를 AngleDegrees만큼 회전시킨다(2D 회전 변환).
+static FVector2D RotateOffset(const FVector2D& Offset, const float AngleDegrees)
+{
+	const float Rad = FMath::DegreesToRadians(AngleDegrees);
+	const float CosA = FMath::Cos(Rad);
+	const float SinA = FMath::Sin(Rad);
+	return FVector2D(
+		Offset.X * CosA - Offset.Y * SinA,
+		Offset.X * SinA + Offset.Y * CosA);
+}
+
+// Right 이미지 하나만 WBP에서 브러시/크기를 잡아두면, 나머지 3방향은 Right를 그대로 복사한 뒤
+// Position/Angle을 Right 기준 벡터를 회전시켜서 재사용한다. 디자이너에서 4개를 따로 맞출 필요가 없어진다.
+static void SyncDirectionalReticleImage(const UImage* Source, UImage* Target, const float AngleDegrees)
+{
+	if (!Source || !Target)
+	{
+		return;
+	}
+
+	Target->SetBrush(Source->GetBrush());
+
+	const UCanvasPanelSlot* SourceSlot = Cast<UCanvasPanelSlot>(Source->Slot);
+	UCanvasPanelSlot* TargetSlot = Cast<UCanvasPanelSlot>(Target->Slot);
+	if (SourceSlot && TargetSlot)
+	{
+		TargetSlot->SetSize(SourceSlot->GetSize());
+
+		// Source의 실제 Position 벡터를 그대로 회전시키지 않는다 - Source 자체가 완벽한 수평/수직이
+		// 아니면 그 오차가 4방향 모두에 전파된다. 대신 거리(반경)만 뽑아서 정확히 0/90/180/270도
+		// 방향으로 다시 배치한다.
+		const float SourceRadius = SourceSlot->GetPosition().Size();
+		TargetSlot->SetPosition(RotateOffset(FVector2D(SourceRadius, 0.f), AngleDegrees));
+	}
+
+	// 각 이미지가 자기 자신의 중심을 기준으로 회전하도록 Pivot을 강제로 정중앙에 고정한다.
+	// (WBP에서 예전에 만져둔 Pivot 값이 남아있으면 엉뚱한 지점을 기준으로 돌아간다.)
+	Target->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+	Target->SetRenderTransformAngle(AngleDegrees);
 }
 
 void UShooterReticle::NativeOnInitialized()
@@ -47,6 +88,43 @@ void UShooterReticle::NativeOnInitialized()
 	ConfigureCenteredCanvasSlot(Image_Left);
 	ConfigureCenteredCanvasSlot(Image_Right);
 	ConfigureCenteredCanvasSlot(Image_Center);
+
+	// ==================== [CROSSHAIRDEBUG] 하드코딩 최소 테스트 (진단 끝나면 제거) ====================
+	// 계산/회전 로직을 전부 배제하고, 4개 이미지에 브러시/앵커/얼라인먼트/피벗/각도/포지션을
+	// 숫자 그대로 박아 넣는다. 이래도 정십자가 안 나오면 문제는 Anchor/Alignment나 부모 CanvasPanel
+	// 기준점 쪽이다.
+	{
+		const FSlateBrush RightBrush = Image_Right ? Image_Right->GetBrush() : FSlateBrush();
+		const UCanvasPanelSlot* RightSlot = Image_Right ? Cast<UCanvasPanelSlot>(Image_Right->Slot) : nullptr;
+		const FVector2D RightSize = RightSlot ? RightSlot->GetSize() : FVector2D(30.f, 30.f);
+		UE_LOG(LogTemp, Warning, TEXT("[CROSSHAIRDEBUG] Right Size=(%.3f,%.3f) - 이 값을 4개 다 강제로 통일한다"), RightSize.X, RightSize.Y);
+
+		auto ApplyHardcodedCross = [&RightBrush, &RightSize](UImage* Img, const float X, const float Y, const float AngleDegrees)
+		{
+			if (!Img)
+			{
+				return;
+			}
+			Img->SetBrush(RightBrush);
+			Img->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+			Img->SetRenderTransformAngle(AngleDegrees);
+			if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Img->Slot))
+			{
+				Slot->SetAnchors(FAnchors(0.5f, 0.5f, 0.5f, 0.5f));
+				Slot->SetAlignment(FVector2D(0.5f, 0.5f));
+				Slot->SetSize(RightSize);
+				Slot->SetPosition(FVector2D(X, Y));
+			}
+		};
+		ApplyHardcodedCross(Image_Right,  30.f,   0.f,   0.f);
+		ApplyHardcodedCross(Image_Left,  -30.f,   0.f, 180.f);
+		ApplyHardcodedCross(Image_Top,     0.f, -30.f,  90.f);
+		ApplyHardcodedCross(Image_Bottom,  0.f,  30.f, 270.f);
+	}
+	// SyncDirectionalReticleImage(Image_Right, Image_Left, 180.f);
+	// SyncDirectionalReticleImage(Image_Right, Image_Top, 270.f);
+	// SyncDirectionalReticleImage(Image_Right, Image_Bottom, 90.f);
+	// ==================== END [CROSSHAIRDEBUG] 하드코딩 테스트 ====================
 
 	SetSlotPosition(Image_Center, FVector2D::ZeroVector);
 
@@ -91,6 +169,7 @@ void UShooterReticle::NativeOnInitialized()
 		FinishedEvent.BindDynamic(this, &ThisClass::HandleKillEffectAnimationFinished);
 		BindToAnimationFinished(Anim_KillEffect, FinishedEvent);
 	}
+
 }
 
 void UShooterReticle::NativeDestruct()
@@ -173,13 +252,15 @@ bool UShooterReticle::IsHitMarkerActive() const
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	
-	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
-	
-	SetSlotPosition(Image_Top,    FVector2D(0.f, -Radius));
-	SetSlotPosition(Image_Bottom, FVector2D(0.f,  Radius));
-	SetSlotPosition(Image_Left,   FVector2D(-Radius, 0.f));
-	SetSlotPosition(Image_Right,  FVector2D( Radius, 0.f));
+
+	// [CROSSHAIRDEBUG] 하드코딩 테스트 중에는 매 프레임 Position을 덮어쓰지 않도록 잠시 꺼둔다.
+	// 진단 끝나면 아래 블록을 원복한다.
+	// const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
+	// const FVector2D RightOffset(Radius, 0.f);
+	// SetSlotPosition(Image_Right,  RightOffset);
+	// SetSlotPosition(Image_Left,   RotateOffset(RightOffset, 180.f));
+	// SetSlotPosition(Image_Top,    RotateOffset(RightOffset, 270.f));
+	// SetSlotPosition(Image_Bottom, RotateOffset(RightOffset, 90.f));
 }
 
 float UShooterReticle::GetSpreadDegrees() const
