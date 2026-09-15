@@ -546,28 +546,29 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
-		if (!ImpactEffect.bHasHit)
+		// 명중 관련 캐시/표면 임팩트 사운드는 실제 Hit일 때만 갱신
+		if (ImpactEffect.bHasHit)
 		{
-			continue;
-		}
+			LastImpactPoint = ImpactEffect.ImpactPoint;
+			LastImpactNormal = ImpactEffect.ImpactNormal;
+			LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
+			LastImpactPelletIndex = ImpactEffect.PelletIndex;
 
-		LastImpactPoint = ImpactEffect.ImpactPoint;
-		LastImpactNormal = ImpactEffect.ImpactNormal;
-		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
-		LastImpactPelletIndex = ImpactEffect.PelletIndex;
-
-		if (SurfaceDefinition)
-		{
-			if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+			if (SurfaceDefinition)
 			{
-				UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+				{
+					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				}
 			}
 		}
-
+		
+		// FireEffects와 명중 노드는 bHasHit으로 분기
 		FireEffects(
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
+			ImpactEffect.bHasHit,
 			bIsFirstPerson);
 	}
 }
