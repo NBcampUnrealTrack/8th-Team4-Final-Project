@@ -44,6 +44,7 @@ public:
 	UTexture2D* GetCachedClassIcon(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassPortrait(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassWeaponArt(EDominationCombatClass CombatClass) const;
+	USoundBase* GetCachedSelectionVoice(EDominationCombatClass CombatClass) const;
 
 protected:
 	virtual void NativeOnActivated() override;
@@ -139,6 +140,8 @@ private:
 	TMap<EDominationCombatClass, TObjectPtr<UTexture2D>> ClassIconCache;
 	UPROPERTY(Transient)
 	TMap<EDominationCombatClass, TObjectPtr<UTexture2D>> ClassPortraitCache;
+	UPROPERTY(Transient)
+	TMap<EDominationCombatClass, TObjectPtr<USoundBase>> ClassVoiceCache;
 	UPROPERTY(Transient)
 	TMap<EDominationCombatClass, TObjectPtr<UTexture2D>> ClassWeaponArtCache;
 
