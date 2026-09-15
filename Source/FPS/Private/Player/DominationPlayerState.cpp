@@ -85,3 +85,18 @@ void ADominationPlayerState::OnRep_PreviewCombatClass()
 
 
 
+
+void ADominationPlayerState::ResetCombatClassSelection()
+{
+    if (!HasAuthority())
+    {
+        return;
+    }
+    const bool bHadSelection = HasSelectedCombatClass();
+    const bool bHadPreview = HasPreviewCombatClass();
+    CombatClass = EDominationCombatClass::Unselected;
+    PreviewCombatClass = EDominationCombatClass::Unselected;
+    if (bHadSelection) { OnRep_CombatClass(); }
+    if (bHadPreview) { OnRep_PreviewCombatClass(); }
+    ForceNetUpdate();
+}

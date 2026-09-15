@@ -8,7 +8,7 @@
 #include "Augment/RogueAugmentSettings.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameMode/BaseTeamGameMode.h"
+#include "GameMode/ShooterGameMode.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameplayEffectTypes.h"
@@ -19,7 +19,7 @@
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentDraftManager, Log, All);
 
 void UAugmentDraftManager::Initialize(
-	ABaseTeamGameMode* InOwnerGameMode,
+	AShooterGameMode* InOwnerGameMode,
 	const bool bInDraftEnabled,
 	const UAugmentDraftProfile* InDraftProfile)
 {
@@ -105,8 +105,41 @@ void UAugmentDraftManager::CancelDraft()
 	}
 }
 
-// 모든 플레이어의 대기열에 증강 부여
 void UAugmentDraftManager::GrantToAll(
+    const EAugmentRewardPool Pool, const int32 RoundNumber, const FGameplayTag ActiveSlot)
+{
+    TArray<AShooterPlayerState*> Recipients;
+    GetCurrentPlayerStates(Recipients);
+    GrantToParticipants(Recipients, Pool, RoundNumber, ActiveSlot);
+}
+
+void UAugmentDraftManager::GrantToPlayer(
+    AShooterPlayerState* Recipient, const EAugmentRewardPool Pool,
+    const int32 RoundNumber, const FGameplayTag ActiveSlot)
+{
+    if (!IsValid(Recipient) || !Recipient->HasAuthority()
+        || !OwnerGameMode.IsValid() || Recipient->GetWorld() != OwnerGameMode->GetWorld())
+    {
+        return;
+    }
+    TArray<AShooterPlayerState*> Recipients;
+    Recipients.Add(Recipient);
+    GrantToParticipants(Recipients, Pool, RoundNumber, ActiveSlot);
+}
+
+void UAugmentDraftManager::ReleasePlayer(AShooterPlayerState* LeavingPlayer)
+{
+    StopListeningForCommit(LeavingPlayer);
+    if (UAugmentInventoryComponent* Inventory = GetInventory(LeavingPlayer))
+    {
+        Inventory->ClearOffers();
+    }
+    ClearPlayerGameplayInputBlock(LeavingPlayer);
+}
+
+// 모든 플레이어의 대기열에 증강 부여
+void UAugmentDraftManager::GrantToParticipants(
+	const TArray<AShooterPlayerState*>& Recipients,
 	const EAugmentRewardPool Pool,
 	const int32 RoundNumber,
 	const FGameplayTag ActiveSlot)
@@ -141,10 +174,8 @@ void UAugmentDraftManager::GrantToAll(
 	}
 
 	// 모든 플레이어의 대기열에 증강 등록
-	TArray<AShooterPlayerState*> PlayerStates;
-	GetCurrentPlayerStates(PlayerStates);
 
-	for (AShooterPlayerState* PlayerState : PlayerStates)
+	for (AShooterPlayerState* PlayerState : Recipients)
 	{
 		UAugmentInventoryComponent* Inventory = GetInventory(PlayerState);
 		if (!IsValid(Inventory))
@@ -158,7 +189,7 @@ void UAugmentDraftManager::GrantToAll(
 
 	UE_LOG(LogAugmentDraftManager, Log,
 		TEXT("Round %d reward granted to %d players. Pool=%s TeamA=%s TeamB=%s Slot=%s"),
-		RoundNumber, PlayerStates.Num(),
+		RoundNumber, Recipients.Num(),
 		*UEnum::GetValueAsString(Pool),
 		*UEnum::GetValueAsString(TeamATier),
 		*UEnum::GetValueAsString(TeamBTier),
@@ -364,7 +395,7 @@ void UAugmentDraftManager::ResolveRewardTiers(
 	// 팀별로 굴릴 때만 점수를 가져옴
 	if (DraftRules.bPerTeamTiers)
 	{
-		const ABaseTeamGameMode* GameMode = OwnerGameMode.Get();
+		const AShooterGameMode* GameMode = OwnerGameMode.Get();
 		if (const ABaseTeamGameState* TeamGameState = IsValid(GameMode)
 			? GameMode->GetGameState<ABaseTeamGameState>()
 			: nullptr)
@@ -496,7 +527,7 @@ void UAugmentDraftManager::GetCurrentPlayerStates(TArray<AShooterPlayerState*>& 
 {
 	OutPlayerStates.Reset();
 
-	const ABaseTeamGameMode* GameMode = OwnerGameMode.Get();
+	const AShooterGameMode* GameMode = OwnerGameMode.Get();
 	const ABaseTeamGameState* TeamGameState = IsValid(GameMode)
 		? GameMode->GetGameState<ABaseTeamGameState>()
 		: nullptr;

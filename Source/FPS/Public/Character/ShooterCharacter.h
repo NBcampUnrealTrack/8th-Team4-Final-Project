@@ -162,7 +162,6 @@ private:
 	FDelegateHandle UtilityHeldEventHandle;
 
 	// 랙돌에 피격 임펄스 적용
-	void ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const;
 
 	// 사망 연출 중복 진입 방지
 	bool bDeathStateApplied = false;

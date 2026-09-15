@@ -7,7 +7,7 @@
 
 class UCommonTextBlock;
 class UAugmentInventoryComponent;
-class UDominationUIInitComponent;
+class UCombatUIInitComponent;
 
 /**
  * 증강 선택 화면을 보류한 동안 HUD에 뜨는 힌트
@@ -51,10 +51,10 @@ private:
 	void HandlePresentationChanged();
 	
 	UAugmentInventoryComponent* GetInventory() const;
-	UDominationUIInitComponent* GetUIInitComp() const;
+	UCombatUIInitComponent* GetUIInitComp() const;
 	
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInv;
-	TWeakObjectPtr<UDominationUIInitComponent> BoundUIInit;
+	TWeakObjectPtr<UCombatUIInitComponent> BoundUIInit;
 	FTimerHandle DependencyBindRetryTimerHandle;
 	FTimerHandle PresentationRefreshTimerHandle;
 	FTimerHandle CountdownTimerHandle;

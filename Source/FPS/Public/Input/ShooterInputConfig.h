@@ -65,6 +65,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> PushToTalkAction;
 
+	// Common actor interaction. If shared with a GAS entry, unhandled input falls back to that ability.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> InteractAction;
+
 	// Fire/Reload/무기 슬롯 전환 같은 GAS 어빌리티 입력을 코드에 하드코딩하지 않고 태그 계약으로
 	// 연결한다. 1번/2번 무기 전환도 InputTag.Ability.WeaponSlotPrimary/Secondary로 여기에 등록한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Abilities")
