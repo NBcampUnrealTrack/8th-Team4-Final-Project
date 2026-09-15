@@ -2,20 +2,32 @@
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 
 #include "Components/EditableTextBox.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
+#include "GameMode/State/BaseTeamGameState.h"
 #include "Player/ShooterPlayerController.h"
+#include "UI/InGame/HUD/ShooterChatSuggestionEntry.h"
+
+UShooterChatInputBox::UShooterChatInputBox()
+{
+	InputConfig = EShooterWidgetInputMode::GameAndMenu;
+}
 
 void UShooterChatInputBox::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	SetVisibility(ESlateVisibility::Collapsed);
-
-	if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+	if (Text_Message)
 	{
-		PlayerController->RegisterChatInputWidget(this);
+		Text_Message->OnTextChanged.AddDynamic(this, &ThisClass::HandleMessageTextChanged);
 	}
+}
+
+UWidget* UShooterChatInputBox::NativeGetDesiredFocusTarget() const
+{
+	return Text_Message;
 }
 
 FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -25,7 +37,16 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 	{
 		if (InKeyEvent.GetKey() == EKeys::Enter)
 		{
-			PlayerController->HandleChatSubmit(Text_Message->GetText().ToString());
+			// 추천 목록이 떠 있으면 Enter는 전송이 아니라 하이라이트된 이름 확정(오버워치 친구
+			// 검색과 동일한 방향키+Enter 방식). 안 떠 있으면 평소처럼 메시지 전송.
+			if (CurrentSuggestions.IsValidIndex(HighlightedSuggestionIndex))
+			{
+				ApplySuggestedName(CurrentSuggestions[HighlightedSuggestionIndex]);
+			}
+			else
+			{
+				PlayerController->HandleChatSubmit(Text_Message->GetText().ToString());
+			}
 			return FReply::Handled();
 		}
 		if (InKeyEvent.GetKey() == EKeys::Tab)
@@ -33,8 +54,18 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 			PlayerController->HandleChatChannelSwitchRequested();
 			return FReply::Handled();
 		}
+		if ((InKeyEvent.GetKey() == EKeys::Up || InKeyEvent.GetKey() == EKeys::Down) && !CurrentSuggestions.IsEmpty())
+		{
+			MoveSuggestionHighlight(InKeyEvent.GetKey() == EKeys::Up ? 1 : -1);
+			return FReply::Handled();
+		}
 		if (InKeyEvent.GetKey() == EKeys::Escape)
 		{
+			if (!CurrentSuggestions.IsEmpty())
+			{
+				ClearSuggestions();
+				return FReply::Handled();
+			}
 			PlayerController->HandleChatCancel();
 			return FReply::Handled();
 		}
@@ -43,55 +74,178 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
-void UShooterChatInputBox::OpenForChannel(const EChatChannel Channel)
-{
-	SetVisibility(ESlateVisibility::Visible);
-
-	if (Text_Message)
-	{
-		Text_Message->SetText(FText::GetEmpty());
-	}
-
-	SetChannel(Channel);
-
-	if (APlayerController* PlayerController = GetOwningPlayer())
-	{
-		FInputModeGameAndUI InputModeData;
-		InputModeData.SetWidgetToFocus(TakeWidget());
-		InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputModeData.SetHideCursorDuringCapture(true);
-		PlayerController->SetInputMode(InputModeData);
-	}
-
-	if (Text_Message)
-	{
-		Text_Message->SetKeyboardFocus();
-	}
-}
-
-void UShooterChatInputBox::SetChannel(const EChatChannel Channel)
+void UShooterChatInputBox::SetChannel(const EChatChannel Channel, const FString& WhisperTargetName)
 {
 	if (!Text_ChannelLabel)
 	{
 		return;
 	}
 
-	const FLinearColor ChannelColor = Channel == EChatChannel::Team ? TeamChannelColor : MatchChannelColor;
-	Text_ChannelLabel->SetText(Channel == EChatChannel::Team ? FText::FromString(TEXT("TEAM")) : FText::FromString(TEXT("ALL")));
-	Text_ChannelLabel->SetColorAndOpacity(FSlateColor(ChannelColor));
+	switch (Channel)
+	{
+	case EChatChannel::Team:
+		Text_ChannelLabel->SetText(FText::FromString(TEXT("TEAM")));
+		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(TeamChannelColor));
+		break;
+	case EChatChannel::Match:
+		Text_ChannelLabel->SetText(FText::FromString(TEXT("ALL")));
+		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(MatchChannelColor));
+		break;
+	case EChatChannel::Whisper:
+		Text_ChannelLabel->SetText(FText::FromString(WhisperTargetName));
+		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(WhisperChannelColor));
+		break;
+	}
 }
 
-void UShooterChatInputBox::CloseAndClearText()
+void UShooterChatInputBox::ResetForOpen(const EChatChannel Channel, const FString& WhisperTargetName)
 {
-	SetVisibility(ESlateVisibility::Collapsed);
+	if (Text_Message)
+	{
+		Text_Message->SetText(FText::GetEmpty());
+	}
+
+	ClearSuggestions();
+	SetChannel(Channel, WhisperTargetName);
+}
+
+void UShooterChatInputBox::HandleMessageTextChanged(const FText& NewText)
+{
+	const FString Text = NewText.ToString();
+	FString Rest;
+	if (!ShooterChatLimits::StripWhisperCommandPrefix(Text, Rest))
+	{
+		ClearSuggestions();
+		return;
+	}
+
+	FString Name, Message;
+	if (Rest.Split(TEXT(" "), &Name, &Message))
+	{
+		// 이름 뒤에 공백까지 쳤다 - 이름은 완성된 걸로 보고 후보는 닫은 뒤 채널 라벨을
+		// 미리 이 사람으로 보여준다(실제 전송/큐 등록은 HandleChatSubmit에서).
+		ClearSuggestions();
+		if (!Name.IsEmpty())
+		{
+			SetChannel(EChatChannel::Whisper, Name);
+		}
+		return;
+	}
+
+	RefreshWhisperSuggestions(Rest);
+}
+
+void UShooterChatInputBox::RefreshWhisperSuggestions(const FString& TypedPrefix)
+{
+	ClearSuggestions();
+
+	if (TypedPrefix.IsEmpty() || !Box_Suggestions || !SuggestionEntryWidgetClass)
+	{
+		return;
+	}
+
+	const ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
+	if (!TeamGameState)
+	{
+		return;
+	}
+
+	const FString OwnName = GetOwningPlayerState() ? GetOwningPlayerState()->GetPlayerName() : FString();
+	CurrentSuggestions = TeamGameState->GetPlayerNamesMatchingPrefix(TypedPrefix, OwnName);
+	if (CurrentSuggestions.IsEmpty())
+	{
+		return;
+	}
+
+	HighlightedSuggestionIndex = 0;
+	SuggestionWidgets.SetNum(CurrentSuggestions.Num());
+
+	// Box_Suggestions는 입력창 바로 위에서 위로 자라나는 배치를 전제로 한다. 추가한 순서대로
+	// 위->아래로 쌓이므로, 가장 좋은 후보(인덱스 0)가 입력창에 가장 가까운 맨 아래에 오도록
+	// 역순으로 추가한다. 후보 수 제한이 없어서 ScrollBox 높이를 넘으면 스크롤된다.
+	for (int32 Index = CurrentSuggestions.Num() - 1; Index >= 0; --Index)
+	{
+		UShooterChatSuggestionEntry* Entry = CreateWidget<UShooterChatSuggestionEntry>(this, SuggestionEntryWidgetClass);
+		if (!Entry)
+		{
+			continue;
+		}
+
+		Entry->SetPlayerName(CurrentSuggestions[Index]);
+		Entry->SetHighlighted(Index == HighlightedSuggestionIndex);
+
+		Box_Suggestions->AddChild(Entry);
+		SuggestionWidgets[Index] = Entry;
+	}
+
+	Box_Suggestions->SetVisibility(ESlateVisibility::Visible);
+	if (SuggestionWidgets.IsValidIndex(HighlightedSuggestionIndex))
+	{
+		Box_Suggestions->ScrollWidgetIntoView(SuggestionWidgets[HighlightedSuggestionIndex], false);
+	}
+}
+
+void UShooterChatInputBox::ClearSuggestions()
+{
+	for (UShooterChatSuggestionEntry* Entry : SuggestionWidgets)
+	{
+		if (Entry)
+		{
+			Entry->RemoveFromParent();
+		}
+	}
+
+	SuggestionWidgets.Reset();
+	CurrentSuggestions.Reset();
+	HighlightedSuggestionIndex = INDEX_NONE;
+
+	if (Box_Suggestions)
+	{
+		Box_Suggestions->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UShooterChatInputBox::MoveSuggestionHighlight(const int32 Delta)
+{
+	if (SuggestionWidgets.IsEmpty())
+	{
+		return;
+	}
+
+	if (SuggestionWidgets.IsValidIndex(HighlightedSuggestionIndex))
+	{
+		SuggestionWidgets[HighlightedSuggestionIndex]->SetHighlighted(false);
+	}
+
+	HighlightedSuggestionIndex =
+		(HighlightedSuggestionIndex + Delta + SuggestionWidgets.Num()) % SuggestionWidgets.Num();
+	SuggestionWidgets[HighlightedSuggestionIndex]->SetHighlighted(true);
+
+	if (Box_Suggestions)
+	{
+		Box_Suggestions->ScrollWidgetIntoView(SuggestionWidgets[HighlightedSuggestionIndex], true);
+	}
+}
+
+void UShooterChatInputBox::ApplySuggestedName(const FString& PlayerName)
+{
+	// "/w 이름"을 텍스트에 남기는 대신 채널을 바로 Whisper로 잠근다 - 입력창은 실제 메시지만
+	// 남도록 비워서, 이전에 쓰던 글자가 이어져 파싱이 꼬이는 일이 없게 한다.
+	if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+	{
+		PlayerController->RegisterWhisperTarget(PlayerName);
+	}
 
 	if (Text_Message)
 	{
 		Text_Message->SetText(FText::GetEmpty());
 	}
 
-	if (APlayerController* PlayerController = GetOwningPlayer())
+	ClearSuggestions();
+	SetChannel(EChatChannel::Whisper, PlayerName);
+
+	if (Text_Message)
 	{
-		PlayerController->SetInputMode(FInputModeGameOnly());
+		Text_Message->SetKeyboardFocus();
 	}
 }

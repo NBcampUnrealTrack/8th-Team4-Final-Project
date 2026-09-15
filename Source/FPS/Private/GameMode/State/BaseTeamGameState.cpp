@@ -133,6 +133,58 @@ void ABaseTeamGameState::ForEachChatRecipient(
 	}
 }
 
+AShooterPlayerController* ABaseTeamGameState::FindChatRecipientByName(const FString& PlayerName) const
+{
+	if (!HasAuthority())
+	{
+		return nullptr;
+	}
+
+	for (APlayerState* PlayerState : PlayerArray)
+	{
+		if (!IsValid(PlayerState) || !PlayerState->GetPlayerName().Equals(PlayerName, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+
+		return Cast<AShooterPlayerController>(PlayerState->GetPlayerController());
+	}
+
+	return nullptr;
+}
+
+TArray<FString> ABaseTeamGameState::GetPlayerNamesMatchingPrefix(
+	const FString& Prefix, const FString& ExcludeName) const
+{
+	TArray<FString> Results;
+	if (Prefix.IsEmpty())
+	{
+		return Results;
+	}
+
+	for (const APlayerState* PlayerState : PlayerArray)
+	{
+		if (!IsValid(PlayerState))
+		{
+			continue;
+		}
+
+		const FString Name = PlayerState->GetPlayerName();
+		if (!Name.StartsWith(Prefix, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+		if (!ExcludeName.IsEmpty() && Name.Equals(ExcludeName, ESearchCase::IgnoreCase))
+		{
+			continue;
+		}
+
+		Results.Add(Name);
+	}
+
+	return Results;
+}
+
 void ABaseTeamGameState::OnRep_TeamAScore()
 {
 	OnTeamScoreChanged.Broadcast(EGameTeam::TeamA, TeamAScore);

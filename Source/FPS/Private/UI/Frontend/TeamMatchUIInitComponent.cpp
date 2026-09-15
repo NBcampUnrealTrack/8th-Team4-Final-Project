@@ -13,6 +13,7 @@
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/InGame/Scoreboard/ShooterScoreboard.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
 
@@ -353,6 +354,38 @@ void UTeamMatchUIInitComponent::HideScoreboard()
 
 	RemoveScreenFromLayer(UITags::UI_Layer_GameMenu, ScoreboardInstance);
 	ScoreboardInstance = nullptr;
+}
+
+UShooterChatInputBox* UTeamMatchUIInitComponent::OpenChat()
+{
+	if (IsValid(ChatInputBoxInstance))
+	{
+		return ChatInputBoxInstance;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!ensure(UIManager) || !ensure(ChatInputBoxClass))
+	{
+		return nullptr;
+	}
+
+	// GameMenu 레이어는 스코어보드처럼 포커스를 가져가지 않는 오버레이용이라 Action Router가
+	// 리프 노드로 취급하지 않는다(입력 포커스가 안 걸림). 채팅은 실제 키보드 포커스가 필요해서
+	// InGameMenu/Options/AugmentSelect와 같은 Modal 레이어를 사용한다.
+	ChatInputBoxInstance = Cast<UShooterChatInputBox>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ChatInputBoxClass));
+	return ChatInputBoxInstance;
+}
+
+void UTeamMatchUIInitComponent::CloseChat()
+{
+	if (!IsValid(ChatInputBoxInstance))
+	{
+		return;
+	}
+
+	RemoveScreenFromLayer(UITags::UI_Layer_Modal, ChatInputBoxInstance);
+	ChatInputBoxInstance = nullptr;
 }
 
 void UTeamMatchUIInitComponent::ScheduleModalRefresh()

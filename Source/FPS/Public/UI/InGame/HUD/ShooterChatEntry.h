@@ -34,4 +34,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Chat")
 	FLinearColor MatchChannelColor = FLinearColor(1.0f, 0.55f, 0.05f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "Chat")
+	FLinearColor WhisperChannelColor = FLinearColor(0.75f, 0.3f, 0.9f);
 };

@@ -981,9 +981,92 @@ void AShooterPlayerController::ServerSendChatMessage_Implementation(const FStrin
 	});
 }
 
+void AShooterPlayerController::ServerSendWhisperMessage_Implementation(const FString& TargetName, const FString& MessageText)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastChatMessageServerTime >= 0.0 && Now - LastChatMessageServerTime < ShooterChatLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+
+	FString Trimmed = MessageText;
+	Trimmed.TrimStartAndEndInline();
+	if (Trimmed.IsEmpty())
+	{
+		return;
+	}
+	if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+	{
+		Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+	}
+
+	LastChatMessageServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
+	if (!IsValid(TeamGameState))
+	{
+		return;
+	}
+
+	AShooterPlayerController* TargetController = TeamGameState->FindChatRecipientByName(TargetName);
+	if (!TargetController)
+	{
+		// MVP: 닉네임을 못 찾아도 별도 에러 메시지는 없다. 채팅창은 이미 닫힌 뒤라 조용히 무시.
+		return;
+	}
+
+	FChatMessage ToReceiver;
+	ToReceiver.SenderName = PlayerState->GetPlayerName();
+	ToReceiver.MessageText = Trimmed;
+	ToReceiver.Channel = EChatChannel::Whisper;
+	ToReceiver.bIsOutgoingEcho = false;
+	TargetController->ClientReceiveChatMessage(ToReceiver);
+
+	// 보낸 사람 본인에게는 "-> 대상" 형태로 에코해 무엇을 누구에게 보냈는지 확인시켜준다.
+	FChatMessage Echo;
+	Echo.SenderName = FString::Printf(TEXT("-> %s"), *TargetName);
+	Echo.MessageText = Trimmed;
+	Echo.Channel = EChatChannel::Whisper;
+	Echo.bIsOutgoingEcho = true;
+	ClientReceiveChatMessage(Echo);
+}
+
 void AShooterPlayerController::ClientReceiveChatMessage_Implementation(const FChatMessage& Message)
 {
+	// 남이 나한테 보낸 진짜 귓속말(내 에코가 아님)이면, 오버워치처럼 자동으로 그 사람과의
+	// 채널로 전환하고 최근 귓말 큐(Tab 토글용)에도 등록한다.
+	if (Message.Channel == EChatChannel::Whisper && !Message.bIsOutgoingEcho)
+	{
+		RegisterWhisperTarget(Message.SenderName);
+
+		if (ChatInputWidget.IsValid())
+		{
+			ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+		}
+	}
+
 	OnChatMessageReceived.Broadcast(Message);
+}
+
+void AShooterPlayerController::RegisterWhisperTarget(const FString& PlayerName)
+{
+	RecentWhisperTargets.RemoveAll([&PlayerName](const FString& Existing)
+	{
+		return Existing.Equals(PlayerName, ESearchCase::IgnoreCase);
+	});
+	RecentWhisperTargets.Insert(PlayerName, 0);
+	if (RecentWhisperTargets.Num() > 2)
+	{
+		RecentWhisperTargets.SetNum(2);
+	}
+
+	CurrentChatChannel = EChatChannel::Whisper;
+	CurrentWhisperTarget = PlayerName;
 }
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
@@ -1322,13 +1405,26 @@ void AShooterPlayerController::Input_PushToTalkReleased()
 
 void AShooterPlayerController::Input_OpenChat()
 {
-	if (!IsLocalController() || bIsChatInputOpen || !ChatInputWidget.IsValid())
+	if (!IsLocalController() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent();
+	if (!UIInitComponent)
+	{
+		return;
+	}
+
+	UShooterChatInputBox* Widget = UIInitComponent->OpenChat();
+	if (!Widget)
 	{
 		return;
 	}
 
 	bIsChatInputOpen = true;
-	ChatInputWidget->OpenForChannel(CurrentChatChannel);
+	ChatInputWidget = Widget;
+	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
 }
 
 void AShooterPlayerController::CloseChatInput()
@@ -1339,16 +1435,12 @@ void AShooterPlayerController::CloseChatInput()
 	}
 
 	bIsChatInputOpen = false;
+	ChatInputWidget.Reset();
 
-	if (ChatInputWidget.IsValid())
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
-		ChatInputWidget->CloseAndClearText();
+		UIInitComponent->CloseChat();
 	}
-}
-
-void AShooterPlayerController::RegisterChatInputWidget(UShooterChatInputBox* InWidget)
-{
-	ChatInputWidget = InWidget;
 }
 
 void AShooterPlayerController::HandleChatSubmit(const FString& RawText)
@@ -1358,12 +1450,36 @@ void AShooterPlayerController::HandleChatSubmit(const FString& RawText)
 
 	if (!Trimmed.IsEmpty())
 	{
-		if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+		FString TargetName, WhisperMessage;
+		if (TryParseWhisperCommand(Trimmed, TargetName, WhisperMessage))
 		{
-			Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
-		}
+			if (WhisperMessage.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				WhisperMessage.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
 
-		ServerSendChatMessage(Trimmed, CurrentChatChannel);
+			RegisterWhisperTarget(TargetName);
+			ServerSendWhisperMessage(TargetName, WhisperMessage);
+		}
+		else if (CurrentChatChannel == EChatChannel::Whisper && !CurrentWhisperTarget.IsEmpty())
+		{
+			// Tab으로 귓말 채널을 골라놓은 상태에서 "/w 이름" 없이 바로 메시지만 친 경우.
+			if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
+
+			ServerSendWhisperMessage(CurrentWhisperTarget, Trimmed);
+		}
+		else
+		{
+			if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
+
+			ServerSendChatMessage(Trimmed, CurrentChatChannel);
+		}
 	}
 
 	CloseChatInput();
@@ -1374,6 +1490,34 @@ void AShooterPlayerController::HandleChatCancel()
 	CloseChatInput();
 }
 
+bool AShooterPlayerController::TryParseWhisperCommand(const FString& Text, FString& OutTargetName, FString& OutMessage)
+{
+	FString Remainder;
+	if (!ShooterChatLimits::StripWhisperCommandPrefix(Text, Remainder))
+	{
+		return false;
+	}
+
+	Remainder.TrimStartInline();
+
+	FString Name, Message;
+	if (!Remainder.Split(TEXT(" "), &Name, &Message))
+	{
+		return false;
+	}
+
+	Name.TrimEndInline();
+	Message.TrimStartInline();
+	if (Name.IsEmpty() || Message.IsEmpty())
+	{
+		return false;
+	}
+
+	OutTargetName = Name;
+	OutMessage = Message;
+	return true;
+}
+
 void AShooterPlayerController::HandleChatChannelSwitchRequested()
 {
 	if (!bIsChatInputOpen)
@@ -1381,11 +1525,45 @@ void AShooterPlayerController::HandleChatChannelSwitchRequested()
 		return;
 	}
 
-	CurrentChatChannel = CurrentChatChannel == EChatChannel::Team ? EChatChannel::Match : EChatChannel::Team;
+	// 순환 순서: Team -> Match -> 최근 귓말 대상(최대 2명, 최신순) -> Team ...
+	const int32 WhisperCount = RecentWhisperTargets.Num();
+	const int32 SlotCount = 2 + WhisperCount;
+
+	int32 CurrentIndex = 0;
+	if (CurrentChatChannel == EChatChannel::Match)
+	{
+		CurrentIndex = 1;
+	}
+	else if (CurrentChatChannel == EChatChannel::Whisper)
+	{
+		const int32 WhisperIndex = RecentWhisperTargets.IndexOfByPredicate([this](const FString& Name)
+		{
+			return Name.Equals(CurrentWhisperTarget, ESearchCase::IgnoreCase);
+		});
+		CurrentIndex = 2 + FMath::Max(WhisperIndex, 0);
+	}
+
+	const int32 NextIndex = (CurrentIndex + 1) % SlotCount;
+
+	if (NextIndex == 0)
+	{
+		CurrentChatChannel = EChatChannel::Team;
+		CurrentWhisperTarget.Empty();
+	}
+	else if (NextIndex == 1)
+	{
+		CurrentChatChannel = EChatChannel::Match;
+		CurrentWhisperTarget.Empty();
+	}
+	else
+	{
+		CurrentChatChannel = EChatChannel::Whisper;
+		CurrentWhisperTarget = RecentWhisperTargets[NextIndex - 2];
+	}
 
 	if (ChatInputWidget.IsValid())
 	{
-		ChatInputWidget->SetChannel(CurrentChatChannel);
+		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
 	}
 }
 

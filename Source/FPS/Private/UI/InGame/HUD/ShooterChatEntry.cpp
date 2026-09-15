@@ -5,8 +5,15 @@
 
 void UShooterChatEntry::SetData(const FChatMessage& InMessage)
 {
-	const FLinearColor ChannelColor =
-		InMessage.Channel == EChatChannel::Team ? TeamChannelColor : MatchChannelColor;
+	FLinearColor ChannelColor = MatchChannelColor;
+	if (InMessage.Channel == EChatChannel::Team)
+	{
+		ChannelColor = TeamChannelColor;
+	}
+	else if (InMessage.Channel == EChatChannel::Whisper)
+	{
+		ChannelColor = WhisperChannelColor;
+	}
 
 	if (Text_SenderName)
 	{

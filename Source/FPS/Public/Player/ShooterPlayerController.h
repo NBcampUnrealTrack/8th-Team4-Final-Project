@@ -164,9 +164,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
 	FOnChatMessageReceivedSignature OnChatMessageReceived;
 
-	// 채팅 입력창(UShooterChatInputBox)이 NativeConstruct에서 자기 자신을 등록한다.
-	void RegisterChatInputWidget(UShooterChatInputBox* InWidget);
-
 	UFUNCTION(BlueprintPure, Category = "Shooter|Chat")
 	bool IsChatInputOpen() const { return bIsChatInputOpen; }
 
@@ -178,6 +175,10 @@ public:
 
 	// 채팅 입력창이 Tab을 감지하면 호출한다. 입력 중이던 텍스트는 유지한 채 채널만 토글한다.
 	void HandleChatChannelSwitchRequested();
+
+	// 귓속말 자동완성에서 이름을 확정하는 즉시(전송 전) 호출한다. 채널을 바로 Whisper로 잠그고
+	// 최근 귓말 큐를 갱신해, 그 뒤로는 "/w 이름" 없이 메시지만 쳐도 이 사람에게 간다.
+	void RegisterWhisperTarget(const FString& PlayerName);
 
 protected:
 	virtual void BeginPlay() override;
@@ -226,6 +227,11 @@ protected:
 	// 레이트리밋/길이 재검증 후 GameState::ForEachChatRecipient로 팀/전체 필터링해 전달한다.
 	UFUNCTION(Server, Reliable)
 	void ServerSendChatMessage(const FString& MessageText, EChatChannel Channel);
+
+	// "/w 닉네임 메시지" 명령으로 전송. GameState::FindChatRecipientByName으로 대상을 찾아
+	// 그 사람에게만 전달하고, 보낸 사람에게는 "-> 닉네임" 형태로 에코해 자기가 보낸 걸 확인시켜준다.
+	UFUNCTION(Server, Reliable)
+	void ServerSendWhisperMessage(const FString& TargetName, const FString& MessageText);
 
 	UFUNCTION(Client, Reliable)
 	void ClientReceiveChatMessage(const FChatMessage& Message);
@@ -307,6 +313,16 @@ private:
 	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
 	bool bIsChatInputOpen = false;
 	EChatChannel CurrentChatChannel = EChatChannel::Team;
+
+	// CurrentChatChannel==Whisper일 때 대상 이름. 그 외엔 비어있다.
+	FString CurrentWhisperTarget;
+
+	// 최근 귓속말 상대 큐. 앞이 최신. 최대 2명 - Tab 채널 토글에 Team/Match 다음으로 순서대로 들어간다.
+	// 보내거나(HandleChatSubmit) 받으면(ClientReceiveChatMessage) 갱신된다.
+	TArray<FString> RecentWhisperTargets;
+
+	// "/w 닉네임 메시지" 형태면 닉네임/메시지로 분리해 true, 아니면 false.
+	static bool TryParseWhisperCommand(const FString& Text, FString& OutTargetName, FString& OutMessage);
 
 	// 서버 전용 레이트리밋 상태. 리플리케이트하지 않는다.
 	double LastChatMessageServerTime = -1.0;
