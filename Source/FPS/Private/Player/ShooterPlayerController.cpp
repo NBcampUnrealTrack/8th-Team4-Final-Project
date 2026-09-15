@@ -785,6 +785,56 @@ void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 	HideSpectatorWidget();
 }
 
+void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
+{
+	if (bKillcamViewTargetSuppressed)
+	{
+		const bool bUsableCandidate = NewViewTarget != this
+			&& UKillcamReplaySubsystem::IsLiveWorldActor(NewViewTarget);
+		if (bUsableCandidate)
+		{
+			PendingViewTarget = NewViewTarget;
+			PendingViewTargetTransitionParams = TransitionParams;
+		}
+		return;
+	}
+
+	Super::SetViewTarget(NewViewTarget, TransitionParams);
+}
+
+void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
+{
+	if (bKillcamViewTargetSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bKillcamViewTargetSuppressed = bSuppressed;
+	if (bSuppressed)
+	{
+		PendingViewTarget.Reset();
+		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	}
+}
+
+void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
+{
+	if (!IsValid(KillcamCamera))
+	{
+		return;
+	}
+
+	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+}
+
+AActor* AShooterPlayerController::ConsumePendingViewTarget()
+{
+	AActor* Pending = PendingViewTarget.Get();
+	PendingViewTarget.Reset();
+	PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	return Pending;
+}
+
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())

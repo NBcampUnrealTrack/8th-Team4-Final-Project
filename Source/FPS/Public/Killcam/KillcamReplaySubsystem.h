@@ -7,6 +7,7 @@
 #include "KillcamReplaySubsystem.generated.h"
 
 class ABaseTeamGameState;
+class AKillcamCameraActor;
 class AShooterPlayerController;
 class UDemoNetDriver;
 class UWorld;
@@ -19,6 +20,8 @@ class FPS_API UKillcamReplaySubsystem : public ULocalPlayerSubsystem
 
 public:
 	virtual void Deinitialize() override;
+
+	static bool IsLiveWorldActor(const AActor* Actor);
 
 	void SetUpForWorld(UWorld* World);
 	void ReleaseWorld(UWorld* World);
@@ -34,6 +37,11 @@ private:
 	void HandlePlaybackReady(bool bWasSuccessful);
 	bool ShowPlayback();
 	void StopPlayback();
+
+	AKillcamCameraActor* SpawnPlaybackCamera(AActor* KillerActor);
+	void DestroyPlaybackCamera();
+
+	AActor* ResolveRestoreViewTarget(AShooterPlayerController* PlayerController) const;
 	void CleanPlaybackWorld();
 	void RestoreLiveWorld();
 	bool IsSupportedWorld(const UWorld* World) const;
@@ -47,8 +55,14 @@ private:
 	UPROPERTY(Config)
 	TSoftClassPtr<UKillcamWidget> WidgetClass;
 
+	UPROPERTY(Config)
+	TSoftClassPtr<AKillcamCameraActor> CameraClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UKillcamWidget> PlaybackWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AKillcamCameraActor> PlaybackCamera;
 
 	UPROPERTY(Transient)
 	FShooterEliminationEvent PlaybackElimination;

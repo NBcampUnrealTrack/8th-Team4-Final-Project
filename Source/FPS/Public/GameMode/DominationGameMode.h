@@ -112,7 +112,7 @@ private:
 	float PointTransitionDuration = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
-	float RespawnDelay = 5.0f;
+	float RespawnDelay = 8.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
 	float RespawnProtectionDuration = 2.0f;
