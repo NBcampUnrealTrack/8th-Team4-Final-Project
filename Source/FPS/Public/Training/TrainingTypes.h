@@ -109,6 +109,7 @@ namespace TrainingRules
 {
     inline constexpr float MovementRadiusCentimeters = 300.0f;
     inline constexpr float TargetIntervalSeconds = 2.0f;
+    inline constexpr float TargetMinIntervalSeconds = 1.0f;
     inline constexpr float TargetDurationSeconds = 60.0f;
     inline constexpr float CombatIntervalSeconds = 5.0f;
     inline constexpr float TargetHealth = 1.0f;
@@ -120,6 +121,7 @@ namespace TrainingRules
     FPS_API bool ResolveDistanceBand(ETrainingDistancePreset Preset,
         float CustomMeters, FTrainingDistanceBand& OutBand);
     FPS_API int32 RemainingWholeSeconds(float Duration, float Elapsed);
+    FPS_API float GetTargetSpawnIntervalSeconds(float Elapsed, float Duration);
     FPS_API bool CanSpawnCombatAI(int32 LivingCount);
     FPS_API bool IsRunningState(ETrainingSessionState State);
     FPS_API float FeedbackOpacity(float Elapsed, float Duration, float FadeIn, float FadeOut);

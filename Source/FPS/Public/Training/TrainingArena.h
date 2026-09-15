@@ -41,6 +41,10 @@ public:
     bool FindStrafeDestination(const FVector& CurrentPosition, const FTrainingDistanceBand& Band,
         const FNavAgentProperties& AgentProperties, bool bClockwise, FVector& OutNavPosition) const;
 
+    bool FindBotStepDestination(const FVector& CurrentPosition, const FTrainingDistanceBand& Band,
+        const FNavAgentProperties& AgentProperties, float SignedArcCentimeters,
+        float RadialStepCentimeters, FVector& OutNavPosition) const;
+
     void SetSessionState(ETrainingSessionState NewState);
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Rules", meta = (ClampMin = "0.0", Units = "s"))

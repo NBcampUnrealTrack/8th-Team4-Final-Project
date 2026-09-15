@@ -1,11 +1,8 @@
 #include "Training/UI/TrainingStartFeedbackWidget.h"
 
 #include "Blueprint/WidgetTree.h"
-#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Training/TrainingTypes.h"
@@ -123,7 +120,6 @@ void UTrainingStartFeedbackWidget::UpdatePulse()
         if (Digit != LastCountdownDigit)
         {
             LastCountdownDigit = Digit;
-            // Old child WBPs may have serialized the fixed "3초..." text. Use a live format
             const FText Format = CountdownText.ToString().Contains(TEXT("{Seconds}"))
                 ? CountdownText : LOCTEXT("CountdownLive", "{Seconds}초 뒤에 시작합니다");
             FFormatNamedArguments Args;

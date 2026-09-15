@@ -132,29 +132,53 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UImage> Img_CombatSelected;
 
-    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UButton> Btn_Augments;
-    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_AugmentSummary;
-    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidgetSwitcher> Switch_TrainingPages;
-    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTrainingAugmentSelectionWidget> AugmentSelection;
-    UPROPERTY(Transient) TArray<FAugmentInventoryEntry> AppliedAugments;
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UButton> Btn_Augments;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> Txt_AugmentSummary;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UWidgetSwitcher> Switch_TrainingPages;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UTrainingAugmentSelectionWidget> AugmentSelection;
+
+    UPROPERTY(Transient)
+    TArray<FAugmentInventoryEntry> AppliedAugments;
     bool bChoosingAugments = false;
     void HandleAugmentApply(const TArray<FPrimaryAssetId>& Selection);
     void HandleAugmentBack();
     void RefreshAugmentSummary();
 
-    void BindGeneratedControls();
-    void UnbindGeneratedControls();
-    void RefreshGeneratedControls();
-    void SelectGeneratedDistance(ETrainingDistancePreset NewPreset);
+    void BindControls();
+    void UnbindControls();
+    void RefreshControls();
+    void SelectDistance(ETrainingDistancePreset NewPreset);
 
-    UFUNCTION() void HandleGeneratedPrimary();
-    UFUNCTION() void HandleGeneratedTarget();
-    UFUNCTION() void HandleGeneratedCombat();
-    UFUNCTION() void HandleGenerated10();
-    UFUNCTION() void HandleGenerated20();
-    UFUNCTION() void HandleGenerated30();
-    UFUNCTION() void HandleGeneratedCustom();
-    UFUNCTION() void HandleGeneratedCustomValue(float NewValue);
+    UFUNCTION()
+    void HandleGeneratedPrimary();
+
+    UFUNCTION()
+    void HandleGeneratedTarget();
+
+    UFUNCTION()
+    void HandleGeneratedCombat();
+
+    UFUNCTION()
+    void HandleGenerated10();
+
+    UFUNCTION()
+    void HandleGenerated20();
+
+    UFUNCTION()
+    void HandleGenerated30();
+
+    UFUNCTION()
+    void HandleGeneratedCustom();
+
+    UFUNCTION()
+    void HandleGeneratedCustomValue(float NewValue);
 
     ETrainingMode SelectedMode = ETrainingMode::TargetAcquisition;
     ETrainingDistancePreset SelectedPreset = ETrainingDistancePreset::TwentyMeters;

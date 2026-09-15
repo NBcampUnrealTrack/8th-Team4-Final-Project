@@ -73,7 +73,7 @@ void UTrainingDialogWidget::HandleAugmentBack()
     bChoosingAugments = false;
     if (AugmentSelection) { AugmentSelection->EndSelection(); }
     if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(0); }
-    RefreshGeneratedControls();
+    RefreshControls();
     if (Btn_Augments) { Btn_Augments->SetUserFocus(GetOwningPlayer()); }
 }
 

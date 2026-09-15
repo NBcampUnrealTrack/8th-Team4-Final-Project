@@ -52,6 +52,12 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
     return true;
 }
 
+float TrainingRules::GetTargetSpawnIntervalSeconds(const float Elapsed, const float Duration)
+{
+    const float Progress = Duration > 0.0f ? FMath::Clamp(Elapsed / Duration, 0.0f, 1.0f) : 0.0f;
+    return FMath::Lerp(TargetIntervalSeconds, TargetMinIntervalSeconds, Progress);
+}
+
 bool TrainingRules::CanSpawnCombatAI(const int32 LivingCount)
 {
     return LivingCount >= 0 && LivingCount < MaxLivingCombatAI;

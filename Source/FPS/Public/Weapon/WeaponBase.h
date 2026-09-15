@@ -47,6 +47,20 @@ public:
 	bool FireMelee(bool bHeavyAttack = false);
 	bool FireRanged(float ClientFireServerTime);
 
+	// 서버가 탄약 정책을 결정하고, 클라이언트는 복제된 정책으로 재장전을 예측한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	void SetAmmoPolicy(EWeaponAmmoPolicy NewAmmoPolicy);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	EWeaponAmmoPolicy GetAmmoPolicy() const { return AmmoPolicy; }
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool HasInfiniteReserveAmmo() const { return bUsesAmmo && AmmoPolicy == EWeaponAmmoPolicy::InfiniteReserve; }
+
+	// 재장전 가능 여부는 탄약 정책을 소유한 무기에서만 판단한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool CanReload() const;
+
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void StartReload();
@@ -182,7 +196,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
-	// 탄창을 채울 때 소모되는 예비(보유) 탄약. bUsesAmmo가 false인 무기(칼 등)는 항상 0이다.
+	// 실제 예비탄 수량이다. 무한 여부는 HasInfiniteReserveAmmo()로 따로 조회한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentReserveAmmo() const { return CurrentReserveAmmo; }
 
@@ -412,8 +426,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MaxReserveAmmo = 90;
 
-	// 현재 보유 중인 예비 탄약. 재장전 시 부족분만큼 소모되고(탄창을 다 못 채워도 재장전은 진행됨),
-	// 0이면 재장전 자체가 불가능하다(StartReload/GA_Reload::CanActivateAbility가 확인).
+	// 정책은 런타임 인스턴스에만 적용한다. 무기 BP와 다른 게임모드의 기본값은 바꾸지 않는다.
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
+	EWeaponAmmoPolicy AmmoPolicy = EWeaponAmmoPolicy::Standard;
+
+	// 일반 정책에서만 재장전 부족분을 소모한다. 무한 예비탄 정책에서는 수량을 보존한다.
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
 	int32 CurrentReserveAmmo = 90;
 

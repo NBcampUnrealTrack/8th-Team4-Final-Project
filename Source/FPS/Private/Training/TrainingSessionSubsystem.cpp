@@ -130,11 +130,6 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
 
     GetWorld()->GetTimerManager().SetTimer(CountdownTimer, this, &ThisClass::BeginActiveSession,
         TrainingRules::CountdownSeconds, false);
-    UE_LOG(LogTemp, Log,
-        TEXT("[Training] Session %d: countdown %.1fs, mode=%s, band=%.0f-%.0fcm. No bots spawn during countdown."),
-        SessionId, TrainingRules::CountdownSeconds,
-        Mode == ETrainingMode::TargetAcquisition ? TEXT("TargetAcquisition") : TEXT("CombatResponse"),
-        Band.MinCentimeters, Band.MaxCentimeters);
     NotifyParticipant(ETrainingFeedbackPhase::Countdown, GetWorld()->GetTimeSeconds());
     return true;
 }
@@ -159,13 +154,14 @@ void UTrainingSessionSubsystem::BeginActiveSession()
         ShotResolvedHandle = ShotResolver->OnServerShotResolved.AddUObject(this, &ThisClass::HandleShotResolved);
     }
     Arena->SetSessionState(State);
-    UE_LOG(LogTemp, Log, TEXT("[Training] Session %d: START. Spawn timers begin now."), SessionId);
     NotifyParticipant(ETrainingFeedbackPhase::Started, SessionStartSeconds);
 
     FTimerManager& Timers = GetWorld()->GetTimerManager();
-    const bool bTargets = State == ETrainingSessionState::TargetAcquisitionActive;
-    Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
-        bTargets ? TrainingRules::TargetIntervalSeconds : TrainingRules::CombatIntervalSeconds, true);
+    if (State == ETrainingSessionState::CombatResponseActive)
+    {
+        Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
+            TrainingRules::CombatIntervalSeconds, true);
+    }
     if (SessionDurationSeconds > 0.0f)
     {
         Timers.SetTimer(DurationTimer, this, &ThisClass::EndSession, SessionDurationSeconds, false);
@@ -184,11 +180,19 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
         StopSession(true);
         return;
     }
-    if (SessionDurationSeconds > 0.0f
-        && GetWorld()->GetTimeSeconds() - SessionStartSeconds >= SessionDurationSeconds)
+    const double ElapsedSeconds = GetWorld()->GetTimeSeconds() - SessionStartSeconds;
+    if (SessionDurationSeconds > 0.0f && ElapsedSeconds >= SessionDurationSeconds)
     {
         EndSession();
         return;
+    }
+    if (State == ETrainingSessionState::TargetAcquisitionActive)
+    {
+        const float SpawnInterval = TrainingRules::GetTargetSpawnIntervalSeconds(
+            static_cast<float>(ElapsedSeconds), SessionDurationSeconds);
+        // 생성 콜백에서 세션이 끝나도 함께 취소되도록 다음 생성을 먼저 예약한다.
+        GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
+            SpawnInterval, false);
     }
     ActiveScenario->SpawnNext();
 }
@@ -334,8 +338,6 @@ void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
     }
     if (State != ETrainingSessionState::Idle)
     {
-        UE_LOG(LogTemp, Log, TEXT("[Training] Session %d: stopped (immediate cleanup=%s)."),
-            SessionId, bImmediate ? TEXT("true") : TEXT("false"));
         NotifyParticipant(ETrainingFeedbackPhase::Stopped, 0.0);
     }
     if (ActiveScenario)

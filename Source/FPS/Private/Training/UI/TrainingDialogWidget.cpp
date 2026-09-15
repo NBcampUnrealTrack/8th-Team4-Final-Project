@@ -32,7 +32,7 @@ void UTrainingDialogWidget::InitializeDialog(UTrainingPlayerComponent& InBridge,
     }
     SetRequestPending(false);
     OnDialogPrepared();
-    RefreshGeneratedControls();
+    RefreshControls();
     InBridge.ApplyButtonSounds(*this);
 }
 
@@ -65,7 +65,7 @@ void UTrainingDialogWidget::SetRequestPending(const bool bPending)
         Txt_Error->SetText(FText::GetEmpty());
         Txt_Error->SetVisibility(ESlateVisibility::Collapsed);
     }
-    RefreshGeneratedControls();
+    RefreshControls();
     if (AugmentSelection && bChoosingAugments) { AugmentSelection->SetPending(bPending); }
     OnRequestPendingChanged(bPending);
 }
@@ -117,7 +117,7 @@ void UTrainingDialogWidget::CancelDialog()
 void UTrainingDialogWidget::NativeDestruct()
 {
     if (AugmentSelection) { AugmentSelection->EndSelection(); }
-    UnbindGeneratedControls();
+    UnbindControls();
     if (Bridge.IsValid())
     {
         Bridge->NotifyDialogRemoved(*this);
@@ -147,12 +147,15 @@ void UTrainingDialogWidget::NativeConstruct()
     {
         DialogKind = GeneratedDialogKind;
     }
-    BindGeneratedControls();
+    BindControls();
     if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(bChoosingAugments ? 1 : 0); }
     if (UTextBlock* TargetDescription = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Description"))))
     {
-        TargetDescription->SetText(LOCTEXT("StationaryTargetDescription",
-            "Stationary targets. One new target every 2 seconds.\nOne hit removes a target. 60-second session."));
+        TargetDescription->SetText(FText::Format(LOCTEXT("LinearTargetDescription",
+            "Stationary targets. Spawn interval: {0}s to {1}s.\nOne hit removes a target. {2}-second session."),
+            FText::AsNumber(TrainingRules::TargetIntervalSeconds),
+            FText::AsNumber(TrainingRules::TargetMinIntervalSeconds),
+            FText::AsNumber(TrainingRules::TargetDurationSeconds)));
     }
     if (UTextBlock* TargetFooter = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Foot"))))
     {
@@ -162,7 +165,7 @@ void UTrainingDialogWidget::NativeConstruct()
     {
         SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), 5.0f, 50.0f);
     }
-    RefreshGeneratedControls();
+    RefreshControls();
 }
 
 UWidget* UTrainingDialogWidget::NativeGetDesiredFocusTarget() const
@@ -182,7 +185,7 @@ UWidget* UTrainingDialogWidget::NativeGetDesiredFocusTarget() const
     return Super::NativeGetDesiredFocusTarget();
 }
 
-void UTrainingDialogWidget::BindGeneratedControls()
+void UTrainingDialogWidget::BindControls()
 {
     if (!bAutoBindGeneratedUI)
     {
@@ -208,7 +211,7 @@ void UTrainingDialogWidget::BindGeneratedControls()
     if (Spin_CustomMeters) Spin_CustomMeters->OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleGeneratedCustomValue);
 }
 
-void UTrainingDialogWidget::UnbindGeneratedControls()
+void UTrainingDialogWidget::UnbindControls()
 {
     if (!bAutoBindGeneratedUI)
     {
@@ -232,7 +235,7 @@ void UTrainingDialogWidget::UnbindGeneratedControls()
     if (Spin_CustomMeters) Spin_CustomMeters->OnValueChanged.RemoveDynamic(this, &ThisClass::HandleGeneratedCustomValue);
 }
 
-void UTrainingDialogWidget::RefreshGeneratedControls()
+void UTrainingDialogWidget::RefreshControls()
 {
     if (!bAutoBindGeneratedUI)
     {
@@ -289,7 +292,12 @@ void UTrainingDialogWidget::RefreshGeneratedControls()
     if (Txt_SessionHint)
     {
         Txt_SessionHint->SetText(SelectedMode == ETrainingMode::TargetAcquisition
-            ? LOCTEXT("TargetHint", "3s countdown  /  60s session  /  One target every 2s")
+            ? FText::Format(LOCTEXT("TargetHintLinearSpawn",
+                "{0}s countdown  /  {1}s session  /  Spawns: {2}s to {3}s"),
+                FText::AsNumber(TrainingRules::CountdownSeconds),
+                FText::AsNumber(TrainingRules::TargetDurationSeconds),
+                FText::AsNumber(TrainingRules::TargetIntervalSeconds),
+                FText::AsNumber(TrainingRules::TargetMinIntervalSeconds))
             : LOCTEXT("CombatHint", "3s countdown  /  One AI every 5s  /  Max 10 alive"));
     }
 }
@@ -311,33 +319,33 @@ void UTrainingDialogWidget::HandleGeneratedTarget()
 {
     if (bRequestPending) return;
     SelectedMode = ETrainingMode::TargetAcquisition;
-    RefreshGeneratedControls();
+    RefreshControls();
 }
 
 void UTrainingDialogWidget::HandleGeneratedCombat()
 {
     if (bRequestPending) return;
     SelectedMode = ETrainingMode::CombatResponse;
-    RefreshGeneratedControls();
+    RefreshControls();
 }
 
-void UTrainingDialogWidget::SelectGeneratedDistance(const ETrainingDistancePreset NewPreset)
+void UTrainingDialogWidget::SelectDistance(const ETrainingDistancePreset NewPreset)
 {
     if (bRequestPending) return;
     SelectedPreset = NewPreset;
-    RefreshGeneratedControls();
+    RefreshControls();
 }
 
-void UTrainingDialogWidget::HandleGenerated10() { SelectGeneratedDistance(ETrainingDistancePreset::TenMeters); }
-void UTrainingDialogWidget::HandleGenerated20() { SelectGeneratedDistance(ETrainingDistancePreset::TwentyMeters); }
-void UTrainingDialogWidget::HandleGenerated30() { SelectGeneratedDistance(ETrainingDistancePreset::ThirtyMeters); }
-void UTrainingDialogWidget::HandleGeneratedCustom() { SelectGeneratedDistance(ETrainingDistancePreset::Custom); }
+void UTrainingDialogWidget::HandleGenerated10() { SelectDistance(ETrainingDistancePreset::TenMeters); }
+void UTrainingDialogWidget::HandleGenerated20() { SelectDistance(ETrainingDistancePreset::TwentyMeters); }
+void UTrainingDialogWidget::HandleGenerated30() { SelectDistance(ETrainingDistancePreset::ThirtyMeters); }
+void UTrainingDialogWidget::HandleGeneratedCustom() { SelectDistance(ETrainingDistancePreset::Custom); }
 
 void UTrainingDialogWidget::HandleGeneratedCustomValue(const float NewValue)
 {
     if (bRequestPending || !FMath::IsFinite(NewValue)) return;
     SelectedCustomMeters = FMath::Clamp(NewValue, 5.0f, 50.0f);
-    RefreshGeneratedControls();
+    RefreshControls();
 }
 
 #undef LOCTEXT_NAMESPACE

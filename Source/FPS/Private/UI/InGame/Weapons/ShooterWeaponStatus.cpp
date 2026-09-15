@@ -34,9 +34,11 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
 	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
 	const int32 ReserveAmmo = Weapon->GetCurrentReserveAmmo();
+	const bool bInfiniteReserveAmmo = Weapon->HasInfiniteReserveAmmo();
 
-	// 값이 달라질때만 갱신
-	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo)
+	// 수량이 같아도 정책이 바뀌면 무한 표시를 갱신한다.
+	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo
+		&& bCachedInfiniteReserveAmmo == bInfiniteReserveAmmo)
 	{
 		return;
 	}
@@ -44,6 +46,7 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	CachedAmmo = CurrentAmmo;
 	CachedMaxAmmo = MaxAmmo;
 	CachedReserveAmmo = ReserveAmmo;
+	bCachedInfiniteReserveAmmo = bInfiniteReserveAmmo;
 
 	RefreshAmmo(Weapon);
 }
@@ -73,6 +76,10 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	{
 		Text_Ammo->SetText(FText::GetEmpty());
 		Text_MaxAmmo->SetText(FText::GetEmpty());
+		if (IsValid(Text_ReserveAmmo))
+		{
+			Text_ReserveAmmo->SetText(FText::GetEmpty());
+		}
 		return;
 	}
 
@@ -87,6 +94,7 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	CachedAmmo = INDEX_NONE;
 	CachedMaxAmmo = INDEX_NONE;
 	CachedReserveAmmo = INDEX_NONE;
+	bCachedInfiniteReserveAmmo = false;
 	
 	if (!WeaponDisplaySet)
 	{
@@ -112,11 +120,14 @@ void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 	// '/' 앞: 현재 탄창 잔탄. 장전하면 GetCurrentAmmo()가 (증강 반영된) 탄창 최대치까지 차서
 	// 자동으로 최대값으로 표시된다. 탄창 증강이 켜지면 EffectiveMagazineSize가 커지므로 이 값도 함께 올라간다.
 	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
-	// '/' 뒤: 탄창 최대치가 아니라 예비탄창(보유)에 남은 총알 수를 표시한다.
-	Text_MaxAmmo->SetText(FText::AsNumber(Weapon->GetCurrentReserveAmmo()));
+	// 무한 기호는 표시용이다. 실제 예비탄 수량을 임의의 큰 값으로 바꾸지 않는다.
+	const FText ReserveAmmoText = Weapon->HasInfiniteReserveAmmo()
+		? FText::AsCultureInvariant(TEXT("\u221E"))
+		: FText::AsNumber(Weapon->GetCurrentReserveAmmo());
+	Text_MaxAmmo->SetText(ReserveAmmoText);
 	if (IsValid(Text_ReserveAmmo))
 	{
-		Text_ReserveAmmo->SetText(FText::AsNumber(Weapon->GetCurrentReserveAmmo()));
+		Text_ReserveAmmo->SetText(ReserveAmmoText);
 	}
 
 	EShooterHUDVisualTypes Type = EShooterHUDVisualTypes::Normal;

@@ -139,8 +139,6 @@ void UCombatResponseScenario::SpawnCombatBot()
         return;
     }
     TrackActor(*SpawnedBot);
-    UE_LOG(LogTemp, Log, TEXT("[Training] %s spawned: %s at %s"),
-        ModeLabel, *GetNameSafe(SpawnedBot), *SpawnedBot->GetActorLocation().ToCompactString());
 }
 
 void UTargetAcquisitionScenario::SpawnNext()
@@ -189,8 +187,6 @@ void UTargetAcquisitionScenario::SpawnNext()
         return;
     }
     TrackActor(*SpawnedTarget);
-    UE_LOG(LogTemp, Log, TEXT("[Training] Stationary target spawned: %s at %s"),
-        *GetNameSafe(SpawnedTarget), *FinalPosition.ToCompactString());
 }
 
 int32 UCombatResponseScenario::GetLivingAICount() const

@@ -197,6 +197,40 @@ bool ATrainingArena::FindStrafeDestination(const FVector& CurrentPosition,
     return false;
 }
 
+bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
+    const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
+    const float SignedArcCentimeters, const float RadialStepCentimeters, FVector& OutNavPosition) const
+{
+    if (!FMath::IsFinite(SignedArcCentimeters) || !FMath::IsFinite(RadialStepCentimeters)
+        || Band.MaxCentimeters <= Band.MinCentimeters)
+    {
+        return false;
+    }
+    const FVector ArenaCenter = GetCenterLocation();
+    const FVector Radial = (CurrentPosition - ArenaCenter).GetSafeNormal2D();
+    if (Radial.IsNearlyZero())
+    {
+        return false;
+    }
+    const float CurrentRadius = static_cast<float>(FVector::Dist2D(CurrentPosition, ArenaCenter));
+    const float Margin = FMath::Min(25.0f, (Band.MaxCentimeters - Band.MinCentimeters) * 0.25f);
+    for (int32 Attempt = 0; Attempt < 4; ++Attempt)
+    {
+        const float StepScale = 1.0f - 0.2f * Attempt;
+        const float Radius = FMath::Clamp(CurrentRadius + RadialStepCentimeters * StepScale,
+            Band.MinCentimeters + Margin, Band.MaxCentimeters - Margin);
+        const float Angle = FMath::Clamp(FMath::RadiansToDegrees(
+            SignedArcCentimeters * StepScale / FMath::Max(1.0f, Radius)), -12.0f, 12.0f);
+        const FVector Candidate = ArenaCenter + Radial.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
+        if (ProjectNavPosition(Candidate, Band, AgentProperties, OutNavPosition)
+            && Band.ContainsSegment(ArenaCenter, CurrentPosition, OutNavPosition))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ATrainingArena::SetSessionState(const ETrainingSessionState NewState)
 {
     if (HasAuthority())

@@ -2,6 +2,7 @@
 
 #include "Engine/World.h"
 #include "Augment/AugmentDraftProfile.h"
+#include "Combat/CombatComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/Manager/AugmentDraftManager.h"
 #include "GameMode/Manager/DominationLoadoutManager.h"
@@ -156,6 +157,10 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
     if (!IsValid(CombatPawn) || CombatPawn->GetController() != WaitingPlayer) { return false; }
     ClassState->ServerRespawnReset();
     if (!LoadoutManager->ApplyCombatClassLoadout(ClassState, CombatPawn)) { return false; }
+
+    UCombatComponent* Combat = CombatPawn->FindComponentByClass<UCombatComponent>();
+    if (!IsValid(Combat)) { return false; }
+    Combat->SetWeaponAmmoPolicy(EWeaponAmmoPolicy::InfiniteReserve);
 
     WaitingPlayer->ChangeState(NAME_Playing);
     WaitingPlayer->ClientGotoState(NAME_Playing);
