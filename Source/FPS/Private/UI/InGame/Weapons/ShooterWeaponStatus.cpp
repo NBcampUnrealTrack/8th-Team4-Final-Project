@@ -7,6 +7,7 @@
 #include "Components/Border.h"
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/Pawn.h"
+#include "Player/TrainingPlayerController.h"
 
 void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
@@ -34,11 +35,7 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
 	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
 	const int32 ReserveAmmo = Weapon->GetCurrentReserveAmmo();
-	const bool bInfiniteReserveAmmo = Weapon->HasInfiniteReserveAmmo();
-
-	// 수량이 같아도 정책이 바뀌면 무한 표시를 갱신한다.
-	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo
-		&& bCachedInfiniteReserveAmmo == bInfiniteReserveAmmo)
+	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo)
 	{
 		return;
 	}
@@ -46,7 +43,6 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	CachedAmmo = CurrentAmmo;
 	CachedMaxAmmo = MaxAmmo;
 	CachedReserveAmmo = ReserveAmmo;
-	bCachedInfiniteReserveAmmo = bInfiniteReserveAmmo;
 
 	RefreshAmmo(Weapon);
 }
@@ -94,7 +90,6 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	CachedAmmo = INDEX_NONE;
 	CachedMaxAmmo = INDEX_NONE;
 	CachedReserveAmmo = INDEX_NONE;
-	bCachedInfiniteReserveAmmo = false;
 	
 	if (!WeaponDisplaySet)
 	{
@@ -117,12 +112,17 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 
 void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 {
-	// '/' 앞: 현재 탄창 잔탄. 장전하면 GetCurrentAmmo()가 (증강 반영된) 탄창 최대치까지 차서
-	// 자동으로 최대값으로 표시된다. 탄창 증강이 켜지면 EffectiveMagazineSize가 커지므로 이 값도 함께 올라간다.
-	Text_Ammo->SetText(FText::AsNumber(Weapon->GetCurrentAmmo()));
-	// 무한 기호는 표시용이다. 실제 예비탄 수량을 임의의 큰 값으로 바꾸지 않는다.
-	const FText ReserveAmmoText = Weapon->HasInfiniteReserveAmmo()
-		? FText::AsCultureInvariant(TEXT("\u221E"))
+	const bool bTrainingMode = Cast<ATrainingPlayerController>(GetOwningPlayer()) != nullptr;
+	const FText InfiniteAmmoText = FText::AsCultureInvariant(TEXT("\x221E"));
+
+	// Training에서는 실제 탄창/재장전 로직은 그대로 두고 HUD 숫자만 무한으로 표시한다.
+	// 맵 이름이나 GAS 상태에 의존하지 않고 Training 전용 PlayerController로 모드를 판별한다.
+	Text_Ammo->SetText(bTrainingMode
+		? InfiniteAmmoText
+		: FText::AsNumber(Weapon->GetCurrentAmmo()));
+
+	const FText ReserveAmmoText = bTrainingMode
+		? InfiniteAmmoText
 		: FText::AsNumber(Weapon->GetCurrentReserveAmmo());
 	Text_MaxAmmo->SetText(ReserveAmmoText);
 	if (IsValid(Text_ReserveAmmo))
