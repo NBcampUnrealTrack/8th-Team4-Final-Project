@@ -131,6 +131,17 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "UI")
 	float SpreadRadiusScale = 1.f;
 
+	// Top/Bottom 이미지가 Left/Right와 같은(회전된) 브러시를 쓸 때, 박스 크기 차이로 중심에서
+	// 더 멀어 보이는 것을 보정한다. 1.0이면 Left/Right와 동일한 반경, 낮출수록 위/아래가 중앙에
+	// 더 가깝게 붙는다.
+	UPROPERTY(EditAnywhere, Category = "UI", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float VerticalSpreadRadiusScale = 0.75f;
+
+	// Top/Bottom 둘을 하나의 축으로 보고 한꺼번에 미세 이동시키는 오프셋(픽셀). Left/Right 기준선과
+	// 안 맞을 때 여기서 X/Y를 같이 조절한다. (+X: 오른쪽, +Y: 아래쪽)
+	UPROPERTY(EditAnywhere, Category = "UI")
+	FVector2D VerticalGroupOffset = FVector2D(4.f, 4.f);
+
 	// Anim_HitMarker가 없을 때 히트마커를 표시하는 시간
 	UPROPERTY(EditAnywhere, Category = "UI")
 	float HitMarkerDuration = 0.4f;
