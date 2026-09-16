@@ -152,6 +152,7 @@ void ARogueUtilityHoldCueNotify::AttachHeldMesh(AActor* Target, const FGameplayC
 
 	HeldMesh->SetRelativeLocation(bFirstPerson ? Visual.GripOffsetLocation1P : Visual.GripOffsetLocation3P);
 	HeldMesh->SetRelativeRotation(bFirstPerson ? Visual.GripOffsetRotation1P : Visual.GripOffsetRotation3P);
+	HeldMesh->SetRelativeScale3D(bFirstPerson ? Visual.GripScale1P : Visual.GripScale3P);
 	HeldMesh->SetVisibility(true);
 }
 
