@@ -1,6 +1,6 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "GAS/RogueCascadeCueNotify.h"
+#include "GAS/CueNotify/RogueCascadeCueNotify.h"
 
 #include "Components/SceneComponent.h"
 #include "Kismet/GameplayStatics.h"

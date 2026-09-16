@@ -1,7 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "GAS/RogueMontageCueNotify.h"
+#include "GAS/CueNotify/RogueMontageCueNotify.h"
 
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"

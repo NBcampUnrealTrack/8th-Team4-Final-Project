@@ -1,6 +1,6 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "GAS/RogueUtilityHoldCueNotify.h"
+#include "GAS/CueNotify/RogueUtilityHoldCueNotify.h"
 
 #include "Animation/AnimInstance.h"
 #include "Augment/AugmentDefinition.h"
