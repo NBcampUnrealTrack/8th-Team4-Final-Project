@@ -9,6 +9,8 @@
 class UEditableTextBox;
 class UTextBlock;
 class UScrollBox;
+class UImage;
+class UTexture2D;
 class UShooterChatSuggestionEntry;
 
 // Enter로 열리는 채팅 입력창. 팀/전체 채널 토글(Tab), 전송/취소(Enter/Esc)를 이 위젯이 직접
@@ -63,6 +65,23 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_ChannelLabel;
+
+	// 입력창 전체 네모의 왼쪽에 붙는 채널 표시 아이콘. WBP에서 이 이름으로 Image를 추가하면
+	// Text_ChannelLabel과 같은 색으로 자동 틴트되고, 채널 종류에 따라 아이콘도 자동 교체된다.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_ChannelIndicator;
+
+	// 팀 채팅일 때 쓰는 아이콘
+	UPROPERTY(EditDefaultsOnly, Category = "Chat")
+	TObjectPtr<UTexture2D> TeamIconTexture;
+
+	// 경기(전체) 채팅일 때 쓰는 아이콘
+	UPROPERTY(EditDefaultsOnly, Category = "Chat")
+	TObjectPtr<UTexture2D> MatchIconTexture;
+
+	// 귓속말(1:1)일 때 쓰는 아이콘
+	UPROPERTY(EditDefaultsOnly, Category = "Chat")
+	TObjectPtr<UTexture2D> WhisperIconTexture;
 
 	// 귓속말 자동완성 후보들이 채워지는 ScrollBox. 평소엔 Collapsed. 후보 수 제한이 없어서
 	// 높이를 넘기면 스크롤되는데, 방향키로 하이라이트가 화면 밖으로 나가면

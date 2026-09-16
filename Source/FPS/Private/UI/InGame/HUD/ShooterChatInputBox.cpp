@@ -2,8 +2,10 @@
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 
 #include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "GameMode/State/BaseTeamGameState.h"
@@ -56,7 +58,7 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 		}
 		if ((InKeyEvent.GetKey() == EKeys::Up || InKeyEvent.GetKey() == EKeys::Down) && !CurrentSuggestions.IsEmpty())
 		{
-			MoveSuggestionHighlight(InKeyEvent.GetKey() == EKeys::Up ? 1 : -1);
+			MoveSuggestionHighlight(InKeyEvent.GetKey() == EKeys::Up ? -1 : 1);
 			return FReply::Handled();
 		}
 		if (InKeyEvent.GetKey() == EKeys::Escape)
@@ -76,25 +78,48 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 
 void UShooterChatInputBox::SetChannel(const EChatChannel Channel, const FString& WhisperTargetName)
 {
-	if (!Text_ChannelLabel)
-	{
-		return;
-	}
+	FLinearColor ChannelColor = MatchChannelColor;
+	FString LabelText = TEXT("ALL");
 
 	switch (Channel)
 	{
 	case EChatChannel::Team:
-		Text_ChannelLabel->SetText(FText::FromString(TEXT("TEAM")));
-		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(TeamChannelColor));
+		LabelText = TEXT("TEAM");
+		ChannelColor = TeamChannelColor;
 		break;
 	case EChatChannel::Match:
-		Text_ChannelLabel->SetText(FText::FromString(TEXT("ALL")));
-		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(MatchChannelColor));
+		LabelText = TEXT("ALL");
+		ChannelColor = MatchChannelColor;
 		break;
 	case EChatChannel::Whisper:
-		Text_ChannelLabel->SetText(FText::FromString(WhisperTargetName));
-		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(WhisperChannelColor));
+		LabelText = WhisperTargetName;
+		ChannelColor = WhisperChannelColor;
 		break;
+	}
+
+	if (Text_ChannelLabel)
+	{
+		// 채팅 내역의 "[이름]:" 표기와 통일감을 주기 위해 채널 라벨에도 콜론을 붙인다.
+		Text_ChannelLabel->SetText(FText::FromString(FString::Printf(TEXT("%s:"), *LabelText)));
+		Text_ChannelLabel->SetColorAndOpacity(FSlateColor(ChannelColor));
+	}
+
+	if (Image_ChannelIndicator)
+	{
+		UTexture2D* IconTexture = MatchIconTexture;
+		if (Channel == EChatChannel::Team)
+		{
+			IconTexture = TeamIconTexture;
+		}
+		else if (Channel == EChatChannel::Whisper)
+		{
+			IconTexture = WhisperIconTexture;
+		}
+
+		if (IconTexture)
+		{
+			Image_ChannelIndicator->SetBrushFromTexture(IconTexture);
+		}
 	}
 }
 
