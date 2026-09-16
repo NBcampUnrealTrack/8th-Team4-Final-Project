@@ -136,6 +136,11 @@ protected:
 		meta = (EditCondition = "CastDelaySeconds > 0", EditConditionHides, Categories = "GameplayCue"))
 	FGameplayTag TelegraphCueTag;
 
+	// 실제 발동 순간 실행할 GameplayCue. 시전 지연이 끝난 뒤 한 번
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag DeliverCueTag;
+
 	// 사용 후 유틸을 든 상태를 유지하는 시간, 사용 모션
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
