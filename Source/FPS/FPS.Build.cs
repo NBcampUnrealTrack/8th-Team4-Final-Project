@@ -29,9 +29,15 @@ public class FPS : ModuleRules
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
 			"OnlineSubsystemUtils",
-		});
+            "HairStrandsCore",
+        });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara" });
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Niagara",
+			"NetworkReplayStreaming",
+			"InMemoryNetworkReplayStreaming"
+		});
 
 		if (Target.bBuildEditor)
 		{

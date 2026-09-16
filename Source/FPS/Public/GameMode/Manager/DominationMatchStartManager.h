@@ -33,6 +33,10 @@ public:
 	void RequestCombatClass(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
+	// 임시 선택은 매치 시작 조건이 아니므로 전원 확정 검사를 하지 않는다.
+	void RequestPreviewCombatClass(
+		ADominationPlayerController* PlayerController,
+		EDominationCombatClass RequestedClass);
 	void GetInitialParticipantPlayerStates(TArray<ADominationPlayerState*>& OutPlayerStates) const;
 
 	// GameMode가 초기 거점 활성화와 외부 연결 이벤트를 조율하기 위한 내부 완료 신호다.

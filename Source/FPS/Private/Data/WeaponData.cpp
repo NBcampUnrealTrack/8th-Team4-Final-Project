@@ -2,15 +2,40 @@
 
 #include "Animation/AnimMontage.h"
 
-const FPlayerAnims* UWeaponData::FindPlayerAnims(const FGameplayTag WeaponTag, const bool bFirstPerson) const
+const FPlayerAnims* UWeaponData::FindPlayerAnims(
+	const FGameplayTag WeaponTag,
+	const bool bFirstPerson,
+	const EDominationCombatClass CombatClass) const
 {
 	if (!WeaponTag.IsValid())
 	{
 		return nullptr;
 	}
 
-	const TMap<FGameplayTag, FPlayerAnims>& AnimMap = bFirstPerson ? FirstPersonAnims : ThirdPersonAnims;
-	return AnimMap.Find(WeaponTag);
+	if (CombatClass != EDominationCombatClass::Unselected)
+	{
+		if (const FCombatClassWeaponAnims* ClassAnims = ClassAnimationOverrides.Find(CombatClass))
+		{
+			const TMap<FGameplayTag, FPlayerAnims>* ClassAnimMap = &ClassAnims->ThirdPersonAnims;
+			if (bFirstPerson)
+			{
+				ClassAnimMap = &ClassAnims->FirstPersonAnims;
+			}
+
+			if (const FPlayerAnims* PlayerAnims = ClassAnimMap->Find(WeaponTag))
+			{
+				return PlayerAnims;
+			}
+		}
+	}
+
+	const TMap<FGameplayTag, FPlayerAnims>* AnimMap = &ThirdPersonAnims;
+	if (bFirstPerson)
+	{
+		AnimMap = &FirstPersonAnims;
+	}
+
+	return AnimMap->Find(WeaponTag);
 }
 
 const FWeaponMontageData* UWeaponData::FindWeaponMontages(const FGameplayTag WeaponTag, const bool bFirstPerson) const

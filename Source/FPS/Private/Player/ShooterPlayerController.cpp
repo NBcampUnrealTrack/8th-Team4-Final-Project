@@ -21,6 +21,7 @@
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Killcam/KillcamReplaySubsystem.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/NetworkTimeSyncComponent.h"
@@ -65,6 +66,14 @@ void AShooterPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			KillcamSubsystem->SetUpForWorld(GetWorld());
+		}
 	}
 
 	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
@@ -116,6 +125,14 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+		{
+			if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+			{
+				KillcamSubsystem->ReleaseWorld(GetWorld());
+			}
+		}
+
 		ShutdownAudioSettings();
 		HideSpectatorWidget();
 
@@ -766,6 +783,56 @@ void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerSt
 void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 {
 	HideSpectatorWidget();
+}
+
+void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
+{
+	if (bKillcamViewTargetSuppressed)
+	{
+		const bool bUsableCandidate = NewViewTarget != this
+			&& UKillcamReplaySubsystem::IsLiveWorldActor(NewViewTarget);
+		if (bUsableCandidate)
+		{
+			PendingViewTarget = NewViewTarget;
+			PendingViewTargetTransitionParams = TransitionParams;
+		}
+		return;
+	}
+
+	Super::SetViewTarget(NewViewTarget, TransitionParams);
+}
+
+void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
+{
+	if (bKillcamViewTargetSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bKillcamViewTargetSuppressed = bSuppressed;
+	if (bSuppressed)
+	{
+		PendingViewTarget.Reset();
+		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	}
+}
+
+void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
+{
+	if (!IsValid(KillcamCamera))
+	{
+		return;
+	}
+
+	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+}
+
+AActor* AShooterPlayerController::ConsumePendingViewTarget()
+{
+	AActor* Pending = PendingViewTarget.Get();
+	PendingViewTarget.Reset();
+	PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	return Pending;
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)

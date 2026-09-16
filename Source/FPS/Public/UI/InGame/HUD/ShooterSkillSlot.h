@@ -127,8 +127,6 @@ protected:
 	TObjectPtr<UTexture2D> DefaultIconTexture;
 
 	// true면 Debug_ConsumeCharge로 구동. 증강없이 비주얼 검증 위함
-	// false면 실제 ASC 폴링. 실연동 후에도 디버그 경로는 남겨둬야
-	// 비주얼만 다시 손볼 때 증강을 뽑지 않고 바로 켜서 테스트 가능
 	UPROPERTY(EditDefaultsOnly, Category = "Skill Slot")
 	bool bUseDebugDriver = true;
 

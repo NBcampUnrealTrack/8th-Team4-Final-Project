@@ -7,6 +7,8 @@
 #include "Animation/AnimInstance.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Interfaces/PlayerInterface.h"
 
 bool UGA_MeleeAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
                                           const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,

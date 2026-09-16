@@ -131,6 +131,10 @@ struct FHitscanImpactEffectData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	int32 PelletIndex = 0;
+
+	// 실제 표면에 맞은 경우에만 데칼/파티클/사운드 재생하도록 분기
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	bool bHasHit = false;
 };
 
 // 한 발의 실행 시점 데이터. 동기 C++ 호출 전용이라 Blueprint Reflection을 붙이지 않는다.

@@ -65,6 +65,25 @@
 				"Linux",
 				"Android"
 			]
+		},
+		{
+			"Name": "NarshaMCP",
+			"Enabled": true,
+			"Optional": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "MultiUserClient",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
 		}
 	]
 }
