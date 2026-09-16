@@ -10,6 +10,7 @@
 #include "GameFramework/PlayerState.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "Player/ShooterPlayerController.h"
+#include "TimerManager.h"
 #include "UI/InGame/HUD/ShooterChatSuggestionEntry.h"
 
 UShooterChatInputBox::UShooterChatInputBox()
@@ -252,7 +253,7 @@ void UShooterChatInputBox::MoveSuggestionHighlight(const int32 Delta)
 	}
 }
 
-void UShooterChatInputBox::ApplySuggestedName(const FString& PlayerName)
+void UShooterChatInputBox::ApplySuggestedName(FString PlayerName)
 {
 	// "/w 이름"을 텍스트에 남기는 대신 채널을 바로 Whisper로 잠근다 - 입력창은 실제 메시지만
 	// 남도록 비워서, 이전에 쓰던 글자가 이어져 파싱이 꼬이는 일이 없게 한다.
@@ -263,12 +264,24 @@ void UShooterChatInputBox::ApplySuggestedName(const FString& PlayerName)
 
 	if (Text_Message)
 	{
+		// SetText가 OnTextChanged -> HandleMessageTextChanged -> ClearSuggestions()를 동기
+		// 호출해 CurrentSuggestions를 Reset()한다. PlayerName은 함수 시작 시 값으로 복사받은
+		// 별도 FString이라 이 시점에 원본 배열이 지워져도 안전하다(참조로 받으면 댕글링).
 		Text_Message->SetText(FText::GetEmpty());
 	}
 
 	ClearSuggestions();
 	SetChannel(EChatChannel::Whisper, PlayerName);
 
+	// 포커스 요청을 라벨 텍스트 갱신과 다른 틱으로 분리해 둔다(무해한 방어 코드).
+	if (Text_Message && GetWorld())
+	{
+		GetWorld()->GetTimerManager().SetTimerForNextTick(this, &ThisClass::FocusMessageBoxDeferred);
+	}
+}
+
+void UShooterChatInputBox::FocusMessageBoxDeferred()
+{
 	if (Text_Message)
 	{
 		Text_Message->SetKeyboardFocus();

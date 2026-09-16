@@ -57,8 +57,15 @@ protected:
 	void ClearSuggestions();
 	void MoveSuggestionHighlight(int32 Delta);
 
-	// Enter로 하이라이트된 후보 확정. 텍스트를 "/w 이름 "으로 채우고 후보 목록을 닫는다.
-	void ApplySuggestedName(const FString& PlayerName);
+	// Enter로 하이라이트된 후보 확정. 채널을 Whisper로 잠그고 입력창을 비운 뒤 후보 목록을 닫는다.
+	// 값으로 받아야 한다 - 참조로 받으면, 이 함수 안에서 Text_Message->SetText가 촉발하는
+	// HandleMessageTextChanged -> ClearSuggestions()가 호출 인자의 원본인 CurrentSuggestions
+	// 배열을 Reset()해버려서 참조가 댕글링되고, 그 뒤 SetChannel에서 해제된 메모리를 읽게 된다.
+	void ApplySuggestedName(FString PlayerName);
+
+	// ApplySuggestedName이 라벨 텍스트 갱신과 같은 틱에 포커스를 뺏지 않도록 한 틱 미뤄 호출하는
+	// 헬퍼. (실제 글자 깨짐 버그는 댕글링 참조가 원인이었고 이건 별개의 방어 코드일 뿐이다.)
+	void FocusMessageBoxDeferred();
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> Text_Message;
