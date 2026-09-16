@@ -23,6 +23,8 @@ class UNetworkTimeSyncComponent;
 class UShooterChatInputBox;
 class UShooterSpectatorWidget;
 class UShooterInputConfig;
+class UShooterInteractionComponent;
+class UTrainingPlayerComponent;
 class USteamVoiceComponent;
 class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
@@ -147,6 +149,18 @@ public:
 
 	UFUNCTION(Client, Reliable)
 	void ClientExitSpectatorMode();
+
+	virtual void SetViewTarget(
+		AActor* NewViewTarget,
+		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
+
+	void SetKillcamViewTargetSuppressed(bool bSuppressed);
+
+	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
+
+	void ApplyKillcamViewTarget(AActor* KillcamCamera);
+
+	AActor* ConsumePendingViewTarget();
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
@@ -283,6 +297,8 @@ private:
 	bool HasDataJackInteractionInputBlock() const;
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
+	void Input_InteractPressed(const FInputActionValue& Value);
+	void Input_InteractReleased(const FInputActionValue& Value);
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
@@ -315,6 +331,14 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShooterInteractionComponent> InteractionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Training", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTrainingPlayerComponent> TrainingPlayerComponent;
+
+	FGameplayTag ActiveInteractionFallbackTag;
+
 	UPROPERTY(Transient)
 	TObjectPtr<USoundMix> ActiveUserSettingsSoundMix;
 
@@ -344,4 +368,7 @@ private:
 	// 서버 전용 레이트리밋 상태. 리플리케이트하지 않는다.
 	double LastChatMessageServerTime = -1.0;
 	double LastPingServerTime = -1.0;
+	bool bKillcamViewTargetSuppressed = false;
+	TWeakObjectPtr<AActor> PendingViewTarget;
+	FViewTargetTransitionParams PendingViewTargetTransitionParams;
 };

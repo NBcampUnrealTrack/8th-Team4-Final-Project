@@ -80,7 +80,9 @@ void UDominationMatchStartManager::RequestCombatClass(
 	ADominationPlayerState* DominationPlayerState =
 		PlayerController->GetPlayerState<ADominationPlayerState>();
 	if (!IsValid(DominationPlayerState)
-		|| !DominationPlayerState->TryConfirmCombatClass(RequestedClass))
+		|| !DominationPlayerState->HasPreviewCombatClass()
+		|| !DominationPlayerState->TryConfirmCombatClass(
+			DominationPlayerState->GetPreviewCombatClass()))
 	{
 		return;
 	}
@@ -89,6 +91,28 @@ void UDominationMatchStartManager::RequestCombatClass(
 	{
 		CompleteClassSelection();
 	}
+}
+
+void UDominationMatchStartManager::RequestPreviewCombatClass(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass RequestedClass)
+{
+	const ADominationGameState* DominationGameState = GetDominationGameState();
+	if (!IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::ClassSelecting
+		|| !IsInitialParticipant(PlayerController))
+	{
+		return;
+	}
+
+	ADominationPlayerState* DominationPlayerState =
+		PlayerController->GetPlayerState<ADominationPlayerState>();
+	if (!IsValid(DominationPlayerState))
+	{
+		return;
+	}
+
+	DominationPlayerState->TrySetPreviewCombatClass(RequestedClass);
 }
 
 void UDominationMatchStartManager::GetInitialParticipantPlayerStates(
@@ -243,7 +267,12 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 				GetDefault<UDominationClassSettings>();
 			if (IsValid(ClassSettings))
 			{
-				PlayerState->TryConfirmCombatClass(ClassSettings->DefaultCombatClass);
+				// LOCK IN을 누르지 않아도 임시 선택이 그대로 확정된다.
+				const EDominationCombatClass FallbackClass =
+					PlayerState->HasPreviewCombatClass()
+						? PlayerState->GetPreviewCombatClass()
+						: ClassSettings->DefaultCombatClass;
+				PlayerState->TryConfirmCombatClass(FallbackClass);
 			}
 		}
 	}

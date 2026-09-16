@@ -7,6 +7,7 @@
 #include "DominationClassSettings.generated.h"
 
 class AShooterCharacter;
+class USoundBase;
 class UTexture2D;
 
 /**
@@ -35,6 +36,21 @@ struct FPS_API FDominationCombatClassDefinition
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	// 클래스 선택 화면의 팀원 슬롯용 소형 초상화
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
+	TSoftObjectPtr<UTexture2D> Portrait;
+
+	// 특성 태그
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
+	TArray<FText> TraitTags;
+
+	// 클래스 선택 카드의 큰 무기 렌더
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
+	TSoftObjectPtr<UTexture2D> WeaponArt;
+
+	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Domination|Class")
+	TSoftObjectPtr<USoundBase> SelectionVoice;
 };
 
 /**

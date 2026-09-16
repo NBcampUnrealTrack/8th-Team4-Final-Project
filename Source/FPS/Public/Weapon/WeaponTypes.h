@@ -8,6 +8,14 @@
 
 class UCurveVector;
 
+// 탄창 소모는 유지하고, 재장전 시 예비탄 사용 규칙만 구분한다.
+UENUM(BlueprintType)
+enum class EWeaponAmmoPolicy : uint8
+{
+	Standard,
+	InfiniteReserve
+};
+
 // 런타임 무기 슬롯 식별용.
 // 슬롯은 1/2/3번 입력 및 Primary/Secondary/Melee 인스턴스 보관에만 사용한다.
 UENUM(BlueprintType)

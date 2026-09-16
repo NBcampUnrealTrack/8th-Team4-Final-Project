@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -42,6 +42,11 @@ public:
 	                           const FGameplayAbilityActivationInfo ActivationInfo) override;
 
 protected:
+    // Honor the granted spec's input slot when a loadout remaps an active augment.
+    // Original slots and non-slot/ability-specific cooldown tags are unchanged.
+    FGameplayTag ResolveCooldownTag(FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo) const;
+
 	// 발동 조건 검사 -> 페이로드 조립 -> 커밋 -> 대가 지불 -> Deliver
 	// TriggerEventData 가 없으면 이벤트 관련 조건은 건너뜀
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -135,6 +140,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "CastDelaySeconds > 0", EditConditionHides, Categories = "GameplayCue"))
 	FGameplayTag TelegraphCueTag;
+
+	// 실제 발동 순간 실행할 GameplayCue. 시전 지연이 끝난 뒤 한 번
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag DeliverCueTag;
 
 	// 사용 후 유틸을 든 상태를 유지하는 시간, 사용 모션
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",

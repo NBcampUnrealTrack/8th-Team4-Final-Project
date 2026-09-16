@@ -41,6 +41,10 @@ public:
 		TSubclassOf<AWeaponBase> SecondaryWeaponClass,
 		TSubclassOf<AWeaponBase> MeleeWeaponClass);
 
+	// 현재 보유 무기와 이후 생성·장착하는 무기에 같은 정책을 전달한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	void SetWeaponAmmoPolicy(EWeaponAmmoPolicy NewAmmoPolicy);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool SwitchWeaponSlot(EWeaponSlot WeaponSlot);
 
@@ -173,6 +177,9 @@ protected:
 	float ADSZoomInterpSpeed = 10.f;
 
 private:
+	// 서버의 로드아웃 설정이다. 클라이언트에 필요한 정책은 각 무기가 복제한다.
+	EWeaponAmmoPolicy WeaponAmmoPolicy = EWeaponAmmoPolicy::Standard;
+
 	AWeaponBase* SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass);
 	void ClearWeaponLoadout();
 	void ApplyCurrentWeapon(AWeaponBase* NewWeapon);

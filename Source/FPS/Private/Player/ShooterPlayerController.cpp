@@ -19,11 +19,14 @@
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
+#include "Input/ShooterInteractionComponent.h"
+#include "Training/TrainingPlayerComponent.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Killcam/KillcamReplaySubsystem.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
@@ -49,6 +52,8 @@ AShooterPlayerController::AShooterPlayerController()
 {
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
+	InteractionComponent = CreateDefaultSubobject<UShooterInteractionComponent>(TEXT("InteractionComponent"));
+	TrainingPlayerComponent = CreateDefaultSubobject<UTrainingPlayerComponent>(TEXT("TrainingPlayerComponent"));
 }
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(
@@ -70,6 +75,14 @@ void AShooterPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			KillcamSubsystem->SetUpForWorld(GetWorld());
+		}
 	}
 
 	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
@@ -121,6 +134,14 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+		{
+			if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+			{
+				KillcamSubsystem->ReleaseWorld(GetWorld());
+			}
+		}
+
 		ShutdownAudioSettings();
 		HideSpectatorWidget();
 
@@ -348,7 +369,8 @@ void AShooterPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
-	if (InputConfig->ShowScoreboardAction)
+	const UTeamMatchUIInitComponent* ScoreboardUI = GetTeamMatchUIInitComponent();
+	if (InputConfig->ShowScoreboardAction && ScoreboardUI && ScoreboardUI->SupportsScoreboard())
 	{
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
@@ -369,9 +391,20 @@ void AShooterPlayerController::SetupInputComponent()
 			&ThisClass::Input_HideScoreboard);
 	}
 
+	if (InputConfig->InteractAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Started,
+			this, &ThisClass::Input_InteractPressed);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Completed,
+			this, &ThisClass::Input_InteractReleased);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Canceled,
+			this, &ThisClass::Input_InteractReleased);
+	}
+
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
-		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
+		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid()
+			|| AbilityInput.InputAction == InputConfig->InteractAction)
 		{
 			continue;
 		}
@@ -388,6 +421,38 @@ void AShooterPlayerController::SetupInputComponent()
 			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+	}
+}
+
+void AShooterPlayerController::Input_InteractPressed(const FInputActionValue& Value)
+{
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+	ActiveInteractionFallbackTag = FGameplayTag();
+	if (InteractionComponent->TryInteract())
+	{
+		return;
+	}
+
+	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
+	{
+		if (AbilityInput.InputAction == InputConfig->InteractAction && AbilityInput.InputTag.IsValid())
+		{
+			ActiveInteractionFallbackTag = AbilityInput.InputTag;
+			Input_AbilityPressed(Value, ActiveInteractionFallbackTag);
+			break;
+		}
+	}
+}
+
+void AShooterPlayerController::Input_InteractReleased(const FInputActionValue& Value)
+{
+	if (ActiveInteractionFallbackTag.IsValid())
+	{
+		Input_AbilityReleased(Value, ActiveInteractionFallbackTag);
+		ActiveInteractionFallbackTag = FGameplayTag();
 	}
 }
 
@@ -833,6 +898,56 @@ void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerSt
 void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 {
 	HideSpectatorWidget();
+}
+
+void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
+{
+	if (bKillcamViewTargetSuppressed)
+	{
+		const bool bUsableCandidate = NewViewTarget != this
+			&& UKillcamReplaySubsystem::IsLiveWorldActor(NewViewTarget);
+		if (bUsableCandidate)
+		{
+			PendingViewTarget = NewViewTarget;
+			PendingViewTargetTransitionParams = TransitionParams;
+		}
+		return;
+	}
+
+	Super::SetViewTarget(NewViewTarget, TransitionParams);
+}
+
+void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
+{
+	if (bKillcamViewTargetSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bKillcamViewTargetSuppressed = bSuppressed;
+	if (bSuppressed)
+	{
+		PendingViewTarget.Reset();
+		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	}
+}
+
+void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
+{
+	if (!IsValid(KillcamCamera))
+	{
+		return;
+	}
+
+	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+}
+
+AActor* AShooterPlayerController::ConsumePendingViewTarget()
+{
+	AActor* Pending = PendingViewTarget.Get();
+	PendingViewTarget.Reset();
+	PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	return Pending;
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)

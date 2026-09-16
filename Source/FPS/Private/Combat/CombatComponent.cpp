@@ -163,6 +163,28 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
 }
 
+void UCombatComponent::SetWeaponAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy)
+{
+	const AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	WeaponAmmoPolicy = NewAmmoPolicy;
+	AWeaponBase* const Weapons[] =
+	{
+		PrimaryWeapon.Get(), SecondaryWeapon.Get(), MeleeWeapon.Get(), CurrentWeapon.Get()
+	};
+	for (AWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->SetAmmoPolicy(WeaponAmmoPolicy);
+		}
+	}
+}
+
 AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)
 {
 	AActor* OwnerActor = GetOwner();
@@ -184,6 +206,7 @@ AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> Weap
 
 	if (IsValid(SpawnedWeapon))
 	{
+		SpawnedWeapon->SetAmmoPolicy(WeaponAmmoPolicy);
 		SpawnedWeapon->SetActorHiddenInGame(true);
 	}
 
@@ -586,6 +609,7 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	if (IsValid(CurrentWeapon.Get()) && IsValid(OwnerActor))
 	{
 		CurrentWeapon->SetOwner(OwnerActor);
+		CurrentWeapon->SetAmmoPolicy(WeaponAmmoPolicy);
 	}
 
 	RefreshWeaponPresentation();

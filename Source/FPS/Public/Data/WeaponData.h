@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "GameplayTagContainer.h"
 #include "WeaponData.generated.h"
 
@@ -54,13 +55,28 @@ struct FWeaponMontageData
 	TObjectPtr<UAnimMontage> FireMontage = nullptr;
 };
 
+USTRUCT(BlueprintType)
+struct FCombatClassWeaponAnims
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FirstPerson")
+	TMap<FGameplayTag, FPlayerAnims> FirstPersonAnims;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
+	TMap<FGameplayTag, FPlayerAnims> ThirdPersonAnims;
+};
+
 UCLASS(BlueprintType)
 class FPS_API UWeaponData : public UDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	const FPlayerAnims* FindPlayerAnims(FGameplayTag WeaponTag, bool bFirstPerson) const;
+	const FPlayerAnims* FindPlayerAnims(
+		FGameplayTag WeaponTag,
+		bool bFirstPerson,
+		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 	const FWeaponMontageData* FindWeaponMontages(FGameplayTag WeaponTag, bool bFirstPerson) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
 	float GetReloadDuration(FGameplayTag WeaponTag) const;
@@ -82,4 +98,7 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|WeaponData|ThirdPerson")
 	TMap<FGameplayTag, FWeaponMontageData> ThirdPersonMontages;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|WeaponData|CombatClasses")
+	TMap<EDominationCombatClass, FCombatClassWeaponAnims> ClassAnimationOverrides;
 };

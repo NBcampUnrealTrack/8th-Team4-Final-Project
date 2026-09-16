@@ -12,6 +12,7 @@ class UAnimMontage;
 class UAnimSequence;
 class UCharacterMovementComponent;
 class UCombatComponent;
+enum class EDominationCombatClass : uint8;
 
 UCLASS()
 class FPS_API UShooterAnimInstance : public UAnimInstance
@@ -108,6 +109,7 @@ private:
 	void PlayEquipMontageForCurrentWeapon();
 	void PlayReloadMontageForCurrentWeapon();
 	void TurnInPlace(float DeltaSeconds);
+	EDominationCombatClass GetCurrentCombatClass() const;
 
 	FRotator StartingAimRotation = FRotator::ZeroRotator;
 	float InterpAO_Yaw = 0.f;

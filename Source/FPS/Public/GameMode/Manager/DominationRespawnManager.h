@@ -12,9 +12,8 @@ class ADominationGameMode;
 class ADominationGameState;
 class ADominationSpawnVolume;
 class AShooterPlayerState;
-class UAbilitySystemComponent;
+class UPlayerRespawnProtection;
 class UDominationObjectiveManager;
-struct FGameplayEventData;
 
 /** 전투 스폰 대기, 전선 기준 스폰 위치, 스폰 직후 보호 수명주기를 관리한다. 실제 Pawn 생성은 GameMode에 요청한다. */
 UCLASS()
@@ -49,22 +48,10 @@ private:
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
 	void HandleRespawnTimer(TWeakObjectPtr<AController> WaitingController);
-	void HandleRespawnProtectionExpired(TWeakObjectPtr<AShooterPlayerState> PlayerState);
-	void HandleProtectedPlayerWeaponFired(
-		FGameplayTag EventTag,
-		const FGameplayEventData* Payload,
-		TWeakObjectPtr<AShooterPlayerState> PlayerState);
 	void EndRespawnProtection(AShooterPlayerState* PlayerState);
 
-	struct FActiveRespawnProtection
-	{
-		TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
-		FTimerHandle ExpirationTimer;
-		FDelegateHandle WeaponFiredDelegate;
-		FGameplayTagContainer WeaponFiredEventTags;
-	};
-
-	void ReleaseRespawnProtection(FActiveRespawnProtection& Protection);
+    UPROPERTY(Transient)
+    TObjectPtr<UPlayerRespawnProtection> RespawnProtection;
 
 	// 현재 상태 조회는 공통 기반을 사용하고, 델리게이트 해제를 위해 바인딩 대상만 보관한다.
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
@@ -74,8 +61,6 @@ private:
 	TWeakObjectPtr<ADominationSpawnVolume> TeamASpawnVolume;
 	TWeakObjectPtr<ADominationSpawnVolume> TeamBSpawnVolume;
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> PendingRespawnTimers;
-	TMap<TWeakObjectPtr<AShooterPlayerState>, FActiveRespawnProtection> ActiveRespawnProtections;
 	EDominationPointId SpawnObjectivePointId = EDominationPointId::None;
 	float RespawnDelay = 5.0f;
-	float RespawnProtectionDuration = 2.0f;
 };

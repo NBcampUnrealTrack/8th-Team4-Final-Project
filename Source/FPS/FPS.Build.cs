@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 using UnrealBuildTool;
 
 public class FPS : ModuleRules
@@ -7,7 +5,7 @@ public class FPS : ModuleRules
 	public FPS(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-	
+
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
 			"Core",
@@ -18,6 +16,10 @@ public class FPS : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"AIModule",
+			"NavigationSystem",
+			"StateTreeModule",
+			"GameplayStateTreeModule",
 			"PhysicsCore",
 			"UMG",
 			"Slate",
@@ -29,9 +31,15 @@ public class FPS : ModuleRules
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
 			"OnlineSubsystemUtils",
+			"HairStrandsCore",
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara" });
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Niagara",
+			"NetworkReplayStreaming",
+			"InMemoryNetworkReplayStreaming"
+		});
 
 		if (Target.bBuildEditor)
 		{

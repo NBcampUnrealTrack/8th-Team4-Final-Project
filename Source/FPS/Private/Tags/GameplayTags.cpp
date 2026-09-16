@@ -70,6 +70,7 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_ActionBlocked, "State.Combat.ActionBlocked", "이동을 제외한 행동 불가. 사격/조준/재장전/무기 교체 차단");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_SystemOverload, "State.Combat.SystemOverload", "시스템 오버로드 지속 중. 처치 시 재적용 조건");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_UtilityHeld,   "State.Combat.UtilityHeld",   "유틸리티를 손에 든 상태. 장착 무기 태그와 공존한다. 무기 어빌리티가 이 태그로 차단된다");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Deployable,  "State.Combat.Deployable",  "체력을 가진 설치물/소환물. 파괴돼도 처치로 치지 않는다");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Ability,            "Augment.Ability",            "증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준");
 
 	// 이동 상태
