@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
@@ -333,6 +333,9 @@ struct FAugmentInventoryEntry
     // 증강 계열
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "Augment.Line"))
     FGameplayTag LineTag;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment", meta = (Categories = "InputTag.Ability"))
+    FGameplayTag ActiveInputSlot;
 
     static FAugmentInventoryEntry Make(const UAugmentDefinition& Definition);
 };

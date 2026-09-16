@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Augment/AugmentDraft.h"
@@ -162,6 +162,12 @@ EAugmentTier RogueAugmentDraft::ResolveTier(
 	return IsLowerTier(Result, MinimumTier) ? MinimumTier : Result;
 }
 
+bool RogueAugmentDraft::MeetsUnlockRequirements(
+    const UAugmentDefinition& Definition, const FGameplayTagContainer& UnlockTags)
+{
+    return UnlockTags.HasAll(Definition.RequiredUnlockTags);
+}
+
 // 해당 증강이 이번 라운드 후보로 제시될 수 있는지 판정
 bool RogueAugmentDraft::IsCandidateEligible(
 	const FAugmentDraftRules& Rules,
@@ -208,7 +214,7 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	}
 
 	// 필요한 태그가 없는 경우
-	if (!State.UnlockTags.HasAll(Definition.RequiredUnlockTags))
+	if (!MeetsUnlockRequirements(Definition, State.UnlockTags))
 	{
 		return false;
 	}

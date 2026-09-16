@@ -29,6 +29,9 @@ public:
 	bool HasPreviewCombatClass() const;
 	
 	bool TryConfirmCombatClass(EDominationCombatClass RequestedClass);
+	// 변경 허용 시점은 GameMode가 검증한다. 최초 선택의 잠금 규칙은 유지한다.
+	bool TryChangeCombatClass(EDominationCombatClass RequestedClass);
+	void ResetCombatClassSelection();
 	// 확정 전 임시 선택
 	bool TrySetPreviewCombatClass(EDominationCombatClass RequestedClass);
 	

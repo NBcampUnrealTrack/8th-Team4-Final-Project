@@ -15,7 +15,9 @@ void UShooterUIManagerSubsystem::InitializeUI(
 	}
 	
 	// 이미 이 컨트롤러로 RootLayout이 객체에 올라와있으면 아무것도 안 한다
-	if (IsValid(RootLayoutInstance) && RootLayoutInstance->IsInViewport() )
+	if (IsValid(RootLayoutInstance) && RootLayoutInstance->IsInViewport()
+		&& RootLayoutInstance->GetOwningPlayer() == OwningController
+		&& RootLayoutInstance->GetClass() == RootLayoutClass.Get())
 	{
 		return;
 	}

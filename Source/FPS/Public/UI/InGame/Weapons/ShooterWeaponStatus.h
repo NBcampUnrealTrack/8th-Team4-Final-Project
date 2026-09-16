@@ -40,7 +40,7 @@ protected:
 	// '/' 앞: 현재 탄창 잔탄(GetCurrentAmmo).
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Ammo;
-	// '/' 뒤: 이름은 MaxAmmo지만 실제로는 예비탄창(보유) 잔탄(GetCurrentReserveAmmo)을 표시한다.
+	// '/' 뒤: 이름은 MaxAmmo지만 실제로는 예비탄 잔탄 또는 무한 기호를 표시한다.
 	// 바인딩/스타일 데이터를 유지하려고 위젯 이름은 그대로 두고 표시값만 바꿨다.
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_MaxAmmo;
@@ -84,6 +84,7 @@ protected:
 	// GetEffectiveMagazineSize()(증강 반영된 탄창 최대치). 화면에는 표시하지 않고 색상 경고 비율 계산에만 쓴다.
 	int32 CachedMaxAmmo = INDEX_NONE;
 	int32 CachedReserveAmmo = INDEX_NONE;
+	bool bCachedInfiniteReserveAmmo = false;
 	
 	bool bLoggedNoWeapon = false;
 };

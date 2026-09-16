@@ -12,6 +12,7 @@
 #include "Interfaces/RogueDamageableTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Tags/GameplayTags.h"
 
 bool FHitscanTrace::IsPotentialDamageTargetActor(AActor* TargetActor,
 												 const FHitscanDamageTargetSettings& TargetSettings)
@@ -53,12 +54,15 @@ FGameplayTag FHitscanTrace::ResolveHitZoneTag(const FHitResult& HitResult, const
 				TargetActor->FindComponentByClass<ULagCompensationComponent>())
 		{
 			FGameplayTag HitZoneTag;
-			if (LagCompensationComponent->TryGetHitZoneForComponent(HitResult.GetComponent(), HitZoneTag))
+			if (LagCompensationComponent->TryGetHitZoneForComponent(HitResult.GetComponent(), HitZoneTag)
+				&& HitZoneTag.IsValid())
 			{
 				return HitZoneTag;
 			}
 		}
 	}
+
+	FGameplayTag ResolvedHitZoneTag = Request.DamageSettings.DefaultHitZoneTag;
 
 	AActor* TargetActor = HitResult.GetActor();
 	if (IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
@@ -66,11 +70,15 @@ FGameplayTag FHitscanTrace::ResolveHitZoneTag(const FHitResult& HitResult, const
 		if (const UCombatHitZoneDefinition* HitZoneDefinition =
 				IRogueDamageableTarget::Execute_GetCombatHitZoneDefinition(TargetActor))
 		{
-			return HitZoneDefinition->ResolveHitZone(BoneName, Request.DamageSettings.DefaultHitZoneTag);
+			ResolvedHitZoneTag = HitZoneDefinition->ResolveHitZone(BoneName, ResolvedHitZoneTag);
 		}
 	}
 
-	return Request.DamageSettings.DefaultHitZoneTag;
+	// Hits against capsules or non-skeletal damageable actors may not have a bone name.
+	// HitContextBuilder intentionally rejects invalid zone tags, so an unset weapon fallback would
+	// otherwise turn a real blocking hit into an impact-only hit with no damage event.
+	// Treat a valid generic damageable hit as torso when no more specific zone can be resolved.
+	return ResolvedHitZoneTag.IsValid() ? ResolvedHitZoneTag : RogueTags::Hit_Zone_Torso;
 }
 
 bool FHitscanTrace::FindSurfaceExit(const FHitResult& EntryHit, const FVector& TraceDirection,

@@ -19,6 +19,8 @@ class ULoadingScreenWidget;
 class UNetworkTimeSyncComponent;
 class UShooterSpectatorWidget;
 class UShooterInputConfig;
+class UShooterInteractionComponent;
+class UTrainingPlayerComponent;
 class USteamVoiceComponent;
 class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
@@ -236,6 +238,8 @@ private:
 	bool HasDataJackInteractionInputBlock() const;
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
+	void Input_InteractPressed(const FInputActionValue& Value);
+	void Input_InteractReleased(const FInputActionValue& Value);
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
 	void Input_JumpPressed();
@@ -264,6 +268,14 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|Voice")
 	TObjectPtr<USteamVoiceComponent> SteamVoiceComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Interaction", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UShooterInteractionComponent> InteractionComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Training", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTrainingPlayerComponent> TrainingPlayerComponent;
+
+	FGameplayTag ActiveInteractionFallbackTag;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundMix> ActiveUserSettingsSoundMix;

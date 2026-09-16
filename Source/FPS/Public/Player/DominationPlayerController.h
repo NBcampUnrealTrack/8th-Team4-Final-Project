@@ -3,12 +3,13 @@
 #include "CoreMinimal.h"
 #include "GameMode/Types/DominationTypes.h"
 #include "Player/ShooterPlayerController.h"
+#include "Interfaces/RogueCombatClassSelector.h"
 #include "DominationPlayerController.generated.h"
 
 class UDominationUIInitComponent;
 
 UCLASS()
-class FPS_API ADominationPlayerController : public AShooterPlayerController
+class FPS_API ADominationPlayerController : public AShooterPlayerController, public IRogueCombatClassSelector
 {
 	GENERATED_BODY()
 
@@ -17,10 +18,12 @@ public:
 	virtual bool CanProcessGameplayInput() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "Domination|Class")
-	void SelectCombatClass(EDominationCombatClass RequestedClass);
+	virtual void SelectCombatClass(EDominationCombatClass RequestedClass) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Domination|Class")
-	void SetPreviewCombatClass(EDominationCombatClass RequestedClass);
+	virtual void SetPreviewCombatClass(EDominationCombatClass RequestedClass) override;
+
+	virtual float GetCombatClassSelectionTimeRemaining() const override;
 
 protected:
 	virtual void SetupInputComponent() override;

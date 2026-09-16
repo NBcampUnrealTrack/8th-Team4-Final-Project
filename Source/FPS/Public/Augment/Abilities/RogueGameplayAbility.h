@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -42,6 +42,11 @@ public:
 	                           const FGameplayAbilityActivationInfo ActivationInfo) override;
 
 protected:
+    // Honor the granted spec's input slot when a loadout remaps an active augment.
+    // Original slots and non-slot/ability-specific cooldown tags are unchanged.
+    FGameplayTag ResolveCooldownTag(FGameplayAbilitySpecHandle Handle,
+        const FGameplayAbilityActorInfo* ActorInfo) const;
+
 	// 발동 조건 검사 -> 페이로드 조립 -> 커밋 -> 대가 지불 -> Deliver
 	// TriggerEventData 가 없으면 이벤트 관련 조건은 건너뜀
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,

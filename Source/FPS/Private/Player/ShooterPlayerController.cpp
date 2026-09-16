@@ -16,6 +16,8 @@
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
+#include "Input/ShooterInteractionComponent.h"
+#include "Training/TrainingPlayerComponent.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
@@ -45,6 +47,8 @@ AShooterPlayerController::AShooterPlayerController()
 {
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
+	InteractionComponent = CreateDefaultSubobject<UShooterInteractionComponent>(TEXT("InteractionComponent"));
+	TrainingPlayerComponent = CreateDefaultSubobject<UTrainingPlayerComponent>(TEXT("TrainingPlayerComponent"));
 }
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(
@@ -352,7 +356,8 @@ void AShooterPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
-	if (InputConfig->ShowScoreboardAction)
+	const UTeamMatchUIInitComponent* ScoreboardUI = GetTeamMatchUIInitComponent();
+	if (InputConfig->ShowScoreboardAction && ScoreboardUI && ScoreboardUI->SupportsScoreboard())
 	{
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
@@ -373,9 +378,20 @@ void AShooterPlayerController::SetupInputComponent()
 			&ThisClass::Input_HideScoreboard);
 	}
 
+	if (InputConfig->InteractAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Started,
+			this, &ThisClass::Input_InteractPressed);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Completed,
+			this, &ThisClass::Input_InteractReleased);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Canceled,
+			this, &ThisClass::Input_InteractReleased);
+	}
+
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
-		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
+		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid()
+			|| AbilityInput.InputAction == InputConfig->InteractAction)
 		{
 			continue;
 		}
@@ -392,6 +408,38 @@ void AShooterPlayerController::SetupInputComponent()
 			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+	}
+}
+
+void AShooterPlayerController::Input_InteractPressed(const FInputActionValue& Value)
+{
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+	ActiveInteractionFallbackTag = FGameplayTag();
+	if (InteractionComponent->TryInteract())
+	{
+		return;
+	}
+
+	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
+	{
+		if (AbilityInput.InputAction == InputConfig->InteractAction && AbilityInput.InputTag.IsValid())
+		{
+			ActiveInteractionFallbackTag = AbilityInput.InputTag;
+			Input_AbilityPressed(Value, ActiveInteractionFallbackTag);
+			break;
+		}
+	}
+}
+
+void AShooterPlayerController::Input_InteractReleased(const FInputActionValue& Value)
+{
+	if (ActiveInteractionFallbackTag.IsValid())
+	{
+		Input_AbilityReleased(Value, ActiveInteractionFallbackTag);
+		ActiveInteractionFallbackTag = FGameplayTag();
 	}
 }
 

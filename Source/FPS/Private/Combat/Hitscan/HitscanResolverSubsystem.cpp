@@ -53,7 +53,8 @@ void UHitscanResolverSubsystem::ResolveImpactSamples(
 void UHitscanResolverSubsystem::ApplyDamageToTargets(
 	UWorld* World,
 	const FHitscanShotRequest& Request,
-	const TArray<FRogueHitContext>& HitContexts) const
+	const TArray<FRogueHitContext>& HitContexts,
+	TArray<TWeakObjectPtr<AActor>>* OutAppliedTargets) const
 {
 	if (!IsValid(World) || HitContexts.IsEmpty())
 	{
@@ -75,7 +76,11 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 
 	for (const FRogueHitContext& HitContext : HitContexts)
 	{
-		DamageSubsystem->ApplyHitscanDamage(Params, HitContext);
+		const FRogueDamageResult Result = DamageSubsystem->ApplyHitscanDamage(Params, HitContext);
+		if (OutAppliedTargets && Result.bApplied)
+		{
+			OutAppliedTargets->Add(HitContext.Target.Get());
+		}
 	}
 }
 
@@ -97,6 +102,9 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 	TArray<FRogueHitContext> HitContexts;
 	FHitscanHitContextBuilder::Build(Request, ImpactSamples, HitContexts);
 
-	ApplyDamageToTargets(World, Request, HitContexts);
+	TArray<TWeakObjectPtr<AActor>> AppliedTargets;
+	const bool bNotifyObservers = OnServerShotResolved.IsBound();
+	ApplyDamageToTargets(World, Request, HitContexts, bNotifyObservers ? &AppliedTargets : nullptr);
+	if (bNotifyObservers) { OnServerShotResolved.Broadcast(Request, AppliedTargets); }
 	return true;
 }
