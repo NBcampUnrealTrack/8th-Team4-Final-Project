@@ -109,7 +109,7 @@ private:
     double DissolveStartServerSeconds = -1.0;
 
     UPROPERTY(Transient)
-    TArray<TObjectPtr<UMaterialInstanceDynamic>> DissolveInstances;
+    TObjectPtr<UMaterialInstanceDynamic> DissolveInstance;
 
     FTimerHandle DissolveUpdateTimer;
     bool bDeathPresentationStarted = false;

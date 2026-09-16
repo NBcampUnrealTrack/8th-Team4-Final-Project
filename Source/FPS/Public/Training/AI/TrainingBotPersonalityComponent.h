@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -27,7 +27,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "Training|Personality")
     bool IsBeingAimedAt() const { return AimLatch.IsAimedAt(); }
 
-    float GetCopyTangentialVelocity(bool bDelayed) const;
+    bool ReverseStrafeDirection();
     bool ChooseEscapeClockwise() const;
     void StartTrickSequence();
     bool GetTrickClockwise() const { return bTrickClockwise; }
@@ -38,11 +38,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality", meta = (ClampMin = "0.05", ClampMax = "1.0", Units = "s"))
     float ReactionSeconds = 0.12f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality", meta = (ClampMin = "0.05", ClampMax = "1.0", Units = "s"))
-    float CopyDelaySeconds = 0.3f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality|Strafe", meta = (ClampMin = "0.1", Units = "s"))
+    float StrafeDirectionSeconds = 1.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality", meta = (ClampMin = "1.0", Units = "cm/s"))
-    float CopyMovementDeadZone = 25.0f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality|Strafe", meta = (ClampMin = "0.0", Units = "s"))
+    float StrafeDirectionVariance = 0.25f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality", meta = (ClampMin = "0.0", Units = "cm"))
     float AimEnterPadding = 20.0f;
@@ -60,11 +60,10 @@ protected:
 private:
     void Observe(float DeltaSeconds);
 
-    FTrainingVelocityHistory VelocityHistory;
     FTrainingAimLatch AimLatch;
     TWeakObjectPtr<APawn> ParticipantPawn;
-    float ObservationSeconds = 0.0f;
     float AimTangentOffset = 0.0f;
+    bool bStrafeClockwise = false;
     bool bTrickClockwise = false;
 
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Training|Personality", meta = (AllowPrivateAccess = "true"))

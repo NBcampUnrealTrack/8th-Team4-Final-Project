@@ -176,19 +176,20 @@ void ATrainingCharacter::StartDissolvePresentation()
         const float LocalMaterialStart = static_cast<float>(GetWorld()->GetTimeSeconds()) - AlreadyElapsed;
         const FVector EffectOrigin = GetMesh()->Bounds.Origin - FVector(0.0, 0.0, GetMesh()->Bounds.BoxExtent.Z);
         const float EffectHeight = FMath::Max(1.0f, static_cast<float>(GetMesh()->Bounds.BoxExtent.Z * 2.0));
-        for (int32 MaterialIndex = 0; MaterialIndex < GetMesh()->GetNumMaterials(); ++MaterialIndex)
+        DissolveInstance = UMaterialInstanceDynamic::Create(DissolveMaterial, this);
+        if (DissolveInstance)
         {
-            UMaterialInstanceDynamic* Instance = UMaterialInstanceDynamic::Create(DissolveMaterial, this);
-            if (!Instance) { continue; }
-            Instance->SetScalarParameterValue(TEXT("DissolveStartTime"), LocalMaterialStart);
-            Instance->SetScalarParameterValue(TEXT("DissolveDuration"), GetDissolveDuration());
-            Instance->SetScalarParameterValue(DissolveParameterName, DissolveStartValue);
-            Instance->SetVectorParameterValue(TEXT("DissolveOriginWS"),
+            DissolveInstance->SetScalarParameterValue(TEXT("DissolveStartTime"), LocalMaterialStart);
+            DissolveInstance->SetScalarParameterValue(TEXT("DissolveDuration"), GetDissolveDuration());
+            DissolveInstance->SetScalarParameterValue(DissolveParameterName, DissolveStartValue);
+            DissolveInstance->SetVectorParameterValue(TEXT("DissolveOriginWS"),
                 FLinearColor(static_cast<float>(EffectOrigin.X), static_cast<float>(EffectOrigin.Y),
                     static_cast<float>(EffectOrigin.Z), 0.0f));
-            Instance->SetScalarParameterValue(TEXT("DissolveHeight"), EffectHeight);
-            GetMesh()->SetMaterial(MaterialIndex, Instance);
-            DissolveInstances.Add(Instance);
+            DissolveInstance->SetScalarParameterValue(TEXT("DissolveHeight"), EffectHeight);
+            for (int32 MaterialIndex = 0; MaterialIndex < GetMesh()->GetNumMaterials(); ++MaterialIndex)
+            {
+                GetMesh()->SetMaterial(MaterialIndex, DissolveInstance);
+            }
         }
     }
     GetWorld()->GetTimerManager().SetTimer(DissolveUpdateTimer, this,
@@ -204,9 +205,9 @@ void ATrainingCharacter::UpdateDissolvePresentation()
     const float Elapsed = static_cast<float>(FMath::Max(0.0, ServerNow - DissolveStartServerSeconds));
     const float Alpha = FMath::Clamp(Elapsed / GetDissolveDuration(), 0.0f, 1.0f);
     const float Value = FMath::Lerp(DissolveStartValue, DissolveEndValue, Alpha);
-    for (UMaterialInstanceDynamic* Instance : DissolveInstances)
+    if (DissolveInstance)
     {
-        Instance->SetScalarParameterValue(DissolveParameterName, Value);
+        DissolveInstance->SetScalarParameterValue(DissolveParameterName, Value);
     }
     if (Alpha >= 1.0f)
     {
@@ -238,7 +239,7 @@ void ATrainingCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
         TrainingDamageTakenHandle.Reset();
     }
     OnTrainingHit.Clear();
-    DissolveInstances.Reset();
+    DissolveInstance = nullptr;
     HealthComponent->UninitializeFromAbilitySystem();
     Super::EndPlay(EndPlayReason);
 }

@@ -6,9 +6,13 @@
 class UWidgetTree;
 class UUserWidget;
 class USoundBase;
+class UShooterAugmentTierStyleSet;
+enum class EAugmentTier : uint8;
 
 namespace TrainingWidgetLayout
 {
+    FLinearColor GetAugmentTierColor(EAugmentTier Tier, const UShooterAugmentTierStyleSet* Palette);
+    FText GetAugmentTierName(EAugmentTier Tier, const UShooterAugmentTierStyleSet* Palette);
     FSlateFontInfo MakeFont(int32 Size);
     bool RepairFont(FSlateFontInfo& Font);
     void RepairTextFonts(UWidgetTree& Tree);

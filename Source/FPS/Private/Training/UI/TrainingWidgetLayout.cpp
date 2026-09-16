@@ -16,10 +16,43 @@
 #include "Sound/SoundBase.h"
 #include "Sound/SlateSound.h"
 #include "Engine/Font.h"
+#include "UI/Common/ShooterAugmentTierStyleSet.h"
 #include "UObject/UObjectGlobals.h"
 
 namespace TrainingWidgetLayout
 {
+FLinearColor GetAugmentTierColor(const EAugmentTier Tier, const UShooterAugmentTierStyleSet* Palette)
+{
+    if (const FShooterAugmentTierStyle* Style = Palette ? Palette->FindStyle(Tier) : nullptr)
+    {
+        FLinearColor Color = Style->AccentColor;
+        Color.A = 1.0f;
+        return Color;
+    }
+    switch (Tier)
+    {
+    case EAugmentTier::Rare: return FLinearColor(FColor(80, 167, 255));
+    case EAugmentTier::Epic: return FLinearColor(FColor(191, 125, 255));
+    case EAugmentTier::Legendary: return FLinearColor(FColor(255, 197, 80));
+    default: return FLinearColor(FColor(168, 183, 197));
+    }
+}
+
+FText GetAugmentTierName(const EAugmentTier Tier, const UShooterAugmentTierStyleSet* Palette)
+{
+    if (const FShooterAugmentTierStyle* Style = Palette ? Palette->FindStyle(Tier) : nullptr)
+    {
+        if (!Style->TierDisplayName.IsEmpty()) { return Style->TierDisplayName; }
+    }
+    switch (Tier)
+    {
+    case EAugmentTier::Rare: return NSLOCTEXT("TrainingAugmentStyle", "Rare", "RARE");
+    case EAugmentTier::Epic: return NSLOCTEXT("TrainingAugmentStyle", "Epic", "EPIC");
+    case EAugmentTier::Legendary: return NSLOCTEXT("TrainingAugmentStyle", "Legendary", "LEGENDARY");
+    default: return NSLOCTEXT("TrainingAugmentStyle", "Common", "COMMON");
+    }
+}
+
 namespace
 {
     const FLinearColor Ink(0.018f, 0.025f, 0.041f, 0.96f);

@@ -19,20 +19,17 @@ void UTrainingScenario::Initialize(ATrainingArena& InArena, APlayerController& I
 ATrainingArena* UTrainingScenario::GetArena() const { return Arena.Get(); }
 APlayerController* UTrainingScenario::GetParticipant() const { return Participant.Get(); }
 
-void UTrainingScenario::TrackActor(AActor& SpawnedActor)
+void UTrainingScenario::TrackActor(ATrainingCharacter& SpawnedActor)
 {
     OwnedActors.Add(&SpawnedActor);
     SpawnedActor.OnDestroyed.AddDynamic(this, &ThisClass::HandleActorDestroyed);
-    if (ATrainingCharacter* Bot = Cast<ATrainingCharacter>(&SpawnedActor))
-    {
-        Bot->OnTrainingHit.AddUObject(this, &ThisClass::HandleBotHit);
-        OnBotSpawned.Broadcast(*Bot);
-    }
+    SpawnedActor.OnTrainingHit.AddUObject(this, &ThisClass::HandleBotHit);
+    OnBotSpawned.Broadcast(SpawnedActor);
 }
 
 bool UTrainingScenario::OwnsActor(const AActor* Candidate) const
 {
-    return Candidate && OwnedActors.ContainsByPredicate([Candidate](const TWeakObjectPtr<AActor>& Entry)
+    return Candidate && OwnedActors.ContainsByPredicate([Candidate](const TWeakObjectPtr<ATrainingCharacter>& Entry)
     {
         return Entry.Get() == Candidate;
     });
@@ -50,7 +47,7 @@ void UTrainingScenario::HandleActorDestroyed(AActor* DestroyedActor)
     {
         Bot->OnTrainingHit.RemoveAll(this);
     }
-    OwnedActors.RemoveAll([DestroyedActor](const TWeakObjectPtr<AActor>& Entry)
+    OwnedActors.RemoveAll([DestroyedActor](const TWeakObjectPtr<ATrainingCharacter>& Entry)
     {
         return !Entry.IsValid() || Entry.Get() == DestroyedActor;
     });
@@ -60,23 +57,15 @@ void UTrainingScenario::Stop(const bool bImmediate)
 {
     OnBotSpawned.Clear();
     OnBotHit.Clear();
-    TArray<TWeakObjectPtr<AActor>> ActorsToRemove = MoveTemp(OwnedActors);
-    OwnedActors.Reset();
-    for (const TWeakObjectPtr<AActor>& Entry : ActorsToRemove)
+    TArray<TWeakObjectPtr<ATrainingCharacter>> ActorsToRemove = MoveTemp(OwnedActors);
+    for (const TWeakObjectPtr<ATrainingCharacter>& Entry : ActorsToRemove)
     {
-        if (AActor* SpawnedActor = Entry.Get())
+        if (ATrainingCharacter* Bot = Entry.Get())
         {
-            SpawnedActor->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleActorDestroyed);
-            ATrainingCharacter* TrainingBot = Cast<ATrainingCharacter>(SpawnedActor);
-            if (TrainingBot) { TrainingBot->OnTrainingHit.RemoveAll(this); }
-            if (!bImmediate && TrainingBot)
-            {
-                TrainingBot->BeginDissolveRemoval();
-            }
-            else
-            {
-                SpawnedActor->Destroy();
-            }
+            Bot->OnDestroyed.RemoveDynamic(this, &ThisClass::HandleActorDestroyed);
+            Bot->OnTrainingHit.RemoveAll(this);
+            if (bImmediate) { Bot->Destroy(); }
+            else { Bot->BeginDissolveRemoval(); }
         }
     }
     Arena.Reset();
@@ -192,9 +181,9 @@ void UTargetAcquisitionScenario::SpawnNext()
 int32 UCombatResponseScenario::GetLivingAICount() const
 {
     int32 LivingCount = 0;
-    for (const TWeakObjectPtr<AActor>& Entry : OwnedActors)
+    for (const TWeakObjectPtr<ATrainingCharacter>& Entry : OwnedActors)
     {
-        const ATrainingCombatAI* TrainingPawn = Cast<ATrainingCombatAI>(Entry.Get());
+        const ATrainingCharacter* TrainingPawn = Entry.Get();
         if (TrainingPawn && TrainingPawn->IsAlive())
         {
             ++LivingCount;
@@ -205,11 +194,8 @@ int32 UCombatResponseScenario::GetLivingAICount() const
 
 void UCombatResponseScenario::SpawnNext()
 {
-    if (GetArena())
+    if (TrainingRules::CanSpawnCombatAI(GetLivingAICount()))
     {
-        if (TrainingRules::CanSpawnCombatAI(GetLivingAICount()))
-        {
-            SpawnCombatBot();
-        }
+        SpawnCombatBot();
     }
 }

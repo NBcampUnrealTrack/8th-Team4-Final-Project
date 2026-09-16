@@ -1,54 +1,4 @@
-#include "Training/AI/TrainingBotPersonalityTypes.h"
-
-void FTrainingVelocityHistory::Reset()
-{
-    NextIndex = 0;
-    SampleCount = 0;
-}
-
-void FTrainingVelocityHistory::Add(const float TimeSeconds, const FVector& Velocity)
-{
-    if (!FMath::IsFinite(TimeSeconds) || Velocity.ContainsNaN())
-    {
-        return;
-    }
-    if (SampleCount > 0)
-    {
-        const int32 PreviousIndex = (NextIndex + Capacity - 1) % Capacity;
-        if (TimeSeconds < Samples[PreviousIndex].TimeSeconds)
-        {
-            Reset();
-        }
-        else if (TimeSeconds == Samples[PreviousIndex].TimeSeconds)
-        {
-            Samples[PreviousIndex].Velocity = Velocity;
-            return;
-        }
-    }
-    Samples[NextIndex].TimeSeconds = TimeSeconds;
-    Samples[NextIndex].Velocity = Velocity;
-    NextIndex = (NextIndex + 1) % Capacity;
-    SampleCount = FMath::Min(SampleCount + 1, Capacity);
-}
-
-bool FTrainingVelocityHistory::TryGetAtOrBefore(const float TimeSeconds, FVector& OutVelocity) const
-{
-    OutVelocity = FVector::ZeroVector;
-    if (!FMath::IsFinite(TimeSeconds))
-    {
-        return false;
-    }
-    for (int32 Offset = 0; Offset < SampleCount; ++Offset)
-    {
-        const int32 Index = (NextIndex + Capacity - 1 - Offset) % Capacity;
-        if (Samples[Index].TimeSeconds <= TimeSeconds)
-        {
-            OutVelocity = Samples[Index].Velocity;
-            return true;
-        }
-    }
-    return false;
-}
+﻿#include "Training/AI/TrainingBotPersonalityTypes.h"
 
 void FTrainingAimLatch::Reset()
 {
@@ -78,19 +28,19 @@ bool TrainingPersonality::IsConcretePersonality(const ETrainingBotPersonality Pe
         || Personality == ETrainingBotPersonality::Trickster;
 }
 
-bool TrainingPersonality::IsCopyAction(const ETrainingBotAction Action)
+bool TrainingPersonality::IsStrafeAction(const ETrainingBotAction Action)
 {
     return Action == ETrainingBotAction::CopyMirror
         || Action == ETrainingBotAction::CopyInverse
         || Action == ETrainingBotAction::CopyDelayed;
 }
 
-float TrainingPersonality::TangentialVelocity(const FVector& WorldVelocity,
+float TrainingPersonality::TangentialProjection(const FVector& WorldVector,
     const FVector& ArenaCenter, const FVector& BotPosition)
 {
     const FVector Radial = (BotPosition - ArenaCenter).GetSafeNormal2D();
     const FVector PositiveTangent(-Radial.Y, Radial.X, 0.0);
-    return static_cast<float>(FVector::DotProduct(WorldVelocity, PositiveTangent));
+    return static_cast<float>(FVector::DotProduct(WorldVector, PositiveTangent));
 }
 
 bool TrainingPersonality::IsAimNearCapsule(const FVector& Eye, const FVector& ViewDirection,

@@ -107,6 +107,11 @@ struct FPS_API FTrainingSessionResult
 
 namespace TrainingRules
 {
+    inline constexpr float MinDistanceMeters = 5.0f;
+    inline constexpr float MaxDistanceMeters = 50.0f;
+    inline constexpr float DistanceHalfWidthMeters = 2.0f;
+    inline constexpr float CentimetersPerMeter = 100.0f;
+    inline constexpr float BotArcStepCentimeters = 150.0f;
     inline constexpr float MovementRadiusCentimeters = 300.0f;
     inline constexpr float TargetIntervalSeconds = 2.0f;
     inline constexpr float TargetMinIntervalSeconds = 1.0f;

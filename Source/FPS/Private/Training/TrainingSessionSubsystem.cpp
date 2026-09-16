@@ -190,7 +190,6 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
     {
         const float SpawnInterval = TrainingRules::GetTargetSpawnIntervalSeconds(
             static_cast<float>(ElapsedSeconds), SessionDurationSeconds);
-        // 생성 콜백에서 세션이 끝나도 함께 취소되도록 다음 생성을 먼저 예약한다.
         GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
             SpawnInterval, false);
     }

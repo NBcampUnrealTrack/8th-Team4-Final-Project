@@ -125,7 +125,7 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const float D
     while (DamageNumbers.Num() >= Limit)
     {
         if (UTextBlock* OldText = DamageNumbers[0].Text.Get()) { OldText->RemoveFromParent(); }
-        DamageNumbers.RemoveAt(0);
+        DamageNumbers.RemoveAt(0, 1, EAllowShrinking::No);
     }
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     DamageText->SetText(FText::AsNumber(FMath::RoundToInt(Damage)));
@@ -141,7 +141,8 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const float D
     FDamageNumber& Entry = DamageNumbers.AddDefaulted_GetRef();
     Entry.Text = DamageText;
     Entry.WorldPosition = WorldPosition + DamageNumberWorldOffset;
-    Entry.HorizontalOffset = static_cast<float>((DamageSequence++ % 3) - 1) * 18.0f;
+    Entry.HorizontalOffset = static_cast<float>(DamageSequence - 1) * 18.0f;
+    DamageSequence = (DamageSequence + 1) % 3;
 }
 
 void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
@@ -160,7 +161,7 @@ void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const fl
         if (!DamageText || Entry.Age >= Lifetime)
         {
             if (DamageText) { DamageText->RemoveFromParent(); }
-            DamageNumbers.RemoveAtSwap(Index);
+            DamageNumbers.RemoveAt(Index, 1, EAllowShrinking::No);
             continue;
         }
         FVector2D Position;

@@ -2,10 +2,12 @@
 
 bool FTrainingDistanceBand::Contains(const FVector& Center, const FVector& Position) const
 {
-    const double Radius = FVector::Dist2D(Center, Position);
-    return FMath::IsFinite(Radius)
-        && Radius >= MinCentimeters - KINDA_SMALL_NUMBER
-        && Radius <= MaxCentimeters + KINDA_SMALL_NUMBER;
+    const double RadiusSquared = FVector::DistSquared2D(Center, Position);
+    const double MinRadius = MinCentimeters - KINDA_SMALL_NUMBER;
+    const double MaxRadius = MaxCentimeters + KINDA_SMALL_NUMBER;
+    return FMath::IsFinite(RadiusSquared)
+        && (MinRadius <= 0.0 || RadiusSquared >= FMath::Square(MinRadius))
+        && MaxRadius >= 0.0 && RadiusSquared <= FMath::Square(MaxRadius);
 }
 
 bool FTrainingDistanceBand::ContainsSegment(const FVector& Center,
@@ -23,8 +25,8 @@ bool FTrainingDistanceBand::ContainsSegment(const FVector& Center,
     const double Alpha = LengthSquared > SMALL_NUMBER
         ? FMath::Clamp(-FVector2D::DotProduct(A, Segment) / LengthSquared, 0.0, 1.0)
         : 0.0;
-    const double ClosestRadius = (A + Segment * Alpha).Size();
-    return ClosestRadius >= MinCentimeters - KINDA_SMALL_NUMBER;
+    const double MinRadius = MinCentimeters - KINDA_SMALL_NUMBER;
+    return MinRadius <= 0.0 || (A + Segment * Alpha).SizeSquared() >= FMath::Square(MinRadius);
 }
 
 bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
@@ -41,14 +43,14 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
         {
             return false;
         }
-        NominalMeters = FMath::Clamp(CustomMeters, 5.0f, 50.0f);
+        NominalMeters = FMath::Clamp(CustomMeters, MinDistanceMeters, MaxDistanceMeters);
         break;
     default:
         return false;
     }
 
-    OutBand.MinCentimeters = FMath::Max(5.0f, NominalMeters - 2.0f) * 100.0f;
-    OutBand.MaxCentimeters = FMath::Min(50.0f, NominalMeters + 2.0f) * 100.0f;
+    OutBand.MinCentimeters = FMath::Max(MinDistanceMeters, NominalMeters - DistanceHalfWidthMeters) * CentimetersPerMeter;
+    OutBand.MaxCentimeters = FMath::Min(MaxDistanceMeters, NominalMeters + DistanceHalfWidthMeters) * CentimetersPerMeter;
     return true;
 }
 

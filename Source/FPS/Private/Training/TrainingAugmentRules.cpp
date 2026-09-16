@@ -2,8 +2,29 @@
 
 #include "Augment/AugmentDefinition.h"
 #include "Augment/AugmentDraft.h"
+#include "AbilitySystemComponent.h"
+#include "Player/ShooterPlayerState.h"
+#include "Weapon/WeaponInventoryComponent.h"
 
 #define LOCTEXT_NAMESPACE "TrainingAugmentRules"
+
+bool TrainingAugmentRules::GetAvailabilityTags(const AShooterPlayerState* PlayerState,
+    FGameplayTagContainer& OutTags)
+{
+    OutTags.Reset();
+    const UAbilitySystemComponent* ASC = PlayerState ? PlayerState->GetAbilitySystemComponent() : nullptr;
+    const UWeaponInventoryComponent* Weapons = PlayerState ? PlayerState->GetWeaponInventory() : nullptr;
+    if (!ASC || !Weapons) { return false; }
+
+    ASC->GetOwnedGameplayTags(OutTags);
+    // 이전 Pawn의 무기 태그 대신 현재 인벤토리 기준으로 다시 구성한다.
+    const FGameplayTag WeaponUnlockRoot = FGameplayTag::RequestGameplayTag(TEXT("Unlock.Weapon"), false);
+    OutTags.RemoveTags(OutTags.Filter(FGameplayTagContainer(WeaponUnlockRoot)));
+    FGameplayTagContainer WeaponTags;
+    Weapons->GetAugmentUnlockTags(WeaponTags);
+    OutTags.AppendTags(WeaponTags);
+    return true;
+}
 
 bool TrainingAugmentRules::IsCatalogEligible(const UAugmentDefinition& Definition,
     const FGameplayTagContainer& UnlockTags)
@@ -29,7 +50,8 @@ bool TrainingAugmentRules::ValidateIds(const TArray<FPrimaryAssetId>& Selection,
     OutFailure = FText::GetEmpty();
     if (Selection.Num() > MaximumSelection)
     {
-        OutFailure = LOCTEXT("Limit", "Select up to 3 augments in total (active + passive).");
+        OutFailure = FText::Format(LOCTEXT("Limit", "Select up to {0} augments in total (active + passive)."),
+            FText::AsNumber(MaximumSelection));
         return false;
     }
     TSet<FPrimaryAssetId> Seen;
@@ -50,19 +72,16 @@ FGameplayTag TrainingAugmentRules::GetActiveSlot(const int32 ActiveIndex)
     static const FName Names[] = {
         TEXT("InputTag.Ability.Slot1"), TEXT("InputTag.Ability.Slot2"), TEXT("InputTag.Ability.Slot3")
     };
+    static_assert(UE_ARRAY_COUNT(Names) == MaximumSelection);
     return ActiveIndex >= 0 && ActiveIndex < UE_ARRAY_COUNT(Names)
         ? FGameplayTag::RequestGameplayTag(Names[ActiveIndex], false) : FGameplayTag();
 }
 
 FText TrainingAugmentRules::GetSlotLabel(const int32 ActiveIndex)
 {
-    switch (ActiveIndex)
-    {
-    case 0: return LOCTEXT("Slot1", "SLOT 1 / Q");
-    case 1: return LOCTEXT("Slot2", "SLOT 2 / E");
-    case 2: return LOCTEXT("Slot3", "SLOT 3 / V");
-    default: return FText::GetEmpty();
-    }
+    return ActiveIndex >= 0 && ActiveIndex < MaximumSelection
+        ? FText::Format(LOCTEXT("Slot", "SLOT {0}"), FText::AsNumber(ActiveIndex + 1))
+        : FText::GetEmpty();
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -3,12 +3,14 @@
 #include "CoreMinimal.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "Training/TrainingTypes.h"
-#include "Augment/AugmentTypes.h"
+#include "Training/TrainingLoadoutSnapshot.h"
 #include "Styling/SlateTypes.h"
+#include "Types/SlateEnums.h"
 #include "TrainingDialogWidget.generated.h"
 
 class UTrainingPlayerComponent;
 class UButton;
+class UComboBoxString;
 class USpinBox;
 class UTextBlock;
 class UImage;
@@ -26,7 +28,9 @@ public:
     void DetachRequest();
     void ReceiveRequestFailure(const FText& Failure);
     void SetAppliedAugments(const TArray<FAugmentInventoryEntry>& Entries);
-    void ReceiveAugmentResult(bool bSuccess, const TArray<FAugmentInventoryEntry>& Entries, const FText& Failure);
+    void SetAppliedLoadout(const FTrainingLoadoutSnapshot& Snapshot);
+    void ReceiveCombatClassResult(bool bSuccess, const FTrainingLoadoutSnapshot& Snapshot, const FText& Failure);
+    void ReceiveAugmentResult(bool bSuccess, const FTrainingLoadoutSnapshot& Snapshot, const FText& Failure);
 
     UFUNCTION(BlueprintCallable, Category = "Training")
     void OpenAugmentSelection();
@@ -139,6 +143,12 @@ private:
     TObjectPtr<UTextBlock> Txt_AugmentSummary;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UComboBoxString> Combo_Class;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> Txt_ClassHint;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UWidgetSwitcher> Switch_TrainingPages;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
@@ -150,6 +160,18 @@ private:
     void HandleAugmentApply(const TArray<FPrimaryAssetId>& Selection);
     void HandleAugmentBack();
     void RefreshAugmentSummary();
+
+    void BuildClassOptions();
+    void RefreshClassControls();
+
+    UFUNCTION()
+    void HandleGeneratedClassSelection(FString SelectedItem, ESelectInfo::Type SelectionType);
+
+    TArray<EDominationCombatClass> ClassOptions;
+    EDominationCombatClass AppliedCombatClass = EDominationCombatClass::Unselected;
+    EDominationCombatClass PendingCombatClass = EDominationCombatClass::Unselected;
+    FText ClassFeedback;
+    bool bUpdatingClassControl = false;
 
     void BindControls();
     void UnbindControls();

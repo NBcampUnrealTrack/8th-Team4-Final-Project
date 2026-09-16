@@ -95,11 +95,11 @@ void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interact
     PendingSessionId = Sessions->GetSessionId();
     PendingKind = Kind;
     PendingInteractable = &Interactable;
-    ClientOpenDialog(Kind, PendingRequestId, Interactable.InteractionSound, Interactable.InteractionSoundVolume, GetAugmentSnapshot());
+    ClientOpenDialog(Kind, PendingRequestId, Interactable.InteractionSound, Interactable.InteractionSoundVolume, BuildLoadoutSnapshot());
 }
 
 void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDialogKind Kind, const int32 RequestId,
-    USoundBase* InteractionSound, const float SoundVolume, const TArray<FAugmentInventoryEntry>& AugmentSnapshot)
+    USoundBase* InteractionSound, const float SoundVolume, const FTrainingLoadoutSnapshot& LoadoutSnapshot)
 {
     CloseResults();
     CloseActiveDialog();
@@ -125,7 +125,9 @@ void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDi
         return;
     }
     ActiveDialog = NewDialog;
-    NewDialog->SetAppliedAugments(AugmentSnapshot);
+    ClientLoadout = LoadoutSnapshot;
+    bHasClientLoadout = true;
+    NewDialog->SetAppliedLoadout(LoadoutSnapshot);
     NewDialog->InitializeDialog(*this, Kind, RequestId);
     USoundBase* OpenSound = InteractionSound ? InteractionSound : WidgetOpenSound.Get();
     if (OpenSound) { UGameplayStatics::PlaySound2D(this, OpenSound, InteractionSound ? FMath::Max(0.0f, SoundVolume) : 1.0f); }
@@ -389,6 +391,7 @@ void UTrainingPlayerComponent::NotifyDialogRemoved(UTrainingDialogWidget& Dialog
     if (ActiveDialog.Get() == &Dialog)
     {
         ActiveDialog.Reset();
+        bHasClientLoadout = false;
     }
     Dialog.DetachRequest();
 }
@@ -397,6 +400,7 @@ void UTrainingPlayerComponent::CloseActiveDialog()
 {
     UTrainingDialogWidget* Dialog = ActiveDialog.Get();
     ActiveDialog.Reset();
+    bHasClientLoadout = false;
     if (Dialog)
     {
         Dialog->DetachRequest();

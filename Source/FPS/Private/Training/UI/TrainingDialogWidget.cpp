@@ -2,6 +2,7 @@
 
 #include "Training/TrainingPlayerComponent.h"
 #include "Components/Button.h"
+#include "Components/ComboBoxString.h"
 #include "Components/Image.h"
 #include "Components/SpinBox.h"
 #include "Components/TextBlock.h"
@@ -22,9 +23,11 @@ void UTrainingDialogWidget::InitializeDialog(UTrainingPlayerComponent& InBridge,
     if (AugmentSelection) { AugmentSelection->EndSelection(); }
     if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(0); }
     Bridge = &InBridge;
-    InBridge.ApplyButtonSounds(*this);
     DialogKind = InKind;
     RequestId = InRequestId;
+    PendingCombatClass = EDominationCombatClass::Unselected;
+    ClassFeedback = FText::GetEmpty();
+    BuildClassOptions();
     if (bAutoBindGeneratedUI && Txt_Error)
     {
         Txt_Error->SetText(FText::GetEmpty());
@@ -127,10 +130,6 @@ void UTrainingDialogWidget::NativeDestruct()
 
 bool UTrainingDialogWidget::NativeOnHandleBackAction()
 {
-    if (bAutoBindGeneratedUI && bRequestPending)
-    {
-        return true;
-    }
     CancelDialog();
     return true;
 }
@@ -148,6 +147,7 @@ void UTrainingDialogWidget::NativeConstruct()
         DialogKind = GeneratedDialogKind;
     }
     BindControls();
+    BuildClassOptions();
     if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(bChoosingAugments ? 1 : 0); }
     if (UTextBlock* TargetDescription = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Description"))))
     {
@@ -163,7 +163,7 @@ void UTrainingDialogWidget::NativeConstruct()
     }
     if (Spin_CustomMeters)
     {
-        SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), 5.0f, 50.0f);
+        SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters);
     }
     RefreshControls();
 }
@@ -192,6 +192,7 @@ void UTrainingDialogWidget::BindControls()
         return;
     }
     if (Btn_Augments) { Btn_Augments->OnClicked.AddUniqueDynamic(this, &ThisClass::OpenAugmentSelection); }
+    if (Combo_Class) { Combo_Class->OnSelectionChanged.AddUniqueDynamic(this, &ThisClass::HandleGeneratedClassSelection); }
     if (AugmentSelection)
     {
         AugmentSelection->OnApplyRequested.RemoveAll(this);
@@ -218,6 +219,7 @@ void UTrainingDialogWidget::UnbindControls()
         return;
     }
     if (Btn_Augments) { Btn_Augments->OnClicked.RemoveDynamic(this, &ThisClass::OpenAugmentSelection); }
+    if (Combo_Class) { Combo_Class->OnSelectionChanged.RemoveDynamic(this, &ThisClass::HandleGeneratedClassSelection); }
     if (AugmentSelection)
     {
         AugmentSelection->OnApplyRequested.RemoveAll(this);
@@ -242,6 +244,7 @@ void UTrainingDialogWidget::RefreshControls()
         return;
     }
     RefreshAugmentSummary();
+    RefreshClassControls();
     if (Txt_Prompt) Txt_Prompt->SetText(GetPromptText());
     if (Txt_Primary)
     {
@@ -256,7 +259,12 @@ void UTrainingDialogWidget::RefreshControls()
     }
     const auto ApplyChoice = [this](UButton* ChoiceButton, const bool bSelected)
     {
-        if (ChoiceButton) ChoiceButton->SetStyle(bSelected ? ChoiceSelectedStyle : ChoiceNormalStyle);
+        if (!ChoiceButton) { return; }
+        const FButtonStyle& Current = ChoiceButton->GetStyle();
+        FButtonStyle Style = bSelected ? ChoiceSelectedStyle : ChoiceNormalStyle;
+        Style.HoveredSlateSound = Current.HoveredSlateSound;
+        Style.PressedSlateSound = Current.PressedSlateSound;
+        ChoiceButton->SetStyle(Style);
     };
     ApplyChoice(Btn_ModeTarget.Get(), SelectedMode == ETrainingMode::TargetAcquisition);
     ApplyChoice(Btn_ModeCombat.Get(), SelectedMode == ETrainingMode::CombatResponse);
@@ -264,7 +272,6 @@ void UTrainingDialogWidget::RefreshControls()
     ApplyChoice(Btn_Distance20.Get(), SelectedPreset == ETrainingDistancePreset::TwentyMeters);
     ApplyChoice(Btn_Distance30.Get(), SelectedPreset == ETrainingDistancePreset::ThirtyMeters);
     ApplyChoice(Btn_DistanceCustom.Get(), SelectedPreset == ETrainingDistancePreset::Custom);
-    if (Bridge.IsValid()) { Bridge->ApplyButtonSounds(*this); }
     if (Img_TargetSelected)
     {
         Img_TargetSelected->SetVisibility(SelectedMode == ETrainingMode::TargetAcquisition
@@ -285,8 +292,8 @@ void UTrainingDialogWidget::RefreshControls()
         if (TrainingRules::ResolveDistanceBand(SelectedPreset, SelectedCustomMeters, ResolvedBand))
         {
             Txt_Range->SetText(FText::Format(LOCTEXT("Range", "Spawn range: {0}-{1} m  |  Fixed arena center"),
-                FText::AsNumber(ResolvedBand.MinCentimeters / 100.0f),
-                FText::AsNumber(ResolvedBand.MaxCentimeters / 100.0f)));
+                FText::AsNumber(ResolvedBand.MinCentimeters / TrainingRules::CentimetersPerMeter),
+                FText::AsNumber(ResolvedBand.MaxCentimeters / TrainingRules::CentimetersPerMeter)));
         }
     }
     if (Txt_SessionHint)
@@ -298,7 +305,10 @@ void UTrainingDialogWidget::RefreshControls()
                 FText::AsNumber(TrainingRules::TargetDurationSeconds),
                 FText::AsNumber(TrainingRules::TargetIntervalSeconds),
                 FText::AsNumber(TrainingRules::TargetMinIntervalSeconds))
-            : LOCTEXT("CombatHint", "3s countdown  /  One AI every 5s  /  Max 10 alive"));
+            : FText::Format(LOCTEXT("CombatHint", "{0}s countdown  /  One AI every {1}s  /  Max {2} alive"),
+                FText::AsNumber(TrainingRules::CountdownSeconds),
+                FText::AsNumber(TrainingRules::CombatIntervalSeconds),
+                FText::AsNumber(TrainingRules::MaxLivingCombatAI)));
     }
 }
 
@@ -307,7 +317,7 @@ void UTrainingDialogWidget::HandleGeneratedPrimary()
     if (DialogKind == ETrainingDialogKind::SelectMode)
     {
         const float CustomValue = Spin_CustomMeters ? Spin_CustomMeters->GetValue() : SelectedCustomMeters;
-        StartSelectedMode(SelectedMode, SelectedPreset, FMath::Clamp(CustomValue, 5.0f, 50.0f));
+        StartSelectedMode(SelectedMode, SelectedPreset, FMath::Clamp(CustomValue, TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters));
     }
     else
     {
@@ -344,7 +354,7 @@ void UTrainingDialogWidget::HandleGeneratedCustom() { SelectDistance(ETrainingDi
 void UTrainingDialogWidget::HandleGeneratedCustomValue(const float NewValue)
 {
     if (bRequestPending || !FMath::IsFinite(NewValue)) return;
-    SelectedCustomMeters = FMath::Clamp(NewValue, 5.0f, 50.0f);
+    SelectedCustomMeters = FMath::Clamp(NewValue, TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters);
     RefreshControls();
 }
 

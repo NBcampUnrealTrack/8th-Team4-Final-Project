@@ -4,7 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Training/TrainingTypes.h"
-#include "Augment/AugmentTypes.h"
+#include "Training/TrainingLoadoutSnapshot.h"
 #include "TrainingPlayerComponent.generated.h"
 
 class APlayerController;
@@ -32,6 +32,7 @@ public:
     void SubmitConfirmation(int32 RequestId);
     void SubmitMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
     void SubmitAugments(int32 RequestId, const TArray<FPrimaryAssetId>& Selection);
+    void SubmitCombatClass(int32 RequestId, EDominationCombatClass RequestedClass);
     bool GetAugmentAvailabilityTags(FGameplayTagContainer& OutTags) const;
     void DismissDialog(int32 RequestId);
     void NotifyDialogRemoved(UTrainingDialogWidget& Dialog);
@@ -85,7 +86,8 @@ protected:
 private:
     APlayerController* GetParticipantController() const;
     UAugmentInventoryComponent* GetAugmentInventory() const;
-    TArray<FAugmentInventoryEntry> GetAugmentSnapshot() const;
+    FTrainingLoadoutSnapshot BuildLoadoutSnapshot() const;
+    bool ValidateLoadoutRequest(int32 RequestId, FText& OutFailure) const;
     UShooterUIManagerSubsystem* GetUIManager() const;
     bool ValidatePendingRequest(int32 RequestId, FText& OutFailure) const;
     void ClearPendingRequest();
@@ -97,7 +99,7 @@ private:
 
     UFUNCTION(Client, Reliable)
     void ClientOpenDialog(ETrainingDialogKind Kind, int32 RequestId, USoundBase* InteractionSound, float SoundVolume,
-        const TArray<FAugmentInventoryEntry>& AugmentSnapshot);
+        const FTrainingLoadoutSnapshot& LoadoutSnapshot);
 
     UFUNCTION(Client, Reliable)
     void ClientRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
@@ -130,7 +132,14 @@ private:
 
     UFUNCTION(Client, Reliable)
     void ClientAugmentResult(int32 RequestId, bool bSuccess,
-        const TArray<FAugmentInventoryEntry>& AuthoritativeEntries, const FText& Failure);
+        const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure);
+
+    UFUNCTION(Server, Reliable)
+    void ServerChangeCombatClass(int32 RequestId, EDominationCombatClass RequestedClass);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCombatClassResult(int32 RequestId, bool bSuccess,
+        const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure);
 
     UFUNCTION(Server, Reliable)
     void ServerCancel(int32 RequestId);
@@ -147,6 +156,10 @@ private:
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
     int32 LastStoppedSessionId = 0;
     int32 FeedbackSessionId = 0;
+    UPROPERTY(Transient)
+    FTrainingLoadoutSnapshot ClientLoadout;
+    bool bHasClientLoadout = false;
+
     TWeakObjectPtr<ATrainingInteractionActor> PendingInteractable;
     TWeakObjectPtr<UTrainingDialogWidget> ActiveDialog;
     ETrainingDialogKind PendingKind = ETrainingDialogKind::EnterArena;

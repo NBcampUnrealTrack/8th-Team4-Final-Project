@@ -55,7 +55,6 @@ void ATrainingCombatAI::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         if (ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetController()))
         {
-            TrainingController->StopTrainingBrain();
             TrainingController->UnPossess();
             TrainingController->Destroy();
         }

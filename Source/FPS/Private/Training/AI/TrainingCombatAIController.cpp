@@ -75,21 +75,7 @@ void ATrainingCombatAIController::RefreshParticipantFocus()
 
 bool ATrainingCombatAIController::RequestStrafeStep(const bool bClockwise)
 {
-    const ATrainingCombatAI* TrainingPawn = Cast<ATrainingCombatAI>(GetPawn());
-    const ATrainingArena* Arena = TrainingPawn ? TrainingPawn->GetTrainingArena() : nullptr;
-    if (!TrainingPawn || !TrainingPawn->IsAlive() || !Arena)
-    {
-        return false;
-    }
-    const FTrainingDistanceBand& Band = TrainingPawn->GetDistanceBand();
-    FVector Destination;
-    if (!Arena->FindStrafeDestination(TrainingPawn->GetActorLocation(), Band,
-        TrainingPawn->GetNavAgentPropertiesRef(), bClockwise, Destination))
-    {
-        return false;
-    }
-
-    return RequestTrainingDestination(Destination);
+    return RequestPersonalityStep(bClockwise, 0.0f);
 }
 
 bool ATrainingCombatAIController::RequestPersonalityStep(const bool bClockwise, const float RadialStepCentimeters)
@@ -102,7 +88,8 @@ bool ATrainingCombatAIController::RequestPersonalityStep(const bool bClockwise, 
     }
     FVector Destination;
     if (!Arena->FindBotStepDestination(TrainingPawn->GetActorLocation(), TrainingPawn->GetDistanceBand(),
-        TrainingPawn->GetNavAgentPropertiesRef(), bClockwise ? 150.0f : -150.0f,
+        TrainingPawn->GetNavAgentPropertiesRef(),
+        bClockwise ? TrainingRules::BotArcStepCentimeters : -TrainingRules::BotArcStepCentimeters,
         RadialStepCentimeters, Destination))
     {
         return false;

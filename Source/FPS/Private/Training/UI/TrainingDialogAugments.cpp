@@ -7,6 +7,7 @@
 #include "Components/WidgetSwitcher.h"
 #include "Engine/GameInstance.h"
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/TrainingAugmentRules.h"
 #include "Training/UI/TrainingAugmentSelectionWidget.h"
 
 #define LOCTEXT_NAMESPACE "TrainingDialogAugments"
@@ -28,8 +29,8 @@ void UTrainingDialogWidget::RefreshAugmentSummary()
         const UAugmentDefinition* Definition = Registry ? Registry->FindDefinition(Entry.DefinitionId) : nullptr;
         Names.Add(Definition ? Definition->DisplayName.ToString() : Entry.DefinitionId.PrimaryAssetName.ToString());
     }
-    Txt_AugmentSummary->SetText(FText::Format(LOCTEXT("Count", "{0} / 3 applied  |  {1}"),
-        FText::AsNumber(AppliedAugments.Num()), Names.IsEmpty() ? LOCTEXT("None", "No augments")
+    Txt_AugmentSummary->SetText(FText::Format(LOCTEXT("Count", "{0} / {1} applied  |  {2}"),
+        FText::AsNumber(AppliedAugments.Num()), FText::AsNumber(TrainingAugmentRules::MaximumSelection), Names.IsEmpty() ? LOCTEXT("None", "No augments")
             : FText::FromString(FString::Join(Names, TEXT(", ")))));
     Txt_AugmentSummary->SetToolTipText(Txt_AugmentSummary->GetText());
 }
@@ -58,10 +59,10 @@ void UTrainingDialogWidget::HandleAugmentApply(const TArray<FPrimaryAssetId>& Se
 }
 
 void UTrainingDialogWidget::ReceiveAugmentResult(const bool bSuccess,
-    const TArray<FAugmentInventoryEntry>& Entries, const FText& Failure)
+    const FTrainingLoadoutSnapshot& Snapshot, const FText& Failure)
 {
     if (!bChoosingAugments) { return; }
-    SetAppliedAugments(Entries);
+    SetAppliedLoadout(Snapshot);
     SetRequestPending(false);
     if (bSuccess) { HandleAugmentBack(); }
     else if (AugmentSelection) { AugmentSelection->ShowFailure(Failure); }

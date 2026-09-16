@@ -40,7 +40,7 @@ void UTrainingStartFeedbackWidget::NativePreConstruct()
     SetVisibility(ESlateVisibility::HitTestInvisible);
     if (IsDesignTime() && Txt_FeedbackMessage)
     {
-        Txt_FeedbackMessage->SetText(FText::Format(LOCTEXT("CountdownPreview", "{0}초 뒤에 시작합니다"), FText::AsNumber(3)));
+        Txt_FeedbackMessage->SetText(FText::Format(LOCTEXT("CountdownPreview", "{0}초 뒤에 시작합니다"), FText::AsNumber(TrainingRules::CountdownSeconds)));
     }
 }
 

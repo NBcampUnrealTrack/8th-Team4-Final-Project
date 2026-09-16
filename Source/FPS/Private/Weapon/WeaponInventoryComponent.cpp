@@ -180,46 +180,77 @@ bool UWeaponInventoryComponent::ServerConfirmWeaponUpgrade(const FGameplayTag We
 
 namespace
 {
-    // The mapping lives here once: both GAS synchronization and read-only UI queries use it.
-    void VisitAugmentUnlocks(const UWeaponInventoryComponent& Inventory,
-        TFunctionRef<void(FGameplayTag, bool)> Visit)
-    {
-        struct FUnlockRule { FGameplayTag Weapon; FGameplayTag Unlock; bool bFirearm; };
-        const FUnlockRule Rules[] = {
-            {RogueTags::Weapon_Type_Rifle,   RogueTags::Unlock_Weapon_Rifle_Owned, true},
-            {RogueTags::Weapon_Type_Sniper,  RogueTags::Unlock_Weapon_Sniper_Owned, true},
-            {RogueTags::Weapon_Type_Shotgun, RogueTags::Unlock_Weapon_Shotgun_Owned, true},
-            {RogueTags::Weapon_Type_Pistol,  RogueTags::Unlock_Weapon_Pistol_Upgraded, true},
-            {RogueTags::Weapon_Type_Knife,   RogueTags::Unlock_Weapon_Knife_Upgraded, false}
-        };
-        bool bAnyFirearm = false;
-        for (const FUnlockRule& Rule : Rules)
-        {
-            const bool bUnlocked = Inventory.IsUnlocked(Rule.Weapon);
-            Visit(Rule.Unlock, bUnlocked);
-            bAnyFirearm |= bUnlocked && Rule.bFirearm;
-        }
-        Visit(RogueTags::Unlock_Weapon_Firearm_Any, bAnyFirearm);
-    }
+	// GAS 동기화와 UI 조회가 같은 해금 규칙을 사용한다.
+	void VisitAugmentUnlocks(const UWeaponInventoryComponent& Inventory,
+		TFunctionRef<void(FGameplayTag, bool)> Visit)
+	{
+		struct FUnlockRule
+		{
+			FGameplayTag Weapon;
+			FGameplayTag Unlock;
+			bool bFirearm;
+		};
+
+		const FUnlockRule Rules[] = {
+			{RogueTags::Weapon_Type_Rifle, RogueTags::Unlock_Weapon_Rifle_Owned, true},
+			{RogueTags::Weapon_Type_Sniper, RogueTags::Unlock_Weapon_Sniper_Owned, true},
+			{RogueTags::Weapon_Type_Shotgun, RogueTags::Unlock_Weapon_Shotgun_Owned, true},
+			{RogueTags::Weapon_Type_Pistol, RogueTags::Unlock_Weapon_Pistol_Upgraded, true},
+			{RogueTags::Weapon_Type_Knife, RogueTags::Unlock_Weapon_Knife_Upgraded, false}
+		};
+
+		bool bAnyFirearm = false;
+		for (const FUnlockRule& Rule : Rules)
+		{
+			const bool bUnlocked = Inventory.IsUnlocked(Rule.Weapon);
+			Visit(Rule.Unlock, bUnlocked);
+			bAnyFirearm |= bUnlocked && Rule.bFirearm;
+		}
+		Visit(RogueTags::Unlock_Weapon_Firearm_Any, bAnyFirearm);
+	}
 }
 
 void UWeaponInventoryComponent::GetAugmentUnlockTags(FGameplayTagContainer& OutTags) const
 {
-    OutTags.Reset();
-    VisitAugmentUnlocks(*this, [&OutTags](const FGameplayTag Tag, const bool bUnlocked)
-    {
-        if (bUnlocked) { OutTags.AddTag(Tag); }
-    });
+	OutTags.Reset();
+	VisitAugmentUnlocks(*this, [&OutTags](const FGameplayTag Tag, const bool bUnlocked)
+	{
+		if (bUnlocked)
+		{
+			OutTags.AddTag(Tag);
+		}
+	});
+}
+
+FWeaponInventorySnapshot UWeaponInventoryComponent::CaptureSnapshot() const
+{
+	return {WeaponStates, EquippedPrimaryTag};
+}
+
+void UWeaponInventoryComponent::ServerRestoreSnapshot(const FWeaponInventorySnapshot& Snapshot)
+{
+	if (!HasServerAuthority())
+	{
+		return;
+	}
+
+	WeaponStates = Snapshot.WeaponStates;
+	EquippedPrimaryTag = Snapshot.EquippedPrimaryTag;
+	NotifyInventoryChanged();
+	GetOwner()->ForceNetUpdate();
 }
 
 void UWeaponInventoryComponent::SyncUnlockTags()
 {
-    if (!IsValid(AbilitySystemComponent)) { return; }
-    VisitAugmentUnlocks(*this, [this](const FGameplayTag Tag, const bool bUnlocked)
-    {
-        // Keep the original server-only, idempotent tag-count semantics.
-        AbilitySystemComponent->SetLooseGameplayTagCount(Tag, bUnlocked ? 1 : 0);
-    });
+	if (!IsValid(AbilitySystemComponent))
+	{
+		return;
+	}
+
+	VisitAugmentUnlocks(*this, [this](const FGameplayTag Tag, const bool bUnlocked)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(Tag, bUnlocked ? 1 : 0);
+	});
 }
 
 void UWeaponInventoryComponent::NotifyInventoryChanged()

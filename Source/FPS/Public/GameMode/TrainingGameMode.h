@@ -25,6 +25,8 @@ public:
     virtual void NotifyPlayerReadyForGameFlow(APlayerController* ReadyPlayer) override;
     bool RequestCombatClass(ATrainingPlayerController* Requester,
         EDominationCombatClass RequestedClass, FText& OutFailure);
+    bool RequestTrainingCombatClass(ATrainingPlayerController* Requester,
+        EDominationCombatClass RequestedClass, FText& OutFailure);
     bool UsesManualAugmentSelection() const { return bUseManualAugmentSelection; }
     void RequestPreviewCombatClass(ATrainingPlayerController* Requester,
         EDominationCombatClass RequestedClass);

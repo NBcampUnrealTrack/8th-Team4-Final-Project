@@ -1,4 +1,4 @@
-#include "Training/AI/TrainingBotPersonalityComponent.h"
+﻿#include "Training/AI/TrainingBotPersonalityComponent.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -33,9 +33,10 @@ void UTrainingBotPersonalityComponent::BeginTraining()
         };
         ActivePersonality = Choices[FMath::RandHelper(static_cast<int32>(UE_ARRAY_COUNT(Choices)))];
     }
+    bStrafeClockwise = (FMath::RandHelper(2) != 0);
     StartTrickSequence();
-    Observe(0.0f);
     SetComponentTickEnabled(true);
+    Observe(0.0f);
     if (bLogPersonalityOnSpawn)
     {
         UE_LOG(LogTemp, Log, TEXT("[TrainingPersonality] %s -> %s"),
@@ -47,10 +48,9 @@ void UTrainingBotPersonalityComponent::BeginTraining()
 void UTrainingBotPersonalityComponent::EndTraining()
 {
     SetComponentTickEnabled(false);
-    VelocityHistory.Reset();
     AimLatch.Reset();
     ParticipantPawn.Reset();
-    ObservationSeconds = 0.0f;
+    bStrafeClockwise = false;
     AimTangentOffset = 0.0f;
     ActivePersonality = ETrainingBotPersonality::Random;
 }
@@ -72,24 +72,20 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
         EndTraining();
         return;
     }
-    ObservationSeconds += FMath::Max(0.0f, DeltaSeconds);
     const APlayerController* Player = TrainingBot->GetParticipant();
     APawn* CurrentParticipantPawn = Player ? Player->GetPawn() : nullptr;
     if (ParticipantPawn.Get() != CurrentParticipantPawn)
     {
         ParticipantPawn = CurrentParticipantPawn;
-        VelocityHistory.Reset();
         AimLatch.Reset();
         AimTangentOffset = 0.0f;
     }
     if (!IsValid(CurrentParticipantPawn))
     {
         ParticipantPawn.Reset();
-        VelocityHistory.Reset();
         AimLatch.Reset();
         return;
     }
-    VelocityHistory.Add(ObservationSeconds, CurrentParticipantPawn->GetVelocity());
 
     bool bAimObserved = false;
     const ATrainingArena* Arena = TrainingBot->GetTrainingArena();
@@ -120,7 +116,7 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
                 -static_cast<double>(AxisHalfHeight), static_cast<double>(AxisHalfHeight));
             bAimObserved = !GetWorld()->LineTraceSingleByChannel(Obstruction,
                 Eye, SightPoint, ECC_Visibility, Params);
-            AimTangentOffset = TrainingPersonality::TangentialVelocity(
+            AimTangentOffset = TrainingPersonality::TangentialProjection(
                 ClosestAimPoint - TrainingBot->GetActorLocation(), Arena->GetCenterLocation(),
                 TrainingBot->GetActorLocation());
         }
@@ -128,24 +124,10 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
     AimLatch.Update(bAimObserved, DeltaSeconds, FMath::Clamp(ReactionSeconds, 0.05f, 1.0f));
 }
 
-float UTrainingBotPersonalityComponent::GetCopyTangentialVelocity(const bool bDelayed) const
+bool UTrainingBotPersonalityComponent::ReverseStrafeDirection()
 {
-    const ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetOwner());
-    const ATrainingCombatAI* TrainingBot = TrainingController
-        ? Cast<ATrainingCombatAI>(TrainingController->GetPawn()) : nullptr;
-    const ATrainingArena* Arena = TrainingBot ? TrainingBot->GetTrainingArena() : nullptr;
-    if (!ParticipantPawn.IsValid() || !TrainingBot || !Arena)
-    {
-        return 0.0f;
-    }
-    FVector SampleVelocity;
-    const float Delay = bDelayed ? FMath::Clamp(CopyDelaySeconds, 0.05f, 1.0f) : 0.0f;
-    if (!VelocityHistory.TryGetAtOrBefore(ObservationSeconds - Delay, SampleVelocity))
-    {
-        return 0.0f;
-    }
-    return TrainingPersonality::TangentialVelocity(SampleVelocity,
-        Arena->GetCenterLocation(), TrainingBot->GetActorLocation());
+    bStrafeClockwise = !bStrafeClockwise;
+    return bStrafeClockwise;
 }
 
 bool UTrainingBotPersonalityComponent::ChooseEscapeClockwise() const

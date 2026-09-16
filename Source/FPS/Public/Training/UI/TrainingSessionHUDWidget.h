@@ -68,7 +68,7 @@ private:
     TArray<FDamageNumber> DamageNumbers;
     ETrainingMode ActiveMode = ETrainingMode::TargetAcquisition;
     double StartServerSeconds = 0.0;
-    float ActiveDurationSeconds = 60.0f;
+    float ActiveDurationSeconds = TrainingRules::TargetDurationSeconds;
     float KillFeedbackAge = 0.0f;
     float KillFeedbackOpacity = 0.0f;
     float KillFadeStartOpacity = 0.0f;

@@ -44,4 +44,7 @@ private:
     UPROPERTY(Transient, meta = (BindWidget)) TObjectPtr<UImage> Img_Icon;
     FPrimaryAssetId DefinitionId;
     FLinearColor TierAccent = FLinearColor::White;
+    bool bSelectionInitialized = false;
+    bool bLastSelected = false;
+    int32 LastActiveIndex = INDEX_NONE;
 };

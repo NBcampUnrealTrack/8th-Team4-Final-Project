@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "TrainingBotPersonalityTypes.generated.h"
@@ -7,7 +7,7 @@ UENUM(BlueprintType)
 enum class ETrainingBotPersonality : uint8
 {
     Random,
-    Copycat,
+    Copycat UMETA(DisplayName = "좌우 왕복"),
     Coward,
     Trickster
 };
@@ -16,9 +16,10 @@ UENUM(BlueprintType)
 enum class ETrainingBotAction : uint8
 {
     WaitForParticipant,
-    CopyMirror,
-    CopyInverse,
-    CopyDelayed,
+    // 기존 StateTree와의 호환을 위해 저장된 enum 이름과 순서는 유지한다.
+    CopyMirror UMETA(DisplayName = "좌우 왕복 1"),
+    CopyInverse UMETA(DisplayName = "좌우 왕복 2"),
+    CopyDelayed UMETA(DisplayName = "좌우 왕복 3"),
     CowardApproach,
     CowardEscape,
     TrickCruise,
@@ -35,26 +36,6 @@ enum class ETrainingBotCondition : uint8
     IsBeingAimedAt
 };
 
-struct FPS_API FTrainingVelocityHistory
-{
-    static constexpr int32 Capacity = 64;
-
-    void Reset();
-    void Add(float TimeSeconds, const FVector& Velocity);
-    bool TryGetAtOrBefore(float TimeSeconds, FVector& OutVelocity) const;
-
-private:
-    struct FSample
-    {
-        float TimeSeconds = 0.0f;
-        FVector Velocity = FVector::ZeroVector;
-    };
-
-    FSample Samples[Capacity];
-    int32 NextIndex = 0;
-    int32 SampleCount = 0;
-};
-
 struct FPS_API FTrainingAimLatch
 {
     void Reset();
@@ -69,8 +50,8 @@ private:
 namespace TrainingPersonality
 {
     FPS_API bool IsConcretePersonality(ETrainingBotPersonality Personality);
-    FPS_API bool IsCopyAction(ETrainingBotAction Action);
-    FPS_API float TangentialVelocity(const FVector& WorldVelocity,
+    FPS_API bool IsStrafeAction(ETrainingBotAction Action);
+    FPS_API float TangentialProjection(const FVector& WorldVector,
         const FVector& ArenaCenter, const FVector& BotPosition);
     FPS_API bool IsAimNearCapsule(const FVector& Eye, const FVector& ViewDirection,
         const FVector& Center, float HalfHeight, float Radius, float Padding,

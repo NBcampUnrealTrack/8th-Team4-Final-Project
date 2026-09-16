@@ -27,11 +27,11 @@ public:
     FTrainingBotHit OnBotHit;
 
 protected:
-    void TrackActor(AActor& SpawnedActor);
+    void TrackActor(ATrainingCharacter& SpawnedActor);
     ATrainingArena* GetArena() const;
     APlayerController* GetParticipant() const;
     FTrainingDistanceBand DistanceBand;
-    TArray<TWeakObjectPtr<AActor>> OwnedActors;
+    TArray<TWeakObjectPtr<ATrainingCharacter>> OwnedActors;
 
 private:
     void HandleBotHit(ATrainingCharacter& Bot, const AActor* InstigatorActor, float Damage, bool bKilled);

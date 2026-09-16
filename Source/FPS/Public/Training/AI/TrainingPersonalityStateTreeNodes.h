@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "StateTreeConditionBase.h"
@@ -68,9 +68,6 @@ struct FPS_API FTrainingBotActionInstanceData
 
     UPROPERTY()
     bool bClockwise = false;
-
-    UPROPERTY()
-    int32 LastCopyDirection = 0;
 };
 
 USTRUCT(meta = (DisplayName = "Training Personality Action", Category = "Training"))

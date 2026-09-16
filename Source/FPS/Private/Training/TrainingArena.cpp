@@ -175,26 +175,9 @@ bool ATrainingArena::FindStrafeDestination(const FVector& CurrentPosition,
     const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
     const bool bClockwise, FVector& OutNavPosition) const
 {
-    const FVector Radial = (CurrentPosition - GetCenterLocation()).GetSafeNormal2D();
-    if (Radial.IsNearlyZero())
-    {
-        return false;
-    }
-    const float Radius = FMath::Clamp(static_cast<float>(FVector::Dist2D(CurrentPosition, GetCenterLocation())),
-        Band.MinCentimeters + 25.0f, Band.MaxCentimeters - 25.0f);
-    const float StepDegrees = FMath::Clamp(FMath::RadiansToDegrees(150.0f / Radius), 1.0f, 12.0f);
-    const float DirectionSign = bClockwise ? 1.0f : -1.0f;
-    for (int32 Attempt = 0; Attempt < 4; ++Attempt)
-    {
-        const float Angle = DirectionSign * StepDegrees * (1.0f - 0.2f * Attempt);
-        const FVector Candidate = GetCenterLocation() + Radial.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
-        if (ProjectNavPosition(Candidate, Band, AgentProperties, OutNavPosition)
-            && Band.ContainsSegment(GetCenterLocation(), CurrentPosition, OutNavPosition))
-        {
-            return true;
-        }
-    }
-    return false;
+    return FindBotStepDestination(CurrentPosition, Band, AgentProperties,
+        bClockwise ? TrainingRules::BotArcStepCentimeters : -TrainingRules::BotArcStepCentimeters,
+        0.0f, OutNavPosition);
 }
 
 bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
@@ -220,7 +203,7 @@ bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
         const float Radius = FMath::Clamp(CurrentRadius + RadialStepCentimeters * StepScale,
             Band.MinCentimeters + Margin, Band.MaxCentimeters - Margin);
         const float Angle = FMath::Clamp(FMath::RadiansToDegrees(
-            SignedArcCentimeters * StepScale / FMath::Max(1.0f, Radius)), -12.0f, 12.0f);
+            SignedArcCentimeters / FMath::Max(1.0f, Radius)), -12.0f, 12.0f) * StepScale;
         const FVector Candidate = ArenaCenter + Radial.RotateAngleAxis(Angle, FVector::UpVector) * Radius;
         if (ProjectNavPosition(Candidate, Band, AgentProperties, OutNavPosition)
             && Band.ContainsSegment(ArenaCenter, CurrentPosition, OutNavPosition))

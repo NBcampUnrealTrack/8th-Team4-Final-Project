@@ -16,6 +16,7 @@
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/UI/TrainingAugmentTileWidget.h"
 #include "UI/Common/ShooterAugmentTierStyleSet.h"
+#include "TrainingWidgetLayout.h"
 
 #define LOCTEXT_NAMESPACE "TrainingAugmentSelection"
 
@@ -25,49 +26,6 @@ namespace
     {
         EAugmentTier::Common, EAugmentTier::Rare, EAugmentTier::Epic, EAugmentTier::Legendary
     };
-
-    FText CategoryTierName(const EAugmentTier Tier)
-    {
-        switch (Tier)
-        {
-        case EAugmentTier::Rare: return LOCTEXT("TierRare", "RARE");
-        case EAugmentTier::Epic: return LOCTEXT("TierEpic", "EPIC");
-        case EAugmentTier::Legendary: return LOCTEXT("TierLegendary", "LEGENDARY");
-        default: return LOCTEXT("TierCommon", "COMMON");
-        }
-    }
-
-    FLinearColor CategoryFallbackColor(const EAugmentTier Tier)
-    {
-        switch (Tier)
-        {
-        case EAugmentTier::Rare: return FLinearColor(FColor(80, 167, 255));
-        case EAugmentTier::Epic: return FLinearColor(FColor(191, 125, 255));
-        case EAugmentTier::Legendary: return FLinearColor(FColor(255, 197, 80));
-        default: return FLinearColor(FColor(168, 183, 197));
-        }
-    }
-
-    FLinearColor CategoryColor(const EAugmentTier Tier, const UShooterAugmentTierStyleSet* Palette)
-    {
-        if (!Palette) { return CategoryFallbackColor(Tier); }
-        FLinearColor Colors[UE_ARRAY_COUNT(CategoryTiers)];
-        for (int32 Index = 0; Index < UE_ARRAY_COUNT(CategoryTiers); ++Index)
-        {
-            const FShooterAugmentTierStyle* Style = Palette->FindStyle(CategoryTiers[Index]);
-            Colors[Index] = Style ? Style->AccentColor : CategoryFallbackColor(CategoryTiers[Index]);
-            Colors[Index].A = 1.0f;
-            for (int32 Previous = 0; Previous < Index; ++Previous)
-            {
-                if (Colors[Index].Equals(Colors[Previous])) { return CategoryFallbackColor(Tier); }
-            }
-        }
-        for (int32 Index = 0; Index < UE_ARRAY_COUNT(CategoryTiers); ++Index)
-        {
-            if (CategoryTiers[Index] == Tier) { return Colors[Index]; }
-        }
-        return CategoryFallbackColor(Tier);
-    }
 
     void StyleCategoryButton(UButton& Button, const FLinearColor& Accent, const bool bSelected)
     {
@@ -97,8 +55,8 @@ namespace
 void UTrainingAugmentSelectionWidget::NativeOnInitialized()
 {
     Super::NativeOnInitialized();
-    if (Btn_Apply) { Btn_Apply->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleApply); }
-    if (Btn_Back) { Btn_Back->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBack); }
+    Btn_Apply->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleApply);
+    Btn_Back->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBack);
     if (Btn_ActiveCommon) { Btn_ActiveCommon->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleActiveCommon); }
     if (Btn_ActiveRare) { Btn_ActiveRare->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleActiveRare); }
     if (Btn_ActiveEpic) { Btn_ActiveEpic->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleActiveEpic); }
@@ -115,6 +73,12 @@ UAugmentRegistrySubsystem* UTrainingAugmentSelectionWidget::GetRegistry() const
     return Instance ? Instance->GetSubsystem<UAugmentRegistrySubsystem>() : nullptr;
 }
 
+const UShooterAugmentTierStyleSet* UTrainingAugmentSelectionWidget::GetTierPalette() const
+{
+    const UTrainingAugmentTileWidget* Defaults = TileWidgetClass ? TileWidgetClass.GetDefaultObject() : nullptr;
+    return Defaults ? Defaults->TierStyles.Get() : nullptr;
+}
+
 void UTrainingAugmentSelectionWidget::BeginSelection(UTrainingPlayerComponent& InBridge,
     const TArray<FPrimaryAssetId>& AppliedIds)
 {
@@ -126,9 +90,7 @@ void UTrainingAugmentSelectionWidget::BeginSelection(UTrainingPlayerComponent& I
     bChooseInitialTiers = true;
     bOpen = true;
     bPending = false;
-    bCatalogBuilt = false;
-    ClearCatalog();
-    ResetCatalogScroll();
+    bCatalogDirty = false;
     InBridge.ApplyButtonSounds(*this);
     const APlayerController* Controller = GetOwningPlayer();
     const AShooterPlayerState* State = Controller ? Controller->GetPlayerState<AShooterPlayerState>() : nullptr;
@@ -148,6 +110,7 @@ void UTrainingAugmentSelectionWidget::BeginSelection(UTrainingPlayerComponent& I
     UAugmentRegistrySubsystem* Registry = GetRegistry();
     if (!Registry)
     {
+        ClearCatalog();
         ShowFailure(LOCTEXT("NoRegistry", "AugmentRegistrySubsystem is unavailable."));
         RefreshSelection();
         return;
@@ -156,6 +119,8 @@ void UTrainingAugmentSelectionWidget::BeginSelection(UTrainingPlayerComponent& I
     if (Registry->IsReady()) { BuildCatalog(); }
     else
     {
+        ClearCatalog();
+        ResetCatalogScroll();
         Registry->OnRegistryReady.AddUniqueDynamic(this, &ThisClass::HandleRegistryReady);
         Txt_Status->SetText(LOCTEXT("Loading", "Loading the augment catalog..."));
         RefreshSelection();
@@ -183,6 +148,7 @@ void UTrainingAugmentSelectionWidget::EndSelection()
     Bridge.Reset();
     bOpen = false;
     bPending = false;
+    bCatalogDirty = false;
 }
 
 void UTrainingAugmentSelectionWidget::NativeDestruct()
@@ -198,7 +164,7 @@ void UTrainingAugmentSelectionWidget::HandleRegistryReady()
 
 void UTrainingAugmentSelectionWidget::HandleEligibilityChanged()
 {
-    if (bOpen && !bPending) { BuildCatalog(); }
+    if (bOpen) { BuildCatalog(); }
 }
 
 void UTrainingAugmentSelectionWidget::HandleUnlockTagChanged(const FGameplayTag Tag, const int32)
@@ -238,6 +204,8 @@ void UTrainingAugmentSelectionWidget::BuildCatalog()
 {
     UAugmentRegistrySubsystem* Registry = GetRegistry();
     if (!bOpen || !Registry || !Registry->IsReady()) { return; }
+    if (bPending) { bCatalogDirty = true; return; }
+    bCatalogDirty = false;
     Registry->OnRegistryReady.RemoveDynamic(this, &ThisClass::HandleRegistryReady);
     ClearCatalog();
     FGameplayTagContainer UnlockTags;
@@ -317,7 +285,8 @@ void UTrainingAugmentSelectionWidget::HandleTileClicked(const FPrimaryAssetId Id
     if (!bOpen || bPending || !bCatalogBuilt || !CatalogIds.Contains(Id)) { return; }
     const TrainingAugmentRules::EToggleResult Result = TrainingAugmentRules::Toggle(SelectedIds, Id);
     Txt_Status->SetText(Result == TrainingAugmentRules::EToggleResult::LimitReached
-        ? LOCTEXT("Limit", "Maximum 3 augments. Deselect a card before choosing another one.")
+        ? FText::Format(LOCTEXT("Limit", "Maximum {0} augments. Deselect a card before choosing another one."),
+            FText::AsNumber(TrainingAugmentRules::MaximumSelection))
         : LOCTEXT("Instructions", "Click to select; click again to remove. Changes take effect only after Apply."));
     RefreshSelection();
 }
@@ -345,15 +314,13 @@ void UTrainingAugmentSelectionWidget::RefreshSelection()
         const int32* Index = ActiveIndices.Find(Id);
         Tile->SetSelection(SelectedIds.Contains(Id), Index ? *Index : INDEX_NONE, bPending);
     }
-    if (Txt_Count) { Txt_Count->SetText(FText::Format(LOCTEXT("Count", "SELECTED  {0} / 3"), FText::AsNumber(SelectedIds.Num()))); }
-    if (Txt_Selection)
-    {
-        Txt_Selection->SetText(Names.IsEmpty() ? LOCTEXT("None", "No augments selected. Apply to clear the current loadout.")
-            : FText::FromString(FString::Join(Names, TEXT("   |   "))));
-    }
-    if (Btn_Apply) { Btn_Apply->SetIsEnabled(bOpen && bCatalogBuilt && !bPending && SelectedIds.Num() <= TrainingAugmentRules::MaximumSelection); }
-    if (Btn_Back) { Btn_Back->SetIsEnabled(!bPending); }
-    if (Txt_Apply) { Txt_Apply->SetText(bPending ? LOCTEXT("Applying", "Applying...") : LOCTEXT("Apply", "Apply augments")); }
+    Txt_Count->SetText(FText::Format(LOCTEXT("Count", "SELECTED  {0} / {1}"),
+        FText::AsNumber(SelectedIds.Num()), FText::AsNumber(TrainingAugmentRules::MaximumSelection)));
+    Txt_Selection->SetText(Names.IsEmpty() ? LOCTEXT("None", "No augments selected. Apply to clear the current loadout.")
+        : FText::FromString(FString::Join(Names, TEXT("   |   "))));
+    Btn_Apply->SetIsEnabled(bOpen && bCatalogBuilt && !bPending && SelectedIds.Num() <= TrainingAugmentRules::MaximumSelection);
+    Btn_Back->SetIsEnabled(!bPending);
+    Txt_Apply->SetText(bPending ? LOCTEXT("Applying", "Applying...") : LOCTEXT("Apply", "Apply augments"));
     RefreshTierButtons();
 }
 
@@ -401,6 +368,7 @@ void UTrainingAugmentSelectionWidget::SetVisibleTier(const bool bActive, const E
     if (VisibleTier == Tier) { return; }
     VisibleTier = Tier;
     RefreshTierView();
+    RefreshTierButtons();
     UScrollBox* Scroll = bActive ? Scroll_Active.Get() : Scroll_Passive.Get();
     if (Scroll)
     {
@@ -412,6 +380,7 @@ void UTrainingAugmentSelectionWidget::SetVisibleTier(const bool bActive, const E
 void UTrainingAugmentSelectionWidget::RefreshTierView()
 {
     const bool bFilterByTier = HasTierCategories();
+    const UShooterAugmentTierStyleSet* Palette = GetTierPalette();
     const UAugmentRegistrySubsystem* Registry = GetRegistry();
     for (UTrainingAugmentTileWidget* Tile : Tiles)
     {
@@ -429,23 +398,21 @@ void UTrainingAugmentSelectionWidget::RefreshTierView()
         if (Info)
         {
             Info->SetText(bCatalogBuilt
-                ? FText::Format(LOCTEXT("TierInfo", "{0}  /  {1} AVAILABLE"), CategoryTierName(Tier), FText::AsNumber(Count))
+                ? FText::Format(LOCTEXT("TierInfo", "{0}  /  {1} AVAILABLE"), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), FText::AsNumber(Count))
                 : LOCTEXT("TierLoading", "Waiting for the available augment catalog..."));
         }
         if (Empty)
         {
-            Empty->SetText(FText::Format(LOCTEXT("TierEmpty", "No {0} augments available.\nChoose another category."), CategoryTierName(Tier)));
+            Empty->SetText(FText::Format(LOCTEXT("TierEmpty", "No {0} augments available.\nChoose another category."), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette)));
             Empty->SetVisibility(bFilterByTier && bCatalogBuilt && Count == 0
                 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
         }
     }
-    RefreshTierButtons();
 }
 
 void UTrainingAugmentSelectionWidget::RefreshTierButtons()
 {
-    const UTrainingAugmentTileWidget* TileDefaults = TileWidgetClass ? TileWidgetClass.GetDefaultObject() : nullptr;
-    const UShooterAugmentTierStyleSet* Palette = TileDefaults ? TileDefaults->TierStyles.Get() : nullptr;
+    const UShooterAugmentTierStyleSet* Palette = GetTierPalette();
     for (const bool bActive : {true, false})
     {
         const TMap<EAugmentTier, int32>& Counts = bActive ? ActiveTierCounts : PassiveTierCounts;
@@ -454,14 +421,14 @@ void UTrainingAugmentSelectionWidget::RefreshTierButtons()
         {
             UButton* Button = GetTierButton(bActive, Tier);
             if (!Button) { continue; }
-            StyleCategoryButton(*Button, CategoryColor(Tier, Palette), VisibleTier == Tier);
+            StyleCategoryButton(*Button, TrainingWidgetLayout::GetAugmentTierColor(Tier, Palette), VisibleTier == Tier);
             Button->SetIsEnabled(bOpen && bCatalogBuilt && !bPending);
             if (UTextBlock* Label = Cast<UTextBlock>(Button->GetContent()))
             {
-                Label->SetText(FText::Format(LOCTEXT("TierButton", "{0}\n{1} augments"), CategoryTierName(Tier), FText::AsNumber(Counts.FindRef(Tier))));
+                Label->SetText(FText::Format(LOCTEXT("TierButton", "{0}\n{1} augments"), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), FText::AsNumber(Counts.FindRef(Tier))));
             }
             Button->SetToolTipText(FText::Format(LOCTEXT("TierTooltip", "Show {0} {1} augments. Your selection in other categories is kept."),
-                CategoryTierName(Tier), bActive ? LOCTEXT("ActiveCategory", "active") : LOCTEXT("PassiveCategory", "passive")));
+                TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), bActive ? LOCTEXT("ActiveCategory", "active") : LOCTEXT("PassiveCategory", "passive")));
         }
     }
 }
@@ -477,15 +444,20 @@ void UTrainingAugmentSelectionWidget::HandlePassiveLegendary() { SetVisibleTier(
 
 void UTrainingAugmentSelectionWidget::SetPending(const bool bInPending)
 {
+    if (bPending == bInPending) { return; }
     bPending = bInPending;
-    if (bPending && Txt_Status) { Txt_Status->SetText(LOCTEXT("Waiting", "Applying on the server...")); }
-    if (!bPending && bOpen) { BuildCatalog(); }
+    if (bPending) { Txt_Status->SetText(LOCTEXT("Waiting", "Applying on the server...")); }
+    if (!bPending && bOpen && bCatalogDirty)
+    {
+        BuildCatalog();
+        return;
+    }
     RefreshSelection();
 }
 
 void UTrainingAugmentSelectionWidget::ShowFailure(const FText& Failure)
 {
-    if (Txt_Status) { Txt_Status->SetText(Failure); }
+    Txt_Status->SetText(Failure);
 }
 
 UWidget* UTrainingAugmentSelectionWidget::GetInitialFocusTarget() const { return Btn_Back.Get(); }

@@ -16,6 +16,7 @@ class UVerticalBox;
 class UScrollBox;
 class UWeaponInventoryComponent;
 class UAbilitySystemComponent;
+class UShooterAugmentTierStyleSet;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FTrainingAugmentApplyRequested, const TArray<FPrimaryAssetId>&);
 DECLARE_MULTICAST_DELEGATE(FTrainingAugmentBackRequested);
@@ -65,6 +66,7 @@ private:
     void BuildCatalog();
     void RefreshSelection();
     UAugmentRegistrySubsystem* GetRegistry() const;
+    const UShooterAugmentTierStyleSet* GetTierPalette() const;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UScrollBox> Scroll_Active;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UScrollBox> Scroll_Passive;
@@ -107,4 +109,5 @@ private:
     bool bPending = false;
     bool bOpen = false;
     bool bCatalogBuilt = false;
+    bool bCatalogDirty = false;
 };

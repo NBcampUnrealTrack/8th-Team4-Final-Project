@@ -1,4 +1,4 @@
-#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
+﻿#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
 
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
@@ -20,8 +20,8 @@ namespace TrainingPersonalityTask
     static void UpdateMovement(FTrainingBotActionInstanceData& Data,
         ATrainingCombatAIController& TrainingController, bool bForce)
     {
-        const UTrainingBotPersonalityComponent& Observations = *TrainingController.PersonalityComponent;
-        const bool bCopy = TrainingPersonality::IsCopyAction(Data.Action);
+        UTrainingBotPersonalityComponent& Observations = *TrainingController.PersonalityComponent;
+        const bool bStrafe = TrainingPersonality::IsStrafeAction(Data.Action);
         if (!Observations.HasParticipant() || Data.Action == ETrainingBotAction::WaitForParticipant
             || Data.Action == ETrainingBotAction::TrickPause)
         {
@@ -29,37 +29,7 @@ namespace TrainingPersonalityTask
             {
                 TrainingController.StopMovement();
             }
-            Data.LastCopyDirection = 0;
             return;
-        }
-
-        if (bCopy)
-        {
-            float SignedSpeed = Observations.GetCopyTangentialVelocity(Data.Action == ETrainingBotAction::CopyDelayed);
-            if (Data.Action == ETrainingBotAction::CopyInverse)
-            {
-                SignedSpeed = -SignedSpeed;
-            }
-            const int32 Direction = FMath::Abs(SignedSpeed) < FMath::Max(1.0f, Observations.CopyMovementDeadZone)
-                ? 0 : (SignedSpeed > 0.0f ? 1 : -1);
-            if (Direction == 0)
-            {
-                if (TrainingController.GetMoveStatus() != EPathFollowingStatus::Idle)
-                {
-                    TrainingController.StopMovement();
-                }
-                Data.LastCopyDirection = 0;
-                return;
-            }
-            if (Direction != Data.LastCopyDirection)
-            {
-                TrainingController.StopMovement();
-                Data.bClockwise = Direction > 0;
-                Data.LastCopyDirection = Direction;
-                bForce = true;
-            }
-            TrainingController.SetTrainingSpeedMultiplier(Data.SpeedMultiplier
-                * FMath::Clamp(FMath::Abs(SignedSpeed) / 250.0f, 0.4f, 1.3f));
         }
 
         if (!bForce && Data.RetrySeconds < 0.1f)
@@ -81,9 +51,15 @@ namespace TrainingPersonalityTask
         {
             RadialStep = 100.0f;
         }
-        if (!TrainingController.RequestPersonalityStep(Data.bClockwise, RadialStep) && !bCopy)
+        if (!TrainingController.RequestPersonalityStep(Data.bClockwise, RadialStep))
         {
-            Data.bClockwise = !Data.bClockwise;
+            Data.bClockwise = bStrafe
+                ? Observations.ReverseStrafeDirection() : !Data.bClockwise;
+            if (bStrafe)
+            {
+                TrainingController.StopMovement();
+                TrainingController.RequestPersonalityStep(Data.bClockwise, RadialStep);
+            }
         }
     }
 }
@@ -130,28 +106,38 @@ EStateTreeRunStatus FTrainingBotActionTask::EnterState(FStateTreeExecutionContex
     {
         return EStateTreeRunStatus::Failed;
     }
-    if (!FMath::IsFinite(Data.DurationSeconds) || !FMath::IsFinite(Data.DurationVariance)
+    UTrainingBotPersonalityComponent& Observations = *TrainingController->PersonalityComponent;
+    const bool bStrafe = TrainingPersonality::IsStrafeAction(Data.Action);
+    const float DurationSeconds = bStrafe ? Observations.StrafeDirectionSeconds : Data.DurationSeconds;
+    const float DurationVariance = bStrafe ? Observations.StrafeDirectionVariance : Data.DurationVariance;
+    if (!FMath::IsFinite(DurationSeconds) || !FMath::IsFinite(DurationVariance)
         || !FMath::IsFinite(Data.SpeedMultiplier))
     {
         return EStateTreeRunStatus::Failed;
     }
     Data.ElapsedSeconds = 0.0f;
     Data.RetrySeconds = 0.0f;
-    Data.LastCopyDirection = 0;
-    const float Variance = FMath::Max(0.0f, Data.DurationVariance);
-    Data.SelectedDuration = Data.DurationSeconds > 0.0f
-        ? FMath::Max(0.05f, Data.DurationSeconds + FMath::FRandRange(-Variance, Variance)) : 0.0f;
+    const float Variance = FMath::Max(0.0f, DurationVariance);
+    Data.SelectedDuration = bStrafe || DurationSeconds > 0.0f
+        ? FMath::Max(bStrafe ? 0.1f : 0.05f,
+            DurationSeconds + FMath::FRandRange(-Variance, Variance)) : 0.0f;
 
-    UTrainingBotPersonalityComponent& Observations = *TrainingController->PersonalityComponent;
-    if (Data.Action == ETrainingBotAction::TrickCruise)
+    if (bStrafe)
     {
-        Observations.StartTrickSequence();
+        Data.bClockwise = Observations.ReverseStrafeDirection();
     }
-    Data.bClockwise = Data.Action == ETrainingBotAction::CowardEscape
-        ? Observations.ChooseEscapeClockwise() : Observations.GetTrickClockwise();
-    if (Data.Action == ETrainingBotAction::TrickFeint)
+    else
     {
-        Data.bClockwise = !Data.bClockwise;
+        if (Data.Action == ETrainingBotAction::TrickCruise)
+        {
+            Observations.StartTrickSequence();
+        }
+        Data.bClockwise = Data.Action == ETrainingBotAction::CowardEscape
+            ? Observations.ChooseEscapeClockwise() : Observations.GetTrickClockwise();
+        if (Data.Action == ETrainingBotAction::TrickFeint)
+        {
+            Data.bClockwise = !Data.bClockwise;
+        }
     }
     TrainingController->SetTrainingSpeedMultiplier(Data.SpeedMultiplier);
     TrainingController->RefreshParticipantFocus();
