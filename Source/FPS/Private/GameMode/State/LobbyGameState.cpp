@@ -1,5 +1,8 @@
 #include "GameMode/State/LobbyGameState.h"
 
+#include "Engine/World.h"
+#include "GameFramework/PlayerState.h"
+#include "GameMode/LobbyGameMode.h"
 #include "Net/UnrealNetwork.h"
 
 void ALobbyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -8,6 +11,9 @@ void ALobbyGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 	DOREPLIFETIME(ALobbyGameState, LobbyRevision);
 	DOREPLIFETIME(ALobbyGameState, SelectedMatchMode);
+	DOREPLIFETIME(ALobbyGameState, RoomSettings);
+	DOREPLIFETIME(ALobbyGameState, HostPlayerState);
+	DOREPLIFETIME(ALobbyGameState, StartState);
 }
 
 void ALobbyGameState::NotifyLobbyPlayerListChanged()
@@ -15,6 +21,14 @@ void ALobbyGameState::NotifyLobbyPlayerListChanged()
 	if (!HasAuthority())
 	{
 		return;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const ALobbyGameMode* LobbyGameMode = World->GetAuthGameMode<ALobbyGameMode>())
+		{
+			StartState = LobbyGameMode->BuildStartState();
+		}
 	}
 
 	++LobbyRevision;
@@ -34,6 +48,26 @@ void ALobbyGameState::SetSelectedMatchMode(const ELobbyMatchMode NewMatchMode)
 	ForceNetUpdate();
 }
 
+void ALobbyGameState::SetRoomSettings(const FLobbyRoomSettings& NewRoomSettings)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	RoomSettings = NewRoomSettings;
+}
+
+void ALobbyGameState::SetHostPlayerState(APlayerState* NewHostPlayerState)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	HostPlayerState = NewHostPlayerState;
+}
+
 void ALobbyGameState::OnRep_LobbyRevision()
 {
 	OnLobbyPlayerListChanged.Broadcast();
@@ -42,4 +76,19 @@ void ALobbyGameState::OnRep_LobbyRevision()
 void ALobbyGameState::OnRep_SelectedMatchMode()
 {
 	OnLobbyMatchModeChanged.Broadcast(SelectedMatchMode);
+}
+
+void ALobbyGameState::OnRep_RoomSettings()
+{
+	OnLobbyPlayerListChanged.Broadcast();
+}
+
+void ALobbyGameState::OnRep_HostPlayerState()
+{
+	OnLobbyPlayerListChanged.Broadcast();
+}
+
+void ALobbyGameState::OnRep_StartState()
+{
+	OnLobbyPlayerListChanged.Broadcast();
 }
