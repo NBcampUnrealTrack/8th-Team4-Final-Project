@@ -271,6 +271,10 @@ struct FAugmentHeldVisual
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
     FRotator GripOffsetRotation1P = FRotator::ZeroRotator;
 
+    // 1인칭에서 들었을 때 크기
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripScale1P = FVector::OneVector;
+
     // 3인칭 부착 소켓 이름
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
     FName GripSocketName3P = TEXT("Weapon_R_Socket");
@@ -280,6 +284,10 @@ struct FAugmentHeldVisual
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
     FRotator GripOffsetRotation3P = FRotator::ZeroRotator;
+
+    // 3인칭에서 들었을 때 크기
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Held")
+    FVector GripScale3P = FVector::OneVector;
 };
 
 // 등급 추첨 가중치

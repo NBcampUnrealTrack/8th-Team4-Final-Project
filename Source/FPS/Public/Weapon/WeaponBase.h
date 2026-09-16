@@ -298,6 +298,7 @@ public:
 		FVector ImpactPoint,
 		FVector ImpactNormal,
 		EPhysicalSurface ImpactSurfaceType,
+		bool bHasHit,
 		bool bIsFirstPerson);
 
 protected:

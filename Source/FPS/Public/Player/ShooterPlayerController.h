@@ -132,6 +132,18 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientExitSpectatorMode();
 
+	virtual void SetViewTarget(
+		AActor* NewViewTarget,
+		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
+
+	void SetKillcamViewTargetSuppressed(bool bSuppressed);
+
+	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
+
+	void ApplyKillcamViewTarget(AActor* KillcamCamera);
+
+	AActor* ConsumePendingViewTarget();
+
 	UFUNCTION(BlueprintPure, Category = "Shooter|Network")
 	UNetworkTimeSyncComponent* GetNetworkTimeSyncComponent() const { return NetworkTimeSyncComponent; }
 
@@ -276,4 +288,8 @@ private:
 
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
+
+	bool bKillcamViewTargetSuppressed = false;
+	TWeakObjectPtr<AActor> PendingViewTarget;
+	FViewTargetTransitionParams PendingViewTargetTransitionParams;
 };

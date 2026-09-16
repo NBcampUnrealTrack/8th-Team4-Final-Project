@@ -246,6 +246,8 @@ void URogueGameplayAbility::FinishDeliver()
 		return;
 	}
 
+	ExecuteCue(DeliverCueTag);
+
 	// 대상 탐색과 효과 적용은 서버에서만
 	if (HasAuthority(&CurrentActivationInfo))
 	{

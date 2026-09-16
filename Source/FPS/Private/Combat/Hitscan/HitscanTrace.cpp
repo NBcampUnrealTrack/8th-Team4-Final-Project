@@ -249,6 +249,7 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	ImpactEffectData.ImpactNormal = HitResult.ImpactNormal;
 	ImpactEffectData.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
 	ImpactEffectData.PelletIndex = PelletIndex;
+	ImpactEffectData.bHasHit = true; 
 	return ImpactEffectData;
 }
 

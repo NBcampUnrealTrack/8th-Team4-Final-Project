@@ -1,6 +1,8 @@
 #include "GameMode/DominationGameMode.h"
 
 #include "Augment/AugmentDraftProfile.h"
+#include "Audio/DominationSystemAnnouncer.h"
+#include "GameMode/Manager/DominationAnnouncerManager.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Manager/AugmentDraftManager.h"
@@ -25,6 +27,8 @@ ADominationGameMode::ADominationGameMode()
 	PlayerControllerClass = ADominationPlayerController::StaticClass();
 	PlayerStateClass = ADominationPlayerState::StaticClass();
 	bDelayedStart = true;
+	AnnouncerClass = ADominationSystemAnnouncer::StaticClass();
+	AnnouncerManager = CreateDefaultSubobject<UDominationAnnouncerManager>(TEXT("AnnouncerManager"));
 
 	MatchStartManager = CreateDefaultSubobject<UDominationMatchStartManager>(TEXT("MatchStartManager"));
 	LoadoutManager = CreateDefaultSubobject<UDominationLoadoutManager>(TEXT("LoadoutManager"));
@@ -88,6 +92,12 @@ void ADominationGameMode::BeginPlay()
 		return;
 	}
 
+	// 음성 설정 실패는 매치를 막지 않는다. 매치 시작 이벤트보다 먼저 구독한다.
+	if (!IsValid(AnnouncerManager) || !AnnouncerManager->Initialize(this, AnnouncerClass))
+	{
+		UE_LOG(LogDominationGameMode, Warning, TEXT("아나운서 초기화 실패. 음성 안내 없이 도미네이션을 진행합니다."));
+	}
+
 	if (!IsValid(MatchStartManager)
 		|| !MatchStartManager->Initialize(
 			this,
@@ -120,6 +130,12 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
 
+	// 다른 매니저가 상태를 초기화하기 전에 구독과 재생을 정리한다.
+	if (IsValid(AnnouncerManager))
+	{
+		AnnouncerManager->Shutdown();
+	}
+
 	AugmentDraftManager->OnDependenciesReady.RemoveAll(this);
 	AugmentDraftManager->OnPlayerDraftQueueDrained.RemoveAll(this);
 	AugmentDraftManager->Shutdown();
@@ -147,6 +163,11 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+ASystemAnnouncer* ADominationGameMode::GetSystemAnnouncer() const
+{
+	return IsValid(AnnouncerManager) ? AnnouncerManager->GetSystemAnnouncer() : nullptr;
 }
 
 void ADominationGameMode::Logout(AController* Exiting)
