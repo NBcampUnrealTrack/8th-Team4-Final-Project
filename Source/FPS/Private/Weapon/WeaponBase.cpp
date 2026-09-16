@@ -547,6 +547,8 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
+		const bool bHeadshot = RogueTags::IsHeadZone(ImpactEffect.HitZoneTag);
+
 		// 명중 관련 캐시/표면 임팩트 사운드는 실제 Hit일 때만 갱신
 		if (ImpactEffect.bHasHit)
 		{
@@ -557,20 +559,30 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 			if (SurfaceDefinition)
 			{
-				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+				// 헤드샷은 고정 사운드, 그 외(바디 등)는 여러 사운드 중 랜덤 재생
+				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType, bHeadshot))
 				{
 					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
 				}
+
+				// 혈흔 등 임팩트 파티클도 사운드와 동일한 규칙(헤드샷 고정 / 그 외 랜덤)으로 직접 스폰한다.
+				if (UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot))
+				{
+					UGameplayStatics::SpawnEmitterAtLocation(
+						this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactEffect.ImpactNormal.Rotation());
+				}
 			}
 		}
-		
-		// FireEffects와 명중 노드는 bHasHit으로 분기
+
+		// FireEffects와 명중 노드는 bHasHit으로 분기. 혈흔 사운드/파티클은 위에서 이미 C++이 직접 처리하므로,
+		// bHeadshot 핀은 그 외 부가 연출(카메라 셰이크 등)을 BP에서 분기하고 싶을 때만 참고하면 된다.
 		FireEffects(
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
 			ImpactEffect.bHasHit,
-			bIsFirstPerson);
+			bIsFirstPerson,
+			bHeadshot);
 	}
 }
 

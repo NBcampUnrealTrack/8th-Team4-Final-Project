@@ -835,7 +835,7 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 			Sound = AudioSettings->HitMarkerSound_Headshot.LoadSynchronous();
 			break;
 		case ERogueHitMarkerType::Shield:
-			Sound = AudioSettings->HitMarkerSound_Shield.LoadSynchronous();
+			// 실드 히트 사운드는 뺀다(기획 요청).
 			break;
 		case ERogueHitMarkerType::Body:
 		default:

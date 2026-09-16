@@ -342,6 +342,7 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 		}
 
 		OutImpactEffect = BuildImpactEffectData(HitResult, PelletIndex);
+		OutImpactEffect.HitZoneTag = ResolveHitZoneTag(HitResult, Request, HitResult.BoneName);
 		bOutHasImpactEffect = true;
 
 		// 현재 규칙은 피해 대상에서 펠릿을 종료하고, 월드 표면만 연속 관통한다.
