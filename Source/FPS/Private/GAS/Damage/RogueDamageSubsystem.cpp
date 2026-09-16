@@ -453,8 +453,18 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 			const bool bIsKill = Result.bHealthDepleted;
 			if (!bHitObstructed || bIsKill)
 			{
-				const bool bRed = bIsKill || (Ctx && Ctx->bHeadshot);
-				SrcPC->ClientPlayHitMarker(bRed);
+				// 우선순위: 헤드샷 > 쉴드 > 바디
+				ERogueHitMarkerType MarkerType = ERogueHitMarkerType::Body;
+				if (Ctx && Ctx->bHeadshot)
+				{
+					MarkerType = ERogueHitMarkerType::Headshot;
+				}
+				else if (Result.ShieldDamage > 0.f)
+				{
+					MarkerType = ERogueHitMarkerType::Shield;
+				}
+
+				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill);
 			}
 		}
 	}

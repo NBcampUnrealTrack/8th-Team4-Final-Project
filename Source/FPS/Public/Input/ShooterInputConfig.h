@@ -65,6 +65,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> PushToTalkAction;
 
+	// 크로스헤어 방향으로 라인트레이스해서 팀원에게 핑을 찍는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> PingAction;
+
+	// 채팅 입력창을 연다(Enter). 입력창이 열린 뒤의 Enter/Tab/Esc는 입력창 위젯이 직접 가로챈다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> OpenChatAction;
 	// Common actor interaction. If shared with a GAS entry, unhandled input falls back to that ability.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> InteractAction;

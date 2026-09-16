@@ -76,10 +76,11 @@ void AShooterGameMode::HandlePlayerEliminated(
 	{
 		KillerPlayerState->ServerAddKill();
 
+		const int32 KillStreak = KillerPlayerState->ServerRegisterKillStreak();
 		if (AShooterPlayerController* KillerController =
 			Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
 		{
-			KillerController->ClientPlayKillSound();
+			KillerController->ClientPlayKillSound(KillStreak);
 		}
 	}
 

@@ -313,6 +313,22 @@ void AShooterPlayerState::ServerAddDeath(const int32 Amount)
 	ForceNetUpdate();
 }
 
+int32 AShooterPlayerState::ServerRegisterKillStreak()
+{
+	if (!HasAuthority())
+	{
+		return 1;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Now = World ? World->GetTimeSeconds() : 0.f;
+
+	CurrentKillStreak = (Now - LastKillTimeSeconds <= MultiKillWindowSeconds) ? CurrentKillStreak + 1 : 1;
+	LastKillTimeSeconds = Now;
+
+	return CurrentKillStreak;
+}
+
 void AShooterPlayerState::OnRep_Kills()
 {
 	OnKillStatsChanged.Broadcast(this, Kills, Deaths);
