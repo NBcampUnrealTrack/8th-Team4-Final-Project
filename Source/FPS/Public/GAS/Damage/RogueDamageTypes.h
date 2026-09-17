@@ -8,6 +8,16 @@
 // 한 히트에서 컨텍스트에 실을 수 있는 부위 그룹 수의 상한
 inline constexpr int32 RogueMaxHitGroups = 16;
 
+// 크로스헤어 히트마커가 어떤 부위에 맞았는지 구분한다. 처치 여부는 별도 bool로 얹는다(부위 무관 발생 가능).
+// 우선순위: 헤드샷 > 쉴드 > 바디 (한 히트가 여러 조건을 동시에 만족할 때 정보 가치가 높은 쪽을 표시).
+UENUM(BlueprintType)
+enum class ERogueHitMarkerType : uint8
+{
+    Body,
+    Shield,
+    Headshot,
+};
+
 
 USTRUCT(BlueprintType)
 struct FRogueHitGroup

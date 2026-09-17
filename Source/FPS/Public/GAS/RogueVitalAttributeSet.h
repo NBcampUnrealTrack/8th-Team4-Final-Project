@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
@@ -25,6 +23,9 @@ public:
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	bool IsDeathDeclared() const { return bDeathDeclared; }
+
+	// 일반 데미지 검증이 끝난 뒤 서버에서 강제로 사망을 확정할 때 사용한다.
+	void ServerForceDeath(const FGameplayEffectContextHandle& Context);
 
 	// 라운드 시작 / 부활 시 반드시 호출
 	void ClearDeathDeclared() { bDeathDeclared = false; }

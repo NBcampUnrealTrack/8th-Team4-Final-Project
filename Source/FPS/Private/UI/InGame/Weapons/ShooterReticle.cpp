@@ -2,7 +2,6 @@
 #include "UI/InGame/Weapons/ShooterReticle.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
-#include "Components/TextBlock.h"
 #include "Animation/WidgetAnimation.h" // (Modified: 히트마커 페이드 효과 추가)
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/PlayerController.h"
@@ -32,7 +31,7 @@ static void SetSlotPosition(UWidget* Widget, const FVector2D& Position)
 	{
 		return;
 	}
-	
+
 	if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget->Slot))
 	{
 		Slot->SetPosition(Position);
@@ -49,18 +48,46 @@ void UShooterReticle::NativeOnInitialized()
 	ConfigureCenteredCanvasSlot(Image_Right);
 	ConfigureCenteredCanvasSlot(Image_Center);
 
+	// Top/Bottom도 Left/Right와 같은(가로로 긴) CrossSide 브러시를 그대로 쓰기로 했으므로,
+	// 세로 방향으로 보이도록 자기 중심을 기준으로 90도 돌려준다. Left/Right는 원본 그대로 둔다.
 	SetSlotPosition(Image_Center, FVector2D::ZeroVector);
 
-	// 히트마커 기능
-	bHitMarkerActive = false;
-	if (Text_HitMarker)
+	auto RotateInPlace = [](UImage* Img, const float AngleDegrees)
 	{
-		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
+		if (!Img)
+		{
+			return;
+		}
+		Img->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Img->SetRenderTransformAngle(AngleDegrees);
+	};
+	RotateInPlace(Image_Top, 90.f);
+	RotateInPlace(Image_Bottom, 90.f);
+
+	// 히트마커 기능. 크로스헤어와 같은 중앙 위치에 겹쳐서 뜬다(반투명 처리는 HandleHitMarker에서).
+	ConfigureCenteredCanvasSlot(Image_HitMarker);
+	SetSlotPosition(Image_HitMarker, FVector2D::ZeroVector);
+
+	bHitMarkerActive = false;
+	if (Image_HitMarker)
+	{
+		Image_HitMarker->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	// 킬 이펙트 기능. 히트마커와 같은 중앙 위치에 겹쳐서 뜬다(반투명 처리는 HandleKillEffect에서).
+	ConfigureCenteredCanvasSlot(Image_KillEffect);
+	SetSlotPosition(Image_KillEffect, FVector2D::ZeroVector);
+
+	bKillEffectActive = false;
+	if (Image_KillEffect)
+	{
+		Image_KillEffect->SetVisibility(ESlateVisibility::Hidden);
 	}
 
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
 		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
+		PC->OnKillEffect.AddUObject(this, &ThisClass::HandleKillEffect);
 	}
 
 	// 페이드 애니메이션이 끝나는 시점에 히트마커 상태를 종료한다.
@@ -70,6 +97,15 @@ void UShooterReticle::NativeOnInitialized()
 		FinishedEvent.BindDynamic(this, &ThisClass::HandleHitMarkerAnimationFinished);
 		BindToAnimationFinished(Anim_HitMarker, FinishedEvent);
 	}
+
+	// 페이드 애니메이션이 끝나는 시점에 킬 이펙트 상태를 종료한다.
+	if (Anim_KillEffect)
+	{
+		FWidgetAnimationDynamicEvent FinishedEvent;
+		FinishedEvent.BindDynamic(this, &ThisClass::HandleKillEffectAnimationFinished);
+		BindToAnimationFinished(Anim_KillEffect, FinishedEvent);
+	}
+
 }
 
 void UShooterReticle::NativeDestruct()
@@ -78,13 +114,16 @@ void UShooterReticle::NativeDestruct()
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
 		PC->OnHitMarker.RemoveAll(this);
+		PC->OnKillEffect.RemoveAll(this);
 	}
 
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
+		World->GetTimerManager().ClearTimer(KillEffectTimerHandle);
 	}
 	bHitMarkerActive = false;
+	bKillEffectActive = false;
 
 	Super::NativeDestruct();
 }
@@ -149,13 +188,16 @@ bool UShooterReticle::IsHitMarkerActive() const
 void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	
+
+	// 4방향 모두 브러시 자체가 이미 올바른 방향을 향하고 있으므로, 회전 없이 중심에서 반경만큼
+	// 축을 따라 밀어내기만 하면 된다. Top/Bottom은 박스 크기 차이를 보정하기 위해 반경을 줄이고,
+	// VerticalGroupOffset으로 둘을 한 축으로 묶어 미세 위치를 맞춘다.
 	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
-	
-	SetSlotPosition(Image_Top,    FVector2D(0.f, -Radius));
-	SetSlotPosition(Image_Bottom, FVector2D(0.f,  Radius));
-	SetSlotPosition(Image_Left,   FVector2D(-Radius, 0.f));
-	SetSlotPosition(Image_Right,  FVector2D( Radius, 0.f));
+	const float VerticalRadius = Radius * VerticalSpreadRadiusScale;
+	SetSlotPosition(Image_Right, FVector2D(Radius, 0.f));
+	SetSlotPosition(Image_Left, FVector2D(-Radius, 0.f));
+	SetSlotPosition(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius));
+	SetSlotPosition(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
 float UShooterReticle::GetSpreadDegrees() const
@@ -172,17 +214,23 @@ float UShooterReticle::GetSpreadDegrees() const
 }
 
 // 히트마커
-void UShooterReticle::HandleHitMarker(const bool bRed)
+void UShooterReticle::HandleHitMarker(const ERogueHitMarkerType Type, const bool bKill)
 {
-	if (!Text_HitMarker)
+	if (!Image_HitMarker)
 	{
 		return;
 	}
 
 	bHitMarkerActive = true;
+	LastHitMarkerType = Type;
+	bLastHitMarkerKill = bKill;
 
-	Text_HitMarker->SetColorAndOpacity(bRed ? FLinearColor::Red : FLinearColor::White);
-	Text_HitMarker->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// 알파를 HitMarkerOpacity로 낮춰서 크로스헤어와 겹쳐도 뒤가 비쳐 보이게 한다.
+	FLinearColor Color = ResolveHitMarkerColor(Type, bKill);
+	Color.A = FMath::Clamp(HitMarkerOpacity, 0.f, 1.f);
+
+	Image_HitMarker->SetColorAndOpacity(Color);
+	Image_HitMarker->SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	// 이전 타이머가 새 히트마커를 조기에 숨기지 않도록 갱신한다.
 	if (UWorld* World = GetWorld())
@@ -207,9 +255,9 @@ void UShooterReticle::HideHitMarker()
 {
 	bHitMarkerActive = false;
 
-	if (Text_HitMarker)
+	if (Image_HitMarker)
 	{
-		Text_HitMarker->SetVisibility(ESlateVisibility::Hidden);
+		Image_HitMarker->SetVisibility(ESlateVisibility::Hidden);
 	}
 }
 
@@ -217,6 +265,75 @@ void UShooterReticle::HideHitMarker()
 void UShooterReticle::HandleHitMarkerAnimationFinished()
 {
 	HideHitMarker();
+}
+
+// 킬 이펙트. 크기 변화(크게 등장 -> 작아지며 페이드)는 Anim_KillEffect의 RenderTransform Scale +
+// Render Opacity 트랙이 담당하고, 여기서는 표시 상태/알파(반투명)만 처리한다.
+void UShooterReticle::HandleKillEffect()
+{
+	if (!Image_KillEffect)
+	{
+		return;
+	}
+
+	bKillEffectActive = true;
+
+	// 알파를 KillEffectOpacity로 낮춰서 크로스헤어/히트마커와 겹쳐도 뒤가 비쳐 보이게 한다.
+	Image_KillEffect->SetColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, FMath::Clamp(KillEffectOpacity, 0.f, 1.f)));
+	Image_KillEffect->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	// 이전 타이머가 새 킬 이펙트를 조기에 숨기지 않도록 갱신한다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(KillEffectTimerHandle);
+	}
+
+	// 애니메이션이 있으면 그걸로 등장/축소/페이드, 없으면 즉시 켜고 KillEffectDuration 뒤에 끈다.
+	if (Anim_KillEffect)
+	{
+		PlayAnimation(Anim_KillEffect);
+	}
+	else if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			KillEffectTimerHandle, this, &ThisClass::HideKillEffect, KillEffectDuration, false);
+	}
+}
+
+// 킬 이펙트 자체만 제거한다.
+void UShooterReticle::HideKillEffect()
+{
+	bKillEffectActive = false;
+
+	if (Image_KillEffect)
+	{
+		Image_KillEffect->SetVisibility(ESlateVisibility::Hidden);
+	}
+}
+
+// Anim_KillEffect 재생 종료 시 호출
+void UShooterReticle::HandleKillEffectAnimationFinished()
+{
+	HideKillEffect();
+}
+
+// 헤드샷과 처치는 부위 구분보다 우선해서 빨간색으로 강조한다. 그 외(바디/쉴드)는 부위별 색상을 쓴다.
+// 색상 대신/추가로 아이콘까지 바꾸고 싶다면 Blueprint에서 GetHitMarkerType()/WasHitMarkerKill()을 읽어 처리한다.
+FLinearColor UShooterReticle::ResolveHitMarkerColor(const ERogueHitMarkerType Type, const bool bKill)
+{
+	if (bKill || Type == ERogueHitMarkerType::Headshot)
+	{
+		return FLinearColor::Red;
+	}
+
+	switch (Type)
+	{
+	case ERogueHitMarkerType::Shield:
+		return FLinearColor(0.3f, 0.75f, 1.f); // 하늘색
+	case ERogueHitMarkerType::Body:
+	default:
+		return FLinearColor::White;
+	}
 }
 
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const

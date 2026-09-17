@@ -28,6 +28,13 @@ struct FWeaponOwnershipState
 	bool bUnlocked = false;
 };
 
+// 서버 내부 로드아웃 교체가 실패했을 때 보유·해금·장착 상태를 함께 복원한다.
+struct FWeaponInventorySnapshot
+{
+    TArray<FWeaponOwnershipState> WeaponStates;
+    FGameplayTag EquippedPrimaryTag;
+};
+
 /**
  * PlayerState가 소유하는 무기 영구 상태. 폰 수명과 무관하며 7R 공수 전환에도 유지된다.
  *
@@ -59,6 +66,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Inventory")
 	FGameplayTag GetEquippedPrimaryTag() const { return EquippedPrimaryTag; }
+
+	// 복제된 인벤토리 상태를 기준으로 증강 해금 태그를 조회한다.
+	void GetAugmentUnlockTags(FGameplayTagContainer& OutTags) const;
+
+	FWeaponInventorySnapshot CaptureSnapshot() const;
+	void ServerRestoreSnapshot(const FWeaponInventorySnapshot& Snapshot);
 
 	// --- 서버 변경. 게임 흐름 순서대로 ---
 

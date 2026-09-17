@@ -5,6 +5,8 @@
 #include "GameFramework/GameStateBase.h"
 #include "LobbyGameState.generated.h"
 
+class APlayerState;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnLobbyPlayerListChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FOnLobbyMatchModeChangedSignature,
@@ -31,6 +33,18 @@ public:
 	// Selection authority is validated by LobbyGameMode.
 	void SetSelectedMatchMode(ELobbyMatchMode NewMatchMode);
 
+	UFUNCTION(BlueprintPure, Category = "Lobby|Room")
+	const FLobbyRoomSettings& GetRoomSettings() const { return RoomSettings; }
+
+	UFUNCTION(BlueprintPure, Category = "Lobby|Room")
+	APlayerState* GetHostPlayerState() const { return HostPlayerState; }
+
+	UFUNCTION(BlueprintPure, Category = "Lobby|Match Start")
+	const FLobbyStartState& GetStartState() const { return StartState; }
+
+	void SetRoomSettings(const FLobbyRoomSettings& NewRoomSettings);
+	void SetHostPlayerState(APlayerState* NewHostPlayerState);
+
 	UPROPERTY(BlueprintAssignable, Category = "Lobby")
 	FOnLobbyPlayerListChangedSignature OnLobbyPlayerListChanged;
 
@@ -44,9 +58,27 @@ private:
 	UFUNCTION()
 	void OnRep_SelectedMatchMode();
 
+	UFUNCTION()
+	void OnRep_RoomSettings();
+
+	UFUNCTION()
+	void OnRep_HostPlayerState();
+
+	UFUNCTION()
+	void OnRep_StartState();
+
 	UPROPERTY(ReplicatedUsing = OnRep_LobbyRevision, VisibleInstanceOnly, Category = "Lobby")
 	int32 LobbyRevision = 0;
 
 	UPROPERTY(ReplicatedUsing = OnRep_SelectedMatchMode, VisibleInstanceOnly, Category = "Lobby|Game Mode")
 	ELobbyMatchMode SelectedMatchMode = ELobbyMatchMode::Bomb;
+
+	UPROPERTY(ReplicatedUsing = OnRep_RoomSettings, VisibleInstanceOnly, Category = "Lobby|Room")
+	FLobbyRoomSettings RoomSettings;
+
+	UPROPERTY(ReplicatedUsing = OnRep_HostPlayerState, VisibleInstanceOnly, Category = "Lobby|Room")
+	TObjectPtr<APlayerState> HostPlayerState;
+
+	UPROPERTY(ReplicatedUsing = OnRep_StartState, VisibleInstanceOnly, Category = "Lobby|Match Start")
+	FLobbyStartState StartState;
 };

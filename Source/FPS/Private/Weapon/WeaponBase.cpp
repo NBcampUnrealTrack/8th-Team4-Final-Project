@@ -60,6 +60,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
+	DOREPLIFETIME(AWeaponBase, AmmoPolicy);
 }
 
 void AWeaponBase::BeginPlay()
@@ -573,9 +574,26 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 	}
 }
 
+void AWeaponBase::SetAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy)
+{
+	if (!HasAuthority() || AmmoPolicy == NewAmmoPolicy)
+	{
+		return;
+	}
+
+	AmmoPolicy = NewAmmoPolicy;
+	ForceNetUpdate();
+}
+
+bool AWeaponBase::CanReload() const
+{
+	return bUsesAmmo && !bIsReloading && CurrentAmmo < EffectiveMagazineSize
+		&& (HasInfiniteReserveAmmo() || CurrentReserveAmmo > 0);
+}
+
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize || CurrentReserveAmmo <= 0)
+	if (!CanReload())
 	{
 		return;
 	}
@@ -601,11 +619,17 @@ void AWeaponBase::StartReload()
 
 void AWeaponBase::FinishReload()
 {
-	// 예비 탄약이 부족하면 탄창을 다 못 채우고 남은 예비 탄약만큼만 채운다(예: 탄창 30발 중 12발
-	// 남았는데 예비 탄약이 5발뿐이면 17발만 채우고 예비 탄약은 0이 된다).
-	const int32 AmountToReload = FMath::Clamp(EffectiveMagazineSize - CurrentAmmo, 0, CurrentReserveAmmo);
+	const bool bInfiniteReserve = HasInfiniteReserveAmmo();
+	const int32 MissingAmmo = FMath::Max(EffectiveMagazineSize - CurrentAmmo, 0);
+	const int32 AmountToReload = bInfiniteReserve
+		? MissingAmmo
+		: FMath::Clamp(CurrentReserveAmmo, 0, MissingAmmo);
+
 	CurrentAmmo += AmountToReload;
-	CurrentReserveAmmo -= AmountToReload;
+	if (!bInfiniteReserve)
+	{
+		CurrentReserveAmmo -= AmountToReload;
+	}
 	if (CurrentAmmo > 0)
 	{
 		bEmptyClipNotified = false;

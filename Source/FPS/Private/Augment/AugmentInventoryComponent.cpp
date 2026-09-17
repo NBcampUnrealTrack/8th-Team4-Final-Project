@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Augment/AugmentInventoryComponent.h"
@@ -187,7 +187,8 @@ void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& 
 
 		++OutState.OwnedActiveCount;
 
-		const FGameplayTag SlotTag = Definition->GetActiveInputSlotTag();
+        const FGameplayTag SlotTag = Entry.ActiveInputSlot.IsValid()
+            ? Entry.ActiveInputSlot : Definition->GetActiveInputSlotTag();
 		if (SlotTag.IsValid())
 		{
 			OutState.OccupiedActiveSlots.AddTag(SlotTag);

@@ -65,7 +65,7 @@ void ADominationPlayerController::SetupInputComponent()
 		return;
 	}
 	
-	if (InputConfig->MoveAction)
+	if (InputConfig->ToggleAugmentSelectAction)
 	{
 		EnhancedInputComponent->BindAction(
 			InputConfig->ToggleAugmentSelectAction,
@@ -106,4 +106,11 @@ void ADominationPlayerController::ServerSetPreviewCombatClass_Implementation(
 	{
 		DominationGameMode->RequestPreviewCombatClass(this, RequestedClass);
 	}
+}
+
+float ADominationPlayerController::GetCombatClassSelectionTimeRemaining() const
+{
+    const ADominationGameState* ModeState = GetWorld()
+        ? GetWorld()->GetGameState<ADominationGameState>() : nullptr;
+    return IsValid(ModeState) ? ModeState->GetPhaseTimeRemaining() : -1.0f;
 }

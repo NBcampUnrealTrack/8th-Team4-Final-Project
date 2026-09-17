@@ -75,6 +75,7 @@ namespace RogueTags
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_ActionBlocked);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_SystemOverload);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_UtilityHeld);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Combat_Deployable);
 
 	// 증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Ability);

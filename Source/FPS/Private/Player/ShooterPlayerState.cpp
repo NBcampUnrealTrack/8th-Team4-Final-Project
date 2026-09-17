@@ -14,6 +14,8 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "GameMode/State/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Tags/GameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
@@ -119,6 +121,16 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 	// 소유자는 PlayerState, 아바타는 캐릭터.
 	AbilitySystemComponent->InitAbilityActorInfo(this, Avatar);
+
+	// ASC가 Pawn보다 오래 살기 때문에 서버·클라이언트 모두 새 아바타의 이동 상태로 맞춘다.
+	if (const AShooterCharacter* ShooterAvatar = Cast<AShooterCharacter>(Avatar))
+	{
+		const UCharacterMovementComponent* Movement = ShooterAvatar->GetCharacterMovement();
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching,
+			ShooterAvatar->bIsCrouched ? 1 : 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir,
+			Movement && Movement->IsFalling() ? 1 : 0);
+	}
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -299,6 +311,22 @@ void AShooterPlayerState::ServerAddDeath(const int32 Amount)
 	Deaths = FMath::Max(0, Deaths + Amount);
 	OnRep_Deaths();
 	ForceNetUpdate();
+}
+
+int32 AShooterPlayerState::ServerRegisterKillStreak()
+{
+	if (!HasAuthority())
+	{
+		return 1;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Now = World ? World->GetTimeSeconds() : 0.f;
+
+	CurrentKillStreak = (Now - LastKillTimeSeconds <= MultiKillWindowSeconds) ? CurrentKillStreak + 1 : 1;
+	LastKillTimeSeconds = Now;
+
+	return CurrentKillStreak;
 }
 
 void AShooterPlayerState::OnRep_Kills()

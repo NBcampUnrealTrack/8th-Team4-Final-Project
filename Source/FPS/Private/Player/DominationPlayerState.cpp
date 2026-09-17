@@ -52,6 +52,22 @@ bool ADominationPlayerState::TryConfirmCombatClass(
 	return true;
 }
 
+bool ADominationPlayerState::TryChangeCombatClass(const EDominationCombatClass RequestedClass)
+{
+    if (!HasAuthority() || !HasSelectedCombatClass()
+        || !GetDefault<UDominationClassSettings>()->IsSelectableClass(RequestedClass))
+    {
+        return false;
+    }
+    if (CombatClass != RequestedClass)
+    {
+        CombatClass = RequestedClass;
+        OnRep_CombatClass();
+        ForceNetUpdate();
+    }
+    return true;
+}
+
 bool ADominationPlayerState::TrySetPreviewCombatClass(const EDominationCombatClass RequestedClass)
 {
 	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
@@ -85,3 +101,18 @@ void ADominationPlayerState::OnRep_PreviewCombatClass()
 
 
 
+
+void ADominationPlayerState::ResetCombatClassSelection()
+{
+    if (!HasAuthority())
+    {
+        return;
+    }
+    const bool bHadSelection = HasSelectedCombatClass();
+    const bool bHadPreview = HasPreviewCombatClass();
+    CombatClass = EDominationCombatClass::Unselected;
+    PreviewCombatClass = EDominationCombatClass::Unselected;
+    if (bHadSelection) { OnRep_CombatClass(); }
+    if (bHadPreview) { OnRep_PreviewCombatClass(); }
+    ForceNetUpdate();
+}

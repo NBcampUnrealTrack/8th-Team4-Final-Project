@@ -40,6 +40,7 @@ class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 
 public:
 	UDominationClassSelectScreen();
+	void NotifySelectionFailed(const FText& Reason);
 
 	UTexture2D* GetCachedClassIcon(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassPortrait(EDominationCombatClass CombatClass) const;
@@ -159,4 +160,5 @@ private:
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;
+	FText SelectionFailure;
 };

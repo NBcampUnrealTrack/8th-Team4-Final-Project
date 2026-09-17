@@ -10,6 +10,10 @@ FAugmentInventoryEntry FAugmentInventoryEntry::Make(const UAugmentDefinition& De
 	FAugmentInventoryEntry Entry;
 	Entry.DefinitionId = Definition.GetPrimaryAssetId();
 	Entry.LineTag      = Definition.LineTag;
+    if (Definition.AugmentCategory == EAugmentCategory::Active)
+    {
+        Entry.ActiveInputSlot = Definition.GetActiveInputSlotTag();
+    }
 
 	return Entry;
 }

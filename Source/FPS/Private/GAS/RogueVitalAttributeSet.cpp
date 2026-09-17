@@ -172,6 +172,18 @@ void URogueVitalAttributeSet::OnRep_ShopDamageAmplification(const FGameplayAttri
 	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, OldValue);
 }
 
+void URogueVitalAttributeSet::ServerForceDeath(const FGameplayEffectContextHandle& Context)
+{
+	UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+	if (!OwnerASC || !OwnerASC->IsOwnerActorAuthoritative() || bDeathDeclared)
+	{
+		return;
+	}
+
+	SetHealth(0.f);
+	TryDeclareDeath(Context);
+}
+
 void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle& Context)
 {
 	if (GetHealth() > 0.f || bDeathDeclared)

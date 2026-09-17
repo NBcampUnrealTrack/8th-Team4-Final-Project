@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
+#include "Templates/Function.h"
 
 UWeaponInventoryComponent::UWeaponInventoryComponent()
 {
@@ -177,6 +178,68 @@ bool UWeaponInventoryComponent::ServerConfirmWeaponUpgrade(const FGameplayTag We
 	return true;
 }
 
+namespace
+{
+	// GAS 동기화와 UI 조회가 같은 해금 규칙을 사용한다.
+	void VisitAugmentUnlocks(const UWeaponInventoryComponent& Inventory,
+		TFunctionRef<void(FGameplayTag, bool)> Visit)
+	{
+		struct FUnlockRule
+		{
+			FGameplayTag Weapon;
+			FGameplayTag Unlock;
+			bool bFirearm;
+		};
+
+		const FUnlockRule Rules[] = {
+			{RogueTags::Weapon_Type_Rifle, RogueTags::Unlock_Weapon_Rifle_Owned, true},
+			{RogueTags::Weapon_Type_Sniper, RogueTags::Unlock_Weapon_Sniper_Owned, true},
+			{RogueTags::Weapon_Type_Shotgun, RogueTags::Unlock_Weapon_Shotgun_Owned, true},
+			{RogueTags::Weapon_Type_Pistol, RogueTags::Unlock_Weapon_Pistol_Upgraded, true},
+			{RogueTags::Weapon_Type_Knife, RogueTags::Unlock_Weapon_Knife_Upgraded, false}
+		};
+
+		bool bAnyFirearm = false;
+		for (const FUnlockRule& Rule : Rules)
+		{
+			const bool bUnlocked = Inventory.IsUnlocked(Rule.Weapon);
+			Visit(Rule.Unlock, bUnlocked);
+			bAnyFirearm |= bUnlocked && Rule.bFirearm;
+		}
+		Visit(RogueTags::Unlock_Weapon_Firearm_Any, bAnyFirearm);
+	}
+}
+
+void UWeaponInventoryComponent::GetAugmentUnlockTags(FGameplayTagContainer& OutTags) const
+{
+	OutTags.Reset();
+	VisitAugmentUnlocks(*this, [&OutTags](const FGameplayTag Tag, const bool bUnlocked)
+	{
+		if (bUnlocked)
+		{
+			OutTags.AddTag(Tag);
+		}
+	});
+}
+
+FWeaponInventorySnapshot UWeaponInventoryComponent::CaptureSnapshot() const
+{
+	return {WeaponStates, EquippedPrimaryTag};
+}
+
+void UWeaponInventoryComponent::ServerRestoreSnapshot(const FWeaponInventorySnapshot& Snapshot)
+{
+	if (!HasServerAuthority())
+	{
+		return;
+	}
+
+	WeaponStates = Snapshot.WeaponStates;
+	EquippedPrimaryTag = Snapshot.EquippedPrimaryTag;
+	NotifyInventoryChanged();
+	GetOwner()->ForceNetUpdate();
+}
+
 void UWeaponInventoryComponent::SyncUnlockTags()
 {
 	if (!IsValid(AbilitySystemComponent))
@@ -184,27 +247,10 @@ void UWeaponInventoryComponent::SyncUnlockTags()
 		return;
 	}
 
-	auto SetTag = [this](const FGameplayTag& Tag, const bool bOn)
-		{
-			// AddLoose가 아니라 개수를 직접 세팅한다. 중복 호출로 카운트가 쌓이지 않게.
-			AbilitySystemComponent->SetLooseGameplayTagCount(Tag, bOn ? 1 : 0);
-		};
-
-	SetTag(RogueTags::Unlock_Weapon_Rifle_Owned,      IsUnlocked(RogueTags::Weapon_Type_Rifle));
-	SetTag(RogueTags::Unlock_Weapon_Sniper_Owned,     IsUnlocked(RogueTags::Weapon_Type_Sniper));
-	SetTag(RogueTags::Unlock_Weapon_Shotgun_Owned,    IsUnlocked(RogueTags::Weapon_Type_Shotgun));
-	SetTag(RogueTags::Unlock_Weapon_Pistol_Upgraded,  IsUnlocked(RogueTags::Weapon_Type_Pistol));
-	SetTag(RogueTags::Unlock_Weapon_Knife_Upgraded,   IsUnlocked(RogueTags::Weapon_Type_Knife));
-
-	// RequiredUnlockTags는 HasAll(AND) 판정이라 "총기 중 아무거나 하나"를 표현할 수 없다.
-	// 총기_공통 풀 전용 파생 태그를 따로 세운다. 전술 칼은 총기 그룹이 아니다.
-	const bool bAnyFirearm =
-		IsUnlocked(RogueTags::Weapon_Type_Rifle)
-		|| IsUnlocked(RogueTags::Weapon_Type_Sniper)
-		|| IsUnlocked(RogueTags::Weapon_Type_Shotgun)
-		|| IsUnlocked(RogueTags::Weapon_Type_Pistol);
-
-	SetTag(RogueTags::Unlock_Weapon_Firearm_Any, bAnyFirearm);
+	VisitAugmentUnlocks(*this, [this](const FGameplayTag Tag, const bool bUnlocked)
+	{
+		AbilitySystemComponent->SetLooseGameplayTagCount(Tag, bUnlocked ? 1 : 0);
+	});
 }
 
 void UWeaponInventoryComponent::NotifyInventoryChanged()
