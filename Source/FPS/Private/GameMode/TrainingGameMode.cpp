@@ -160,7 +160,7 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
 
     UCombatComponent* Combat = CombatPawn->FindComponentByClass<UCombatComponent>();
     if (!IsValid(Combat)) { return false; }
-    Combat->SetWeaponAmmoPolicy(EWeaponAmmoPolicy::InfiniteReserve);
+    Combat->SetInfiniteAmmo(true);
 
     WaitingPlayer->ChangeState(NAME_Playing);
     WaitingPlayer->ClientGotoState(NAME_Playing);

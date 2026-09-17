@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
 
@@ -60,7 +60,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
-	DOREPLIFETIME(AWeaponBase, AmmoPolicy);
+	DOREPLIFETIME(AWeaponBase, bInfiniteAmmo);
 }
 
 void AWeaponBase::BeginPlay()
@@ -80,6 +80,7 @@ void AWeaponBase::BeginPlay()
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
 	CurrentReserveAmmo = MaxReserveAmmo;
+	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
 
@@ -135,7 +136,7 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
 	const float RPMForRequestedAttack = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
 
-	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
+	if (bIsReloading || (bUsesAmmo && !bInfiniteAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
 	{
 		return false;
 	}
@@ -430,11 +431,11 @@ bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
 	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
 	RegisterFireCooldown(*World, RPMUsed);
 
-	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
+	const int32 FiredShotIndex = ConsumeAmmoForShot();
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime, bHeavyAttack);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, FiredShotIndex, ClientFireServerTime, bHeavyAttack);
 	if (Effects)
 	{
 		Effects->PlayFireCameraShake();
@@ -458,16 +459,21 @@ void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
 
 int32 AWeaponBase::ConsumeAmmoForShot()
 {
-	const int32 ShotIndexInMagazine = bUsesAmmo
-		? FMath::Max(0, EffectiveMagazineSize - CurrentAmmo)
-		: 0;
-
-	if (bUsesAmmo)
+	if (!bUsesAmmo)
 	{
-		CurrentAmmo--;
+		return 0;
 	}
 
-	return ShotIndexInMagazine;
+	const int32 SafeMagazineSize = FMath::Max(EffectiveMagazineSize, 1);
+	const int32 CurrentShotIndex = FMath::Clamp(ShotIndexInMagazine, 0, SafeMagazineSize - 1);
+
+	if (!bInfiniteAmmo)
+	{
+		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+	}
+
+	ShotIndexInMagazine = (CurrentShotIndex + 1) % SafeMagazineSize;
+	return CurrentShotIndex;
 }
 
 float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
@@ -574,21 +580,21 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 	}
 }
 
-void AWeaponBase::SetAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy)
+void AWeaponBase::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
 {
-	if (!HasAuthority() || AmmoPolicy == NewAmmoPolicy)
+	if (!HasAuthority() || bInfiniteAmmo == bNewInfiniteAmmo)
 	{
 		return;
 	}
 
-	AmmoPolicy = NewAmmoPolicy;
+	bInfiniteAmmo = bNewInfiniteAmmo;
 	ForceNetUpdate();
 }
 
 bool AWeaponBase::CanReload() const
 {
-	return bUsesAmmo && !bIsReloading && CurrentAmmo < EffectiveMagazineSize
-		&& (HasInfiniteReserveAmmo() || CurrentReserveAmmo > 0);
+	return bUsesAmmo && !bInfiniteAmmo && !bIsReloading
+		&& CurrentAmmo < EffectiveMagazineSize && CurrentReserveAmmo > 0;
 }
 
 void AWeaponBase::StartReload()
@@ -619,17 +625,12 @@ void AWeaponBase::StartReload()
 
 void AWeaponBase::FinishReload()
 {
-	const bool bInfiniteReserve = HasInfiniteReserveAmmo();
 	const int32 MissingAmmo = FMath::Max(EffectiveMagazineSize - CurrentAmmo, 0);
-	const int32 AmountToReload = bInfiniteReserve
-		? MissingAmmo
-		: FMath::Clamp(CurrentReserveAmmo, 0, MissingAmmo);
+	const int32 AmountToReload = FMath::Clamp(CurrentReserveAmmo, 0, MissingAmmo);
 
 	CurrentAmmo += AmountToReload;
-	if (!bInfiniteReserve)
-	{
-		CurrentReserveAmmo -= AmountToReload;
-	}
+	CurrentReserveAmmo -= AmountToReload;
+	ShotIndexInMagazine = 0;
 	if (CurrentAmmo > 0)
 	{
 		bEmptyClipNotified = false;
@@ -693,7 +694,7 @@ void AWeaponBase::ResolveHitscanShot(
 	const FVector& TraceStart,
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
-	const int32 ShotIndexInMagazine,
+	const int32 InShotIndexInMagazine,
 	const float ClientFireServerTime,
 	const bool bHeavyAttack)
 {
@@ -758,7 +759,7 @@ void AWeaponBase::ResolveHitscanShot(
 
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
-	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
+	Request.ShotIndexInMagazine = FMath::Max(0, InShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
 
 	TArray<FHitscanImpactEffectData> ImpactEffects;

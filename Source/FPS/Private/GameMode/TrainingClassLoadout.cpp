@@ -146,7 +146,7 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
         return false;
     }
 
-    NewCombat->SetWeaponAmmoPolicy(EWeaponAmmoPolicy::InfiniteReserve);
+    NewCombat->SetInfiniteAmmo(true);
     NewPawn->GetCharacterMovement()->StopMovementImmediately();
     PreviousPawn->Destroy();
     Requester->SetControlRotation(AimRotation);

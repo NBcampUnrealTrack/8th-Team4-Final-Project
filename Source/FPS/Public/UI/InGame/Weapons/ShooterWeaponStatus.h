@@ -84,7 +84,7 @@ protected:
 	// GetEffectiveMagazineSize()(증강 반영된 탄창 최대치). 화면에는 표시하지 않고 색상 경고 비율 계산에만 쓴다.
 	int32 CachedMaxAmmo = INDEX_NONE;
 	int32 CachedReserveAmmo = INDEX_NONE;
-	bool bCachedInfiniteReserveAmmo = false;
+	bool bCachedInfiniteAmmo = false;
 	
 	bool bLoggedNoWeapon = false;
 };
