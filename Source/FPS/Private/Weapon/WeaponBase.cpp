@@ -288,9 +288,12 @@ bool AWeaponBase::IsADS() const
 
 bool AWeaponBase::CanADS() const
 {
-	// 정조준은 스나이퍼 전용이다 - 다른 무기는 Aim 컴포넌트의 bCanADS 설정과 무관하게 항상 불가능하다
-	// (무기 BP마다 체크박스를 일일이 끌 필요 없이 여기서 한 번에 강제한다).
-	return GetWeaponTag() == RogueTags::Weapon_Type_Sniper && Aim && Aim->CanADS();
+	// 기존 ADS 흐름은 라이플과 스나이퍼만 사용한다. 권총/샷건/칼은 Aim 컴포넌트 설정과
+	// 무관하게 계속 지향 사격 전용으로 유지한다.
+	const FGameplayTag WeaponTag = GetWeaponTag();
+	const bool bSupportedWeapon = WeaponTag == RogueTags::Weapon_Type_Rifle
+		|| WeaponTag == RogueTags::Weapon_Type_Sniper;
+	return bSupportedWeapon && Aim && Aim->CanADS();
 }
 
 float AWeaponBase::GetADSFieldOfView() const
