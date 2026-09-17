@@ -46,6 +46,7 @@ public class FPS : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
 				"UnrealEd",
+				"RenderCore",
 				"UMGEditor",
 				"AssetTools",
 				"AssetRegistry"
