@@ -14,6 +14,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "Particles/ParticleSystem.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -547,13 +548,15 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
 
-	// 표면별 임팩트 사운드(사람/벽 등)는 FireEffects BP 그래프와 무관하게 여기서 직접 재생한다 -
+	// 표면별 임팩트 파티클(혈흔 등)은 FireEffects BP 그래프와 무관하게 여기서 직접 스폰한다 -
 	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.
 	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
-		// 명중 관련 캐시/표면 임팩트 사운드는 실제 Hit일 때만 갱신
+		const bool bHeadshot = RogueTags::IsHeadZone(ImpactEffect.HitZoneTag);
+
+		// 명중 관련 캐시/표면 임팩트 파티클은 실제 Hit일 때만 갱신
 		if (ImpactEffect.bHasHit)
 		{
 			LastImpactPoint = ImpactEffect.ImpactPoint;
@@ -563,20 +566,32 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 
 			if (SurfaceDefinition)
 			{
-				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+				// 혈흔 등 임팩트 파티클은 헤드샷 고정 / 그 외 랜덤 규칙으로 직접 스폰한다.
+				// 임팩트 사운드(바디/헤드샷/사망)는 PlayerController가 소유한 기존 히트 피드백 시스템에서 처리한다.
+				UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot);
+				if (ImpactParticle)
 				{
-					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+					// ImpactNormal.Rotation()은 X축(전방)이 표면 노멀을 향하게 정렬할 뿐 Roll은 항상 0이라,
+					// 방향성 있는 파티클(예: P_Blood_Splat_Cone)이 매번 같은 각도로만 튄다. 노멀 축(Roll)을
+					// 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀는 것처럼 보이게 한다.
+					FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
+					ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
+
+					UGameplayStatics::SpawnEmitterAtLocation(
+						this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
 				}
 			}
 		}
-		
-		// FireEffects와 명중 노드는 bHasHit으로 분기
+
+		// FireEffects와 명중 노드는 bHasHit으로 분기. 혈흔 파티클은 위에서 이미 C++이 직접 처리하므로,
+		// bHeadshot 핀은 그 외 부가 연출(카메라 셰이크 등)을 BP에서 분기하고 싶을 때만 참고하면 된다.
 		FireEffects(
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
 			ImpactEffect.bHasHit,
-			bIsFirstPerson);
+			bIsFirstPerson,
+			bHeadshot);
 	}
 }
 

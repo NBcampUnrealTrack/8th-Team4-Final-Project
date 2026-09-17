@@ -241,6 +241,20 @@ bool FHitscanTrace::TryBuildImpactSample(const FHitResult& HitResult, const FVec
 	return true;
 }
 
+TEnumAsByte<EPhysicalSurface> FHitscanTrace::ResolveImpactSurfaceType(const FHitResult& HitResult)
+{
+	if (const AActor* TargetActor = HitResult.GetActor())
+	{
+		if (TargetActor->Implements<URogueDamageableTarget>())
+		{
+			// DefaultEngine.ini의 PhysicalSurfaces 매핑상 SurfaceType1 = "Character".
+			return SurfaceType1;
+		}
+	}
+
+	return UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+}
+
 FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	const FHitResult& HitResult,
 	const int32 PelletIndex)
@@ -249,9 +263,9 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	ImpactEffectData.HitActor = HitResult.GetActor();
 	ImpactEffectData.ImpactPoint = HitResult.ImpactPoint;
 	ImpactEffectData.ImpactNormal = HitResult.ImpactNormal;
-	ImpactEffectData.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+	ImpactEffectData.ImpactSurfaceType = ResolveImpactSurfaceType(HitResult);
 	ImpactEffectData.PelletIndex = PelletIndex;
-	ImpactEffectData.bHasHit = true; 
+	ImpactEffectData.bHasHit = true;
 	return ImpactEffectData;
 }
 
@@ -344,6 +358,7 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 		}
 
 		OutImpactEffect = BuildImpactEffectData(HitResult, PelletIndex);
+		OutImpactEffect.HitZoneTag = ResolveHitZoneTag(HitResult, Request, HitResult.BoneName);
 		bOutHasImpactEffect = true;
 
 		// 현재 규칙은 피해 대상에서 펠릿을 종료하고, 월드 표면만 연속 관통한다.
