@@ -1,8 +1,19 @@
 #include "Settings/ShooterAudioSettings.h"
+#include "Sound/SoundClass.h"
 
 FName UShooterAudioSettings::GetCategoryName() const
 {
 	return TEXT("Game");
+}
+
+USoundClass* UShooterAudioSettings::LoadSoundClass(const TSoftObjectPtr<USoundClass>& SoundClassReference)
+{
+	USoundClass* SoundClass = SoundClassReference.LoadSynchronous();
+	if (IsValid(SoundClass))
+	{
+		LoadedSoundClasses.AddUnique(SoundClass);
+	}
+	return SoundClass;
 }
 
 const TArray<TSoftObjectPtr<USoundBase>>& UShooterAudioSettings::ResolvePainSoundPool(
