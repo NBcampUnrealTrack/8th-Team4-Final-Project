@@ -4,6 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "TimerManager.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingModeDefinition.h"
 #include "TrainingSessionSubsystem.generated.h"
 
 class AActor;
@@ -53,7 +54,8 @@ private:
     TWeakObjectPtr<ATrainingArena> Arena;
     TWeakObjectPtr<APlayerController> Participant;
     ETrainingSessionState State = ETrainingSessionState::Idle;
-    ETrainingMode PendingMode = ETrainingMode::TargetAcquisition;
+    ETrainingMode ActiveMode = ETrainingMode::TargetAcquisition;
+    FTrainingModeConfig ActiveModeConfig;
     FTimerHandle CountdownTimer;
     FTimerHandle SpawnTimer;
     FTimerHandle DurationTimer;

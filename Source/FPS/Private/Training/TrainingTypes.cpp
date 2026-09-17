@@ -61,23 +61,10 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
     return true;
 }
 
-float TrainingRules::GetTargetSpawnIntervalSeconds(const float Elapsed, const float Duration)
-{
-    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
-    const float StartInterval = FMath::Max(0.05f, Settings->TargetSpawnIntervalSeconds);
-    const float MinInterval = FMath::Clamp(Settings->TargetMinSpawnIntervalSeconds, 0.05f, StartInterval);
-    const float Progress = Duration > 0.0f ? FMath::Clamp(Elapsed / Duration, 0.0f, 1.0f) : 0.0f;
-    return FMath::Lerp(StartInterval, MinInterval, Progress);
-}
-
-bool TrainingRules::CanSpawnCombatAI(const int32 LivingCount)
-{
-    return LivingCount >= 0 && LivingCount < FMath::Max(1, GetDefault<UTrainingSettings>()->MaxLivingCombatAI);
-}
-
 bool TrainingRules::IsRunningState(const ETrainingSessionState State)
 {
-    return State == ETrainingSessionState::TargetAcquisitionActive
+    return State == ETrainingSessionState::Active
+        || State == ETrainingSessionState::TargetAcquisitionActive
         || State == ETrainingSessionState::CombatResponseActive;
 }
 

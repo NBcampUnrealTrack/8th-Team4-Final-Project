@@ -17,7 +17,6 @@ class FPS_API UShooterAudioSettings : public UDeveloperSettings
 
 public:
 	virtual FName GetCategoryName() const override;
-	USoundClass* LoadSoundClass(const TSoftObjectPtr<USoundClass>& SoundClassReference);
 
 	// Dedicated modifier; set Duration to -1 so it stays active until the player exits.
 	UPROPERTY(Config, EditAnywhere, Category = "Audio")
@@ -102,8 +101,4 @@ public:
 	// PainSounds_Default로 대체한다. 서버(재생할 사운드 인덱스 선택)와 각 클라이언트
 	// (Multicast로 받은 인덱스로 실제 에셋 로드) 양쪽에서 동일 로직을 쓰기 위해 여기 하나로 둔다.
 	const TArray<TSoftObjectPtr<USoundBase>>& ResolvePainSoundPool(EDominationCombatClass CombatClass) const;
-
-private:
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<USoundClass>> LoadedSoundClasses;
 };

@@ -6,7 +6,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
-#include "TrainingWidgetLayout.h"
+#include "TrainingWidgetStyle.h"
 
 UTrainingDamageFeedbackWidget::UTrainingDamageFeedbackWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -14,34 +14,14 @@ UTrainingDamageFeedbackWidget::UTrainingDamageFeedbackWidget(const FObjectInitia
     SetIsFocusable(false);
 }
 
-TSharedRef<SWidget> UTrainingDamageFeedbackWidget::RebuildWidget()
-{
-    if (!WidgetTree)
-    {
-        WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
-    }
-
-    if (!WidgetTree->RootWidget)
-    {
-        Canvas_Damage = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas_Damage"));
-        WidgetTree->RootWidget = Canvas_Damage;
-    }
-    else
-    {
-        Canvas_Damage = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("Canvas_Damage")));
-        if (!Canvas_Damage)
-        {
-            Canvas_Damage = Cast<UCanvasPanel>(WidgetTree->RootWidget);
-        }
-    }
-
-    return Super::RebuildWidget();
-}
-
 void UTrainingDamageFeedbackWidget::NativePreConstruct()
 {
     Super::NativePreConstruct();
     SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (!IsDesignTime() && !Canvas_Damage)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[Training] Damage Feedback WBP requires a Canvas Panel named Canvas_Damage."));
+    }
 }
 
 void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool bLethal,
@@ -64,7 +44,7 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
 
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     DamageText->SetText(FText::AsNumber(FMath::RoundToInt(Damage)));
-    DamageText->SetFont(TrainingWidgetLayout::MakeFont(bLethal ? LethalDamageFontSize : NormalDamageFontSize));
+    DamageText->SetFont(TrainingWidgetStyle::MakeFont(bLethal ? LethalDamageFontSize : NormalDamageFontSize));
     DamageText->SetColorAndOpacity(FSlateColor(bLethal ? LethalDamageColor : NormalDamageColor));
     DamageText->SetShadowOffset(FVector2D(1.0, 1.0));
     DamageText->SetShadowColorAndOpacity(FLinearColor::Black);

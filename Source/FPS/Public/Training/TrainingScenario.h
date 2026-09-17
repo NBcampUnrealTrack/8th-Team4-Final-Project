@@ -9,6 +9,7 @@
 class AActor;
 class APlayerController;
 class ATrainingArena;
+struct FTrainingModeConfig;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FTrainingBotSpawned, ATrainingCharacter&);
 
@@ -19,7 +20,7 @@ class FPS_API UTrainingScenario : public UObject
 
 public:
     void Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
-        const FTrainingDistanceBand& InBand);
+        const FTrainingDistanceBand& InBand, const FTrainingModeConfig& InModeConfig);
     virtual void SpawnNext() PURE_VIRTUAL(UTrainingScenario::SpawnNext, );
     void Stop(bool bImmediate = false);
     bool OwnsActor(const AActor* Candidate) const;
@@ -31,6 +32,7 @@ protected:
     ATrainingArena* GetArena() const;
     APlayerController* GetParticipant() const;
     FTrainingDistanceBand DistanceBand;
+    int32 MaxLivingActors = 0;
     TArray<TWeakObjectPtr<ATrainingCharacter>> OwnedActors;
 
 private:

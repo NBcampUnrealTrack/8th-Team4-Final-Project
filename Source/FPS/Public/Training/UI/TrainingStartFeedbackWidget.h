@@ -48,7 +48,6 @@ public:
     float StartDisplaySeconds = 1.6f;
 
 protected:
-    virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void NativePreConstruct() override;
     virtual void NativeDestruct() override;
 

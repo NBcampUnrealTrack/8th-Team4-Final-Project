@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "Blueprint/UserWidget.h"
+#include "Training/TrainingTypes.h"
+#include "Training/TrainingModeDefinition.h"
 #include "TrainingSettings.generated.h"
 
 
@@ -56,6 +58,13 @@ public:
 
     UPROPERTY(Config, EditAnywhere, Category = "Health", meta = (ClampMin = "1.0"))
     float CombatHealth = 100.0f;
+
+    UPROPERTY(Config, EditAnywhere, Category = "Health", meta = (ClampMin = "1.0"))
+    float PopUpTargetHealth = 100.0f;
+
+    // Optional data-driven overrides. If a mode is not assigned here, native defaults are used.
+    UPROPERTY(Config, EditAnywhere, Category = "Session|Mode Definitions")
+    TMap<ETrainingMode, TSoftObjectPtr<UTrainingModeDefinition>> ModeDefinitions;
 
     UPROPERTY(Config, EditAnywhere, Category = "Presentation", meta = (ClampMin = "0.1", Units = "s"))
     float DissolveDurationSeconds = 3.0f;

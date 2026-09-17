@@ -29,7 +29,6 @@ public:
     float KillFadeOutSeconds = 0.35f;
 
 protected:
-    virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void NativePreConstruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
     virtual void NativeDestruct() override;
@@ -40,7 +39,7 @@ private:
     void ApplyKillFeedbackAppearance();
     void ResetKillFeedback();
 
-    UPROPERTY(Transient) TObjectPtr<UWidget> SessionInfoContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> SessionInfoContent;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Mode;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Timer;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_TimerLabel;

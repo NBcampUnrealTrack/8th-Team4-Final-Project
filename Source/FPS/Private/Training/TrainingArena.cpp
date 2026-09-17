@@ -75,6 +75,7 @@ void ATrainingArena::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ATrainingArena, SessionState);
+    DOREPLIFETIME(ATrainingArena, ActiveMode);
 }
 
 FVector ATrainingArena::GetCenterLocation() const
@@ -216,13 +217,19 @@ bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
     return false;
 }
 
-void ATrainingArena::SetSessionState(const ETrainingSessionState NewState)
+void ATrainingArena::SetSessionContext(const ETrainingSessionState NewState, const ETrainingMode NewMode)
 {
     if (HasAuthority())
     {
         SessionState = NewState;
+        ActiveMode = NewMode;
         ForceNetUpdate();
     }
+}
+
+void ATrainingArena::SetSessionState(const ETrainingSessionState NewState)
+{
+    SetSessionContext(NewState, ActiveMode);
 }
 
 void ATrainingArena::EndPlay(const EEndPlayReason::Type EndPlayReason)

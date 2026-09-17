@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "Training/TrainingTypes.h"
 #include "Training/TrainingLoadoutSnapshot.h"
+#include "Training/UI/TrainingPlayerPresentation.h"
 #include "TrainingPlayerComponent.generated.h"
 
 class APlayerController;
@@ -91,6 +92,7 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    friend class UTrainingPlayerPresentation;
     APlayerController* GetParticipantController() const;
     UAugmentInventoryComponent* GetAugmentInventory() const;
     FTrainingLoadoutSnapshot BuildLoadoutSnapshot() const;
@@ -99,10 +101,6 @@ private:
     bool ValidatePendingRequest(int32 RequestId, FText& OutFailure) const;
     void ClearPendingRequest();
     void CloseActiveDialog();
-    void ClearSessionFeedback();
-    void ClearTrainingDamageFeedback();
-    UTrainingDamageFeedbackWidget* EnsureDamageFeedbackWidget();
-    void PresentDamageFeedback(float Damage, bool bKilled, const FVector& WorldPosition);
     void CloseResults(bool bPlayCloseSound = false);
     void HandleWorldLeaving(UWorld* DepartingWorld);
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
@@ -161,21 +159,10 @@ private:
     void ServerCancel(int32 RequestId);
 
     UPROPERTY(Transient)
-    TObjectPtr<UTrainingStartFeedbackWidget> StartFeedbackWidget;
-
-    UPROPERTY(Transient)
-    TObjectPtr<UTrainingSessionHUDWidget> SessionHUDWidget;
-
-    UPROPERTY(Transient)
-    TObjectPtr<UTrainingDamageFeedbackWidget> DamageFeedbackWidget;
-
-    UPROPERTY(Transient)
-    TObjectPtr<USoundAttenuation> DefaultBotAttenuation;
+    TObjectPtr<UTrainingPlayerPresentation> Presentation;
 
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
     int32 LastStoppedSessionId = 0;
-    int32 FeedbackSessionId = 0;
-    ETrainingMode FeedbackMode = ETrainingMode::TargetAcquisition;
     UPROPERTY(Transient)
     FTrainingLoadoutSnapshot ClientLoadout;
     bool bHasClientLoadout = false;

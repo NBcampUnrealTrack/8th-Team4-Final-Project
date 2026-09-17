@@ -244,13 +244,13 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 		return;
 	}
 
-	UShooterAudioSettings* AudioSettings = GetMutableDefault<UShooterAudioSettings>();
-	const auto SetClassVolume = [this, AudioSettings](
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	const auto SetClassVolume = [this](
 		const TSoftObjectPtr<USoundClass>& SoundClassReference,
 		const float Volume,
 		const bool bApplyToChildren)
 	{
-		USoundClass* SoundClass = AudioSettings->LoadSoundClass(SoundClassReference);
+		USoundClass* SoundClass = SoundClassReference.LoadSynchronous();
 		if (!ensureMsgf(SoundClass,
 			TEXT("Assign every channel Sound Class in Project Settings > Shooter Audio Settings. Missing: %s"),
 			*SoundClassReference.ToString()))

@@ -1,12 +1,11 @@
 #include "Training/UI/TrainingSessionHUDWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "Training/TrainingSettings.h"
-#include "TrainingWidgetLayout.h"
+#include "Training/TrainingModeDefinition.h"
 
 UTrainingSessionHUDWidget::UTrainingSessionHUDWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
@@ -14,27 +13,9 @@ UTrainingSessionHUDWidget::UTrainingSessionHUDWidget(const FObjectInitializer& O
     SetIsFocusable(false);
 }
 
-TSharedRef<SWidget> UTrainingSessionHUDWidget::RebuildWidget()
-{
-    if (!WidgetTree) { WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient); }
-    if (!WidgetTree->RootWidget) { TrainingWidgetLayout::BuildSessionHUD(*WidgetTree); }
-    TrainingWidgetLayout::RepairTextFonts(*WidgetTree);
-    SessionInfoContent = WidgetTree->FindWidget(TEXT("Size_Timer"));
-    Txt_Mode = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_Mode")));
-    Txt_Timer = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_Timer")));
-    Txt_TimerLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_TimerLabel")));
-    Txt_Kills = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_Kills")));
-    Txt_KillLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_KillLabel")));
-    KillCounterContent = WidgetTree->FindWidget(TEXT("KillCounterContent"));
-    ApplyKillFeedbackAppearance();
-    Bar_TimeRemaining = Cast<UProgressBar>(WidgetTree->FindWidget(TEXT("Bar_TimeRemaining")));
-    return Super::RebuildWidget();
-}
-
 void UTrainingSessionHUDWidget::NativePreConstruct()
 {
     Super::NativePreConstruct();
-    if (WidgetTree) { TrainingWidgetLayout::RepairTextFonts(*WidgetTree); }
     ApplyKillFeedbackAppearance();
     SetVisibility(ESlateVisibility::HitTestInvisible);
 }
@@ -62,9 +43,7 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
     }
     if (Txt_Mode)
     {
-        Txt_Mode->SetText(Mode == ETrainingMode::TargetAcquisition
-            ? NSLOCTEXT("TrainingHUD", "Target", "360 TARGET ACQUISITION")
-            : NSLOCTEXT("TrainingHUD", "Combat", "360 COMBAT RESPONSE"));
+        Txt_Mode->SetText(TrainingModeDefinitions::GetHUDLabel(Mode));
     }
     if (Txt_TimerLabel)
     {

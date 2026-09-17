@@ -5,21 +5,16 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
-#include "GameFramework/GameStateBase.h"
 #include "Input/ShooterInteractionComponent.h"
 #include "Tags/UITags.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingInteractionActor.h"
 #include "Training/TrainingSessionSubsystem.h"
-#include "Training/TrainingSettings.h"
-#include "Training/UI/TrainingDamageFeedbackWidget.h"
 #include "Training/UI/TrainingDialogWidget.h"
-#include "Training/UI/TrainingStartFeedbackWidget.h"
-#include "Training/UI/TrainingSessionHUDWidget.h"
 #include "Training/UI/TrainingResultsWidget.h"
-#include "UI/TrainingWidgetLayout.h"
+#include "Training/UI/TrainingPlayerPresentation.h"
+#include "UI/TrainingWidgetStyle.h"
 #include "Kismet/GameplayStatics.h"
-#include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
@@ -34,6 +29,11 @@ UTrainingPlayerComponent::UTrainingPlayerComponent()
 void UTrainingPlayerComponent::BeginPlay()
 {
     Super::BeginPlay();
+    Presentation = NewObject<UTrainingPlayerPresentation>(this);
+    if (Presentation)
+    {
+        Presentation->Initialize(*this);
+    }
     WorldTearDownHandle = FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &ThisClass::HandleWorldLeaving);
     SeamlessTravelHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(this, &ThisClass::HandleSeamlessTravel);
 }
@@ -361,98 +361,31 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
     const ETrainingMode Mode, const float DurationSeconds)
 {
     APlayerController* LocalController = GetParticipantController();
-    if (!LocalController || !LocalController->IsLocalController()) { return; }
+    if (!LocalController || !LocalController->IsLocalController())
+    {
+        return;
+    }
+
     if (Phase == ETrainingFeedbackPhase::Stopped)
     {
-        if (SessionId == FeedbackSessionId)
+        if (Presentation && Presentation->GetSessionId() == SessionId)
         {
             LastStoppedSessionId = SessionId;
-            ClearSessionFeedback();
+            Presentation->HandlePhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
             CloseActiveDialog();
         }
         return;
     }
+
     if (Phase == ETrainingFeedbackPhase::Countdown)
     {
-        ClearSessionFeedback();
         CloseResults();
         LastStoppedSessionId = 0;
-        FeedbackSessionId = SessionId;
-        FeedbackMode = Mode;
     }
-    else if (FeedbackSessionId != SessionId)
-    {
-        return;
-    }
-    if (Phase == ETrainingFeedbackPhase::Started)
-    {
-        if (!SessionHUDWidget)
-        {
-            UClass* HUDClass = SessionHUDWidgetClass ? SessionHUDWidgetClass.Get() : UTrainingSessionHUDWidget::StaticClass();
-            SessionHUDWidget = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDClass);
-        }
-        if (SessionHUDWidget)
-        {
-            if (!SessionHUDWidget->IsInViewport())
-            {
-                SessionHUDWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
-            }
-            SessionHUDWidget->StartSession(Mode, PhaseStartServerSeconds, DurationSeconds);
-        }
-    }
-    if (!StartFeedbackWidget)
-    {
-        UClass* FeedbackClass = StartFeedbackWidgetClass
-            ? StartFeedbackWidgetClass.Get() : UTrainingStartFeedbackWidget::StaticClass();
-        StartFeedbackWidget = CreateWidget<UTrainingStartFeedbackWidget>(LocalController, FeedbackClass);
-    }
-    if (!StartFeedbackWidget)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Training] Could not create the start feedback widget."));
-        return;
-    }
-    if (!StartFeedbackWidget->IsInViewport()
-        && !StartFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->StartFeedbackZOrder))
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[Training] Could not add start feedback to the local player's viewport."));
-        return;
-    }
-    const AGameStateBase* WorldGameState = GetWorld()->GetGameState();
-    const float Elapsed = WorldGameState
-        ? static_cast<float>(FMath::Max(0.0, WorldGameState->GetServerWorldTimeSeconds() - PhaseStartServerSeconds))
-        : 0.0f;
-    if (Phase == ETrainingFeedbackPhase::Countdown)
-    {
-        StartFeedbackWidget->ShowCountdown(Elapsed);
-    }
-    else
-    {
-        StartFeedbackWidget->ShowStarted(Elapsed);
-    }
-}
 
-void UTrainingPlayerComponent::ClearSessionFeedback()
-{
-    if (SessionHUDWidget)
+    if (Presentation)
     {
-        SessionHUDWidget->RemoveFromParent();
-        SessionHUDWidget = nullptr;
-    }
-    if (StartFeedbackWidget)
-    {
-        StartFeedbackWidget->ClearFeedback();
-        StartFeedbackWidget->RemoveFromParent();
-        StartFeedbackWidget = nullptr;
-    }
-    FeedbackSessionId = 0;
-}
-
-void UTrainingPlayerComponent::ClearTrainingDamageFeedback()
-{
-    if (DamageFeedbackWidget)
-    {
-        DamageFeedbackWidget->RemoveFromParent();
-        DamageFeedbackWidget = nullptr;
+        Presentation->HandlePhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
     }
 }
 
@@ -534,8 +467,10 @@ void UTrainingPlayerComponent::HandleWorldLeaving(UWorld* DepartingWorld)
     }
     CloseActiveDialog();
     CloseResults();
-    ClearSessionFeedback();
-    ClearTrainingDamageFeedback();
+    if (Presentation)
+    {
+        Presentation->Clear();
+    }
     ClearPendingRequest();
     ReturnArena.Reset();
     PreTrainingTransform = FTransform::Identity;
@@ -551,12 +486,13 @@ void UTrainingPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     WorldTearDownHandle.Reset();
     SeamlessTravelHandle.Reset();
     HandleWorldLeaving(GetWorld());
+    Presentation = nullptr;
     Super::EndPlay(EndPlayReason);
 }
 
 void UTrainingPlayerComponent::ApplyButtonSounds(UUserWidget& Widget) const
 {
-    TrainingWidgetLayout::ApplyButtonSounds(Widget, ButtonHoverSound, ButtonClickSound);
+    TrainingWidgetStyle::ApplyButtonSounds(Widget, ButtonHoverSound, ButtonClickSound);
 }
 
 void UTrainingPlayerComponent::NotifySessionHit(const int32 SessionId, const int32 Kills,
@@ -568,19 +504,9 @@ void UTrainingPlayerComponent::NotifySessionHit(const int32 SessionId, const int
 void UTrainingPlayerComponent::ClientSessionHit_Implementation(const int32 SessionId, const int32 Kills,
     const float Damage, const bool bKilled, const FVector WorldPosition)
 {
-    if (SessionId != FeedbackSessionId)
+    if (Presentation)
     {
-        return;
-    }
-
-    if (SessionHUDWidget)
-    {
-        SessionHUDWidget->PresentHit(Kills, bKilled);
-    }
-
-    if (FeedbackMode == ETrainingMode::CombatResponse)
-    {
-        PresentDamageFeedback(Damage, bKilled, WorldPosition);
+        Presentation->HandleHit(SessionId, Kills, Damage, bKilled, WorldPosition);
     }
 }
 
@@ -601,45 +527,9 @@ void UTrainingPlayerComponent::ClientTrainingDamage_Implementation(const float D
     {
         return;
     }
-
-    PresentDamageFeedback(Damage, bKilled, WorldPosition);
-}
-
-UTrainingDamageFeedbackWidget* UTrainingPlayerComponent::EnsureDamageFeedbackWidget()
-{
-    APlayerController* LocalController = GetParticipantController();
-    if (!LocalController || !LocalController->IsLocalController())
+    if (Presentation)
     {
-        return nullptr;
-    }
-
-    if (!DamageFeedbackWidget)
-    {
-        UClass* FeedbackClass = DamageFeedbackWidgetClass
-            ? DamageFeedbackWidgetClass.Get()
-            : UTrainingDamageFeedbackWidget::StaticClass();
-        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, FeedbackClass);
-    }
-
-    if (DamageFeedbackWidget && !DamageFeedbackWidget->IsInViewport())
-    {
-        DamageFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->DamageFeedbackZOrder);
-    }
-
-    return DamageFeedbackWidget;
-}
-
-void UTrainingPlayerComponent::PresentDamageFeedback(const float Damage, const bool bKilled,
-    const FVector& WorldPosition)
-{
-    if (!FMath::IsFinite(Damage) || Damage <= 0.0f)
-    {
-        return;
-    }
-
-    if (UTrainingDamageFeedbackWidget* Feedback = EnsureDamageFeedbackWidget())
-    {
-        Feedback->PresentDamage(Damage, bKilled, WorldPosition);
+        Presentation->PresentStandaloneDamage(Damage, bKilled, WorldPosition);
     }
 }
 
@@ -655,32 +545,10 @@ void UTrainingPlayerComponent::NotifyBotSound(const int32 SessionId, USoundBase*
 void UTrainingPlayerComponent::ClientPlayBotSound_Implementation(const int32 SessionId, USoundBase* Sound,
     USoundAttenuation* Attenuation, const FVector WorldPosition, const float Volume)
 {
-    APlayerController* LocalController = GetParticipantController();
-    if (!LocalController || !LocalController->IsLocalController() || SessionId != FeedbackSessionId || !Sound) { return; }
-    if (!Attenuation)
+    if (Presentation)
     {
-        if (!DefaultBotAttenuation)
-        {
-            DefaultBotAttenuation = NewObject<USoundAttenuation>(this);
-            FSoundAttenuationSettings& Settings = DefaultBotAttenuation->Attenuation;
-            Settings.bAttenuate = true;
-            Settings.bSpatialize = true;
-            Settings.DistanceAlgorithm = EAttenuationDistanceModel::Linear;
-            Settings.bEnableListenerFocus = false;
-            Settings.bEnableOcclusion = false;
-            Settings.bApplyNormalizationToStereoSounds = true;
-            Settings.SpatializationAlgorithm = SPATIALIZATION_Default;
-            Settings.AttenuationShape = EAttenuationShape::Sphere;
-            Settings.AttenuationShapeExtents = FVector(1000.0, 0.0, 0.0);
-            Settings.FalloffDistance = 6000.0f;
-            Settings.NonSpatializedRadiusStart = 0.0f;
-            Settings.NonSpatializedRadiusEnd = 0.0f;
-            Settings.StereoSpread = 0.0f;
-        }
-        Attenuation = DefaultBotAttenuation;
+        Presentation->PlayBotSound(SessionId, Sound, Attenuation, WorldPosition, Volume);
     }
-    UGameplayStatics::PlaySoundAtLocation(this, Sound, WorldPosition, FRotator::ZeroRotator,
-        FMath::Clamp(Volume, 0.0f, 4.0f), 1.0f, 0.0f, Attenuation);
 }
 
 void UTrainingPlayerComponent::NotifySessionFinished(const FTrainingSessionResult& Result)
@@ -700,9 +568,13 @@ void UTrainingPlayerComponent::ClientSessionFinished_Implementation(const FTrain
         ClientNotify_Implementation(LOCTEXT("ResultsNoLayout", "Training results require the existing PrimaryGameLayout modal layer."));
         return;
     }
-    UClass* ResultClass = ResultsWidgetClass ? ResultsWidgetClass.Get() : UTrainingResultsWidget::StaticClass();
+    if (!ResultsWidgetClass)
+    {
+        ClientNotify_Implementation(LOCTEXT("ResultsClassMissing", "Training Results Widget Class is not configured. Assign the existing WBP in the Training Player Component."));
+        return;
+    }
     UTrainingResultsWidget* NewResults = Cast<UTrainingResultsWidget>(
-        UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ResultClass));
+        UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ResultsWidgetClass));
     if (!NewResults)
     {
         ClientNotify_Implementation(LOCTEXT("ResultsFailed", "Could not create Training Results. Check Results Widget Class and the Modal layer."));

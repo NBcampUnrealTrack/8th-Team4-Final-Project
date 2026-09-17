@@ -1,29 +1,13 @@
 #include "Training/UI/TrainingResultsWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Training/TrainingPlayerComponent.h"
-#include "TrainingWidgetLayout.h"
+#include "Training/TrainingModeDefinition.h"
 
 UTrainingResultsWidget::UTrainingResultsWidget()
 {
     InputConfig = EShooterWidgetInputMode::Menu;
-}
-
-TSharedRef<SWidget> UTrainingResultsWidget::RebuildWidget()
-{
-    if (!WidgetTree) { WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient); }
-    if (!WidgetTree->RootWidget) { TrainingWidgetLayout::BuildResults(*WidgetTree); }
-    TrainingWidgetLayout::RepairTextFonts(*WidgetTree);
-    Btn_Confirm = Cast<UButton>(WidgetTree->FindWidget(TEXT("Btn_Confirm")));
-    Txt_ResultTitle = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultTitle")));
-    Txt_ResultMode = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultMode")));
-    Txt_ResultDuration = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultDuration")));
-    Txt_ResultKills = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultKills")));
-    Txt_ResultAccuracy = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultAccuracy")));
-    Txt_ResultShots = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_ResultShots")));
-    return Super::RebuildWidget();
 }
 
 void UTrainingResultsWidget::InitializeResults(UTrainingPlayerComponent& InBridge,
@@ -38,7 +22,6 @@ void UTrainingResultsWidget::InitializeResults(UTrainingPlayerComponent& InBridg
 void UTrainingResultsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
-    if (WidgetTree) { TrainingWidgetLayout::RepairTextFonts(*WidgetTree); }
     if (Btn_Confirm) { Btn_Confirm->OnClicked.AddUniqueDynamic(this, &ThisClass::ConfirmResults); }
     RefreshResult();
     if (Bridge.IsValid()) { Bridge->ApplyButtonSounds(*this); }
@@ -54,9 +37,7 @@ void UTrainingResultsWidget::RefreshResult()
     }
     if (Txt_ResultMode)
     {
-        Txt_ResultMode->SetText(Result.Mode == ETrainingMode::TargetAcquisition
-            ? NSLOCTEXT("TrainingResults", "Target", "360 Target Acquisition")
-            : NSLOCTEXT("TrainingResults", "Combat", "360 Combat Response"));
+        Txt_ResultMode->SetText(TrainingModeDefinitions::GetDisplayName(Result.Mode));
     }
     if (Txt_ResultDuration)
     {
