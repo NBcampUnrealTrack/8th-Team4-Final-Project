@@ -107,21 +107,8 @@ struct FPS_API FTrainingSessionResult
 
 namespace TrainingRules
 {
-    inline constexpr float MinDistanceMeters = 5.0f;
-    inline constexpr float MaxDistanceMeters = 50.0f;
-    inline constexpr float DistanceHalfWidthMeters = 2.0f;
+    // Unit conversion is not gameplay tuning; editable training values live in UTrainingSettings.
     inline constexpr float CentimetersPerMeter = 100.0f;
-    inline constexpr float BotArcStepCentimeters = 150.0f;
-    inline constexpr float MovementRadiusCentimeters = 300.0f;
-    inline constexpr float TargetIntervalSeconds = 2.0f;
-    inline constexpr float TargetMinIntervalSeconds = 1.0f;
-    inline constexpr float TargetDurationSeconds = 60.0f;
-    inline constexpr float CombatIntervalSeconds = 5.0f;
-    inline constexpr float TargetHealth = 1.0f;
-    inline constexpr float CombatHealth = 100.0f;
-    inline constexpr float CountdownSeconds = 3.0f;
-    inline constexpr float DissolveDurationSeconds = 3.0f;
-    inline constexpr int32 MaxLivingCombatAI = 10;
 
     FPS_API bool ResolveDistanceBand(ETrainingDistancePreset Preset,
         float CustomMeters, FTrainingDistanceBand& OutBand);

@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Training/TrainingTypes.h"
 #include "TrainingPopUpTarget.generated.h"
@@ -29,7 +30,7 @@ enum class ETrainingPopUpTargetState : uint8
 };
 
 UCLASS(Blueprintable)
-class FPS_API ATrainingPopUpTarget : public AActor, public IAbilitySystemInterface, public IRogueHitscanReactiveTarget
+class FPS_API ATrainingPopUpTarget : public AActor, public IAbilitySystemInterface, public IRogueHitscanReactiveTarget, public IRogueCombatFeedbackPolicy
 {
     GENERATED_BODY()
 
@@ -41,6 +42,8 @@ public:
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
     virtual void HandleHitscanImpact(AActor* InstigatorActor, const FVector& ImpactPoint,
         const FVector& ShotDirection) override;
+    virtual bool CountsAsCombatKill() const override { return false; }
+    virtual bool PlaysCombatFeedbackAudio() const override { return false; }
 
     UFUNCTION(BlueprintCallable, Category = "Training|PopUpTarget")
     void KnockDown();
@@ -74,7 +77,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|PopUpTarget|Health",
         meta = (ClampMin = "1.0"))
-    float TargetMaxHealth = TrainingRules::CombatHealth;
+    float TargetMaxHealth = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|PopUpTarget|Motion")
     FRotator DownRotation = FRotator(-90.0f, 0.0f, 0.0f);

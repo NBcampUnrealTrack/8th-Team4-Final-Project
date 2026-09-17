@@ -9,6 +9,7 @@
 #include "Training/AI/TrainingBotPersonalityComponent.h"
 #include "Training/AI/TrainingCombatAI.h"
 #include "Training/TrainingArena.h"
+#include "Training/TrainingSettings.h"
 
 ATrainingCombatAIController::ATrainingCombatAIController()
 {
@@ -89,7 +90,8 @@ bool ATrainingCombatAIController::RequestPersonalityStep(const bool bClockwise, 
     FVector Destination;
     if (!Arena->FindBotStepDestination(TrainingPawn->GetActorLocation(), TrainingPawn->GetDistanceBand(),
         TrainingPawn->GetNavAgentPropertiesRef(),
-        bClockwise ? TrainingRules::BotArcStepCentimeters : -TrainingRules::BotArcStepCentimeters,
+        bClockwise ? GetDefault<UTrainingSettings>()->BotArcStepCentimeters
+            : -GetDefault<UTrainingSettings>()->BotArcStepCentimeters,
         RadialStepCentimeters, Destination))
     {
         return false;

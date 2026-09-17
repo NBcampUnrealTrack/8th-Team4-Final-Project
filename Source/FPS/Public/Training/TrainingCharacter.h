@@ -63,7 +63,7 @@ public:
     FName DissolveParameterName = TEXT("DissolveAmount");
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Death", meta = (ClampMin = "0.1", ClampMax = "10.0", Units = "s"))
-    float DissolveDurationSeconds = TrainingRules::DissolveDurationSeconds;
+    float DissolveDurationSeconds = 0.0f;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Death")
     float DissolveStartValue = 0.0f;
@@ -74,7 +74,7 @@ public:
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual float GetInitialTrainingHealth() const { return TrainingRules::CombatHealth; }
+    virtual float GetInitialTrainingHealth() const;
     virtual void StopTrainingMotion();
     virtual bool RemovesOnAnyAcceptedHit() const { return false; }
 

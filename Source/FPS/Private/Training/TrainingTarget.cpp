@@ -1,5 +1,7 @@
 #include "Training/TrainingTarget.h"
 
+#include "Training/TrainingSettings.h"
+
 #include "GameFramework/CharacterMovementComponent.h"
 
 ATrainingTarget::ATrainingTarget()
@@ -25,4 +27,9 @@ void ATrainingTarget::PostInitializeComponents()
 
 void ATrainingTarget::SpawnDefaultController()
 {
+}
+
+float ATrainingTarget::GetInitialTrainingHealth() const
+{
+    return FMath::Max(1.0f, GetDefault<UTrainingSettings>()->TargetHealth);
 }

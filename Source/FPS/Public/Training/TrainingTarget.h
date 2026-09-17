@@ -15,7 +15,7 @@ public:
 
 protected:
     virtual void PostInitializeComponents() override;
-    virtual float GetInitialTrainingHealth() const override { return TrainingRules::TargetHealth; }
+    virtual float GetInitialTrainingHealth() const override;
 
     virtual bool RemovesOnAnyAcceptedHit() const override { return true; }
 };

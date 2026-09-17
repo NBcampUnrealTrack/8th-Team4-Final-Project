@@ -4,10 +4,12 @@
 #include "EnhancedInputComponent.h"
 #include "Engine/World.h"
 #include "GameMode/TrainingGameMode.h"
+#include "Input/ShooterInteractionComponent.h"
 #include "Input/ShooterInputConfig.h"
 #include "Player/DominationPlayerState.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingSettings.h"
 #include "UI/Frontend/TrainingUIInitComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTrainingController, Log, All);
@@ -15,6 +17,26 @@ DEFINE_LOG_CATEGORY_STATIC(LogTrainingController, Log, All);
 ATrainingPlayerController::ATrainingPlayerController()
 {
     UIInitComponent = CreateDefaultSubobject<UTrainingUIInitComponent>(TEXT("TrainingUIInitComponent"));
+}
+
+void ATrainingPlayerController::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (!IsLocalController())
+    {
+        return;
+    }
+
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    UShooterInteractionComponent* Interaction = FindComponentByClass<UShooterInteractionComponent>();
+    if (!Settings || !Interaction)
+    {
+        return;
+    }
+
+    Interaction->SetInteractionPromptZOrder(Settings->InteractionPromptZOrder);
+    Interaction->SetInteractionPromptWidgetClass(Settings->InteractionPromptWidgetClass.LoadSynchronous());
 }
 
 bool ATrainingPlayerController::CanProcessGameplayInput() const

@@ -12,9 +12,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
-#include "Tags/RogueActorTags.h"
 #include "TimerManager.h"
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/TrainingSettings.h"
 
 namespace
 {
@@ -42,7 +42,8 @@ APlayerController* ResolveDamageInstigatorController(const UObject* InstigatorOb
 
 ATrainingPopUpTarget::ATrainingPopUpTarget()
 {
-    Tags.AddUnique(RogueActorTags::SuppressCombatFeedbackAudio);
+    TargetMaxHealth = FMath::Max(1.0f, GetDefault<UTrainingSettings>()->CombatHealth);
+
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
     bReplicates = true;
@@ -165,7 +166,6 @@ void ATrainingPopUpTarget::InitializeHealth()
 
     VitalSet->ClearDeathDeclared();
     AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_IsDead, 0);
-    AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_Deployable, 1);
 
     const float Health = FMath::Max(1.0f, TargetMaxHealth);
     AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxHealthAttribute(), Health);

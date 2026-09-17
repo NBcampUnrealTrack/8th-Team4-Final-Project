@@ -11,6 +11,8 @@
 #include "Training/TrainingArena.h"
 #include "Training/TrainingInteractionActor.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingSettings.h"
+#include "Training/UI/TrainingDamageFeedbackWidget.h"
 #include "Training/UI/TrainingDialogWidget.h"
 #include "Training/UI/TrainingStartFeedbackWidget.h"
 #include "Training/UI/TrainingSessionHUDWidget.h"
@@ -376,6 +378,7 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
         CloseResults();
         LastStoppedSessionId = 0;
         FeedbackSessionId = SessionId;
+        FeedbackMode = Mode;
     }
     else if (FeedbackSessionId != SessionId)
     {
@@ -390,7 +393,10 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
         }
         if (SessionHUDWidget)
         {
-            if (!SessionHUDWidget->IsInViewport()) { SessionHUDWidget->AddToPlayerScreen(19); }
+            if (!SessionHUDWidget->IsInViewport())
+            {
+                SessionHUDWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
+            }
             SessionHUDWidget->StartSession(Mode, PhaseStartServerSeconds, DurationSeconds);
         }
     }
@@ -405,7 +411,8 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
         UE_LOG(LogTemp, Warning, TEXT("[Training] Could not create the start feedback widget."));
         return;
     }
-    if (!StartFeedbackWidget->IsInViewport() && !StartFeedbackWidget->AddToPlayerScreen(20))
+    if (!StartFeedbackWidget->IsInViewport()
+        && !StartFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->StartFeedbackZOrder))
     {
         UE_LOG(LogTemp, Warning, TEXT("[Training] Could not add start feedback to the local player's viewport."));
         return;
@@ -442,10 +449,10 @@ void UTrainingPlayerComponent::ClearSessionFeedback()
 
 void UTrainingPlayerComponent::ClearTrainingDamageFeedback()
 {
-    if (TrainingDamageHUDWidget)
+    if (DamageFeedbackWidget)
     {
-        TrainingDamageHUDWidget->RemoveFromParent();
-        TrainingDamageHUDWidget = nullptr;
+        DamageFeedbackWidget->RemoveFromParent();
+        DamageFeedbackWidget = nullptr;
     }
 }
 
@@ -561,9 +568,19 @@ void UTrainingPlayerComponent::NotifySessionHit(const int32 SessionId, const int
 void UTrainingPlayerComponent::ClientSessionHit_Implementation(const int32 SessionId, const int32 Kills,
     const float Damage, const bool bKilled, const FVector WorldPosition)
 {
-    if (SessionId == FeedbackSessionId && SessionHUDWidget)
+    if (SessionId != FeedbackSessionId)
     {
-        SessionHUDWidget->PresentHit(Kills, Damage, bKilled, WorldPosition);
+        return;
+    }
+
+    if (SessionHUDWidget)
+    {
+        SessionHUDWidget->PresentHit(Kills, bKilled);
+    }
+
+    if (FeedbackMode == ETrainingMode::CombatResponse)
+    {
+        PresentDamageFeedback(Damage, bKilled, WorldPosition);
     }
 }
 
@@ -580,33 +597,50 @@ void UTrainingPlayerComponent::ClientTrainingDamage_Implementation(const float D
     const FVector WorldPosition)
 {
     APlayerController* LocalController = GetParticipantController();
-    if (!LocalController || !LocalController->IsLocalController() || !FMath::IsFinite(Damage) || Damage <= 0.0f)
+    if (!LocalController || !LocalController->IsLocalController())
     {
         return;
     }
 
-    if (!TrainingDamageHUDWidget)
+    PresentDamageFeedback(Damage, bKilled, WorldPosition);
+}
+
+UTrainingDamageFeedbackWidget* UTrainingPlayerComponent::EnsureDamageFeedbackWidget()
+{
+    APlayerController* LocalController = GetParticipantController();
+    if (!LocalController || !LocalController->IsLocalController())
     {
-        UClass* HUDClass = SessionHUDWidgetClass
-            ? SessionHUDWidgetClass.Get() : UTrainingSessionHUDWidget::StaticClass();
-        TrainingDamageHUDWidget = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDClass);
-        if (TrainingDamageHUDWidget)
-        {
-            TrainingDamageHUDWidget->AddToPlayerScreen(18);
-            TrainingDamageHUDWidget->StartDamageOnlyOverlay();
-        }
+        return nullptr;
     }
 
-    if (!TrainingDamageHUDWidget)
+    if (!DamageFeedbackWidget)
+    {
+        UClass* FeedbackClass = DamageFeedbackWidgetClass
+            ? DamageFeedbackWidgetClass.Get()
+            : UTrainingDamageFeedbackWidget::StaticClass();
+        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, FeedbackClass);
+    }
+
+    if (DamageFeedbackWidget && !DamageFeedbackWidget->IsInViewport())
+    {
+        DamageFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->DamageFeedbackZOrder);
+    }
+
+    return DamageFeedbackWidget;
+}
+
+void UTrainingPlayerComponent::PresentDamageFeedback(const float Damage, const bool bKilled,
+    const FVector& WorldPosition)
+{
+    if (!FMath::IsFinite(Damage) || Damage <= 0.0f)
     {
         return;
     }
 
-    if (!TrainingDamageHUDWidget->IsInViewport())
+    if (UTrainingDamageFeedbackWidget* Feedback = EnsureDamageFeedbackWidget())
     {
-        TrainingDamageHUDWidget->AddToPlayerScreen(18);
+        Feedback->PresentDamage(Damage, bKilled, WorldPosition);
     }
-    TrainingDamageHUDWidget->PresentDamage(Damage, bKilled, WorldPosition);
 }
 
 void UTrainingPlayerComponent::NotifyBotSound(const int32 SessionId, USoundBase* Sound,
