@@ -1,5 +1,7 @@
 #include "Training/TrainingTypes.h"
 
+#include "Training/TrainingSettings.h"
+
 bool FTrainingDistanceBand::Contains(const FVector& Center, const FVector& Position) const
 {
     const double RadiusSquared = FVector::DistSquared2D(Center, Position);
@@ -32,6 +34,11 @@ bool FTrainingDistanceBand::ContainsSegment(const FVector& Center,
 bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
     const float CustomMeters, FTrainingDistanceBand& OutBand)
 {
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    const float MinDistanceMeters = Settings->GetMinDistanceMeters();
+    const float MaxDistanceMeters = Settings->GetMaxDistanceMeters();
+    const float DistanceHalfWidthMeters = FMath::Max(0.0f, Settings->DistanceHalfWidthMeters);
+
     float NominalMeters = 0.0f;
     switch (Preset)
     {
@@ -56,13 +63,16 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
 
 float TrainingRules::GetTargetSpawnIntervalSeconds(const float Elapsed, const float Duration)
 {
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    const float StartInterval = FMath::Max(0.05f, Settings->TargetSpawnIntervalSeconds);
+    const float MinInterval = FMath::Clamp(Settings->TargetMinSpawnIntervalSeconds, 0.05f, StartInterval);
     const float Progress = Duration > 0.0f ? FMath::Clamp(Elapsed / Duration, 0.0f, 1.0f) : 0.0f;
-    return FMath::Lerp(TargetIntervalSeconds, TargetMinIntervalSeconds, Progress);
+    return FMath::Lerp(StartInterval, MinInterval, Progress);
 }
 
 bool TrainingRules::CanSpawnCombatAI(const int32 LivingCount)
 {
-    return LivingCount >= 0 && LivingCount < MaxLivingCombatAI;
+    return LivingCount >= 0 && LivingCount < FMath::Max(1, GetDefault<UTrainingSettings>()->MaxLivingCombatAI);
 }
 
 bool TrainingRules::IsRunningState(const ETrainingSessionState State)

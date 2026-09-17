@@ -5,6 +5,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Training/TrainingSettings.h"
 #include "Training/TrainingTypes.h"
 #include "TrainingWidgetLayout.h"
 
@@ -40,7 +41,7 @@ void UTrainingStartFeedbackWidget::NativePreConstruct()
     SetVisibility(ESlateVisibility::HitTestInvisible);
     if (IsDesignTime() && Txt_FeedbackMessage)
     {
-        Txt_FeedbackMessage->SetText(FText::Format(LOCTEXT("CountdownPreview", "{0}초 뒤에 시작합니다"), FText::AsNumber(TrainingRules::CountdownSeconds)));
+        Txt_FeedbackMessage->SetText(FText::Format(LOCTEXT("CountdownPreview", "{0}초 뒤에 시작합니다"), FText::AsNumber(GetDefault<UTrainingSettings>()->GetCountdownSeconds())));
     }
 }
 
@@ -77,7 +78,7 @@ void UTrainingStartFeedbackWidget::ShowCountdown(const float ElapsedServerSecond
 {
     bCountdownPulse = true;
     LastCountdownDigit = INDEX_NONE;
-    ShowPulse(CountdownText, TrainingRules::CountdownSeconds, ElapsedServerSeconds);
+    ShowPulse(CountdownText, GetDefault<UTrainingSettings>()->GetCountdownSeconds(), ElapsedServerSeconds);
 }
 
 void UTrainingStartFeedbackWidget::ShowStarted(const float ElapsedServerSeconds)
@@ -116,7 +117,7 @@ void UTrainingStartFeedbackWidget::UpdatePulse()
     }
     if (bCountdownPulse && Txt_FeedbackMessage)
     {
-        const int32 Digit = TrainingRules::RemainingWholeSeconds(TrainingRules::CountdownSeconds, Elapsed);
+        const int32 Digit = TrainingRules::RemainingWholeSeconds(GetDefault<UTrainingSettings>()->GetCountdownSeconds(), Elapsed);
         if (Digit != LastCountdownDigit)
         {
             LastCountdownDigit = Digit;

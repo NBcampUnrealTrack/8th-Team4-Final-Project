@@ -13,9 +13,13 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
+#include "Training/TrainingSettings.h"
 
 ATrainingCharacter::ATrainingCharacter()
 {
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    DissolveDurationSeconds = FMath::Max(0.1f, Settings->DissolveDurationSeconds);
+
     bReplicates = true;
     SetReplicateMovement(true);
     AIControllerClass = nullptr;
@@ -53,6 +57,11 @@ void ATrainingCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 UAbilitySystemComponent* ATrainingCharacter::GetAbilitySystemComponent() const
 {
     return AbilitySystem;
+}
+
+float ATrainingCharacter::GetInitialTrainingHealth() const
+{
+    return FMath::Max(1.0f, GetDefault<UTrainingSettings>()->CombatHealth);
 }
 
 void ATrainingCharacter::BeginPlay()

@@ -7,6 +7,7 @@
 #include "NavigationSystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingSettings.h"
 #include "Training/TrainingTarget.h"
 #include "Training/AI/TrainingCombatAI.h"
 
@@ -24,7 +25,7 @@ ATrainingArena::ATrainingArena()
 
     MovementArea = CreateDefaultSubobject<USphereComponent>(TEXT("MovementArea"));
     MovementArea->SetupAttachment(CenterPoint);
-    MovementArea->SetSphereRadius(TrainingRules::MovementRadiusCentimeters);
+    MovementArea->SetSphereRadius(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters));
     MovementArea->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MovementArea->SetCanEverAffectNavigation(false);
     MovementArea->SetHiddenInGame(true);
@@ -51,11 +52,11 @@ void ATrainingArena::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     SetActorScale3D(FVector::OneVector);
     SetActorRotation(FRotator(0.0, GetActorRotation().Yaw, 0.0));
-    MovementArea->SetSphereRadius(TrainingRules::MovementRadiusCentimeters);
+    MovementArea->SetSphereRadius(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters));
 
     const float HalfStep = PI / static_cast<float>(MovementBoundary.Num());
-    const float Apothem = TrainingRules::MovementRadiusCentimeters * FMath::Cos(HalfStep);
-    const float HalfLength = TrainingRules::MovementRadiusCentimeters * FMath::Sin(HalfStep) + 2.0f;
+    const float Apothem = FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters) * FMath::Cos(HalfStep);
+    const float HalfLength = FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters) * FMath::Sin(HalfStep) + 2.0f;
     for (int32 Index = 0; Index < MovementBoundary.Num(); ++Index)
     {
         UBoxComponent* BoundaryPiece = MovementBoundary[Index];
@@ -92,7 +93,7 @@ bool ATrainingArena::IsInMovementArea(const AActor& Participant) const
     const FVector Center = GetCenterLocation();
     const FVector Position = Participant.GetActorLocation();
     return FVector::DistSquared2D(Center, Position)
-            <= FMath::Square(TrainingRules::MovementRadiusCentimeters)
+            <= FMath::Square(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters))
         && FMath::Abs(Position.Z - Center.Z) <= 600.0;
 }
 
@@ -176,7 +177,8 @@ bool ATrainingArena::FindStrafeDestination(const FVector& CurrentPosition,
     const bool bClockwise, FVector& OutNavPosition) const
 {
     return FindBotStepDestination(CurrentPosition, Band, AgentProperties,
-        bClockwise ? TrainingRules::BotArcStepCentimeters : -TrainingRules::BotArcStepCentimeters,
+        bClockwise ? GetDefault<UTrainingSettings>()->BotArcStepCentimeters
+            : -GetDefault<UTrainingSettings>()->BotArcStepCentimeters,
         0.0f, OutNavPosition);
 }
 

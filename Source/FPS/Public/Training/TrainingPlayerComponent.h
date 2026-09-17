@@ -11,6 +11,7 @@ class APlayerController;
 class UAugmentInventoryComponent;
 class ATrainingInteractionActor;
 class ATrainingArena;
+class UTrainingDamageFeedbackWidget;
 class UTrainingDialogWidget;
 class UTrainingStartFeedbackWidget;
 class UTrainingSessionHUDWidget;
@@ -65,6 +66,9 @@ public:
     TSubclassOf<UTrainingSessionHUDWidget> SessionHUDWidgetClass;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|UI")
+    TSubclassOf<UTrainingDamageFeedbackWidget> DamageFeedbackWidgetClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|UI")
     TSubclassOf<UTrainingResultsWidget> ResultsWidgetClass;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Audio")
@@ -97,6 +101,8 @@ private:
     void CloseActiveDialog();
     void ClearSessionFeedback();
     void ClearTrainingDamageFeedback();
+    UTrainingDamageFeedbackWidget* EnsureDamageFeedbackWidget();
+    void PresentDamageFeedback(float Damage, bool bKilled, const FVector& WorldPosition);
     void CloseResults(bool bPlayCloseSound = false);
     void HandleWorldLeaving(UWorld* DepartingWorld);
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
@@ -161,7 +167,7 @@ private:
     TObjectPtr<UTrainingSessionHUDWidget> SessionHUDWidget;
 
     UPROPERTY(Transient)
-    TObjectPtr<UTrainingSessionHUDWidget> TrainingDamageHUDWidget;
+    TObjectPtr<UTrainingDamageFeedbackWidget> DamageFeedbackWidget;
 
     UPROPERTY(Transient)
     TObjectPtr<USoundAttenuation> DefaultBotAttenuation;
@@ -169,6 +175,7 @@ private:
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
     int32 LastStoppedSessionId = 0;
     int32 FeedbackSessionId = 0;
+    ETrainingMode FeedbackMode = ETrainingMode::TargetAcquisition;
     UPROPERTY(Transient)
     FTrainingLoadoutSnapshot ClientLoadout;
     bool bHasClientLoadout = false;
