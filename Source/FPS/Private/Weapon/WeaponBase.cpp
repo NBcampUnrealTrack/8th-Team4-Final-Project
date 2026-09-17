@@ -563,9 +563,6 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 				// 혈흔 등 임팩트 파티클은 헤드샷 고정 / 그 외 랜덤 규칙으로 직접 스폰한다.
 				// 임팩트 사운드(바디/헤드샷/사망)는 PlayerController가 소유한 기존 히트 피드백 시스템에서 처리한다.
 				UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot);
-				UE_LOG(LogTemp, Warning, TEXT("[BloodFX] Surface=%s Headshot=%d ImpactParticle=%s"),
-					*UEnum::GetValueAsString(ImpactEffect.ImpactSurfaceType.GetValue()), bHeadshot,
-					ImpactParticle ? *ImpactParticle->GetName() : TEXT("None(폴백도 비어있음)"));
 				if (ImpactParticle)
 				{
 					// ImpactNormal.Rotation()은 X축(전방)이 표면 노멀을 향하게 정렬할 뿐 Roll은 항상 0이라,
