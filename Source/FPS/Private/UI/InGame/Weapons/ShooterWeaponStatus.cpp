@@ -6,7 +6,6 @@
 #include "Components/Border.h"
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/Pawn.h"
-#include "Player/TrainingPlayerController.h"
 
 void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
@@ -34,7 +33,9 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
 	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
 	const int32 ReserveAmmo = Weapon->GetCurrentReserveAmmo();
-	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo && CachedReserveAmmo == ReserveAmmo)
+	const bool bInfiniteAmmo = Weapon->HasInfiniteAmmo();
+	if (CachedAmmo == CurrentAmmo && CachedMaxAmmo == MaxAmmo
+		&& CachedReserveAmmo == ReserveAmmo && bCachedInfiniteAmmo == bInfiniteAmmo)
 	{
 		return;
 	}
@@ -42,6 +43,7 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	CachedAmmo = CurrentAmmo;
 	CachedMaxAmmo = MaxAmmo;
 	CachedReserveAmmo = ReserveAmmo;
+	bCachedInfiniteAmmo = bInfiniteAmmo;
 
 	RefreshAmmo(Weapon);
 }
@@ -88,6 +90,7 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	CachedAmmo = INDEX_NONE;
 	CachedMaxAmmo = INDEX_NONE;
 	CachedReserveAmmo = INDEX_NONE;
+	bCachedInfiniteAmmo = false;
 	
 	if (!WeaponDisplaySet)
 	{
@@ -110,14 +113,14 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 
 void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 {
-	const bool bTrainingMode = Cast<ATrainingPlayerController>(GetOwningPlayer()) != nullptr;
+	const bool bInfiniteAmmo = Weapon->HasInfiniteAmmo();
 	const FText InfiniteAmmoText = FText::AsCultureInvariant(TEXT("\x221E"));
 
-	Text_Ammo->SetText(bTrainingMode
+	Text_Ammo->SetText(bInfiniteAmmo
 		? InfiniteAmmoText
 		: FText::AsNumber(Weapon->GetCurrentAmmo()));
 
-	const FText ReserveAmmoText = bTrainingMode
+	const FText ReserveAmmoText = bInfiniteAmmo
 		? InfiniteAmmoText
 		: FText::AsNumber(Weapon->GetCurrentReserveAmmo());
 	Text_MaxAmmo->SetText(ReserveAmmoText);
@@ -128,7 +131,7 @@ void UShooterWeaponStatus::RefreshAmmo(AWeaponBase* Weapon)
 
 	EShooterHUDVisualTypes Type = EShooterHUDVisualTypes::Normal;
 
-	if (Weapon->UsesAmmo())
+	if (Weapon->UsesAmmo() && !bInfiniteAmmo)
 	{
 		const float AmmoPer = CachedMaxAmmo > 0 ? static_cast<float>(CachedAmmo) / CachedMaxAmmo : 0.f;
 		Type = GetAmmoVisualType(AmmoPer);

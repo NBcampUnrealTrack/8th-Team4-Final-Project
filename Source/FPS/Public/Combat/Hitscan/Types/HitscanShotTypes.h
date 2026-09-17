@@ -120,6 +120,9 @@ struct FHitscanImpactEffectData
 {
 	GENERATED_BODY()
 
+	// 서버 내부에서만 사용하는 피격 액터. FireEffects RPC에는 복제하지 않는다.
+	TWeakObjectPtr<AActor> HitActor;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	FVector ImpactPoint = FVector::ZeroVector;
 
@@ -135,6 +138,10 @@ struct FHitscanImpactEffectData
 	// 실제 표면에 맞은 경우에만 데칼/파티클/사운드 재생하도록 분기
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	bool bHasHit = false;
+
+	// 맞은 부위(헤드/토르소/팔다리 등). 헤드샷 여부 판정 및 헤드샷 전용 이펙트 분기에 쓰인다.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	FGameplayTag HitZoneTag;
 };
 
 // 한 발의 실행 시점 데이터. 동기 C++ 호출 전용이라 Blueprint Reflection을 붙이지 않는다.

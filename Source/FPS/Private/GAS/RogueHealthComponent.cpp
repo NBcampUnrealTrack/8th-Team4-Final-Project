@@ -6,7 +6,10 @@
 #include "GAS/Damage/RogueGameplayEffectContext.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Interfaces/RogueDamageableTarget.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/DominationPlayerState.h"
+#include "Settings/ShooterAudioSettings.h"
 #include "Tags/GameplayTags.h"
 
 URogueHealthComponent::URogueHealthComponent()
@@ -171,6 +174,9 @@ void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, 
 		return;
 	}
 
+	// 고통 사운드는 피격 방향을 못 구해도(자해/낙사 등) 재생돼야 하므로 아래 방향 계산과 무관하게 먼저 처리.
+	PlayPainSoundIfDue();
+
 	const AActor* InstigatorActor = Payload->Instigator;
 	const FVector Direction = ComputeHitDirection(Payload->ContextHandle, InstigatorActor);
 	if (Direction.IsZero())
@@ -184,6 +190,75 @@ void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, 
 	// 서버(리슨서버 로컬 플레이어) 자신에게는 OnRep이 호출되지 않으므로 직접 브로드캐스트한다 -
 	// ApplyDeathStateLocally + OnDeathStateChanged.Broadcast 조합과 같은 이유.
 	OnHitReactionReceived.Broadcast(Direction);
+}
+
+void URogueHealthComponent::PlayPainSoundIfDue()
+{
+	AActor* Owner = GetOwner();
+	const UWorld* World = GetWorld();
+	if (!IsValid(Owner) || !World)
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastPainSoundTime < PainSoundCooldownSeconds)
+	{
+		// 순식간에 여러 발 맞은 경우(펠릿, 동시 피격 등) - 최초 사운드만 유지하고 스킵한다.
+		return;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const EDominationCombatClass CombatClass = ResolveOwnerCombatClass();
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolvePainSoundPool(CombatClass);
+	if (Pool.IsEmpty())
+	{
+		return;
+	}
+
+	LastPainSoundTime = Now;
+
+	// 재생할 배리에이션은 서버가 한 번만 골라서 모든 클라이언트가 같은 사운드를 듣게 한다.
+	const int32 SoundIndex = FMath::RandHelper(Pool.Num());
+	Multicast_PlayPainSound(CombatClass, SoundIndex, Owner->GetActorLocation());
+}
+
+EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwnerPawn))
+	{
+		return EDominationCombatClass::Unselected;
+	}
+
+	const ADominationPlayerState* PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
+	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
+}
+
+void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
+	const EDominationCombatClass CombatClass, const int32 SoundIndex, const FVector Location)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolvePainSoundPool(CombatClass);
+	if (!Pool.IsValidIndex(SoundIndex))
+	{
+		return;
+	}
+
+	if (USoundBase* Sound = Pool[SoundIndex].LoadSynchronous())
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location);
+	}
 }
 
 void URogueHealthComponent::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,

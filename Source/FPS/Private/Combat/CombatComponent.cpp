@@ -163,7 +163,7 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
 }
 
-void UCombatComponent::SetWeaponAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy)
+void UCombatComponent::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
 {
 	const AActor* OwnerActor = GetOwner();
 	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
@@ -171,7 +171,7 @@ void UCombatComponent::SetWeaponAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy
 		return;
 	}
 
-	WeaponAmmoPolicy = NewAmmoPolicy;
+	bInfiniteAmmo = bNewInfiniteAmmo;
 	AWeaponBase* const Weapons[] =
 	{
 		PrimaryWeapon.Get(), SecondaryWeapon.Get(), MeleeWeapon.Get(), CurrentWeapon.Get()
@@ -180,7 +180,7 @@ void UCombatComponent::SetWeaponAmmoPolicy(const EWeaponAmmoPolicy NewAmmoPolicy
 	{
 		if (IsValid(Weapon))
 		{
-			Weapon->SetAmmoPolicy(WeaponAmmoPolicy);
+			Weapon->SetInfiniteAmmo(bInfiniteAmmo);
 		}
 	}
 }
@@ -206,7 +206,7 @@ AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> Weap
 
 	if (IsValid(SpawnedWeapon))
 	{
-		SpawnedWeapon->SetAmmoPolicy(WeaponAmmoPolicy);
+		SpawnedWeapon->SetInfiniteAmmo(bInfiniteAmmo);
 		SpawnedWeapon->SetActorHiddenInGame(true);
 	}
 
@@ -609,7 +609,7 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	if (IsValid(CurrentWeapon.Get()) && IsValid(OwnerActor))
 	{
 		CurrentWeapon->SetOwner(OwnerActor);
-		CurrentWeapon->SetAmmoPolicy(WeaponAmmoPolicy);
+		CurrentWeapon->SetInfiniteAmmo(bInfiniteAmmo);
 	}
 
 	RefreshWeaponPresentation();

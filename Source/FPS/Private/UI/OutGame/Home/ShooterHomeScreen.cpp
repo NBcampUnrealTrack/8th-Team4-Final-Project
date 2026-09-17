@@ -2,6 +2,7 @@
 #include "UI/OutGame/Home/ShooterHomeScreen.h"
 
 #include "Engine/GameInstance.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Tags/UITags.h"
 #include "UI/Common/ShooterConfirmDialog.h"
@@ -45,7 +46,14 @@ void UShooterHomeScreen::HandlePlayClicked()
 
 void UShooterHomeScreen::HandleTrainingClicked()
 {
-	PushMenuScreen(TrainingScreenClass);
+	if (TrainingDestinationMap.IsNull())
+	{
+		UE_LOG(LogShooterHomeScreen, Error,
+			TEXT("TrainingDestinationMap is not configured."));
+		return;
+	}
+
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TrainingDestinationMap);
 }
 
 void UShooterHomeScreen::HandleSettingsClicked()

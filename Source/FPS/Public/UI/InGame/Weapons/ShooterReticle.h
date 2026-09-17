@@ -121,7 +121,7 @@ protected:
 
 	// Anim_KillEffect가 없을 때 킬 이펙트를 표시하는 시간
 	UPROPERTY(EditAnywhere, Category = "UI")
-	float KillEffectDuration = 0.6f;
+	float KillEffectDuration = 0.3f;
 
 	// 탄퍼짐 0일때 간격
 	UPROPERTY(EditAnywhere, Category = "UI")
