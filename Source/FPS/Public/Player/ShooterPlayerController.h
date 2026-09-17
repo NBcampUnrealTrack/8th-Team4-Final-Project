@@ -6,6 +6,7 @@
 #include "Chat/ChatTypes.h"
 #include "GameMode/Types/SurrenderVoteTypes.h"
 #include "GameMode/Types/TeamTypes.h"
+#include "GameMode/Types/LobbyTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
 #include "GAS/Damage/RogueDamageTypes.h"
@@ -83,6 +84,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyTeam(EGameTeam RequestedTeam);
 
+	// 방 화면이 부르는 입구
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void RequestStartRoomGame();
+
+	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
+	void RequestLobbyMatchMode(ELobbyMatchMode RequestedMatchMode);
+
+	UFUNCTION(Client, Reliable)
+	void ClientNotifyLobbyStartFailed();
+
+	// 방 화면이 Activated/Deactivated 쌍으로 구독
+	FSimpleMulticastDelegate OnLobbyStartFailed;
+
 	// 콘솔(~)에서 바로 테스트할 수 있는 임시 진입점. 정식 설정 메뉴가 생기면 그 UI가
 	// UShooterGameUserSettings::SetDynamicCrosshairEnabled를 직접 불러도 된다 - 이 함수는
 	// 그 위에 얹은 토글 편의 기능일 뿐이다.
@@ -155,6 +169,8 @@ public:
 		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
 
 	void SetKillcamViewTargetSuppressed(bool bSuppressed);
+	virtual void UpdateHiddenComponents(
+		const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
 
 	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
 
@@ -215,6 +231,12 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetLobbyReady(bool bNewLobbyReady);
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestStartRoomGame();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestLobbyMatchMode(ELobbyMatchMode RequestedMatchMode);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);

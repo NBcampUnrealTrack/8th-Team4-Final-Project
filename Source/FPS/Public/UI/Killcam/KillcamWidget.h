@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
+#include "Styling/SlateBrush.h"
 #include "KillcamWidget.generated.h"
 
 class APawn;
@@ -19,10 +21,16 @@ public:
 	void SetReplay(const FShooterEliminationEvent& Event, APawn* Killer, APawn* Victim);
 
 protected:
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	void UpdateHealth(APawn* Pawn, UTextBlock* Text, UProgressBar* Bar) const;
+	void UpdateReticle();
+	void HideViewportWidget(UWidget* Widget, ULocalPlayer* Player);
+	void RestoreViewportWidget(UWidget* Widget);
+	TMap<TWeakObjectPtr<UWidget>, ESlateVisibility> HiddenWidgets;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_VictimName;
@@ -40,6 +48,13 @@ private:
 	TObjectPtr<UProgressBar> Progress_KillerHealth;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_Weapon;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Reticle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Killcam|Reticle")
+	TMap<FGameplayTag, FSlateBrush> WeaponReticles;
+
+	FGameplayTag DisplayedReticleTag;
 
 	TWeakObjectPtr<APawn> ReplayKiller;
 	TWeakObjectPtr<APawn> ReplayVictim;

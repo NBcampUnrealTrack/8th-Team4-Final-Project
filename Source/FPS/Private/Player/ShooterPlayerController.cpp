@@ -9,7 +9,9 @@
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GAS/RogueAbilitySystemComponent.h"
@@ -613,6 +615,35 @@ void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
 	ServerSetLobbyTeam(RequestedTeam);
 }
 
+void AShooterPlayerController::RequestStartRoomGame()
+{
+	if (HasAuthority())
+	{
+		ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
+		if (!IsValid(LobbyGameMode) || !LobbyGameMode->RequestStartRoomGame(this))
+		{
+			ClientNotifyLobbyStartFailed();
+		}
+		return;
+	}
+
+	ServerRequestStartRoomGame();
+}
+
+void AShooterPlayerController::RequestLobbyMatchMode(const ELobbyMatchMode RequestedMatchMode)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyMatchMode(this, RequestedMatchMode);
+		}
+		return;
+	}
+
+	ServerRequestLobbyMatchMode(RequestedMatchMode);
+}
+
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
 {
 	if (!IsLocalController())
@@ -915,6 +946,63 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 	}
 
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
+}
+
+void AShooterPlayerController::UpdateHiddenComponents(
+	const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents)
+{
+	Super::UpdateHiddenComponents(ViewLocation, HiddenComponents);
+	if (!bKillcamViewTargetSuppressed || !IsLocalController() || !GetWorld())
+	{
+		return;
+	}
+
+	const FLevelCollection* LiveCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
+	if (!LiveCollection)
+	{
+		return;
+	}
+
+	TSet<AActor*> LiveActors;
+	for (ULevel* Level : LiveCollection->GetLevels())
+	{
+		if (!IsValid(Level))
+		{
+			continue;
+		}
+
+		for (AActor* Actor : Level->Actors)
+		{
+			if (!IsValid(Actor) || (!Actor->IsA<APawn>() && !Actor->IsA<AWeaponBase>()))
+			{
+				continue;
+			}
+
+			LiveActors.Add(Actor);
+			TArray<AActor*> AttachedActors;
+			Actor->GetAttachedActors(AttachedActors, true, true);
+			for (AActor* AttachedActor : AttachedActors)
+			{
+				if (IsValid(AttachedActor) && UKillcamReplaySubsystem::IsLiveWorldActor(AttachedActor))
+				{
+					LiveActors.Add(AttachedActor);
+				}
+			}
+		}
+	}
+
+	for (AActor* Actor : LiveActors)
+	{
+		TInlineComponentArray<UPrimitiveComponent*> Components;
+		Actor->GetComponents(Components);
+		for (UPrimitiveComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered())
+			{
+				HiddenComponents.Add(Component->GetPrimitiveSceneId());
+			}
+		}
+	}
 }
 
 void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
@@ -1354,6 +1442,21 @@ void AShooterPlayerController::ServerSetLobbyTeam_Implementation(const EGameTeam
 	{
 		LobbyGameMode->RequestLobbyTeam(this, RequestedTeam);
 	}
+}
+
+void AShooterPlayerController::ServerRequestStartRoomGame_Implementation()
+{
+	RequestStartRoomGame();
+}
+
+void AShooterPlayerController::ServerRequestLobbyMatchMode_Implementation(const ELobbyMatchMode RequestedMatchMode)
+{
+	RequestLobbyMatchMode(RequestedMatchMode);
+}
+
+void AShooterPlayerController::ClientNotifyLobbyStartFailed_Implementation()
+{
+	OnLobbyStartFailed.Broadcast();
 }
 
 bool AShooterPlayerController::CanProcessGameplayInput() const

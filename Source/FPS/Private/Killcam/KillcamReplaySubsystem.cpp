@@ -377,6 +377,7 @@ void UKillcamReplaySubsystem::StopPlayback()
 	StartRecording();
 }
 
+
 void UKillcamReplaySubsystem::CleanPlaybackWorld()
 {
 	UWorld* World = SourceWorld.Get();
