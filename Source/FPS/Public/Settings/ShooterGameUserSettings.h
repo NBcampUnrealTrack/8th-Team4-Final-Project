@@ -32,6 +32,10 @@ enum class EShooterExperienceProfile : uint8
 
 DECLARE_MULTICAST_DELEGATE(FOnShooterAudioSettingsChanged);
 
+// 크로스헤어 커스터마이징이 바뀔 때마다 발신. UShooterReticle이 구독해서 Dynamic Material
+// Instance 파라미터를 즉시 다시 적용한다(설정 화면에서 슬라이더 움직이는 동안 바로 미리보기됨).
+DECLARE_MULTICAST_DELEGATE(FOnShooterCrosshairSettingsChanged);
+
 /** Setters change session values; the caller chooses when to SaveSettings. */
 UCLASS(Config = GameUserSettings)
 class FPS_API UShooterGameUserSettings : public UGameUserSettings
@@ -53,6 +57,38 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Gameplay")
 	void SetDynamicCrosshairEnabled(bool bEnabled);
+
+	// 크로스헤어 외형(M_UI_Base_ReticleBuilder 계열 머티리얼) 커스터마이징. 설정 화면에서
+	// 슬라이더/컬러피커가 바뀔 때마다 호출되고, UShooterReticle이 OnCrosshairSettingsChanged로
+	// 구독해서 즉시 미리보기에 반영한다.
+	FOnShooterCrosshairSettingsChanged OnCrosshairSettingsChanged;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	FLinearColor GetCrosshairColor() const { return CrosshairColor; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetCrosshairColor(FLinearColor NewColor);
+
+	// 십자선 두께. 머티리얼의 CrossHairThickness 파라미터를 그대로 받는다(음수일수록 두꺼움).
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	float GetCrosshairThickness() const { return CrosshairThickness; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetCrosshairThickness(float NewThickness);
+
+	// 중앙에서 십자선까지의 간격. 머티리얼의 CrossHair_InnerEdge 파라미터를 그대로 받는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	float GetCrosshairGap() const { return CrosshairGap; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetCrosshairGap(float NewGap);
+
+	// 십자선 테두리(아웃라인) 두께. 0이면 테두리 없음.
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	float GetCrosshairOutlineThickness() const { return CrosshairOutlineThickness; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetCrosshairOutlineThickness(float NewThickness);
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
 	float GetMouseHorizontalSensitivity() const { return MouseHorizontalSensitivity; }
@@ -124,6 +160,20 @@ public:
 protected:
 	UPROPERTY(Config)
 	bool bDynamicCrosshair = true;
+
+	// M_UI_Base_ReticleBuilder 계열 머티리얼 파라미터를 그대로 저장한다. 기본값은
+	// MI_UI_Reticles_BaseInstance의 기본값과 맞춰뒀다.
+	UPROPERTY(Config)
+	FLinearColor CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.4f);
+
+	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "0.0"))
+	float CrosshairThickness = -0.5f;
+
+	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "0.0"))
+	float CrosshairGap = -0.25f;
+
+	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	float CrosshairOutlineThickness = 0.f;
 
 	UPROPERTY(Config, meta = (ClampMin = "0.01", ClampMax = "10.0"))
 	float MouseHorizontalSensitivity = 1.0f;

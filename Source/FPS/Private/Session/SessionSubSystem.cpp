@@ -569,6 +569,16 @@ bool USessionSubSystem::SetRoomJoinable(const bool bIsJoinable)
 	return true;
 }
 
+const FString& USessionSubSystem::GetRoomName() const
+{
+	return CachedRoomName;
+}
+
+int32 USessionSubSystem::GetMaxPlayers() const
+{
+	return CachedMaxPlayers;
+}
+
 void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
 {
 	if (SessionInterface)

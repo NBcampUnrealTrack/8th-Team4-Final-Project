@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Augment/Abilities/RogueGameplayAbility.h"
@@ -245,6 +245,8 @@ void URogueGameplayAbility::FinishDeliver()
 		EndSelf(true);
 		return;
 	}
+
+	ExecuteCue(DeliverCueTag);
 
 	// 대상 탐색과 효과 적용은 서버에서만
 	if (HasAuthority(&CurrentActivationInfo))
@@ -660,11 +662,42 @@ int32 URogueGameplayAbility::GetMaxCharges(int32 Level) const
 	return FMath::Max(1, MaxCharges.AsInteger(Level, &Context));
 }
 
+FGameplayTag URogueGameplayAbility::ResolveCooldownTag(const FGameplayAbilitySpecHandle Handle,
+    const FGameplayAbilityActorInfo* ActorInfo) const
+{
+    const FGameplayTag SlotCooldowns[] = {RogueTags::Cooldown_Augment_Slot1,
+        RogueTags::Cooldown_Augment_Slot2, RogueTags::Cooldown_Augment_Slot3};
+    if (CooldownTag != SlotCooldowns[0] && CooldownTag != SlotCooldowns[1] && CooldownTag != SlotCooldowns[2])
+    {
+        return CooldownTag;
+    }
+    UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+    const FGameplayAbilitySpec* Spec = ASC ? ASC->FindAbilitySpecFromHandle(Handle) : nullptr;
+    const UAugmentDefinition* Definition = Spec ? Cast<UAugmentDefinition>(Spec->SourceObject.Get()) : nullptr;
+    if (!Definition || Definition->AugmentCategory != EAugmentCategory::Active)
+    {
+        return CooldownTag;
+    }
+    const FGameplayTag OriginalSlot = Definition->GetActiveInputSlotTag();
+    const FGameplayTagContainer& SpecTags = Spec->GetDynamicSpecSourceTags();
+    // Ordinary match grants retain their data-defined cooldown exactly, even if a
+    // designer deliberately shared a cooldown group between different abilities.
+    if (!OriginalSlot.IsValid() || SpecTags.HasTagExact(OriginalSlot)) { return CooldownTag; }
+    static const FName InputNames[] = {TEXT("InputTag.Ability.Slot1"), TEXT("InputTag.Ability.Slot2"), TEXT("InputTag.Ability.Slot3")};
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(InputNames); ++Index)
+    {
+        const FGameplayTag Input = FGameplayTag::RequestGameplayTag(InputNames[Index], false);
+        if (Input.IsValid() && SpecTags.HasTagExact(Input)) { return SlotCooldowns[Index]; }
+    }
+    return CooldownTag;
+}
+
 bool URogueGameplayAbility::CheckCooldown(const FGameplayAbilitySpecHandle Handle,
                                           const FGameplayAbilityActorInfo* ActorInfo,
                                           FGameplayTagContainer* OptionalRelevantTags) const
 {
-	if (!CooldownTag.IsValid())
+	const FGameplayTag EffectiveCooldownTag = ResolveCooldownTag(Handle, ActorInfo);
+	if (!EffectiveCooldownTag.IsValid())
 	{
 		return true;
 	}
@@ -675,7 +708,7 @@ bool URogueGameplayAbility::CheckCooldown(const FGameplayAbilitySpecHandle Handl
 		return true;
 	}
 
-	const FGameplayTagContainer& CooldownTags = *GetCooldownTags();
+	const FGameplayTagContainer CooldownTags(EffectiveCooldownTag);
 
 	// 현재 스택이 최대 충전 수보다 적으면 쿨타임이 남아있어도 사용 가능
 	const int32 SpentCharges =
@@ -705,9 +738,10 @@ const FGameplayTagContainer* URogueGameplayAbility::GetCooldownTags() const
 {
 	CooldownTagContainer.Reset();
 
-	if (CooldownTag.IsValid())
+	const FGameplayTag EffectiveCooldownTag = ResolveCooldownTag(CurrentSpecHandle, CurrentActorInfo);
+	if (EffectiveCooldownTag.IsValid())
 	{
-		CooldownTagContainer.AddTag(CooldownTag);
+		CooldownTagContainer.AddTag(EffectiveCooldownTag);
 	}
 
 	return &CooldownTagContainer;
@@ -718,7 +752,8 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
                                           const FGameplayAbilityActivationInfo ActivationInfo) const
 {
 	// 태그가 없으면 쿨타임이 없는 어빌리티
-	if (!CooldownTag.IsValid())
+	const FGameplayTag EffectiveCooldownTag = ResolveCooldownTag(Handle, ActorInfo);
+	if (!EffectiveCooldownTag.IsValid())
 	{
 		return;
 	}
@@ -766,7 +801,7 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
 	SpecHandle.Data->SetSetByCallerMagnitude(RogueTags::Data_Magnitude_Duration, Duration);
 
 	// 어빌리티별 쿨타임 태그
-	SpecHandle.Data->DynamicGrantedTags.AddTag(CooldownTag);
+	SpecHandle.Data->DynamicGrantedTags.AddTag(EffectiveCooldownTag);
 
 	ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
 }

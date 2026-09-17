@@ -2,10 +2,10 @@
 
 #include "CommonTextBlock.h"
 #include "Augment/AugmentInventoryComponent.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/ShooterPlayerState.h"
-#include "UI/Frontend/DominationUIInitComponent.h"
-#include "GameMode/State/DominationGameState.h"
+#include "UI/Frontend/CombatUIInitComponent.h"
 #include "Engine/World.h"
 
 void UDominationAugmentSelectHint::NativeConstruct()
@@ -22,9 +22,10 @@ void UDominationAugmentSelectHint::NativeDestruct()
 	{
 		World->GetTimerManager().ClearTimer(DependencyBindRetryTimerHandle);
 		World->GetTimerManager().ClearTimer(PresentationRefreshTimerHandle);
+		World->GetTimerManager().ClearTimer(CountdownTimerHandle);
 	}
 	
-	if (UDominationUIInitComponent* UIInit = BoundUIInit.Get())
+	if (UCombatUIInitComponent* UIInit = BoundUIInit.Get())
 	{
 		UIInit->OnAugmentDismissStateChanged.RemoveDynamic(this, &ThisClass::HandleDismissStateChanged);
 		UIInit->OnAugmentPresentationChanged.RemoveDynamic(this, &ThisClass::HandlePresentationChanged);
@@ -33,7 +34,7 @@ void UDominationAugmentSelectHint::NativeDestruct()
 	
 	if (UAugmentInventoryComponent* Inv = BoundInv.Get())
 	{
-		BoundInv->OnOffersChanged.RemoveDynamic(this, &ThisClass::RefreshPresentation);
+		Inv->OnOffersChanged.RemoveDynamic(this, &ThisClass::HandleOffersChanged);
 	}
 	BoundInv.Reset();
 	
@@ -58,18 +59,14 @@ void UDominationAugmentSelectHint::TryBindDependencies()
 {
 	UWorld* World = GetWorld();
 	
-	// Domination 모드인지 확인한다.
-	if (IsValid(World))
-	{
-		AGameStateBase* GameState = World->GetGameState();
-		if (IsValid(GameState) && !GameState->IsA<ADominationGameState>())
-		{
-			ShutDownForOtherMode();
-			return;
-		}
-	}
-	
-	UDominationUIInitComponent* UIInit = GetUIInitComp();
+    // All class-based combat modes share this hint; unrelated controllers do not.
+    if (IsValid(GetOwningPlayer()) && !IsValid(GetUIInitComp()))
+    {
+        ShutDownForOtherMode();
+        return;
+    }
+
+	UCombatUIInitComponent* UIInit = GetUIInitComp();
 	UAugmentInventoryComponent* Inv = GetInventory();
 	
 	if (!IsValid(UIInit) || !IsValid(Inv))
@@ -113,6 +110,7 @@ void UDominationAugmentSelectHint::ShutDownForOtherMode()
 	{
 		World->GetTimerManager().ClearTimer(DependencyBindRetryTimerHandle);
 		World->GetTimerManager().ClearTimer(PresentationRefreshTimerHandle);
+		World->GetTimerManager().ClearTimer(CountdownTimerHandle);
 	}
 	
 	SetVisibility(ESlateVisibility::Collapsed);
@@ -136,7 +134,7 @@ void UDominationAugmentSelectHint::RefreshPresentation()
 {
 	bPresentationRefreshPending = false;
 	
-	const UDominationUIInitComponent* UIInit = BoundUIInit.Get();
+	const UCombatUIInitComponent* UIInit = BoundUIInit.Get();
 	const UAugmentInventoryComponent* Inv = BoundInv.Get();
 	
 	const bool bShouldShow = IsValid(UIInit)
@@ -264,10 +262,10 @@ UAugmentInventoryComponent* UDominationAugmentSelectHint::GetInventory() const
 	return IsValid(PS) ? PS->GetAugmentInventory() : nullptr;
 }
 
-UDominationUIInitComponent* UDominationAugmentSelectHint::GetUIInitComp() const
+UCombatUIInitComponent* UDominationAugmentSelectHint::GetUIInitComp() const
 {
 	APlayerController* PC = GetOwningPlayer();
 	return IsValid(PC)
-		? PC->FindComponentByClass<UDominationUIInitComponent>()
+		? PC->FindComponentByClass<UCombatUIInitComponent>()
 		: nullptr;
 }

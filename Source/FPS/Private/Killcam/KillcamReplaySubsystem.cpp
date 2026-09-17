@@ -8,9 +8,35 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/SpectatorPawn.h"
+#include "Killcam/KillcamCameraActor.h"
 #include "NetworkReplayStreaming.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "UI/Killcam/KillcamWidget.h"
+
+bool UKillcamReplaySubsystem::IsLiveWorldActor(const AActor* Actor)
+{
+	if (!IsValid(Actor))
+	{
+		return false;
+	}
+
+	const UWorld* World = Actor->GetWorld();
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	const FLevelCollection* SourceCollection = World->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
+	if (!SourceCollection)
+	{
+		return true;
+	}
+
+	ULevel* ActorLevel = Actor->GetLevel();
+	return IsValid(ActorLevel) && SourceCollection->GetLevels().Contains(TObjectPtr<ULevel>(ActorLevel));
+}
 
 void UKillcamReplaySubsystem::Deinitialize()
 {
@@ -44,6 +70,12 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 
 	World->GetTimerManager().ClearTimer(PostDeathTimerHandle);
 	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
+	if (IsValid(PlaybackWidget))
+	{
+		PlaybackWidget->RemoveFromParent();
+		PlaybackWidget = nullptr;
+	}
+	PlaybackElimination = FShooterEliminationEvent();
 
 	if (IsValid(BoundGameState))
 	{
@@ -60,6 +92,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 		GameInstance->StopRecordingReplay();
 	}
 
+	DestroyPlaybackCamera();
 	BoundGameState = nullptr;
 	SourceWorld.Reset();
 	SavedLiveViewTarget.Reset();
@@ -77,7 +110,7 @@ bool UKillcamReplaySubsystem::IsPlaying() const
 void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent)
 {
 	AShooterPlayerController* PlayerController = GetPlayerController();
-	if (!IsValid(PlayerController)
+	if (bPlaying || !IsValid(PlayerController)
 		|| PlayerController->GetPlayerState<AShooterPlayerState>() != EliminationEvent.VictimPlayerState
 		|| !IsValid(EliminationEvent.KillerPlayerState)
 		|| EliminationEvent.KillerPlayerState == EliminationEvent.VictimPlayerState)
@@ -99,6 +132,7 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	}
 
 	KillerActorGuid = RecordingDriver->GetGUIDForActor(KillerPawn);
+	PlaybackElimination = EliminationEvent;
 	VictimActorGuid = RecordingDriver->GetGUIDForActor(VictimPawn);
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
 	if (!KillerActorGuid.IsValid() || !VictimActorGuid.IsValid())
@@ -290,15 +324,48 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 
 	SourceCollection->SetIsVisible(false);
 	DuplicateCollection->SetIsVisible(true);
-	PlayerController->SetViewTarget(KillerActor);
+
+	PlayerController->SetKillcamViewTargetSuppressed(true);
+
+	AKillcamCameraActor* PlaybackCameraActor = SpawnPlaybackCamera(KillerActor);
+	if (!IsValid(PlaybackCameraActor))
+	{
+		return false;
+	}
+
+	PlayerController->ApplyKillcamViewTarget(PlaybackCameraActor);
+	if (UClass* Class = WidgetClass.LoadSynchronous())
+	{
+		PlaybackWidget = CreateWidget<UKillcamWidget>(PlayerController, Class);
+		if (IsValid(PlaybackWidget))
+		{
+			PlaybackWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+			PlaybackWidget->SetReplay(PlaybackElimination, Cast<APawn>(KillerActor), Cast<APawn>(GetReplayActor(VictimActorGuid)));
+			PlaybackWidget->AddToPlayerScreen(100);
+		}
+	}
 	return true;
 }
 
 void UKillcamReplaySubsystem::StopPlayback()
 {
 	UWorld* World = SourceWorld.Get();
+	UDemoNetDriver* PlaybackDriver = GetPlaybackDemoNetDriver();
+	if (IsValid(World) && IsValid(PlaybackDriver) && PlaybackDriver->IsInTick())
+	{
+		World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
+		PlaybackTimerHandle = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::StopPlayback);
+		return;
+	}
+
+	if (IsValid(PlaybackWidget))
+	{
+		PlaybackWidget->RemoveFromParent();
+		PlaybackWidget = nullptr;
+	}
 	if (!IsValid(World))
 	{
+		DestroyPlaybackCamera();
 		bPlaying = false;
 		return;
 	}
@@ -309,6 +376,7 @@ void UKillcamReplaySubsystem::StopPlayback()
 	bPlaying = false;
 	StartRecording();
 }
+
 
 void UKillcamReplaySubsystem::CleanPlaybackWorld()
 {
@@ -356,16 +424,22 @@ void UKillcamReplaySubsystem::CleanPlaybackWorld()
 		}
 
 		World->DestroyDemoNetDriver();
-		DuplicateCollection->SetDemoNetDriver(nullptr);
-	}
 
-	DuplicateCollection->SetIsVisible(false);
-	for (ULevel* Level : DuplicateCollection->GetLevels())
-	{
-		if (IsValid(Level) && Level->bIsVisible)
+		for (ULevel* Level : DuplicateCollection->GetLevels())
 		{
-			World->RemoveFromWorld(Level);
+			if (!IsValid(Level))
+			{
+				continue;
+			}
+
+			while (Level->bIsVisible)
+			{
+				World->RemoveFromWorld(Level);
+			}
 		}
+
+		DuplicateCollection->SetDemoNetDriver(nullptr);
+		DuplicateCollection->SetIsVisible(false);
 	}
 }
 
@@ -389,12 +463,110 @@ void UKillcamReplaySubsystem::RestoreLiveWorld()
 	}
 
 	AShooterPlayerController* PlayerController = GetPlayerController();
-	AActor* LiveViewTarget = SavedLiveViewTarget.Get();
-	if (IsValid(PlayerController) && IsValid(LiveViewTarget))
+	if (IsValid(PlayerController))
 	{
-		PlayerController->SetViewTarget(LiveViewTarget);
+		AActor* RestoreTarget = ResolveRestoreViewTarget(PlayerController);
+
+		PlayerController->SetKillcamViewTargetSuppressed(false);
+		if (IsValid(RestoreTarget))
+		{
+			PlayerController->SetViewTarget(RestoreTarget);
+		}
+
+		if (!PlayerController->HasAuthority())
+		{
+			PlayerController->ServerVerifyViewTarget();
+		}
+
 	}
+
+	DestroyPlaybackCamera();
 	SavedLiveViewTarget.Reset();
+}
+
+AKillcamCameraActor* UKillcamReplaySubsystem::SpawnPlaybackCamera(AActor* KillerActor)
+{
+	UWorld* World = SourceWorld.Get();
+	if (!IsValid(World) || !IsValid(KillerActor))
+	{
+		return nullptr;
+	}
+
+	DestroyPlaybackCamera();
+
+	UClass* ClassToSpawn = CameraClass.IsNull() ? nullptr : CameraClass.LoadSynchronous();
+	if (!ClassToSpawn)
+	{
+		ClassToSpawn = AKillcamCameraActor::StaticClass();
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.ObjectFlags |= RF_Transient;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	FLevelCollection* SourceCollection = World->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
+	AKillcamCameraActor* SpawnedCamera = nullptr;
+	if (SourceCollection)
+	{
+		FScopedLevelCollectionContextSwitch CollectionContext(SourceCollection, World);
+		SpawnedCamera = World->SpawnActor<AKillcamCameraActor>(ClassToSpawn, FTransform::Identity, SpawnParams);
+	}
+	else
+	{
+		SpawnedCamera = World->SpawnActor<AKillcamCameraActor>(ClassToSpawn, FTransform::Identity, SpawnParams);
+	}
+
+	if (IsValid(SpawnedCamera))
+	{
+		SpawnedCamera->StartTracking(KillerActor);
+	}
+
+	PlaybackCamera = SpawnedCamera;
+	return SpawnedCamera;
+}
+
+void UKillcamReplaySubsystem::DestroyPlaybackCamera()
+{
+	if (IsValid(PlaybackCamera))
+	{
+		PlaybackCamera->StopTracking();
+		PlaybackCamera->Destroy();
+	}
+	PlaybackCamera = nullptr;
+}
+
+AActor* UKillcamReplaySubsystem::ResolveRestoreViewTarget(AShooterPlayerController* PlayerController) const
+{
+	if (!IsValid(PlayerController))
+	{
+		return nullptr;
+	}
+
+	AActor* PendingTarget = PlayerController->ConsumePendingViewTarget();
+	if (IsLiveWorldActor(PendingTarget) && PendingTarget != PlayerController)
+	{
+		return PendingTarget;
+	}
+
+	APawn* CurrentPawn = PlayerController->GetPawn();
+	const bool bIsSpectatorPawn = IsValid(CurrentPawn) && CurrentPawn->IsA<ASpectatorPawn>();
+	if (IsValid(CurrentPawn) && !bIsSpectatorPawn)
+	{
+		return CurrentPawn;
+	}
+
+	AActor* SavedTarget = SavedLiveViewTarget.Get();
+	if (IsLiveWorldActor(SavedTarget) && SavedTarget != PlaybackCamera.Get() && SavedTarget != PlayerController)
+	{
+		return SavedTarget;
+	}
+
+	if (APawn* SpectatorPawn = PlayerController->GetSpectatorPawn())
+	{
+		return SpectatorPawn;
+	}
+
+	return CurrentPawn;
 }
 
 bool UKillcamReplaySubsystem::IsSupportedWorld(const UWorld* World) const
@@ -414,7 +586,8 @@ bool UKillcamReplaySubsystem::IsSupportedWorld(const UWorld* World) const
 		return false;
 	}
 
-	return World->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels) != nullptr;
+	const bool bHasDuplicateCollection = World->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels) != nullptr;
+	return bHasDuplicateCollection;
 }
 
 AShooterPlayerController* UKillcamReplaySubsystem::GetPlayerController() const

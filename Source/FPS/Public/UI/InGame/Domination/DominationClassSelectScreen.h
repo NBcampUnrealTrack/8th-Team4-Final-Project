@@ -40,10 +40,12 @@ class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 
 public:
 	UDominationClassSelectScreen();
+	void NotifySelectionFailed(const FText& Reason);
 
 	UTexture2D* GetCachedClassIcon(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassPortrait(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassWeaponArt(EDominationCombatClass CombatClass) const;
+	USoundBase* GetCachedSelectionVoice(EDominationCombatClass CombatClass) const;
 
 protected:
 	virtual void NativeOnActivated() override;
@@ -140,6 +142,8 @@ private:
 	UPROPERTY(Transient)
 	TMap<EDominationCombatClass, TObjectPtr<UTexture2D>> ClassPortraitCache;
 	UPROPERTY(Transient)
+	TMap<EDominationCombatClass, TObjectPtr<USoundBase>> ClassVoiceCache;
+	UPROPERTY(Transient)
 	TMap<EDominationCombatClass, TObjectPtr<UTexture2D>> ClassWeaponArtCache;
 
 	UPROPERTY(Transient)
@@ -156,4 +160,5 @@ private:
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;
+	FText SelectionFailure;
 };

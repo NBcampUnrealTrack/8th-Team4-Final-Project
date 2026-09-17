@@ -33,6 +33,10 @@ void UShooterGameUserSettings::SetToDefaults()
 	Super::SetToDefaults();
 
 	bDynamicCrosshair = true;
+	CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.4f);
+	CrosshairThickness = -0.5f;
+	CrosshairGap = -0.25f;
+	CrosshairOutlineThickness = 0.f;
 	MouseHorizontalSensitivity = 1.0f;
 	MouseVerticalSensitivity = 1.0f;
 	AimSensitivityMultiplier = 1.0f;
@@ -49,6 +53,7 @@ void UShooterGameUserSettings::SetToDefaults()
 	ExperienceProfile = EShooterExperienceProfile::Balanced120;
 	PerformanceTargetFPS = 120.0f;
 	OnAudioSettingsChanged.Broadcast();
+	OnCrosshairSettingsChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::ValidateSettings()
@@ -74,11 +79,62 @@ void UShooterGameUserSettings::ValidateSettings()
 	UserInterfaceVolume = FMath::Clamp(UserInterfaceVolume, 0.0f, 1.0f);
 	VoiceVolume = FMath::Clamp(VoiceVolume, 0.0f, 1.0f);
 	PerformanceTargetFPS = FMath::Clamp(PerformanceTargetFPS, 30.0f, 1000.0f);
+
+	CrosshairThickness = FMath::Clamp(CrosshairThickness, -1.0f, 0.0f);
+	CrosshairGap = FMath::Clamp(CrosshairGap, -1.0f, 0.0f);
+	CrosshairOutlineThickness = FMath::Clamp(CrosshairOutlineThickness, -1.0f, 1.0f);
 }
 
 void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)
 {
 	bDynamicCrosshair = bEnabled;
+}
+
+void UShooterGameUserSettings::SetCrosshairColor(const FLinearColor NewColor)
+{
+	if (CrosshairColor == NewColor)
+	{
+		return;
+	}
+
+	CrosshairColor = NewColor;
+	OnCrosshairSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetCrosshairThickness(const float NewThickness)
+{
+	const float Clamped = FMath::Clamp(NewThickness, -1.0f, 0.0f);
+	if (FMath::IsNearlyEqual(CrosshairThickness, Clamped))
+	{
+		return;
+	}
+
+	CrosshairThickness = Clamped;
+	OnCrosshairSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetCrosshairGap(const float NewGap)
+{
+	const float Clamped = FMath::Clamp(NewGap, -1.0f, 0.0f);
+	if (FMath::IsNearlyEqual(CrosshairGap, Clamped))
+	{
+		return;
+	}
+
+	CrosshairGap = Clamped;
+	OnCrosshairSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetCrosshairOutlineThickness(const float NewThickness)
+{
+	const float Clamped = FMath::Clamp(NewThickness, -1.0f, 1.0f);
+	if (FMath::IsNearlyEqual(CrosshairOutlineThickness, Clamped))
+	{
+		return;
+	}
+
+	CrosshairOutlineThickness = Clamped;
+	OnCrosshairSettingsChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::SetMouseHorizontalSensitivity(const float Sensitivity)

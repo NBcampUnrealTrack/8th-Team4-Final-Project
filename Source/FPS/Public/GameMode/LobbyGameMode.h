@@ -17,6 +17,7 @@ class FPS_API ALobbyGameMode : public AGameModeBase
 public:
 	ALobbyGameMode();
 
+	virtual void InitGameState() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void PostSeamlessTravel() override;
 	virtual void Logout(AController* Exiting) override;
@@ -28,6 +29,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	bool CanStartRoomGame() const;
+
+	// 방 화면이 읽을 시작 가능 여부
+	FLobbyStartState BuildStartState() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Lobby|Game Mode")
 	bool RequestLobbyMatchMode(APlayerController* RequestingPlayer, ELobbyMatchMode RequestedMatchMode);
@@ -71,6 +75,8 @@ private:
 	void ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState);
 	void NotifyLobbyPlayerListChanged();
 	bool AreAllClientsReady() const;
+	// 로그 없는 레디 집계
+	void CountClientReady(int32& OutReady, int32& OutTotal) const;
 	bool HasMinimumPlayersToStart() const;
 	bool CanFinalizeTeamsForMatchStart() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;

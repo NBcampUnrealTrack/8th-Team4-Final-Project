@@ -1,7 +1,6 @@
 #include "GameMode/Manager/DominationRespawnManager.h"
 
-#include "Abilities/GameplayAbilityTypes.h"
-#include "AbilitySystemComponent.h"
+#include "GameMode/Manager/PlayerRespawnProtection.h"
 #include "Actor/DominationCapturePoint.h"
 #include "Actor/DominationSpawnVolume.h"
 #include "EngineUtils.h"
@@ -10,7 +9,6 @@
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Manager/DominationObjectiveManager.h"
 #include "Player/ShooterPlayerState.h"
-#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
 
@@ -33,7 +31,9 @@ bool UDominationRespawnManager::Initialize(
 
 	ObjectiveManager = InObjectiveManager;
 	RespawnDelay = InRespawnDelay;
-	RespawnProtectionDuration = InRespawnProtectionDuration;
+	if (IsValid(RespawnProtection)) { RespawnProtection->Shutdown(); }
+	RespawnProtection = NewObject<UPlayerRespawnProtection>(this);
+	RespawnProtection->Initialize(GetWorld(), InRespawnProtectionDuration);
 	if (!CacheSpawnVolumes())
 	{
 		Shutdown();
@@ -64,7 +64,8 @@ bool UDominationRespawnManager::Initialize(
 void UDominationRespawnManager::Shutdown()
 {
 	CancelPendingRespawns();
-	ClearAllRespawnProtections();
+	if (IsValid(RespawnProtection)) { RespawnProtection->Shutdown(); }
+	RespawnProtection = nullptr;
 	if (ADominationGameState* GameState = BoundGameState.Get())
 	{
 		GameState->OnActivePointChanged.RemoveDynamic(
@@ -97,13 +98,10 @@ void UDominationRespawnManager::CancelPendingRespawns()
 
 void UDominationRespawnManager::ClearAllRespawnProtections()
 {
-	for (TPair<TWeakObjectPtr<AShooterPlayerState>, FActiveRespawnProtection>& Entry
-		: ActiveRespawnProtections)
-	{
-		ReleaseRespawnProtection(Entry.Value);
-	}
-
-	ActiveRespawnProtections.Reset();
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->ClearAll();
+    }
 }
 
 void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
@@ -134,49 +132,12 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 		false);
 }
 
-void UDominationRespawnManager::BeginRespawnProtection(
-	AShooterPlayerState* PlayerState)
+void UDominationRespawnManager::BeginRespawnProtection(AShooterPlayerState* PlayerState)
 {
-	FTimerManager* TimerManager = GetTimerManager();
-	if (TimerManager == nullptr
-		|| !IsValid(PlayerState)
-		|| !PlayerState->HasAuthority()
-		|| RespawnProtectionDuration <= 0.0f)
-	{
-		return;
-	}
-
-	EndRespawnProtection(PlayerState);
-
-	UAbilitySystemComponent* AbilitySystem =
-		PlayerState->GetAbilitySystemComponent();
-	if (!IsValid(AbilitySystem))
-	{
-		return;
-	}
-
-	FActiveRespawnProtection& Protection =
-		ActiveRespawnProtections.Add(PlayerState);
-	Protection.AbilitySystem = AbilitySystem;
-	Protection.WeaponFiredEventTags.AddTag(RogueTags::Event_Weapon_Fired);
-	Protection.WeaponFiredDelegate =
-		AbilitySystem->AddGameplayEventTagContainerDelegate(
-			Protection.WeaponFiredEventTags,
-			FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
-				this,
-				&ThisClass::HandleProtectedPlayerWeaponFired,
-				TWeakObjectPtr<AShooterPlayerState>(PlayerState)));
-
-	AbilitySystem->AddLooseGameplayTag(
-		RogueTags::State_Combat_Invulnerable);
-	TimerManager->SetTimer(
-		Protection.ExpirationTimer,
-		FTimerDelegate::CreateUObject(
-			this,
-			&ThisClass::HandleRespawnProtectionExpired,
-			TWeakObjectPtr<AShooterPlayerState>(PlayerState)),
-		RespawnProtectionDuration,
-		false);
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->BeginProtection(PlayerState);
+    }
 }
 
 bool UDominationRespawnManager::TryGetSpawnTransform(
@@ -357,48 +318,16 @@ void UDominationRespawnManager::HandleRespawnTimer(
 	}
 }
 
-void UDominationRespawnManager::HandleRespawnProtectionExpired(
-	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
+
+
+
+
+void UDominationRespawnManager::EndRespawnProtection(AShooterPlayerState* PlayerState)
 {
-	EndRespawnProtection(PlayerState.Get());
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->EndProtection(PlayerState);
+    }
 }
 
-void UDominationRespawnManager::HandleProtectedPlayerWeaponFired(
-	const FGameplayTag,
-	const FGameplayEventData*,
-	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
-{
-	EndRespawnProtection(PlayerState.Get());
-}
 
-void UDominationRespawnManager::EndRespawnProtection(
-	AShooterPlayerState* PlayerState)
-{
-	FActiveRespawnProtection Protection;
-	if (!ActiveRespawnProtections.RemoveAndCopyValue(
-		TWeakObjectPtr<AShooterPlayerState>(PlayerState),
-		Protection))
-	{
-		return;
-	}
-
-	ReleaseRespawnProtection(Protection);
-}
-
-void UDominationRespawnManager::ReleaseRespawnProtection(
-	FActiveRespawnProtection& Protection)
-{
-	if (FTimerManager* TimerManager = GetTimerManager())
-	{
-		TimerManager->ClearTimer(Protection.ExpirationTimer);
-	}
-
-	if (UAbilitySystemComponent* AbilitySystem = Protection.AbilitySystem.Get())
-	{
-		AbilitySystem->RemoveGameplayEventTagContainerDelegate(
-			Protection.WeaponFiredEventTags,
-			Protection.WeaponFiredDelegate);
-		AbilitySystem->RemoveLooseGameplayTag(
-			RogueTags::State_Combat_Invulnerable);
-	}
-}

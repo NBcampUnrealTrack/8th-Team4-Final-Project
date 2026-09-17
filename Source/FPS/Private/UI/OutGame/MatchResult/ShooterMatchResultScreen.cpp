@@ -17,19 +17,16 @@ void UShooterMatchResultScreen::NativeOnInitialized()
 	}
 }
 
-void UShooterMatchResultScreen::NativeConstruct()
+UWidget* UShooterMatchResultScreen::NativeGetDesiredFocusTarget() const
 {
-	Super::NativeConstruct();
-	
-	if (APlayerController* PC = GetOwningPlayer())
-	{
-		FInputModeUIOnly InputMode;
-		InputMode.SetWidgetToFocus(TakeWidget());
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::LockInFullscreen);
-		
-		PC->SetInputMode(InputMode);
-		PC->SetShowMouseCursor(true);
-	}
+	return Btn_Close;
+}
+
+bool UShooterMatchResultScreen::NativeOnHandleBackAction()
+{
+	// 기본 DeactivateWidget 은 서브시스템의 ActiveWidget 과 스냅샷을 남긴다
+	OnCloseRequested.Broadcast();
+	return true;
 }
 
 void UShooterMatchResultScreen::SetResultData(const FShooterMatchResultSnapshot& InSnapshot)

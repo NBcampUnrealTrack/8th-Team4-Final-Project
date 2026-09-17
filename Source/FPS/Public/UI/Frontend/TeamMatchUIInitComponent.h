@@ -11,6 +11,7 @@ class AShooterPlayerController;
 class UAugmentInventoryComponent;
 class UCommonActivatableWidget;
 class UShooterAugmentSelectScreen;
+class UShooterChatInputBox;
 class UShooterInGameMenuScreen;
 class UShooterOptionsScreen;
 class UShooterSurrenderVoteScreen;
@@ -47,11 +48,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void HideAugmentSelect();
 	
+	// UI policy, available before PlayerState/UI initialization and on clients.
+	UFUNCTION(BlueprintPure, Category = "UI|Scoreboard")
+	virtual bool SupportsScoreboard() const { return true; }
+
 	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
 	void ShowScoreboard();
 	
 	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
 	void HideScoreboard();
+
+	// Enter로 채팅창을 연다. CommonUI GameMenu 레이어에 Push되어 활성화되며,
+	// 그 시점에 UShooterChatInputBox::NativeGetDesiredFocusTarget으로 포커스가 자동으로 잡힌다.
+	UFUNCTION(BlueprintCallable, Category = "UI|Chat")
+	UShooterChatInputBox* OpenChat();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Chat")
+	void CloseChat();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -147,7 +160,12 @@ private:
 	TSubclassOf<UShooterScoreboard> ScoreboardClass;
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterScoreboard> ScoreboardInstance;
-	
+
+	UPROPERTY(EditAnywhere, Category = "UI|Chat")
+	TSubclassOf<UShooterChatInputBox> ChatInputBoxClass;
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterChatInputBox> ChatInputBoxInstance;
+
 	TWeakObjectPtr<AShooterPlayerController> BoundPlayerController;
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	FTimerHandle ModalRefreshTimerHandle;

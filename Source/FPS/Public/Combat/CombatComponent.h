@@ -41,6 +41,10 @@ public:
 		TSubclassOf<AWeaponBase> SecondaryWeaponClass,
 		TSubclassOf<AWeaponBase> MeleeWeaponClass);
 
+	// 현재 보유 무기와 이후 생성·장착하는 무기에 무한 탄약 상태를 동일하게 전달한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
+	void SetInfiniteAmmo(bool bNewInfiniteAmmo);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Combat|Loadout")
 	bool SwitchWeaponSlot(EWeaponSlot WeaponSlot);
 
@@ -173,6 +177,9 @@ protected:
 	float ADSZoomInterpSpeed = 10.f;
 
 private:
+	// 서버의 로드아웃 설정이다. 클라이언트에는 각 무기의 bInfiniteAmmo가 복제된다.
+	bool bInfiniteAmmo = false;
+
 	AWeaponBase* SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass);
 	void ClearWeaponLoadout();
 	void ApplyCurrentWeapon(AWeaponBase* NewWeapon);

@@ -69,7 +69,7 @@ public:
 		FTransform& OutSpawnTransform,
 		int32& OutSelectedIndex) const;
 
-	void RemovePlayerPawn(APlayerController* PlayerController) const;
+	static void RemovePlayerPawn(APlayerController* PlayerController);
 	void ResetAllPlayerPawns();
 	ERoundPlayerPreparationResult PreparePlayersForRound();
 

@@ -33,3 +33,5 @@ dev/
 .antigravity/rules.md
 AGENTS.md
 .mcp.json
+.narshamcp/
+packed/

@@ -8,8 +8,8 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/Settings/DominationClassSettings.h"
-#include "GameMode/State/DominationGameState.h"
-#include "Player/DominationPlayerController.h"
+#include "Interfaces/RogueCombatClassSelector.h"
+#include "GameFramework/PlayerController.h"
 #include "Player/DominationPlayerState.h"
 #include "TimerManager.h"
 #include "Components/AudioComponent.h"
@@ -116,6 +116,7 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	ClassIconCache.Empty();
 	ClassPortraitCache.Empty();
 	ClassWeaponArtCache.Empty();
+	ClassVoiceCache.Empty();
 
 	Super::NativeOnDeactivated();
 }
@@ -150,20 +151,21 @@ void UDominationClassSelectScreen::HandleClassCardClicked(
 	}
 
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
-	ADominationPlayerController* PlayerController = Cast<ADominationPlayerController>(GetOwningPlayer());
-	if (!IsValid(PlayerState) || !IsValid(PlayerController))
+	IRogueCombatClassSelector* ClassSelector = Cast<IRogueCombatClassSelector>(GetOwningPlayer());
+	if (!IsValid(PlayerState) || !ClassSelector)
 	{
 		return;
 	}
 
+	SelectionFailure = FText::GetEmpty();
 	switch (PlayerState->GetParticipationState())
 	{
 	case EPlayerParticipationState::WaitingForMatchStart:
-		PlayerController->SetPreviewCombatClass(RequestedClass);
+		ClassSelector->SetPreviewCombatClass(RequestedClass);
 		break;
 
 	case EPlayerParticipationState::WaitingForNextSpawn:
-		PlayerController->SelectCombatClass(RequestedClass);
+		ClassSelector->SelectCombatClass(RequestedClass);
 		break;
 
 	default:
@@ -219,9 +221,9 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	}
 	
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
-	ADominationPlayerController* PlayerController = Cast<ADominationPlayerController>(GetOwningPlayer());
+	IRogueCombatClassSelector* ClassSelector = Cast<IRogueCombatClassSelector>(GetOwningPlayer());
 	if (!IsValid(PlayerState)
-		|| !IsValid(PlayerController)
+		|| !ClassSelector
 		|| !PlayerState->HasPreviewCombatClass())
 	{
 		return;
@@ -237,12 +239,19 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	{
 		UGameplayStatics::PlaySound2D(this, LockInSound);
 	}
+
+	if (USoundBase* SelectionVoice =
+			GetCachedSelectionVoice(PlayerState->GetPreviewCombatClass()))
+	{
+		UGameplayStatics::PlaySound2D(this, SelectionVoice);
+	}
+	
 	if (IsValid(PreviewStage))
 	{
 		PreviewStage->PlayLockInEffect();
 	}
 
-	PlayerController->SelectCombatClass(PlayerState->GetPreviewCombatClass());
+	ClassSelector->SelectCombatClass(PlayerState->GetPreviewCombatClass());
 }
 
 UTexture2D* UDominationClassSelectScreen::GetCachedClassIcon(
@@ -261,6 +270,12 @@ UTexture2D* UDominationClassSelectScreen::GetCachedClassWeaponArt(
 	const EDominationCombatClass CombatClass) const
 {
 	return ClassWeaponArtCache.FindRef(CombatClass);
+}
+
+USoundBase* UDominationClassSelectScreen::GetCachedSelectionVoice(
+	const EDominationCombatClass CombatClass) const
+{
+	return ClassVoiceCache.FindRef(CombatClass);
 }
 
 EDominationCombatClass UDominationClassSelectScreen::GetDisplayCombatClass() const
@@ -303,6 +318,7 @@ void UDominationClassSelectScreen::BuildIconCache()
 	ClassIconCache.Empty();
 	ClassPortraitCache.Empty();
 	ClassWeaponArtCache.Empty();
+	ClassVoiceCache.Empty();
 
 	const UDominationClassSettings* ClassSettings =
 		GetDefault<UDominationClassSettings>();
@@ -331,6 +347,11 @@ void UDominationClassSelectScreen::BuildIconCache()
 		if (UTexture2D* WeaponArtTexture = Definition.WeaponArt.LoadSynchronous())
 		{
 			ClassWeaponArtCache.Add(Definition.CombatClass, WeaponArtTexture);
+		}
+
+		if (USoundBase* Voice = Definition.SelectionVoice.LoadSynchronous())
+		{
+			ClassVoiceCache.Add(Definition.CombatClass, Voice);
 		}
 	}
 }
@@ -777,24 +798,28 @@ void UDominationClassSelectScreen::RefreshLockInButton()
 
 void UDominationClassSelectScreen::RefreshTimerText()
 {
-	if (!IsValid(Text_Timer))
-	{
-		return;
-	}
+    if (!IsValid(Text_Timer))
+    {
+        return;
+    }
+    const IRogueCombatClassSelector* ClassSelector =
+        Cast<IRogueCombatClassSelector>(GetOwningPlayer());
+    const float Remaining = ClassSelector
+        ? ClassSelector->GetCombatClassSelectionTimeRemaining() : -1.0f;
+    if (Remaining < 0.0f)
+    {
+        Text_Timer->SetText(SelectionFailure);
+        return;
+    }
+    const int32 TotalSeconds = FMath::Max(0, FMath::CeilToInt(Remaining));
+    Text_Timer->SetText(FText::FromString(
+        FString::Printf(TEXT("%02d:%02d"), TotalSeconds / 60, TotalSeconds % 60)));
+}
 
-	const UWorld* World = GetWorld();
-	// ABaseRoundGameState에도 동명 함수가 있다. 반드시 ADominationGameState로 캐스팅한다.
-	const ADominationGameState* DominationGameState = IsValid(World)
-		? World->GetGameState<ADominationGameState>()
-		: nullptr;
-	if (!IsValid(DominationGameState))
-	{
-		Text_Timer->SetText(FText::GetEmpty());
-		return;
-	}
-
-	const int32 TotalSeconds =
-		FMath::Max(0, FMath::CeilToInt(DominationGameState->GetPhaseTimeRemaining()));
-	Text_Timer->SetText(FText::FromString(
-		FString::Printf(TEXT("%02d:%02d"), TotalSeconds / 60, TotalSeconds % 60)));
+void UDominationClassSelectScreen::NotifySelectionFailed(const FText& Reason)
+{
+    bLockInRequestPending = false;
+    SelectionFailure = Reason;
+    RefreshSelectionState();
+    RefreshTimerText();
 }
