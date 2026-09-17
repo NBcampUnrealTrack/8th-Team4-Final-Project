@@ -40,6 +40,7 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 	BloomPerShotDegrees = Row->BloomPerShotDegrees;
 	MaxBloomDegrees = Row->MaxBloomDegrees;
 	SpreadDecayDelay = Row->SpreadDecayDelay;
+	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
 	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
 
 	RecoilCurve = Row->RecoilCurve;
@@ -48,8 +49,6 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
 	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
 	RecoilYawMultiplier = Row->RecoilYawMultiplier;
-	RecoilSpreadMultiplier = Row->RecoilSpreadMultiplier;
-	MaxRecoilSpreadDegrees = Row->MaxRecoilSpreadDegrees;
 }
 
 void UWeaponAimComponent::SetADS(const bool bNewIsADS)
@@ -157,12 +156,6 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 		SpreadDegrees += InAirSpreadPenaltyDegrees;
 	}
 
-	// 아직 회복되지 않고 남아있는 반동(AccumulatedRecoilPitch/Yaw)만큼 크로스헤어도 같이 벌어지게
-	// 한다. TickRecoilRecovery가 매 프레임 이 누적값을 0으로 되돌리므로, 반동 회복 속도
-	// (RecoilRecoverySpeed)를 조절하면 크로스헤어가 좁혀지는 속도도 자동으로 함께 바뀐다.
-	const float RecoilMagnitude = FMath::Sqrt(FMath::Square(AccumulatedRecoilPitch) + FMath::Square(AccumulatedRecoilYaw));
-	SpreadDegrees += FMath::Min(RecoilMagnitude * RecoilSpreadMultiplier, MaxRecoilSpreadDegrees);
-
 	return SpreadDegrees;
 }
 
@@ -173,9 +166,7 @@ void UWeaponAimComponent::TickSpreadDecay(float DeltaTime)
 		return;
 	}
 
-	// 블룸(연사 카운트) 감쇠와 반동 회복을 하나의 속도(RecoilRecoverySpeed)로 통일한다 - 값 하나만
-	// 조절해도 크로스헤어를 구성하는 두 요소(블룸 + 반동)가 같은 속도로 좁혀진다.
-	ConsecutiveShotDecayAccumulator += RecoilRecoverySpeed * DeltaTime;
+	ConsecutiveShotDecayAccumulator += ConsecutiveShotDecayPerSecond * DeltaTime;
 
 	while (ConsecutiveShotDecayAccumulator >= 1.f && ConsecutiveShotCount > 0)
 	{

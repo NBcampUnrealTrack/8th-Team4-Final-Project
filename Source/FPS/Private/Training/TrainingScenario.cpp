@@ -5,15 +5,17 @@
 #include "GameFramework/PlayerController.h"
 #include "Training/AI/TrainingCombatAI.h"
 #include "Training/TrainingCharacter.h"
+#include "Training/TrainingModeDefinition.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingTarget.h"
 
 void UTrainingScenario::Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
-    const FTrainingDistanceBand& InBand)
+    const FTrainingDistanceBand& InBand, const FTrainingModeConfig& InModeConfig)
 {
     Arena = &InArena;
     Participant = &InParticipant;
     DistanceBand = InBand;
+    MaxLivingActors = FMath::Max(0, InModeConfig.MaxLivingActors);
 }
 
 ATrainingArena* UTrainingScenario::GetArena() const { return Arena.Get(); }
@@ -194,7 +196,8 @@ int32 UCombatResponseScenario::GetLivingAICount() const
 
 void UCombatResponseScenario::SpawnNext()
 {
-    if (TrainingRules::CanSpawnCombatAI(GetLivingAICount()))
+    const int32 LivingCount = GetLivingAICount();
+    if (MaxLivingActors <= 0 || LivingCount < MaxLivingActors)
     {
         SpawnCombatBot();
     }

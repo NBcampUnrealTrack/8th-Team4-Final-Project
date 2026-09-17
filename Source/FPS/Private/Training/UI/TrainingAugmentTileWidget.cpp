@@ -6,7 +6,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Training/TrainingAugmentRules.h"
-#include "TrainingWidgetLayout.h"
+#include "TrainingWidgetStyle.h"
 
 #define LOCTEXT_NAMESPACE "TrainingAugmentTile"
 
@@ -53,8 +53,8 @@ void UTrainingAugmentTileWidget::SetDefinition(UAugmentDefinition& Definition)
     Txt_Description->SetText(Description);
     SetToolTipText(FText::Format(LOCTEXT("Tooltip", "{0}\n{1}"), Txt_Name->GetText(), Description));
 
-    const FText Tier = TrainingWidgetLayout::GetAugmentTierName(Definition.Tier, TierStyles);
-    TierAccent = TrainingWidgetLayout::GetAugmentTierColor(Definition.Tier, TierStyles);
+    const FText Tier = TrainingWidgetStyle::GetAugmentTierName(Definition.Tier, TierStyles);
+    TierAccent = TrainingWidgetStyle::GetAugmentTierColor(Definition.Tier, TierStyles);
     Txt_Category->SetText(FText::Format(LOCTEXT("Category", "{0}  /  {1}"),
         Definition.AugmentCategory == EAugmentCategory::Active ? LOCTEXT("Active", "ACTIVE") : LOCTEXT("Passive", "PASSIVE"), Tier));
     Txt_Category->SetColorAndOpacity(FSlateColor(TierAccent));

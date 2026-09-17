@@ -16,7 +16,7 @@
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/UI/TrainingAugmentTileWidget.h"
 #include "UI/Common/ShooterAugmentTierStyleSet.h"
-#include "TrainingWidgetLayout.h"
+#include "TrainingWidgetStyle.h"
 
 #define LOCTEXT_NAMESPACE "TrainingAugmentSelection"
 
@@ -398,12 +398,12 @@ void UTrainingAugmentSelectionWidget::RefreshTierView()
         if (Info)
         {
             Info->SetText(bCatalogBuilt
-                ? FText::Format(LOCTEXT("TierInfo", "{0}  /  {1} AVAILABLE"), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), FText::AsNumber(Count))
+                ? FText::Format(LOCTEXT("TierInfo", "{0}  /  {1} AVAILABLE"), TrainingWidgetStyle::GetAugmentTierName(Tier, Palette), FText::AsNumber(Count))
                 : LOCTEXT("TierLoading", "Waiting for the available augment catalog..."));
         }
         if (Empty)
         {
-            Empty->SetText(FText::Format(LOCTEXT("TierEmpty", "No {0} augments available.\nChoose another category."), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette)));
+            Empty->SetText(FText::Format(LOCTEXT("TierEmpty", "No {0} augments available.\nChoose another category."), TrainingWidgetStyle::GetAugmentTierName(Tier, Palette)));
             Empty->SetVisibility(bFilterByTier && bCatalogBuilt && Count == 0
                 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
         }
@@ -421,14 +421,14 @@ void UTrainingAugmentSelectionWidget::RefreshTierButtons()
         {
             UButton* Button = GetTierButton(bActive, Tier);
             if (!Button) { continue; }
-            StyleCategoryButton(*Button, TrainingWidgetLayout::GetAugmentTierColor(Tier, Palette), VisibleTier == Tier);
+            StyleCategoryButton(*Button, TrainingWidgetStyle::GetAugmentTierColor(Tier, Palette), VisibleTier == Tier);
             Button->SetIsEnabled(bOpen && bCatalogBuilt && !bPending);
             if (UTextBlock* Label = Cast<UTextBlock>(Button->GetContent()))
             {
-                Label->SetText(FText::Format(LOCTEXT("TierButton", "{0}\n{1} augments"), TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), FText::AsNumber(Counts.FindRef(Tier))));
+                Label->SetText(FText::Format(LOCTEXT("TierButton", "{0}\n{1} augments"), TrainingWidgetStyle::GetAugmentTierName(Tier, Palette), FText::AsNumber(Counts.FindRef(Tier))));
             }
             Button->SetToolTipText(FText::Format(LOCTEXT("TierTooltip", "Show {0} {1} augments. Your selection in other categories is kept."),
-                TrainingWidgetLayout::GetAugmentTierName(Tier, Palette), bActive ? LOCTEXT("ActiveCategory", "active") : LOCTEXT("PassiveCategory", "passive")));
+                TrainingWidgetStyle::GetAugmentTierName(Tier, Palette), bActive ? LOCTEXT("ActiveCategory", "active") : LOCTEXT("PassiveCategory", "passive")));
         }
     }
 }

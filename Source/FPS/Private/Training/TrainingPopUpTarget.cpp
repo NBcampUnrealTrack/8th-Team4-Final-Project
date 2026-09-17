@@ -42,7 +42,7 @@ APlayerController* ResolveDamageInstigatorController(const UObject* InstigatorOb
 
 ATrainingPopUpTarget::ATrainingPopUpTarget()
 {
-    TargetMaxHealth = FMath::Max(1.0f, GetDefault<UTrainingSettings>()->CombatHealth);
+    TargetMaxHealth = FMath::Max(1.0f, GetDefault<UTrainingSettings>()->PopUpTargetHealth);
 
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
@@ -140,6 +140,7 @@ void ATrainingPopUpTarget::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ATrainingPopUpTarget, TargetState);
+    DOREPLIFETIME(ATrainingPopUpTarget, FallDirectionSign);
 }
 
 UAbilitySystemComponent* ATrainingPopUpTarget::GetAbilitySystemComponent() const
@@ -215,13 +216,15 @@ void ATrainingPopUpTarget::HandleDamageTaken(FGameplayTag, const FGameplayEventD
     }
 }
 
-void ATrainingPopUpTarget::HandleHitscanImpact(AActor*, const FVector& ImpactPoint, const FVector&)
+void ATrainingPopUpTarget::HandleHitscanImpact(AActor*, const FVector& ImpactPoint,
+    const FVector& ShotDirection)
 {
     if (!HasAuthority() || TargetState != ETrainingPopUpTargetState::Up)
     {
         return;
     }
 
+    CacheFallDirectionFromShot(ShotDirection);
     MulticastPlayHitSound(ImpactPoint);
 }
 
@@ -248,6 +251,7 @@ void ATrainingPopUpTarget::KnockDown()
     }
 
     GetWorldTimerManager().ClearTimer(ResetTimer);
+    CommitPendingFallDirection();
     SetTargetState(ETrainingPopUpTargetState::Falling);
 }
 
@@ -290,6 +294,12 @@ void ATrainingPopUpTarget::SetTargetState(const ETrainingPopUpTargetState NewSta
 
     TargetState = NewState;
     OnRep_TargetState();
+
+    if (TargetState == ETrainingPopUpTargetState::Up)
+    {
+        PendingFallDirectionSign = 1;
+    }
+
     ForceNetUpdate();
 }
 
@@ -321,6 +331,11 @@ void ATrainingPopUpTarget::OnRep_TargetState()
         SetActorTickEnabled(true);
         break;
     }
+}
+
+void ATrainingPopUpTarget::OnRep_FallDirectionSign()
+{
+    UpdateTargetRotation();
 }
 
 void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
@@ -372,8 +387,71 @@ void ATrainingPopUpTarget::UpdateTargetRotation()
     const float SmoothedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f,
         FMath::Clamp(MotionAlpha, 0.0f, 1.0f), 2.0f);
     const FQuat RaisedQuat = RaisedRotation.Quaternion();
-    const FQuat DownQuat = (RaisedRotation + DownRotation).Quaternion();
+    const FQuat DownQuat = (RaisedRotation + GetDirectionalDownRotation()).Quaternion();
     TargetPivot->SetRelativeRotation(FQuat::Slerp(RaisedQuat, DownQuat, SmoothedAlpha));
+}
+
+void ATrainingPopUpTarget::CacheFallDirectionFromShot(const FVector& ShotDirection)
+{
+    const int8 ResolvedSign = ResolveFallDirectionSign(ShotDirection);
+    if (ResolvedSign != 0)
+    {
+        PendingFallDirectionSign = ResolvedSign;
+    }
+}
+
+void ATrainingPopUpTarget::CommitPendingFallDirection()
+{
+    const int8 NewSign = PendingFallDirectionSign < 0 ? -1 : 1;
+    if (FallDirectionSign == NewSign)
+    {
+        return;
+    }
+
+    FallDirectionSign = NewSign;
+    OnRep_FallDirectionSign();
+}
+
+int8 ATrainingPopUpTarget::ResolveFallDirectionSign(const FVector& ShotDirection) const
+{
+    if (!SceneRoot || ShotDirection.IsNearlyZero())
+    {
+        return 0;
+    }
+
+    const FQuat RaisedQuat = RaisedRotation.Quaternion();
+    const FQuat CanonicalDownQuat = (RaisedRotation + DownRotation).Quaternion();
+    const FVector RaisedUp = RaisedQuat.RotateVector(FVector::UpVector).GetSafeNormal();
+
+    FVector CanonicalFallDirection = CanonicalDownQuat.RotateVector(FVector::UpVector);
+    CanonicalFallDirection = FVector::VectorPlaneProject(CanonicalFallDirection, RaisedUp).GetSafeNormal();
+    if (CanonicalFallDirection.IsNearlyZero())
+    {
+        return 0;
+    }
+
+    FVector LocalShotDirection = SceneRoot->GetComponentTransform().InverseTransformVectorNoScale(
+        ShotDirection.GetSafeNormal());
+    LocalShotDirection = FVector::VectorPlaneProject(LocalShotDirection, RaisedUp).GetSafeNormal();
+    if (LocalShotDirection.IsNearlyZero())
+    {
+        return 0;
+    }
+
+    const float Alignment = FVector::DotProduct(LocalShotDirection, CanonicalFallDirection);
+    if (FMath::Abs(Alignment) <= FMath::Clamp(FallDirectionDeadZone, 0.0f, 1.0f))
+    {
+        return 0;
+    }
+
+    return Alignment >= 0.0f ? 1 : -1;
+}
+
+FRotator ATrainingPopUpTarget::GetDirectionalDownRotation() const
+{
+    return FallDirectionSign < 0
+        ? FRotator(-DownRotation.Pitch, -DownRotation.Yaw, -DownRotation.Roll)
+        : DownRotation;
 }
 
 void ATrainingPopUpTarget::ConfigureTargetComponents()

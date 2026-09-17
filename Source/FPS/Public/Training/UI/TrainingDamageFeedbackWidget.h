@@ -46,7 +46,6 @@ public:
     float DamageHorizontalSpreadPixels = 18.0f;
 
 protected:
-    virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void NativePreConstruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
     virtual void NativeDestruct() override;

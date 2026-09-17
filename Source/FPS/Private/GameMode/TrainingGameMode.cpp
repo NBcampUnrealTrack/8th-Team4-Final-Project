@@ -206,7 +206,6 @@ void ATrainingGameMode::NotifyPlayerEliminatedBy(AController* EliminatedControll
     ClassState->SetAlive(false);
     RespawnProtection->EndProtection(ClassState);
     MovePlayerToSpectator(WaitingPlayer);
-    ClassState->SetAlive(false);
     FTimerHandle& RespawnTimer = PendingRespawns.Add(WaitingPlayer);
     GetWorldTimerManager().SetTimer(RespawnTimer,
         FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnTimer,

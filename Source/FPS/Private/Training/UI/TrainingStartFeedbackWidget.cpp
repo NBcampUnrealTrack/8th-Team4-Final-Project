@@ -1,13 +1,12 @@
 #include "Training/UI/TrainingStartFeedbackWidget.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Training/TrainingSettings.h"
 #include "Training/TrainingTypes.h"
-#include "TrainingWidgetLayout.h"
+#include "TrainingWidgetStyle.h"
 
 #define LOCTEXT_NAMESPACE "TrainingStartFeedback"
 
@@ -17,21 +16,7 @@ UTrainingStartFeedbackWidget::UTrainingStartFeedbackWidget(const FObjectInitiali
     SetIsFocusable(false);
     CountdownText = LOCTEXT("CountdownLive", "{Seconds}초 뒤에 시작합니다");
     StartText = LOCTEXT("Start", "START");
-    MessageFont = TrainingWidgetLayout::MakeFont(22);
-}
-
-TSharedRef<SWidget> UTrainingStartFeedbackWidget::RebuildWidget()
-{
-    if (!WidgetTree)
-    {
-        WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient);
-    }
-    if (!WidgetTree->RootWidget) { TrainingWidgetLayout::BuildCountdown(*WidgetTree); }
-    TrainingWidgetLayout::RepairTextFonts(*WidgetTree);
-    FeedbackContent = WidgetTree->FindWidget(TEXT("FeedbackContent"));
-    Txt_FeedbackLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_FeedbackLabel")));
-    Txt_FeedbackMessage = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_FeedbackMessage")));
-    return Super::RebuildWidget();
+    MessageFont = TrainingWidgetStyle::MakeFont(22);
 }
 
 void UTrainingStartFeedbackWidget::NativePreConstruct()
@@ -47,7 +32,7 @@ void UTrainingStartFeedbackWidget::NativePreConstruct()
 
 void UTrainingStartFeedbackWidget::ApplyStyle()
 {
-    TrainingWidgetLayout::RepairFont(MessageFont);
+    TrainingWidgetStyle::RepairFont(MessageFont);
     if (FeedbackContent)
     {
         if (UCanvasPanelSlot* ContentSlot = Cast<UCanvasPanelSlot>(FeedbackContent->Slot))

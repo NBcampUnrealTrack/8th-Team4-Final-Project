@@ -83,6 +83,10 @@ public:
     FRotator DownRotation = FRotator(-90.0f, 0.0f, 0.0f);
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|PopUpTarget|Motion",
+        meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float FallDirectionDeadZone = 0.05f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|PopUpTarget|Motion",
         meta = (ClampMin = "0.01", Units = "s"))
     float FallDurationSeconds = 0.12f;
 
@@ -114,6 +118,9 @@ private:
     UFUNCTION()
     void OnRep_TargetState();
 
+    UFUNCTION()
+    void OnRep_FallDirectionSign();
+
     UFUNCTION(NetMulticast, Unreliable)
     void MulticastPlayHitSound(FVector_NetQuantize ImpactPoint);
 
@@ -127,6 +134,10 @@ private:
     void ConfigureHitBoxCollision();
     void SetHitBoxActive(bool bActive);
     void BeginRise();
+    void CacheFallDirectionFromShot(const FVector& ShotDirection);
+    void CommitPendingFallDirection();
+    int8 ResolveFallDirectionSign(const FVector& ShotDirection) const;
+    FRotator GetDirectionalDownRotation() const;
 
     UPROPERTY(VisibleAnywhere, Category = "Training|PopUpTarget|GAS")
     TObjectPtr<UAbilitySystemComponent> AbilitySystem;
@@ -141,6 +152,10 @@ private:
         Category = "Training|PopUpTarget|State")
     ETrainingPopUpTargetState TargetState = ETrainingPopUpTargetState::Up;
 
+    UPROPERTY(ReplicatedUsing = OnRep_FallDirectionSign)
+    int8 FallDirectionSign = 1;
+
+    int8 PendingFallDirectionSign = 1;
     FDelegateHandle DamageTakenHandle;
     FDelegateHandle OutOfHealthHandle;
     FRotator RaisedRotation = FRotator::ZeroRotator;

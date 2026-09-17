@@ -30,6 +30,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Training")
     ETrainingSessionState GetSessionState() const { return SessionState; }
 
+    UFUNCTION(BlueprintPure, Category = "Training")
+    ETrainingMode GetActiveMode() const { return ActiveMode; }
+
     bool IsInMovementArea(const AActor& Participant) const;
     bool ProjectGroundPosition(const FVector& Candidate, const FTrainingDistanceBand& Band,
         FVector& OutGroundPosition) const;
@@ -45,6 +48,7 @@ public:
         const FNavAgentProperties& AgentProperties, float SignedArcCentimeters,
         float RadialStepCentimeters, FVector& OutNavPosition) const;
 
+    void SetSessionContext(ETrainingSessionState NewState, ETrainingMode NewMode);
     void SetSessionState(ETrainingSessionState NewState);
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Rules", meta = (ClampMin = "0.0", Units = "s"))
@@ -89,4 +93,7 @@ private:
 
     UPROPERTY(Replicated)
     ETrainingSessionState SessionState = ETrainingSessionState::Idle;
+
+    UPROPERTY(Replicated)
+    ETrainingMode ActiveMode = ETrainingMode::TargetAcquisition;
 };

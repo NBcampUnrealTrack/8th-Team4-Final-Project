@@ -13,6 +13,7 @@
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingScenario.h"
 #include "Training/TrainingSettings.h"
+#include "Training/TrainingModeDefinition.h"
 #include "Training/TrainingTarget.h"
 
 #define LOCTEXT_NAMESPACE "TrainingSession"
@@ -62,33 +63,50 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
         return false;
     }
 
-    UClass* BotClass = nullptr;
-    switch (Mode)
+    FTrainingModeConfig ModeConfig;
+    if (!TrainingModeDefinitions::Resolve(Mode, ModeConfig))
     {
-    case ETrainingMode::TargetAcquisition: BotClass = InArena.TargetClass.Get(); break;
-    case ETrainingMode::CombatResponse: BotClass = InArena.CombatAIClass.Get(); break;
-    default:
-        OutFailure = LOCTEXT("Mode", "The selected training mode is invalid.");
+        OutFailure = LOCTEXT("ModeDefinition", "The selected training mode has no valid mode definition.");
         return false;
+    }
+
+    if (ModeConfig.bUseArenaDurationOverride && FMath::IsFinite(InArena.CombatDurationSeconds))
+    {
+        // Preserve the arena-level combat duration override used by existing levels.
+        ModeConfig.DurationSeconds = FMath::Max(0.0f, InArena.CombatDurationSeconds);
+    }
+
+    UClass* BotClass = nullptr;
+    switch (ModeConfig.BotSource)
+    {
+    case ETrainingBotSource::Target:
+        BotClass = InArena.TargetClass.Get();
+        break;
+    case ETrainingBotSource::CombatAI:
+        BotClass = InArena.CombatAIClass.Get();
+        break;
+    default:
+        break;
     }
     if (!BotClass || BotClass->HasAnyClassFlags(CLASS_Abstract))
     {
-        OutFailure = LOCTEXT("BotClass", "Assign a concrete Target / Combat AI Blueprint to the Training Arena.");
+        OutFailure = LOCTEXT("BotClass", "Assign the bot Blueprint required by this Training Mode to the Training Arena.");
         return false;
     }
     const ATrainingCharacter* BotDefaults = Cast<ATrainingCharacter>(BotClass->GetDefaultObject());
     if (!BotDefaults || !BotDefaults->GetMesh()->GetSkeletalMeshAsset())
     {
-        OutFailure = LOCTEXT("BotMesh", "Assign a Skeletal Mesh (for example Manny) to the training bot. Recreate the old static Target Blueprint.");
+        OutFailure = LOCTEXT("BotMesh", "Assign a Skeletal Mesh to the training bot Blueprint.");
         return false;
     }
     if (!BotDefaults->DissolveMaterial)
     {
-        OutFailure = LOCTEXT("BotMaterial", "Assign a Dissolve Material to the Target / Combat AI Blueprint.");
+        OutFailure = LOCTEXT("BotMaterial", "Assign a Dissolve Material to the training bot Blueprint.");
         return false;
     }
+
     FVector ProbePosition;
-    if (Mode == ETrainingMode::TargetAcquisition)
+    if (ModeConfig.BotSource == ETrainingBotSource::Target)
     {
         if (!InArena.FindGroundSpawn(Band, ProbePosition))
         {
@@ -96,12 +114,12 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
             return false;
         }
     }
-    else
+    else if (ModeConfig.BotSource == ETrainingBotSource::CombatAI)
     {
         const ATrainingCombatAI* CombatDefaults = Cast<ATrainingCombatAI>(BotDefaults);
         if (!CombatDefaults || !CombatDefaults->HasConfiguredBehavior())
         {
-            OutFailure = LOCTEXT("CombatTree", "Assign a Training Combat AI Controller Blueprint with a compiled Strafe State Tree to the Combat AI.");
+            OutFailure = LOCTEXT("CombatTree", "Assign a Training Combat AI Controller Blueprint with a compiled Training State Tree to the Combat AI.");
             return false;
         }
         if (!InArena.FindNavSpawn(Band, CombatDefaults->GetNavAgentPropertiesRef(), ProbePosition))
@@ -111,24 +129,27 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
         }
     }
 
-    ActiveScenario = Mode == ETrainingMode::TargetAcquisition
-        ? static_cast<UTrainingScenario*>(NewObject<UTargetAcquisitionScenario>(this))
-        : static_cast<UTrainingScenario*>(NewObject<UCombatResponseScenario>(this));
+    ActiveScenario = NewObject<UTrainingScenario>(this, ModeConfig.ScenarioClass);
+    if (!ActiveScenario)
+    {
+        OutFailure = LOCTEXT("ScenarioCreate", "Could not create the selected Training Scenario.");
+        return false;
+    }
+
     Arena = &InArena;
     Participant = &InParticipant;
-    PendingMode = Mode;
+    ActiveMode = Mode;
+    ActiveModeConfig = ModeConfig;
     Stats = FTrainingSessionStats();
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
-    SessionDurationSeconds = Mode == ETrainingMode::TargetAcquisition
-        ? FMath::Max(0.0f, Settings->TargetDurationSeconds)
-        : (FMath::IsFinite(InArena.CombatDurationSeconds) ? FMath::Max(0.0f, InArena.CombatDurationSeconds) : 0.0f);
+    SessionDurationSeconds = ActiveModeConfig.DurationSeconds;
     SessionId = SessionId == MAX_int32 ? 1 : SessionId + 1;
     SessionStartSeconds = 0.0;
-    ActiveScenario->Initialize(InArena, InParticipant, Band);
+    ActiveScenario->Initialize(InArena, InParticipant, Band, ActiveModeConfig);
     ActiveScenario->OnBotSpawned.AddUObject(this, &ThisClass::HandleBotSpawned);
     ActiveScenario->OnBotHit.AddUObject(this, &ThisClass::HandleBotHit);
     State = ETrainingSessionState::Countdown;
-    InArena.SetSessionState(State);
+    InArena.SetSessionContext(State, ActiveMode);
 
     const float CountdownSeconds = Settings->GetCountdownSeconds();
     NotifyParticipant(ETrainingFeedbackPhase::Countdown, GetWorld()->GetTimeSeconds());
@@ -155,23 +176,17 @@ void UTrainingSessionSubsystem::BeginActiveSession()
         StopSession(true);
         return;
     }
-    State = PendingMode == ETrainingMode::TargetAcquisition
-        ? ETrainingSessionState::TargetAcquisitionActive : ETrainingSessionState::CombatResponseActive;
+    State = ETrainingSessionState::Active;
     SessionStartSeconds = GetWorld()->GetTimeSeconds();
     ShotResolver = GetWorld()->GetSubsystem<UHitscanResolverSubsystem>();
     if (ShotResolver.IsValid())
     {
         ShotResolvedHandle = ShotResolver->OnServerShotResolved.AddUObject(this, &ThisClass::HandleShotResolved);
     }
-    Arena->SetSessionState(State);
+    Arena->SetSessionContext(State, ActiveMode);
     NotifyParticipant(ETrainingFeedbackPhase::Started, SessionStartSeconds);
 
     FTimerManager& Timers = GetWorld()->GetTimerManager();
-    if (State == ETrainingSessionState::CombatResponseActive)
-    {
-        Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
-            FMath::Max(0.05f, GetDefault<UTrainingSettings>()->CombatSpawnIntervalSeconds), true);
-    }
     if (SessionDurationSeconds > 0.0f)
     {
         Timers.SetTimer(DurationTimer, this, &ThisClass::EndSession, SessionDurationSeconds, false);
@@ -196,14 +211,11 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
         EndSession();
         return;
     }
-    if (State == ETrainingSessionState::TargetAcquisitionActive)
-    {
-        const float SpawnInterval = TrainingRules::GetTargetSpawnIntervalSeconds(
-            static_cast<float>(ElapsedSeconds), SessionDurationSeconds);
-        GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
-            SpawnInterval, false);
-    }
     ActiveScenario->SpawnNext();
+
+    const float SpawnInterval = ActiveModeConfig.GetSpawnInterval(static_cast<float>(ElapsedSeconds));
+    GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
+        SpawnInterval, false);
 }
 
 void UTrainingSessionSubsystem::NotifyParticipant(const ETrainingFeedbackPhase Phase,
@@ -213,7 +225,7 @@ void UTrainingSessionSubsystem::NotifyParticipant(const ETrainingFeedbackPhase P
     {
         if (UTrainingPlayerComponent* Bridge = ParticipantPlayer->FindComponentByClass<UTrainingPlayerComponent>())
         {
-            Bridge->NotifySessionPhase(SessionId, Phase, PhaseStartServerSeconds, PendingMode, SessionDurationSeconds);
+            Bridge->NotifySessionPhase(SessionId, Phase, PhaseStartServerSeconds, ActiveMode, SessionDurationSeconds);
         }
     }
 }
@@ -292,7 +304,7 @@ void UTrainingSessionSubsystem::HandleBotHit(ATrainingCharacter& Bot, const AAct
     if (Bridge)
     {
         Bridge->NotifySessionHit(SessionId, Stats.Kills,
-            PendingMode == ETrainingMode::CombatResponse ? Damage : 0.0f,
+            ActiveModeConfig.bShowDamageFeedback ? Damage : 0.0f,
             bKilled, Bot.GetActorLocation());
     }
 }
@@ -328,7 +340,7 @@ void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
     const bool bShowResult = !bImmediate && TrainingRules::IsRunningState(State);
     FTrainingSessionResult Result;
     Result.SessionId = SessionId;
-    Result.Mode = PendingMode;
+    Result.Mode = ActiveMode;
     Result.Stats = Stats;
     if (bShowResult && GetWorld())
     {
@@ -356,12 +368,13 @@ void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
     }
     if (ATrainingArena* PreviousArena = Arena.Get())
     {
-        PreviousArena->SetSessionState(ETrainingSessionState::Idle);
+        PreviousArena->SetSessionContext(ETrainingSessionState::Idle, ActiveMode);
     }
     Arena.Reset();
     Participant.Reset();
     SessionStartSeconds = 0.0;
-    PendingMode = ETrainingMode::TargetAcquisition;
+    ActiveMode = ETrainingMode::TargetAcquisition;
+    ActiveModeConfig = FTrainingModeConfig();
     State = ETrainingSessionState::Idle;
     SessionDurationSeconds = 0.0f;
     Stats = FTrainingSessionStats();

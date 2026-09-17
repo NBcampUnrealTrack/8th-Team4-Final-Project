@@ -25,7 +25,6 @@ public:
     FTrainingSessionResult Result;
 
 protected:
-    virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
     virtual UWidget* NativeGetDesiredFocusTarget() const override;

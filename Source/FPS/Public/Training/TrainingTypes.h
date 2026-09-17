@@ -13,10 +13,11 @@ enum class ETrainingMode : uint8
 UENUM(BlueprintType)
 enum class ETrainingSessionState : uint8
 {
-    Idle,
-    TargetAcquisitionActive,
-    CombatResponseActive,
-    Countdown
+    Idle = 0,
+    TargetAcquisitionActive = 1 UMETA(Hidden),
+    CombatResponseActive = 2 UMETA(Hidden),
+    Countdown = 3,
+    Active = 4
 };
 
 UENUM(BlueprintType)
@@ -113,8 +114,6 @@ namespace TrainingRules
     FPS_API bool ResolveDistanceBand(ETrainingDistancePreset Preset,
         float CustomMeters, FTrainingDistanceBand& OutBand);
     FPS_API int32 RemainingWholeSeconds(float Duration, float Elapsed);
-    FPS_API float GetTargetSpawnIntervalSeconds(float Elapsed, float Duration);
-    FPS_API bool CanSpawnCombatAI(int32 LivingCount);
     FPS_API bool IsRunningState(ETrainingSessionState State);
     FPS_API float FeedbackOpacity(float Elapsed, float Duration, float FadeIn, float FadeOut);
 }
