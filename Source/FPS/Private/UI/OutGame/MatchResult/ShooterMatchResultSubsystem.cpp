@@ -6,8 +6,10 @@
 #include "GameMode/State/LobbyGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/UITags.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
 #include "UI/ShooterUISettings.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterMatchResult, Log, All);
 
@@ -84,6 +86,8 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(
 		return;
 	}
 
+	Snapshot.Reset();
+
 	Snapshot.LocalTeam = LocalTeam;
 	Snapshot.MatchWinner = MatchGameState->GetMatchWinner();
 	Snapshot.TeamAScore = MatchGameState->GetTeamAScore();
@@ -102,7 +106,7 @@ void UShooterMatchResultSubsystem::CaptureSnapshot(
 
 		if (Team == EGameTeam::None)
 		{
-			return;
+			continue;
 		}
 
 		FShooterMatchResultRow Row;
@@ -180,8 +184,10 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 		}
 		
 		APlayerController* LocalPC = GetGameInstance()->GetFirstLocalPlayerController();
+		const UShooterUIManagerSubsystem* UIManager = GetGameInstance()->GetSubsystem<UShooterUIManagerSubsystem>();
 
-		if (!IsValid(LocalPC))
+		// RootLayout 이 아직 없으면 Push 가 조용히 실패한다. 재시도로 기다린다
+		if (!IsValid(LocalPC) || !IsValid(UIManager) || !UIManager->IsUIInitialized())
 		{
 			if (EvaluateAttemptsLeft > 0)
 			{
@@ -271,8 +277,19 @@ bool UShooterMatchResultSubsystem::PresentResultWidget(APlayerController* Owning
 		return false;
 	}
 
-	ActiveWidget =
-		CreateWidget<UShooterMatchResultScreen>(OwningPlayer, LoadedClass);
+	UShooterUIManagerSubsystem* UIManager = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+
+	// 로비 RootLayout 이 아직 없으면 EvaluateWorld 가 다시 부른다
+	if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
+	{
+		return false;
+	}
+
+	// 방 화면이 있는 Menu 가 아니라 Modal 이다. 스택은 맨 위 하나만 보인다
+	ActiveWidget = Cast<UShooterMatchResultScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
 
 	if (!IsValid(ActiveWidget))
 	{
@@ -289,8 +306,8 @@ bool UShooterMatchResultSubsystem::PresentResultWidget(APlayerController* Owning
 		&ThisClass::HandleCloseRequested
 	);
 
+	// Push 가 이미 활성화한 뒤라 값은 그다음에 넣는다
 	ActiveWidget->SetResultData(Snapshot);
-	ActiveWidget->AddToViewport(9000);
 	WidgetWorld = OwningPlayer->GetWorld();
 
 	return true;
@@ -298,13 +315,20 @@ bool UShooterMatchResultSubsystem::PresentResultWidget(APlayerController* Owning
 
 void UShooterMatchResultSubsystem::RemoveResultWidget()
 {
-	if (ActiveWidget)
+	if (IsValid(ActiveWidget))
 	{
 		ActiveWidget->OnCloseRequested.RemoveAll(this);
-		ActiveWidget->RemoveFromParent();
+
+		if (UShooterUIManagerSubsystem* UIManager = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UShooterUIManagerSubsystem>()
+			: nullptr)
+		{
+			UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, ActiveWidget);
+		}
+
 		ActiveWidget = nullptr;
 	}
-	
+
 	WidgetWorld.Reset();
 }
 
@@ -318,7 +342,14 @@ void UShooterMatchResultSubsystem::HandleWorldBeginTearDown(UWorld* TearingDownW
 {
 	if (WidgetWorld.IsValid() && WidgetWorld.Get() == TearingDownWorld)
 	{
-		RemoveResultWidget();
+		// RootLayout 이 월드와 함께 빠진다. 없는 레이어를 만지지 않고 포인터만 정리한다
+		if (IsValid(ActiveWidget))
+		{
+			ActiveWidget->OnCloseRequested.RemoveAll(this);
+			ActiveWidget = nullptr;
+		}
+
+		WidgetWorld.Reset();
 	}
 }
 

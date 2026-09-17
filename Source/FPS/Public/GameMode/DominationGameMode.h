@@ -10,6 +10,8 @@ class APlayerController;
 class AShooterPlayerState;
 class ADominationPlayerController;
 class ADominationPlayerState;
+class ASystemAnnouncer;
+class UDominationAnnouncerManager;
 class UAugmentDraftManager;
 class UAugmentDraftProfile;
 class UDominationLoadoutManager;
@@ -51,7 +53,15 @@ public:
 	void RequestCombatClass(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
+	void RequestPreviewCombatClass(
+		ADominationPlayerController* PlayerController,
+		EDominationCombatClass RequestedClass);
 	UDominationLoadoutManager* GetLoadoutManager() const;
+
+	// 서버의 다른 시스템도 사건 ID로 공용 방송기를 사용할 수 있다.
+	UFUNCTION(BlueprintPure, Category = "Domination|Announcer")
+	ASystemAnnouncer* GetSystemAnnouncer() const;
+
 	void GetInitialParticipantPlayerStates(
 		TArray<ADominationPlayerState*>& OutPlayerStates) const;
 	bool RestartPlayerAtObjective(
@@ -109,7 +119,7 @@ private:
 	float PointTransitionDuration = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
-	float RespawnDelay = 5.0f;
+	float RespawnDelay = 8.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Respawn", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "s"))
 	float RespawnProtectionDuration = 2.0f;
@@ -122,6 +132,13 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Augment", meta = (AllowPrivateAccess = "true", EditCondition = "bEnableAugmentDraft"))
 	TObjectPtr<UAugmentDraftProfile> AugmentDraftProfile;
+
+	// DominationSystemAnnouncer 기반 BP를 지정한다. 맵에 직접 배치할 필요가 없다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Announcer", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<ASystemAnnouncer> AnnouncerClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDominationAnnouncerManager> AnnouncerManager;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDominationMatchStartManager> MatchStartManager;

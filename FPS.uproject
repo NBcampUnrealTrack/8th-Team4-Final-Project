@@ -1,70 +1,98 @@
 {
-	"FileVersion": 3,
-	"EngineAssociation": "5.7",
-	"Category": "",
-	"Description": "",
-	"Modules": [
-		{
-			"Name": "FPS",
-			"Type": "Runtime",
-			"LoadingPhase": "Default",
-			"AdditionalDependencies": [
-				"Engine",
-				"CommonUI",
-				"GameplayAbilities"
-			]
-		}
-	],
-	"Plugins": [
-		{
-			"Name": "ModelingToolsEditorMode",
-			"Enabled": true,
-			"TargetAllowList": [
-				"Editor"
-			]
-		},
-		{
-			"Name": "GameplayAbilities",
-			"Enabled": true
-		},
-		{
-			"Name": "AnimationWarping",
-			"Enabled": true
-		},
-		{
-			"Name": "Mutable",
-			"Enabled": true
-		},
-		{
-			"Name": "CommonUI",
-			"Enabled": true
-		},
-		{
-			"Name": "OnlineSubsystemSteam",
-			"Enabled": true
-		},
-		{
-			"Name": "SteamSockets",
-			"Enabled": true
-		},
-		{
-			"Name": "MetaHumanCharacter",
-			"Enabled": true
-		},
-		{
-			"Name": "LiveLinkControlRig",
-			"Enabled": true
-		},
-		{
-			"Name": "AppleARKitFaceSupport",
-			"Enabled": true,
-			"SupportedTargetPlatforms": [
-				"IOS",
-				"Win64",
-				"Mac",
-				"Linux",
-				"Android"
-			]
-		}
-	]
+    "FileVersion":  3,
+    "EngineAssociation":  "5.7",
+    "Category":  "",
+    "Description":  "",
+    "Modules":  [
+                    {
+                        "Name":  "FPS",
+                        "Type":  "Runtime",
+                        "LoadingPhase":  "Default",
+                        "AdditionalDependencies":  [
+                                                       "Engine",
+                                                       "CommonUI",
+                                                       "GameplayAbilities"
+                                                   ]
+                    }
+                ],
+    "Plugins":  [
+                    {
+                        "Name":  "ModelingToolsEditorMode",
+                        "Enabled":  true,
+                        "TargetAllowList":  [
+                                                "Editor"
+                                            ]
+                    },
+                    {
+                        "Name":  "GameplayAbilities",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "AnimationWarping",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "Mutable",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "CommonUI",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "OnlineSubsystemSteam",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "SteamSockets",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "MetaHumanCharacter",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "LiveLinkControlRig",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "AppleARKitFaceSupport",
+                        "Enabled":  true,
+                        "SupportedTargetPlatforms":  [
+                                                         "IOS",
+                                                         "Win64",
+                                                         "Mac",
+                                                         "Linux",
+                                                         "Android"
+                                                     ]
+                    },
+                    {
+                        "Name":  "StateTree",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "GameplayStateTree",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "NarshaMCP",
+                        "Enabled":  true,
+                        "Optional":  true,
+                        "TargetAllowList":  [
+                                                "Editor"
+                                            ]
+                    },
+                    {
+                        "Name":  "MultiUserClient",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "PythonScriptPlugin",
+                        "Enabled":  true
+                    },
+                    {
+                        "Name":  "EditorScriptingUtilities",
+                        "Enabled":  true
+                    }
+                ]
 }

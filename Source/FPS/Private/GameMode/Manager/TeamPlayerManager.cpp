@@ -299,7 +299,7 @@ bool UTeamPlayerManager::SelectAvailableSpawnTransform(
 	return false;
 }
 
-void UTeamPlayerManager::RemovePlayerPawn(APlayerController* PlayerController) const
+void UTeamPlayerManager::RemovePlayerPawn(APlayerController* PlayerController)
 {
 	if (!IsValid(PlayerController))
 	{

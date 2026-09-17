@@ -56,6 +56,10 @@ private:
 	static FHitscanImpactEffectData BuildImpactEffectData(
 		const FHitResult& HitResult,
 		int32 PelletIndex);
+	// PhysMaterial 기반 표면 판정 폴백. Mutable/MetaHuman 캐릭터는 런타임에 머티리얼이 재생성돼
+	// 소스 에셋에 지정한 Phys Material이 그대로 안 이어질 수 있으므로, ResolveHitZoneTag와 동일하게
+	// "맞은 액터가 URogueDamageableTarget을 구현하는가"를 먼저 확인해 Character 표면으로 강제한다.
+	static TEnumAsByte<EPhysicalSurface> ResolveImpactSurfaceType(const FHitResult& HitResult);
 	static bool TryAdvanceThroughSurface(
 		const FHitResult& EntryHit,
 		const FVector& TraceDirection,

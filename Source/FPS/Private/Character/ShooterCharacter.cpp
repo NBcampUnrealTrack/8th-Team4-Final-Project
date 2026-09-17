@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Character/ShooterCharacter.h"
+#include "Combat/RogueDeathPresentation.h"
 
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
@@ -424,86 +425,17 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	}
 	bDeathStateApplied = true;
 
-	// 관성 저장
-	const FVector DeathVelocity = GetVelocity();
-
-	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
-	{
-		Movement->DisableMovement();
-	}
-
-	// 캡슐 콜리전 비활성화
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	// 충돌 설정
-	USkeletalMeshComponent* Mesh3P = GetMesh();
-	// 사망한 Pawn의 1인칭 표현은 모든 인스턴스에서 끄고, 오너에게도 3인칭 시체를 보인다.
+	// Keep player-only visibility here; share only the established physical death presentation.
 	Mesh1P->SetHiddenInGame(true, true);
-	Mesh3P->SetOwnerNoSee(false);
-	Mesh3P->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
-	Mesh3P->SetCollisionObjectType(ECC_PhysicsBody);
-	Mesh3P->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Mesh3P->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Mesh3P->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	GetMesh()->SetOwnerNoSee(false);
 
-	// 피직스 에셋이 없는 경우
-	if (!Mesh3P->GetPhysicsAsset())
-	{
-		UE_LOG(
-			LogShooterCharacter,
-			Warning,
-			TEXT("[ShooterCharacter] %s: 3인칭 메시에 PhysicsAsset 이 없어 랙돌을 시작할 수 없습니다 (메시=%s)"),
-			*GetNameSafe(this),
-			*GetNameSafe(Mesh3P->GetSkinnedAsset()));
-	}
-
-	// 데디 서버는 랙돌 X
-	else if (GetNetMode() != NM_DedicatedServer)
-	{
-		Mesh3P->SetAllBodiesSimulatePhysics(true);
-		Mesh3P->SetSimulatePhysics(true);
-		Mesh3P->SetAllBodiesPhysicsBlendWeight(1.0f);
-		Mesh3P->WakeAllRigidBodies();
-		Mesh3P->SetAllPhysicsLinearVelocity(DeathVelocity);
-
-		ApplyDeathImpulse(*Mesh3P, Reaction);
-	}
-
-}
-
-void AShooterCharacter::ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const
-{
-	// 임펄스 방향이 없거나 속도가 0이면 적용하지 않는다
-	if (Reaction.Direction.IsNearlyZero() || DeathImpulseSpeed <= 0.f)
-	{
-		return;
-	}
-
-	// 임펄스를 적용할 본
-	const FName FallbackBone = Reaction.bHeadshot ? HeadshotDeathImpulseBoneName : DeathImpulseBoneName;
-
-	FName TargetBone = NAME_None;
-	for (const FName Candidate : { Reaction.HitBoneName, FallbackBone })
-	{
-		if (!Candidate.IsNone() && Mesh3P.GetBodyInstance(Candidate))
-		{
-			TargetBone = Candidate;
-			break;
-		}
-	}
-
-	FVector ImpulseDirection = Reaction.Direction;
-	ImpulseDirection.Z += DeathImpulseUpwardBias;
-	if (!ImpulseDirection.Normalize())
-	{
-		return;
-	}
-
-	const float ImpulseSpeed = DeathImpulseSpeed
-		* (Reaction.bHeadshot ? HeadshotDeathImpulseMultiplier : 1.f);
-
-	// 임펄스 적용
-	Mesh3P.AddImpulse(ImpulseDirection * ImpulseSpeed, TargetBone, true);
+	FRogueRagdollSettings Settings;
+	Settings.ImpulseSpeed = DeathImpulseSpeed;
+	Settings.HeadshotImpulseMultiplier = HeadshotDeathImpulseMultiplier;
+	Settings.UpwardBias = DeathImpulseUpwardBias;
+	Settings.ImpulseBone = DeathImpulseBoneName;
+	Settings.HeadshotImpulseBone = HeadshotDeathImpulseBoneName;
+	RogueDeathPresentation::StartRagdoll(*this, Reaction, Settings);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const

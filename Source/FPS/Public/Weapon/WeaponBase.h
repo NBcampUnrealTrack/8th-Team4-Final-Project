@@ -47,6 +47,18 @@ public:
 	bool FireMelee(bool bHeavyAttack = false);
 	bool FireRanged(float ClientFireServerTime);
 
+	// 훈련장처럼 탄약 소모가 필요 없는 런타임에서만 켠다.
+	// true면 발사 자체는 정상 처리하되 CurrentAmmo를 줄이지 않고 재장전도 필요하지 않다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	void SetInfiniteAmmo(bool bNewInfiniteAmmo);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool HasInfiniteAmmo() const { return bUsesAmmo && bInfiniteAmmo; }
+
+	// 무한 탄약에서는 탄창이 비지 않으므로 재장전하지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool CanReload() const;
+
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void StartReload();
@@ -121,7 +133,7 @@ public:
 	// CanFireNow()가 false인 여러 사유(재장전/쿨다운/탄약없음) 중 "탄약이 없어서"만 콕 집어 확인한다.
 	// GA_RangedAttack이 빈 탄창 사운드를 재생할지 판단할 때 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
-	bool IsOutOfAmmo() const { return bUsesAmmo && CurrentAmmo <= 0; }
+	bool IsOutOfAmmo() const { return bUsesAmmo && !bInfiniteAmmo && CurrentAmmo <= 0; }
 
 	// 탄창이 빈 상태에서 사격 입력이 들어왔을 때 호출한다. 탄창이 빈 뒤 첫 호출에서만 클릭음을
 	// 재생하고 true를 반환한다 - 이후 같은 빈 탄창 상태에서 또 호출되면(이미 한 번 클릭음을 들은
@@ -182,7 +194,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
-	// 탄창을 채울 때 소모되는 예비(보유) 탄약. bUsesAmmo가 false인 무기(칼 등)는 항상 0이다.
+	// 실제 예비탄 수량이다. 무한 탄약에서는 이 값이 발사/재장전에 사용되지 않는다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentReserveAmmo() const { return CurrentReserveAmmo; }
 
@@ -284,7 +296,9 @@ public:
 		FVector ImpactPoint,
 		FVector ImpactNormal,
 		EPhysicalSurface ImpactSurfaceType,
-		bool bIsFirstPerson);
+		bool bHasHit,
+		bool bIsFirstPerson,
+		bool bHeadshot);
 
 protected:
 	virtual void BeginPlay() override;
@@ -296,7 +310,7 @@ protected:
 		const FVector& TraceStart,
 		const TArray<FVector>& PelletDirections,
 		float ShotDamage,
-		int32 ShotIndexInMagazine,
+		int32 InShotIndexInMagazine,
 		float ClientFireServerTime,
 		bool bHeavyAttack);
 
@@ -315,7 +329,7 @@ protected:
 	float ResolveRPMForShot(bool bHeavyAttack) const;
 	// LastFireTime/LastFireInterval을 갱신해 다음 CanFireNow() 쿨다운 기준을 세운다.
 	void RegisterFireCooldown(const UWorld& World, float RPMUsed);
-	// 탄창에서 이번 발의 탄약을 소모하고, 관통/데미지 계산에 쓰일 탄창 내 인덱스를 반환한다.
+	// 이번 발의 탄창 내 인덱스를 반환하고, 일반 탄약 모드에서만 CurrentAmmo를 1 소모한다.
 	int32 ConsumeAmmoForShot();
 	// bHeavyAttack에 따라 이번 발사에 적용할 기본 대미지(Base/Alt)를 고른다.
 	float ResolveShotDamage(bool bHeavyAttack) const;
@@ -412,8 +426,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MaxReserveAmmo = 90;
 
-	// 현재 보유 중인 예비 탄약. 재장전 시 부족분만큼 소모되고(탄창을 다 못 채워도 재장전은 진행됨),
-	// 0이면 재장전 자체가 불가능하다(StartReload/GA_Reload::CanActivateAbility가 확인).
+	// 런타임 인스턴스 전용. 기본 게임에서는 false이고 Training에서만 서버가 true로 설정한다.
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
+	bool bInfiniteAmmo = false;
+
+	// 일반 게임에서 재장전 부족분을 채울 때 사용하는 예비탄 수량이다.
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
 	int32 CurrentReserveAmmo = 90;
 
@@ -486,6 +503,10 @@ private:
 	TObjectPtr<UCameraComponent> CachedOwnerCamera;
 
 	FTimerHandle ReloadTimerHandle;
+
+	// 탄약 소모 여부와 분리된 논리적 탄창 인덱스. 무한 탄약에서도 "탄창 첫 N발" 증강 조건이
+	// 매 발 첫 탄으로 오판되지 않도록 0..MagazineSize-1 범위를 순환한다. 재장전 시 0으로 리셋한다.
+	int32 ShotIndexInMagazine = 0;
 
 	float LastFireTime = -1000.f;
 

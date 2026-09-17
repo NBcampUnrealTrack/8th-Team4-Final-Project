@@ -30,12 +30,12 @@ public:
 	// 레이어 태그 전체 비우기. HUD 화면 정리 등에 필요
 	void ClearLayer(FGameplayTag LayerTag);
 	
+	UCommonActivatableWidgetContainerBase* GetLayerContainer(FGameplayTag LayerTag) const;
+	
 protected:
 	virtual void NativeOnInitialized() override;
 	
 	void RegisterLayer(FGameplayTag LayerTag, UCommonActivatableWidgetContainerBase* LayerWidget);
-	
-	UCommonActivatableWidgetContainerBase* GetLayerContainer(FGameplayTag LayerTag) const;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Game;

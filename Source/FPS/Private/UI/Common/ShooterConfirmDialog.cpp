@@ -10,6 +10,10 @@ void UShooterConfirmDialog::NativeOnInitialized(){
 	Btn_Cancel->OnClicked().AddUObject(this, &ThisClass::HandleCancelClicked);
 }
 
+UWidget* UShooterConfirmDialog::NativeGetDesiredFocusTarget() const{
+	return Btn_Cancel;
+}
+
 void UShooterConfirmDialog::SetupMessage(const FText& InMessage){
 	if (Text_Message)
 	{

@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/Damage/RogueDamageSubsystem.h"
 
@@ -9,6 +9,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
 
@@ -404,6 +405,9 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 
 	AActor* Src = Params.Instigator;
 	AActor* Tgt = TargetActor;
+	const IRogueCombatFeedbackPolicy* FeedbackPolicy = Cast<IRogueCombatFeedbackPolicy>(Tgt);
+	const bool bCountsAsCombatKill = !FeedbackPolicy || FeedbackPolicy->CountsAsCombatKill();
+	const bool bPlayCombatFeedbackAudio = !FeedbackPolicy || FeedbackPolicy->PlaysCombatFeedbackAudio();
 
 	auto Send = [&ContextHandle, Src, Tgt](AActor* To, const FGameplayTag& Tag, float Magnitude)
 	{
@@ -450,11 +454,21 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 				}
 			}
 
-			const bool bIsKill = Result.bHealthDepleted;
+			const bool bIsKill = Result.bHealthDepleted && bCountsAsCombatKill;
 			if (!bHitObstructed || bIsKill)
 			{
-				const bool bRed = bIsKill || (Ctx && Ctx->bHeadshot);
-				SrcPC->ClientPlayHitMarker(bRed);
+				// 우선순위: 헤드샷 > 쉴드 > 바디
+				ERogueHitMarkerType MarkerType = ERogueHitMarkerType::Body;
+				if (Ctx && Ctx->bHeadshot)
+				{
+					MarkerType = ERogueHitMarkerType::Headshot;
+				}
+				else if (Result.ShieldDamage > 0.f)
+				{
+					MarkerType = ERogueHitMarkerType::Shield;
+				}
+
+				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill, bPlayCombatFeedbackAudio);
 			}
 		}
 	}
@@ -465,8 +479,13 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		Send(Src, RogueTags::Event_Combat_EnemyShieldBroken, Result.ShieldDamage);
 	}
 
+	// 설치물 파괴는 처치가 아니다. "처치 시" 조건 증강이 오발동한다
+	const UAbilitySystemComponent* TgtASC = ResolveASC(Tgt);
+	const bool bDeployableTarget =
+		TgtASC && TgtASC->HasMatchingGameplayTag(RogueTags::State_Combat_Deployable);
+
 	// 사망 이벤트 발신
-	if (Result.bHealthDepleted)
+	if (Result.bHealthDepleted && !bDeployableTarget && bCountsAsCombatKill)
 	{
 		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
 		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);

@@ -57,6 +57,9 @@ public:
 	// 게임 모드가 실제 플레이 맵에 진입한 뒤 중도 참가 허용 여부를 명시적으로 제어한다.
 	bool SetRoomJoinable(bool bIsJoinable);
 
+	const FString& GetRoomName() const;
+	int32 GetMaxPlayers() const;
+
 	UPROPERTY(BlueprintAssignable)
 	FOnCreateRoomComplete OnCreateRoomComplete;
 

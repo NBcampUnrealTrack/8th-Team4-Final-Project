@@ -36,7 +36,7 @@ void UShooterMatchResultRowWidget::SetRowData(
 
 		if (Text_Assists)
 		{
-			Text_Assists->SetText(FText::AsNumber(InRow.Assists));
+			// Text_Assists->SetText(FText::AsNumber(InRow.Assists));
 		}
 	}
 

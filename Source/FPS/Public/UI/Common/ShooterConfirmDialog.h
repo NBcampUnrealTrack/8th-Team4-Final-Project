@@ -29,6 +29,8 @@ public:
 	
 protected:
 	virtual void NativeOnInitialized() override;
+	// 기본 포커스는 취소. Enter 한 번에 확인이 눌리지 않게
+	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 	
 	UFUNCTION()
 	void HandleConfirmClicked();

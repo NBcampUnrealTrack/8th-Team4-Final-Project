@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
 
@@ -7,12 +7,14 @@
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Data/WeaponDamageData.h" 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "Particles/ParticleSystem.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -59,6 +61,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
+	DOREPLIFETIME(AWeaponBase, bInfiniteAmmo);
 }
 
 void AWeaponBase::BeginPlay()
@@ -78,6 +81,7 @@ void AWeaponBase::BeginPlay()
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
 	CurrentReserveAmmo = MaxReserveAmmo;
+	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
 
@@ -133,7 +137,7 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
 	const float RPMForRequestedAttack = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
 
-	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
+	if (bIsReloading || (bUsesAmmo && !bInfiniteAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
 	{
 		return false;
 	}
@@ -428,11 +432,11 @@ bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
 	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
 	RegisterFireCooldown(*World, RPMUsed);
 
-	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
+	const int32 FiredShotIndex = ConsumeAmmoForShot();
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime, bHeavyAttack);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, FiredShotIndex, ClientFireServerTime, bHeavyAttack);
 	if (Effects)
 	{
 		Effects->PlayFireCameraShake();
@@ -456,16 +460,21 @@ void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
 
 int32 AWeaponBase::ConsumeAmmoForShot()
 {
-	const int32 ShotIndexInMagazine = bUsesAmmo
-		? FMath::Max(0, EffectiveMagazineSize - CurrentAmmo)
-		: 0;
-
-	if (bUsesAmmo)
+	if (!bUsesAmmo)
 	{
-		CurrentAmmo--;
+		return 0;
 	}
 
-	return ShotIndexInMagazine;
+	const int32 SafeMagazineSize = FMath::Max(EffectiveMagazineSize, 1);
+	const int32 CurrentShotIndex = FMath::Clamp(ShotIndexInMagazine, 0, SafeMagazineSize - 1);
+
+	if (!bInfiniteAmmo)
+	{
+		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+	}
+
+	ShotIndexInMagazine = (CurrentShotIndex + 1) % SafeMagazineSize;
+	return CurrentShotIndex;
 }
 
 float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
@@ -539,36 +548,73 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
 
-	// 표면별 임팩트 사운드(사람/벽 등)는 FireEffects BP 그래프와 무관하게 여기서 직접 재생한다 -
+	// 표면별 임팩트 파티클(혈흔 등)은 FireEffects BP 그래프와 무관하게 여기서 직접 스폰한다 -
 	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.
 	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
-		LastImpactPoint = ImpactEffect.ImpactPoint;
-		LastImpactNormal = ImpactEffect.ImpactNormal;
-		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
-		LastImpactPelletIndex = ImpactEffect.PelletIndex;
+		const bool bHeadshot = RogueTags::IsHeadZone(ImpactEffect.HitZoneTag);
 
-		if (SurfaceDefinition)
+		// 명중 관련 캐시/표면 임팩트 파티클은 실제 Hit일 때만 갱신
+		if (ImpactEffect.bHasHit)
 		{
-			if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+			LastImpactPoint = ImpactEffect.ImpactPoint;
+			LastImpactNormal = ImpactEffect.ImpactNormal;
+			LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
+			LastImpactPelletIndex = ImpactEffect.PelletIndex;
+
+			if (SurfaceDefinition)
 			{
-				UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				// 혈흔 등 임팩트 파티클은 헤드샷 고정 / 그 외 랜덤 규칙으로 직접 스폰한다.
+				// 임팩트 사운드(바디/헤드샷/사망)는 PlayerController가 소유한 기존 히트 피드백 시스템에서 처리한다.
+				UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot);
+				if (ImpactParticle)
+				{
+					// ImpactNormal.Rotation()은 X축(전방)이 표면 노멀을 향하게 정렬할 뿐 Roll은 항상 0이라,
+					// 방향성 있는 파티클(예: P_Blood_Splat_Cone)이 매번 같은 각도로만 튄다. 노멀 축(Roll)을
+					// 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀는 것처럼 보이게 한다.
+					FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
+					ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
+
+					UGameplayStatics::SpawnEmitterAtLocation(
+						this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
+				}
 			}
 		}
 
+		// FireEffects와 명중 노드는 bHasHit으로 분기. 혈흔 파티클은 위에서 이미 C++이 직접 처리하므로,
+		// bHeadshot 핀은 그 외 부가 연출(카메라 셰이크 등)을 BP에서 분기하고 싶을 때만 참고하면 된다.
 		FireEffects(
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
-			bIsFirstPerson);
+			ImpactEffect.bHasHit,
+			bIsFirstPerson,
+			bHeadshot);
 	}
+}
+
+void AWeaponBase::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
+{
+	if (!HasAuthority() || bInfiniteAmmo == bNewInfiniteAmmo)
+	{
+		return;
+	}
+
+	bInfiniteAmmo = bNewInfiniteAmmo;
+	ForceNetUpdate();
+}
+
+bool AWeaponBase::CanReload() const
+{
+	return bUsesAmmo && !bInfiniteAmmo && !bIsReloading
+		&& CurrentAmmo < EffectiveMagazineSize && CurrentReserveAmmo > 0;
 }
 
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize || CurrentReserveAmmo <= 0)
+	if (!CanReload())
 	{
 		return;
 	}
@@ -594,11 +640,12 @@ void AWeaponBase::StartReload()
 
 void AWeaponBase::FinishReload()
 {
-	// 예비 탄약이 부족하면 탄창을 다 못 채우고 남은 예비 탄약만큼만 채운다(예: 탄창 30발 중 12발
-	// 남았는데 예비 탄약이 5발뿐이면 17발만 채우고 예비 탄약은 0이 된다).
-	const int32 AmountToReload = FMath::Clamp(EffectiveMagazineSize - CurrentAmmo, 0, CurrentReserveAmmo);
+	const int32 MissingAmmo = FMath::Max(EffectiveMagazineSize - CurrentAmmo, 0);
+	const int32 AmountToReload = FMath::Clamp(CurrentReserveAmmo, 0, MissingAmmo);
+
 	CurrentAmmo += AmountToReload;
 	CurrentReserveAmmo -= AmountToReload;
+	ShotIndexInMagazine = 0;
 	if (CurrentAmmo > 0)
 	{
 		bEmptyClipNotified = false;
@@ -662,7 +709,7 @@ void AWeaponBase::ResolveHitscanShot(
 	const FVector& TraceStart,
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
-	const int32 ShotIndexInMagazine,
+	const int32 InShotIndexInMagazine,
 	const float ClientFireServerTime,
 	const bool bHeavyAttack)
 {
@@ -687,8 +734,21 @@ void AWeaponBase::ResolveHitscanShot(
 	// 신규 대미지는 WeaponDamageData와 ExecCalc_Damage에서 결정한다.
 	(void)ShotDamage;
 
+	// MaximumRangeMeters를 넘어가도 대미지는 0이 아니라 MinimumDamage로 수렴
+	// EffectiveTraceRange 자체를 바꾸면 이펙트 종료 지점도 같이 늘어나 예광탄이
+	// 1km 밖까지 날아가는 것처럼 보이므로 로컬 변수로만 분리
+	float PhysicalTraceRangeCentimeters = EffectiveTraceRange;
+	if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
+	{
+		if (DamageEntry->MaximumRangeMeters > 0.f)
+		{
+			constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
+			PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+		}
+	}
+
 	FHitscanShotRequest Request;
-	HitscanDefinition->ConfigureShotRequest(Request, EffectiveTraceRange);
+	HitscanDefinition->ConfigureShotRequest(Request, PhysicalTraceRangeCentimeters);
 
 	// 좌/우 공격이 서로 다른 Weapon.Type.* 태그를 쓰는 무기(칼 등)는 ConfigureShotRequest가 채운
 	// 기본 태그를 강공격 태그로 덮어써야 한다. AltWeaponTag가 비어있으면 GetWeaponTag가 기본 태그를
@@ -714,7 +774,7 @@ void AWeaponBase::ResolveHitscanShot(
 
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
-	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
+	Request.ShotIndexInMagazine = FMath::Max(0, InShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
 
 	TArray<FHitscanImpactEffectData> ImpactEffects;
