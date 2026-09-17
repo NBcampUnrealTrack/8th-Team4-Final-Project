@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/StreamableManager.h"
 #include "GameMode/Types/LobbyTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
@@ -11,8 +12,10 @@
 class ALobbyGameState;
 class AShooterPlayerController;
 class AShooterPlayerState;
+class UImage;
 class UPanelWidget;
 class UShooterButtonBase;
+class UShooterConfirmDialog;
 class UShooterRoomPlayerSlot;
 class UTextBlock;
 
@@ -57,6 +60,22 @@ private:
 	void RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views);
 	void HandleSlotJoinRequested(EGameTeam Team);
 
+	// 모드 패널
+	void StepMatchMode(int32 Delta);
+	void RequestThumbnails();
+
+	// 상태 바 · 방 정보 · 나가기
+	FText BuildStatusText(const FLobbyStartState& StartState, bool bIsHost) const;
+	void RefreshRoomHeader(const TArray<FShooterRoomSlotView>& Views, const ALobbyGameState* LobbyGameState);
+	void LeaveToFrontend();
+
+	UFUNCTION()
+	void HandleLeaveConfirmed();
+	UFUNCTION()
+	void HandleLeaveCanceled();
+
+	void ClearLeaveConfirmBindings();
+
 	void HandleReadyClicked();
 	void HandleStartClicked();
 	void HandleModePrevClicked();
@@ -96,6 +115,21 @@ private:
 	TObjectPtr<UShooterButtonBase> Btn_ModeNext;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_ModeName;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> Text_MapName;
+	// "{N}V{N}" 팀 정원. 방 수용 인원과 다름
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> Text_TeamSize;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> Img_MapThumbnail;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> Text_Status;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> Text_RoomTitle;
+	// 방 수용 인원 기준
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UTextBlock> Text_PlayerCount;
 
 	// 레디 수 / 팀 인원
 	UPROPERTY(meta = (BindWidget))
@@ -109,6 +143,8 @@ private:
 	TSubclassOf<UShooterRoomPlayerSlot> PlayerSlotWidgetClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UShooterRoomPlayerSlot> UnassignedEntryWidgetClass;
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSoftClassPtr<UShooterConfirmDialog> ConfirmDialogClass;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UShooterRoomPlayerSlot>> TeamSlotsA;
@@ -120,6 +156,10 @@ private:
 
 	FString CachedPresentationSignature;
 	FTimerHandle ReconcileTimerHandle;
+
+	TSharedPtr<FStreamableHandle> ThumbnailHandle;
+
+	TWeakObjectPtr<UShooterConfirmDialog> LeaveConfirmDialog;
 
 	// 서버가 복제한 시작 가능 여부
 	bool bStartAllowedByServer = false;

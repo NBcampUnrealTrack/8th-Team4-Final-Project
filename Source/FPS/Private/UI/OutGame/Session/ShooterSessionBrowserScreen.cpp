@@ -159,7 +159,7 @@ void UShooterSessionBrowserScreen::StartFindRooms()
 	}
 
 	ScrollBox_Rooms->ClearChildren();
-	SetBusy(true, NSLOCTEXT("ShooterLobby", "SearchingRooms", "방을 찾는 중"));
+	SetBusy(true, NSLOCTEXT("ShooterLobby", "SearchingRooms", "방 찾는 중"));
 	Session->FindRooms();
 }
 
