@@ -856,8 +856,17 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 	// 사운드는 PlayerController 하위 클래스마다 따로 두지 않고 UShooterAudioSettings 하나로 통합돼 있다.
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
 
-	// 처치 강조 사운드가 지정돼 있으면 그걸 우선 재생하고, 없으면 부위별 사운드로 대체한다.
-	USoundBase* Sound = bKill ? AudioSettings->HitMarkerSound_Kill.LoadSynchronous() : nullptr;
+	// 헤드샷 처치는 전용 사운드를 최우선으로, 그 외 처치는 일반 처치 사운드를 우선 재생하고,
+	// 둘 다 없으면 부위별 사운드로 대체한다.
+	USoundBase* Sound = nullptr;
+	if (bKill && Type == ERogueHitMarkerType::Headshot)
+	{
+		Sound = AudioSettings->HitMarkerSound_HeadshotKill.LoadSynchronous();
+	}
+	if (!Sound && bKill)
+	{
+		Sound = AudioSettings->HitMarkerSound_Kill.LoadSynchronous();
+	}
 	if (!Sound)
 	{
 		switch (Type)
@@ -866,7 +875,7 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 			Sound = AudioSettings->HitMarkerSound_Headshot.LoadSynchronous();
 			break;
 		case ERogueHitMarkerType::Shield:
-			Sound = AudioSettings->HitMarkerSound_Shield.LoadSynchronous();
+			// 실드 히트 사운드는 뺀다(기획 요청).
 			break;
 		case ERogueHitMarkerType::Body:
 		default:

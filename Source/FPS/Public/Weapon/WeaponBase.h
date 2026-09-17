@@ -297,7 +297,8 @@ public:
 		FVector ImpactNormal,
 		EPhysicalSurface ImpactSurfaceType,
 		bool bHasHit,
-		bool bIsFirstPerson);
+		bool bIsFirstPerson,
+		bool bHeadshot);
 
 protected:
 	virtual void BeginPlay() override;
