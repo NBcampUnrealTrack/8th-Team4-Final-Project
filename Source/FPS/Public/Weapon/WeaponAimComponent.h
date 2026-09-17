@@ -134,10 +134,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float SpreadDecayDelay = 0.3f;
 
-	// 초당 감소하는 연속 사격 카운트 (예: 5 = 초당 5발씩 감소)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float ConsecutiveShotDecayPerSecond = 5.f;
-
 	// 이동 상태 탄퍼짐 배율. SetMovementSpreadMultiplier로만 갱신된다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float MovementSpreadMultiplier = 1.f;
@@ -192,9 +188,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoveryDelay = 0.15f;
 
-	// 반동 복귀 FInterpTo 속도
+	// 반동 복귀 FInterpTo 속도. TickSpreadDecay의 블룸(연사 카운트) 감쇠 속도도 이 값을 그대로
+	// 공유한다 - 크로스헤어를 구성하는 블룸/반동 두 요소가 항상 같은 속도로 좁혀지게 하기 위함.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoverySpeed = 10.f;
+
+	// 누적 반동(Pitch/Yaw 벡터 길이)이 크로스헤어(탄퍼짐)에 더해지는 배율(반동 1도당 탄퍼짐 도).
+	// 0으로 두면 반동은 크로스헤어에 영향을 주지 않는다(기존 동작과 동일). CalculateCurrentSpreadDegrees가
+	// 매 프레임 이 값을 읽으므로, TickRecoilRecovery로 반동이 줄어드는 것과 같은 속도로 크로스헤어도
+	// 같이 좁혀진다 - 즉 RecoilRecoverySpeed를 올리면 크로스헤어 수렴도 자동으로 빨라진다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
+	float RecoilSpreadMultiplier = 0.3f;
+
+	// RecoilSpreadMultiplier로 반영되는 반동발 탄퍼짐의 상한(도). 반동이 계속 쌓여도 크로스헤어가
+	// 무한정 커지지 않도록 막는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
+	float MaxRecoilSpreadDegrees = 3.f;
 
 	// 현재 적용 중인 실제 반동 배율. SetEffectiveRecoilMultiplier로만 갱신되며, RecoilCurve 샘플링
 	// 값에 곱해진다. 기본값 1이면 배율 없음(원본 커브 그대로).

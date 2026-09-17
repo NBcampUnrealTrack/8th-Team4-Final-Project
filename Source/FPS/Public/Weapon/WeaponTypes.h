@@ -43,10 +43,6 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float SpreadDecayDelay = 0.3f;
 
-	// 초당 감소하는 연속 사격 카운트
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
-	float ConsecutiveShotDecayPerSecond = 5.f;
-
 	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). 정지(브레이킹 성공) 중에는
 	// 여전히 0으로 고정된다 - 조준해도 움직이면서 쏘면 빗나가야 한다는 요구사항 대응.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
@@ -74,7 +70,16 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoveryDelay = 0.15f;
 
-	// 반동 복귀 FInterpTo 속도
+	// 반동 복귀 FInterpTo 속도. 블룸(연사 카운트) 감쇠 속도도 이 값을 그대로 공유한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	float RecoilRecoverySpeed = 10.f;
+
+	// 누적 반동이 크로스헤어(탄퍼짐)에 더해지는 배율(반동 1도당 탄퍼짐 도). 0이면 반동이 크로스헤어에
+	// 영향을 주지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float RecoilSpreadMultiplier = 0.3f;
+
+	// RecoilSpreadMultiplier로 반영되는 반동발 탄퍼짐의 상한(도).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
+	float MaxRecoilSpreadDegrees = 3.f;
 };
