@@ -214,11 +214,6 @@ void BuildSessionHUD(UWidgetTree& Tree)
     KillLabel->SetShadowColorAndOpacity(FLinearColor::Black);
     Counter->AddChildToVerticalBox(KillLabel);
 
-    UCanvasPanel* DamageCanvas = Make<UCanvasPanel>(Tree, TEXT("Canvas_Damage"));
-    UCanvasPanelSlot* DamageSlot = Root->AddChildToCanvas(DamageCanvas);
-    DamageSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-    DamageSlot->SetOffsets(FMargin(0.0f));
-    DamageSlot->SetZOrder(5);
 }
 
 void BuildResults(UWidgetTree& Tree)

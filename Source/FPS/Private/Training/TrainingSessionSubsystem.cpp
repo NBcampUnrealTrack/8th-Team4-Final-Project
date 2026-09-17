@@ -12,6 +12,7 @@
 #include "Training/TrainingCharacter.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingScenario.h"
+#include "Training/TrainingSettings.h"
 #include "Training/TrainingTarget.h"
 
 #define LOCTEXT_NAMESPACE "TrainingSession"
@@ -117,8 +118,9 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     Participant = &InParticipant;
     PendingMode = Mode;
     Stats = FTrainingSessionStats();
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     SessionDurationSeconds = Mode == ETrainingMode::TargetAcquisition
-        ? TrainingRules::TargetDurationSeconds
+        ? FMath::Max(0.0f, Settings->TargetDurationSeconds)
         : (FMath::IsFinite(InArena.CombatDurationSeconds) ? FMath::Max(0.0f, InArena.CombatDurationSeconds) : 0.0f);
     SessionId = SessionId == MAX_int32 ? 1 : SessionId + 1;
     SessionStartSeconds = 0.0;
@@ -128,9 +130,17 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     State = ETrainingSessionState::Countdown;
     InArena.SetSessionState(State);
 
-    GetWorld()->GetTimerManager().SetTimer(CountdownTimer, this, &ThisClass::BeginActiveSession,
-        TrainingRules::CountdownSeconds, false);
+    const float CountdownSeconds = Settings->GetCountdownSeconds();
     NotifyParticipant(ETrainingFeedbackPhase::Countdown, GetWorld()->GetTimeSeconds());
+    if (CountdownSeconds <= KINDA_SMALL_NUMBER)
+    {
+        BeginActiveSession();
+    }
+    else
+    {
+        GetWorld()->GetTimerManager().SetTimer(CountdownTimer, this, &ThisClass::BeginActiveSession,
+            CountdownSeconds, false);
+    }
     return true;
 }
 
@@ -160,7 +170,7 @@ void UTrainingSessionSubsystem::BeginActiveSession()
     if (State == ETrainingSessionState::CombatResponseActive)
     {
         Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
-            TrainingRules::CombatIntervalSeconds, true);
+            FMath::Max(0.05f, GetDefault<UTrainingSettings>()->CombatSpawnIntervalSeconds), true);
     }
     if (SessionDurationSeconds > 0.0f)
     {

@@ -9,7 +9,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
-#include "Tags/RogueActorTags.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
 
@@ -405,6 +405,9 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 
 	AActor* Src = Params.Instigator;
 	AActor* Tgt = TargetActor;
+	const IRogueCombatFeedbackPolicy* FeedbackPolicy = Cast<IRogueCombatFeedbackPolicy>(Tgt);
+	const bool bCountsAsCombatKill = !FeedbackPolicy || FeedbackPolicy->CountsAsCombatKill();
+	const bool bPlayCombatFeedbackAudio = !FeedbackPolicy || FeedbackPolicy->PlaysCombatFeedbackAudio();
 
 	auto Send = [&ContextHandle, Src, Tgt](AActor* To, const FGameplayTag& Tag, float Magnitude)
 	{
@@ -451,7 +454,7 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 				}
 			}
 
-			const bool bIsKill = Result.bHealthDepleted;
+			const bool bIsKill = Result.bHealthDepleted && bCountsAsCombatKill;
 			if (!bHitObstructed || bIsKill)
 			{
 				// 우선순위: 헤드샷 > 쉴드 > 바디
@@ -465,8 +468,7 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 					MarkerType = ERogueHitMarkerType::Shield;
 				}
 
-				const bool bPlayFeedbackSound = !Tgt->ActorHasTag(RogueActorTags::SuppressCombatFeedbackAudio);
-				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill, bPlayFeedbackSound);
+				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill, bPlayCombatFeedbackAudio);
 			}
 		}
 	}
@@ -483,7 +485,7 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 		TgtASC && TgtASC->HasMatchingGameplayTag(RogueTags::State_Combat_Deployable);
 
 	// 사망 이벤트 발신
-	if (Result.bHealthDepleted && !bDeployableTarget)
+	if (Result.bHealthDepleted && !bDeployableTarget && bCountsAsCombatKill)
 	{
 		Send(Src, RogueTags::Event_Combat_Kill,  Result.HealthDamage);
 		Send(Tgt, RogueTags::Event_Combat_Death, Result.HealthDamage);

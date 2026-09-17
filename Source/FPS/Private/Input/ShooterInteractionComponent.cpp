@@ -10,13 +10,12 @@
 #include "Tags/UITags.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
-#include "UObject/SoftObjectPath.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 
 UShooterInteractionComponent::UShooterInteractionComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
-    PrimaryComponentTick.bStartWithTickEnabled = true;
+    PrimaryComponentTick.bStartWithTickEnabled = false;
     SetIsReplicatedByDefault(true);
 
     InteractionPromptBlockingLayers = {
@@ -29,8 +28,8 @@ void UShooterInteractionComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-    const APlayerController* Player = Cast<APlayerController>(GetOwner());
-    SetComponentTickEnabled(Player && Player->IsLocalController());
+    PrimaryComponentTick.TickInterval = FMath::Max(0.01f, InteractionPromptRefreshIntervalSeconds);
+    UpdatePromptTickEnabled();
 }
 
 void UShooterInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -115,6 +114,17 @@ AActor* UShooterInteractionComponent::FindBestInteractable() const
     return FindProximityInteractable();
 }
 
+void UShooterInteractionComponent::UpdatePromptTickEnabled()
+{
+    const APlayerController* Player = Cast<APlayerController>(GetOwner());
+    const bool bShouldTick = Player && Player->IsLocalController() && InteractionPromptWidgetClass != nullptr;
+    SetComponentTickEnabled(bShouldTick);
+    if (!bShouldTick)
+    {
+        HideInteractionPrompt();
+    }
+}
+
 bool UShooterInteractionComponent::IsInteractionPromptBlockedByUI() const
 {
     const APlayerController* Player = Cast<APlayerController>(GetOwner());
@@ -122,7 +132,12 @@ bool UShooterInteractionComponent::IsInteractionPromptBlockedByUI() const
     UShooterUIManagerSubsystem* UIManager = GameInstance
         ? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
         : nullptr;
-    UShooterPrimaryGameLayout* RootLayout = UIManager ? UIManager->GetRootLayout() : nullptr;
+    if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
+    {
+        return false;
+    }
+
+    UShooterPrimaryGameLayout* RootLayout = UIManager->GetRootLayout();
     if (!IsValid(RootLayout))
     {
         return false;
@@ -183,6 +198,38 @@ void UShooterInteractionComponent::UnregisterProximityInteractable(AActor* Candi
     RefreshInteractionPrompt();
 }
 
+void UShooterInteractionComponent::SetInteractionPromptWidgetClass(TSubclassOf<UUserWidget> InWidgetClass)
+{
+    if (InteractionPromptWidgetClass == InWidgetClass)
+    {
+        return;
+    }
+
+    InteractionPromptWidgetClass = InWidgetClass;
+    if (ActiveInteractionPrompt)
+    {
+        ActiveInteractionPrompt->RemoveFromParent();
+        ActiveInteractionPrompt = nullptr;
+    }
+    UpdatePromptTickEnabled();
+}
+
+void UShooterInteractionComponent::SetInteractionPromptZOrder(const int32 InZOrder)
+{
+    const int32 NewZOrder = FMath::Max(0, InZOrder);
+    if (InteractionPromptZOrder == NewZOrder)
+    {
+        return;
+    }
+
+    InteractionPromptZOrder = NewZOrder;
+    if (ActiveInteractionPrompt)
+    {
+        ActiveInteractionPrompt->RemoveFromParent();
+        ActiveInteractionPrompt = nullptr;
+    }
+}
+
 bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate) const
 {
     const AShooterPlayerController* Player = Cast<AShooterPlayerController>(GetOwner());
@@ -213,7 +260,23 @@ bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate)
 void UShooterInteractionComponent::RefreshInteractionPrompt()
 {
     const APlayerController* Player = Cast<APlayerController>(GetOwner());
-    if (!Player || !Player->IsLocalController() || IsInteractionPromptBlockedByUI() || !FindBestInteractable())
+    if (!Player || !Player->IsLocalController() || !InteractionPromptWidgetClass)
+    {
+        HideInteractionPrompt();
+        return;
+    }
+
+    UGameInstance* GameInstance = Player->GetGameInstance();
+    UShooterUIManagerSubsystem* UIManager = GameInstance
+        ? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+        : nullptr;
+    if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
+    {
+        HideInteractionPrompt();
+        return;
+    }
+
+    if (IsInteractionPromptBlockedByUI() || !FindBestInteractable())
     {
         HideInteractionPrompt();
         return;
@@ -232,20 +295,12 @@ void UShooterInteractionComponent::ShowInteractionPrompt()
 
     if (!ActiveInteractionPrompt)
     {
-        TSubclassOf<UUserWidget> PromptClass = InteractionPromptWidgetClass;
-        if (!PromptClass)
-        {
-            static const FSoftClassPath DefaultPromptPath(
-                TEXT("/Game/UI/Training/WBP_TrainingInteractionPrompt.WBP_TrainingInteractionPrompt_C"));
-            PromptClass = DefaultPromptPath.TryLoadClass<UUserWidget>();
-        }
-
-        if (!PromptClass)
+        if (!InteractionPromptWidgetClass)
         {
             return;
         }
 
-        ActiveInteractionPrompt = CreateWidget<UUserWidget>(Player, PromptClass);
+        ActiveInteractionPrompt = CreateWidget<UUserWidget>(Player, InteractionPromptWidgetClass);
         if (!ActiveInteractionPrompt)
         {
             return;

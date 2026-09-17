@@ -21,6 +21,7 @@ public:
     virtual float GetCombatClassSelectionTimeRemaining() const override;
     void RequestTrainingClassSelection();
 protected:
+    virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
 private:
     UFUNCTION(Server, Reliable)

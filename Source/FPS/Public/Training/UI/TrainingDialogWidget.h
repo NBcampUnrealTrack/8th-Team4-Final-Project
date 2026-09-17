@@ -210,7 +210,7 @@ private:
 
     ETrainingMode SelectedMode = ETrainingMode::TargetAcquisition;
     ETrainingDistancePreset SelectedPreset = ETrainingDistancePreset::TwentyMeters;
-    float SelectedCustomMeters = 25.0f;
+    float SelectedCustomMeters = 0.0f;
 
     void SetRequestPending(bool bPending);
     TWeakObjectPtr<UTrainingPlayerComponent> Bridge;

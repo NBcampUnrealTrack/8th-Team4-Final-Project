@@ -4,9 +4,9 @@
 #include "Engine/EngineTypes.h"
 #include "GameplayTagContainer.h"
 #include "Components/ActorComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "ShooterInteractionComponent.generated.h"
 
-class UUserWidget;
 
 UCLASS(ClassGroup = (Input), meta = (BlueprintSpawnableComponent))
 class FPS_API UShooterInteractionComponent : public UActorComponent
@@ -25,6 +25,8 @@ public:
     bool CanReachInteractable(const AActor* Candidate) const;
     void RegisterProximityInteractable(AActor* Candidate);
     void UnregisterProximityInteractable(AActor* Candidate);
+    void SetInteractionPromptWidgetClass(TSubclassOf<UUserWidget> InWidgetClass);
+    void SetInteractionPromptZOrder(int32 InZOrder);
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Interaction", meta = (ClampMin = "50.0"))
     float InteractionDistanceCentimeters = 300.0f;
@@ -38,6 +40,9 @@ public:
     UPROPERTY(EditDefaultsOnly, Category = "Interaction|Prompt", meta = (ClampMin = "0"))
     int32 InteractionPromptZOrder = 25;
 
+    UPROPERTY(EditDefaultsOnly, Category = "Interaction|Prompt", meta = (ClampMin = "0.01", Units = "s"))
+    float InteractionPromptRefreshIntervalSeconds = 0.05f;
+
     UPROPERTY(EditDefaultsOnly, Category = "Interaction|Prompt")
     TArray<FGameplayTag> InteractionPromptBlockingLayers;
 
@@ -46,6 +51,7 @@ private:
     AActor* FindProximityInteractable() const;
     AActor* FindBestInteractable() const;
     bool IsInteractionPromptBlockedByUI() const;
+    void UpdatePromptTickEnabled();
     void RefreshInteractionPrompt();
     void ShowInteractionPrompt();
     void HideInteractionPrompt();

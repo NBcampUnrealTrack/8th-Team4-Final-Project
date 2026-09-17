@@ -1,6 +1,7 @@
 #include "Training/UI/TrainingDialogWidget.h"
 
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/TrainingSettings.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
 #include "Components/Image.h"
@@ -14,6 +15,9 @@
 UTrainingDialogWidget::UTrainingDialogWidget()
 {
     InputConfig = EShooterWidgetInputMode::Menu;
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    SelectedCustomMeters = FMath::Clamp(Settings->DefaultCustomDistanceMeters,
+        Settings->GetMinDistanceMeters(), Settings->GetMaxDistanceMeters());
 }
 
 void UTrainingDialogWidget::InitializeDialog(UTrainingPlayerComponent& InBridge,
@@ -168,6 +172,7 @@ void UTrainingDialogWidget::NativeConstruct()
     {
         return;
     }
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     if (RequestId == 0)
     {
         DialogKind = GeneratedDialogKind;
@@ -179,9 +184,9 @@ void UTrainingDialogWidget::NativeConstruct()
     {
         TargetDescription->SetText(FText::Format(LOCTEXT("LinearTargetDescription",
             "Stationary targets. Spawn interval: {0}s to {1}s.\nOne hit removes a target. {2}-second session."),
-            FText::AsNumber(TrainingRules::TargetIntervalSeconds),
-            FText::AsNumber(TrainingRules::TargetMinIntervalSeconds),
-            FText::AsNumber(TrainingRules::TargetDurationSeconds)));
+            FText::AsNumber(Settings->TargetSpawnIntervalSeconds),
+            FText::AsNumber(Settings->TargetMinSpawnIntervalSeconds),
+            FText::AsNumber(Settings->TargetDurationSeconds)));
     }
     if (UTextBlock* TargetFooter = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Foot"))))
     {
@@ -189,7 +194,7 @@ void UTrainingDialogWidget::NativeConstruct()
     }
     if (Spin_CustomMeters)
     {
-        SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters);
+        SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), Settings->GetMinDistanceMeters(), Settings->GetMaxDistanceMeters());
     }
     RefreshControls();
 }
@@ -274,6 +279,7 @@ void UTrainingDialogWidget::RefreshControls()
     {
         return;
     }
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     RefreshAugmentSummary();
     RefreshClassControls();
     if (Txt_Prompt) Txt_Prompt->SetText(GetPromptText());
@@ -332,14 +338,14 @@ void UTrainingDialogWidget::RefreshControls()
         Txt_SessionHint->SetText(SelectedMode == ETrainingMode::TargetAcquisition
             ? FText::Format(LOCTEXT("TargetHintLinearSpawn",
                 "{0}s countdown  /  {1}s session  /  Spawns: {2}s to {3}s"),
-                FText::AsNumber(TrainingRules::CountdownSeconds),
-                FText::AsNumber(TrainingRules::TargetDurationSeconds),
-                FText::AsNumber(TrainingRules::TargetIntervalSeconds),
-                FText::AsNumber(TrainingRules::TargetMinIntervalSeconds))
+                FText::AsNumber(Settings->GetCountdownSeconds()),
+                FText::AsNumber(Settings->TargetDurationSeconds),
+                FText::AsNumber(Settings->TargetSpawnIntervalSeconds),
+                FText::AsNumber(Settings->TargetMinSpawnIntervalSeconds))
             : FText::Format(LOCTEXT("CombatHint", "{0}s countdown  /  One AI every {1}s  /  Max {2} alive"),
-                FText::AsNumber(TrainingRules::CountdownSeconds),
-                FText::AsNumber(TrainingRules::CombatIntervalSeconds),
-                FText::AsNumber(TrainingRules::MaxLivingCombatAI)));
+                FText::AsNumber(Settings->GetCountdownSeconds()),
+                FText::AsNumber(Settings->CombatSpawnIntervalSeconds),
+                FText::AsNumber(Settings->MaxLivingCombatAI)));
     }
 }
 
@@ -347,8 +353,9 @@ void UTrainingDialogWidget::HandleGeneratedPrimary()
 {
     if (DialogKind == ETrainingDialogKind::SelectMode)
     {
+        const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
         const float CustomValue = Spin_CustomMeters ? Spin_CustomMeters->GetValue() : SelectedCustomMeters;
-        StartSelectedMode(SelectedMode, SelectedPreset, FMath::Clamp(CustomValue, TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters));
+        StartSelectedMode(SelectedMode, SelectedPreset, FMath::Clamp(CustomValue, Settings->GetMinDistanceMeters(), Settings->GetMaxDistanceMeters()));
     }
     else
     {
@@ -384,8 +391,9 @@ void UTrainingDialogWidget::HandleGeneratedCustom() { SelectDistance(ETrainingDi
 
 void UTrainingDialogWidget::HandleGeneratedCustomValue(const float NewValue)
 {
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     if (bRequestPending || !FMath::IsFinite(NewValue)) return;
-    SelectedCustomMeters = FMath::Clamp(NewValue, TrainingRules::MinDistanceMeters, TrainingRules::MaxDistanceMeters);
+    SelectedCustomMeters = FMath::Clamp(NewValue, Settings->GetMinDistanceMeters(), Settings->GetMaxDistanceMeters());
     RefreshControls();
 }
 
