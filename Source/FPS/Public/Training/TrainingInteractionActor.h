@@ -6,9 +6,11 @@
 #include "Training/TrainingTypes.h"
 #include "TrainingInteractionActor.generated.h"
 
+class APlayerController;
 class ATrainingArena;
 class USoundBase;
 class UBoxComponent;
+class UPrimitiveComponent;
 class UStaticMeshComponent;
 
 UCLASS()
@@ -18,6 +20,7 @@ class FPS_API ATrainingInteractionActor : public AActor, public IRogueInteractab
 
 public:
     ATrainingInteractionActor();
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual bool CanInteract(const APlayerController& RequestingPlayer) const override;
     virtual void Interact(APlayerController& RequestingPlayer) override;
 
@@ -38,4 +41,16 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training")
     TObjectPtr<UStaticMeshComponent> DisplayMesh;
+
+protected:
+    UFUNCTION()
+    void HandleInteractionBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+    UFUNCTION()
+    void HandleInteractionEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+        UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+private:
+    TWeakObjectPtr<APlayerController> LocalOverlappingController;
 };

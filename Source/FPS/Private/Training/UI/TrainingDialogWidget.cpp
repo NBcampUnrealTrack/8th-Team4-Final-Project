@@ -63,6 +63,10 @@ FText UTrainingDialogWidget::GetPromptText() const
 void UTrainingDialogWidget::SetRequestPending(const bool bPending)
 {
     bRequestPending = bPending;
+    if (Btn_ReturnStart)
+    {
+        Btn_ReturnStart->SetIsEnabled(!bPending);
+    }
     if (bAutoBindGeneratedUI && bPending && Txt_Error)
     {
         Txt_Error->SetText(FText::GetEmpty());
@@ -117,6 +121,18 @@ void UTrainingDialogWidget::CancelDialog()
     }
 }
 
+void UTrainingDialogWidget::ReturnToStartPosition()
+{
+    if (bRequestPending || bChoosingAugments || !Bridge.IsValid()
+        || DialogKind != ETrainingDialogKind::SelectMode)
+    {
+        return;
+    }
+
+    SetRequestPending(true);
+    Bridge->ReturnToPreTrainingPosition(RequestId);
+}
+
 void UTrainingDialogWidget::NativeDestruct()
 {
     if (AugmentSelection) { AugmentSelection->EndSelection(); }
@@ -138,6 +154,16 @@ void UTrainingDialogWidget::NativeConstruct()
 {
     Super::NativeConstruct();
     if (Bridge.IsValid()) { Bridge->ApplyButtonSounds(*this); }
+
+    if (!Btn_ReturnStart)
+    {
+        Btn_ReturnStart = Cast<UButton>(GetWidgetFromName(TEXT("Btn_ReturnStart")));
+    }
+    if (Btn_ReturnStart)
+    {
+        Btn_ReturnStart->OnClicked.AddUniqueDynamic(this, &ThisClass::ReturnToStartPosition);
+    }
+
     if (!bAutoBindGeneratedUI)
     {
         return;
@@ -214,6 +240,11 @@ void UTrainingDialogWidget::BindControls()
 
 void UTrainingDialogWidget::UnbindControls()
 {
+    if (Btn_ReturnStart)
+    {
+        Btn_ReturnStart->OnClicked.RemoveDynamic(this, &ThisClass::ReturnToStartPosition);
+    }
+
     if (!bAutoBindGeneratedUI)
     {
         return;
@@ -250,7 +281,7 @@ void UTrainingDialogWidget::RefreshControls()
     {
         Txt_Primary->SetText(bRequestPending ? LOCTEXT("Requesting", "Requesting...") : PrimaryActionText);
     }
-    UButton* Buttons[] = { Btn_Primary.Get(), Btn_Cancel.Get(), Btn_Close.Get(),
+    UButton* Buttons[] = { Btn_Primary.Get(), Btn_ReturnStart.Get(), Btn_Cancel.Get(), Btn_Close.Get(),
         Btn_ModeTarget.Get(), Btn_ModeCombat.Get(), Btn_Distance10.Get(),
         Btn_Distance20.Get(), Btn_Distance30.Get(), Btn_DistanceCustom.Get(), Btn_Augments.Get() };
     for (UButton* ChoiceButton : Buttons)

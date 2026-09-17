@@ -41,6 +41,7 @@ class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 public:
 	UDominationClassSelectScreen();
 	void NotifySelectionFailed(const FText& Reason);
+	void SetAllowActiveClassReselection(bool bAllow);
 
 	UTexture2D* GetCachedClassIcon(EDominationCombatClass CombatClass) const;
 	UTexture2D* GetCachedClassPortrait(EDominationCombatClass CombatClass) const;
@@ -74,6 +75,8 @@ private:
 	void RefreshLockInButton();
 	void RefreshTimerText();
 	void RefreshClassInfoPanel();
+	void RefreshSelectionModePresentation();
+	bool IsActiveClassReselectionMode() const;
 
 	// 팀원 슬롯 수명. PlayerArray를 주기적으로 훑어 자리를 맞춘다.
 	void ReconcileSlots();
@@ -160,5 +163,7 @@ private:
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;
+	bool bAllowActiveClassReselection = false;
+	EDominationCombatClass ActiveReselectionPreviewClass = EDominationCombatClass::Unselected;
 	FText SelectionFailure;
 };

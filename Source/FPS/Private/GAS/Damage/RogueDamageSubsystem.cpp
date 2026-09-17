@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/Damage/RogueDamageSubsystem.h"
 
@@ -9,6 +9,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
+#include "Tags/RogueActorTags.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
 
@@ -464,7 +465,8 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 					MarkerType = ERogueHitMarkerType::Shield;
 				}
 
-				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill);
+				const bool bPlayFeedbackSound = !Tgt->ActorHasTag(RogueActorTags::SuppressCombatFeedbackAudio);
+				SrcPC->ClientPlayHitMarker(MarkerType, bIsKill, bPlayFeedbackSound);
 			}
 		}
 	}

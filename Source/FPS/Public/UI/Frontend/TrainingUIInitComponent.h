@@ -14,6 +14,8 @@ class FPS_API UTrainingUIInitComponent : public UCombatUIInitComponent
 public:
     UTrainingUIInitComponent();
     virtual bool SupportsScoreboard() const override { return false; }
+    bool OpenClassSelectionForTraining();
+    void CloseClassSelectionForTraining();
 protected:
     virtual bool PrepareModeBindings() override;
     virtual bool CanInitializeCombatHUD(const ADominationPlayerState& ClassState) const override;

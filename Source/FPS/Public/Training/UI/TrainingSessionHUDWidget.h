@@ -8,6 +8,7 @@
 class UCanvasPanel;
 class UProgressBar;
 class UTextBlock;
+class UWidget;
 
 UCLASS(Blueprintable)
 class FPS_API UTrainingSessionHUDWidget : public UUserWidget
@@ -16,7 +17,9 @@ class FPS_API UTrainingSessionHUDWidget : public UUserWidget
 public:
     UTrainingSessionHUDWidget(const FObjectInitializer& ObjectInitializer);
     void StartSession(ETrainingMode Mode, double StartServerSeconds, float DurationSeconds);
+    void StartDamageOnlyOverlay();
     void PresentHit(int32 TotalKills, float Damage, bool bKilled, const FVector& WorldPosition);
+    void PresentDamage(float Damage, bool bKilled, const FVector& WorldPosition);
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
     float KillFadeInSeconds = 0.10f;
@@ -49,6 +52,7 @@ private:
     void ApplyKillFeedbackAppearance();
     void ResetKillFeedback();
 
+    UPROPERTY(Transient) TObjectPtr<UWidget> SessionInfoContent;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Mode;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Timer;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_TimerLabel;

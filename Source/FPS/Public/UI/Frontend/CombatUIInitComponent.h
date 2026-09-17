@@ -60,6 +60,9 @@ protected:
         PURE_VIRTUAL(UCombatUIInitComponent::IsAugmentModeActive, return false;);
     virtual void OnCombatHUDCreated(UShooterPlayerHUD*) {}
     virtual void OnClassSelectionPresented() {}
+    void PresentClassSelectionScreen();
+    void RemoveClassSelectionScreen();
+    UDominationClassSelectScreen* GetClassSelectionScreen() const { return ClassSelectionWidgetInstance.Get(); }
     virtual bool IsAugmentPresentationAllowed() const override;
     virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) override;
     virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) override;
@@ -87,8 +90,6 @@ private:
     void BindModalContainer();
     void UnbindModalContainer();
     UCommonActivatableWidgetContainerBase* GetModalContainer() const;
-    void PresentClassSelectionScreen();
-    void RemoveClassSelectionScreen();
     void RemoveCombatHUD();
     void ScheduleInitializationRetry();
     void ClearInitializationRetry();

@@ -10,6 +10,7 @@
 class APlayerController;
 class UAugmentInventoryComponent;
 class ATrainingInteractionActor;
+class ATrainingArena;
 class UTrainingDialogWidget;
 class UTrainingStartFeedbackWidget;
 class UTrainingSessionHUDWidget;
@@ -31,6 +32,7 @@ public:
     void OpenDialogFor(ATrainingInteractionActor& Interactable);
     void SubmitConfirmation(int32 RequestId);
     void SubmitMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
+    void ReturnToPreTrainingPosition(int32 RequestId);
     void SubmitAugments(int32 RequestId, const TArray<FPrimaryAssetId>& Selection);
     void SubmitCombatClass(int32 RequestId, EDominationCombatClass RequestedClass);
     bool GetAugmentAvailabilityTags(FGameplayTagContainer& OutTags) const;
@@ -39,6 +41,7 @@ public:
     void NotifySessionPhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds,
         ETrainingMode Mode, float DurationSeconds);
     void NotifySessionHit(int32 SessionId, int32 Kills, float Damage, bool bKilled, const FVector& WorldPosition);
+    void NotifyTrainingDamage(float Damage, bool bKilled, const FVector& WorldPosition);
     void NotifySessionFinished(const FTrainingSessionResult& Result);
     void NotifyBotSound(int32 SessionId, USoundBase* Sound, USoundAttenuation* Attenuation,
         const FVector& WorldPosition, float Volume);
@@ -93,6 +96,7 @@ private:
     void ClearPendingRequest();
     void CloseActiveDialog();
     void ClearSessionFeedback();
+    void ClearTrainingDamageFeedback();
     void CloseResults(bool bPlayCloseSound = false);
     void HandleWorldLeaving(UWorld* DepartingWorld);
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
@@ -112,6 +116,9 @@ private:
     void ClientSessionHit(int32 SessionId, int32 Kills, float Damage, bool bKilled, FVector WorldPosition);
 
     UFUNCTION(Client, Reliable)
+    void ClientTrainingDamage(float Damage, bool bKilled, FVector WorldPosition);
+
+    UFUNCTION(Client, Reliable)
     void ClientSessionFinished(const FTrainingSessionResult& Result);
 
     UFUNCTION(Client, Reliable)
@@ -126,6 +133,9 @@ private:
 
     UFUNCTION(Server, Reliable)
     void ServerStartMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
+
+    UFUNCTION(Server, Reliable)
+    void ServerReturnToPreTrainingPosition(int32 RequestId);
 
     UFUNCTION(Server, Reliable)
     void ServerApplyAugments(int32 RequestId, const TArray<FPrimaryAssetId>& Selection);
@@ -151,6 +161,9 @@ private:
     TObjectPtr<UTrainingSessionHUDWidget> SessionHUDWidget;
 
     UPROPERTY(Transient)
+    TObjectPtr<UTrainingSessionHUDWidget> TrainingDamageHUDWidget;
+
+    UPROPERTY(Transient)
     TObjectPtr<USoundAttenuation> DefaultBotAttenuation;
 
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
@@ -166,6 +179,12 @@ private:
     int32 PendingRequestId = 0;
     int32 RequestSequence = 0;
     int32 PendingSessionId = 0;
+
+    TWeakObjectPtr<ATrainingArena> ReturnArena;
+    FTransform PreTrainingTransform = FTransform::Identity;
+    FRotator PreTrainingControlRotation = FRotator::ZeroRotator;
+    bool bHasPreTrainingTransform = false;
+
     FDelegateHandle WorldTearDownHandle;
     FDelegateHandle SeamlessTravelHandle;
 };

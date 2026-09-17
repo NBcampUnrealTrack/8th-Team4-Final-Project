@@ -19,6 +19,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Training|Class")
     virtual void SetPreviewCombatClass(EDominationCombatClass RequestedClass) override;
     virtual float GetCombatClassSelectionTimeRemaining() const override;
+    void RequestTrainingClassSelection();
 protected:
     virtual void SetupInputComponent() override;
 private:
@@ -28,6 +29,10 @@ private:
     void ServerSetPreviewCombatClass(EDominationCombatClass RequestedClass);
     UFUNCTION(Client, Reliable)
     void ClientCombatClassSelectionFailed(const FText& Reason);
+    UFUNCTION(Client, Reliable)
+    void ClientOpenTrainingClassSelection();
+    UFUNCTION(Client, Reliable)
+    void ClientTrainingClassSelectionSucceeded();
     void Input_ToggleAugmentSelect();
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training|UI", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UTrainingUIInitComponent> UIInitComponent;

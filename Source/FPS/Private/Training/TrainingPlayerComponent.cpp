@@ -144,6 +144,11 @@ void UTrainingPlayerComponent::SubmitMode(const int32 RequestId, const ETraining
     ServerStartMode(RequestId, Mode, Preset, CustomMeters);
 }
 
+void UTrainingPlayerComponent::ReturnToPreTrainingPosition(const int32 RequestId)
+{
+    ServerReturnToPreTrainingPosition(RequestId);
+}
+
 bool UTrainingPlayerComponent::ValidatePendingRequest(const int32 RequestId, FText& OutFailure) const
 {
     const UShooterInteractionComponent* Interaction = GetOwner()->FindComponentByClass<UShooterInteractionComponent>();
@@ -177,10 +182,17 @@ void UTrainingPlayerComponent::ServerConfirm_Implementation(const int32 RequestI
         }
         else if (APawn* ParticipantPawn = ParticipantPlayer->GetPawn())
         {
+            const FTransform PreviousTransform = ParticipantPawn->GetActorTransform();
+            const FRotator PreviousControlRotation = ParticipantPlayer->GetControlRotation();
             const FTransform EntryTransform = RequestedArena->GetEntryTransform();
             bSuccess = ParticipantPawn->TeleportTo(EntryTransform.GetLocation(), EntryTransform.Rotator());
             if (bSuccess)
             {
+                ReturnArena = RequestedArena;
+                PreTrainingTransform = PreviousTransform;
+                PreTrainingControlRotation = PreviousControlRotation;
+                bHasPreTrainingTransform = true;
+
                 if (ACharacter* ParticipantCharacter = Cast<ACharacter>(ParticipantPawn))
                 {
                     ParticipantCharacter->GetCharacterMovement()->StopMovementImmediately();
@@ -235,6 +247,74 @@ void UTrainingPlayerComponent::ServerStartMode_Implementation(const int32 Reques
     {
         Failure = LOCTEXT("InvalidSelection", "This mode selection is no longer valid.");
     }
+    ClientRequestResult(RequestId, bSuccess, Failure);
+}
+
+
+void UTrainingPlayerComponent::ServerReturnToPreTrainingPosition_Implementation(const int32 RequestId)
+{
+    FText Failure;
+    if (!ValidatePendingRequest(RequestId, Failure))
+    {
+        ClientRequestResult(RequestId, false, Failure);
+        return;
+    }
+
+    APlayerController* ParticipantPlayer = GetParticipantController();
+    ATrainingArena* RequestedArena = PendingInteractable.IsValid() ? PendingInteractable->Arena.Get() : nullptr;
+    UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
+    bool bSuccess = false;
+
+    if (PendingKind != ETrainingDialogKind::SelectMode)
+    {
+        Failure = LOCTEXT("ReturnStartWrongDialog", "Return to start is only available from the training mode selection screen.");
+    }
+    else if (!ParticipantPlayer || !RequestedArena || !Sessions)
+    {
+        Failure = LOCTEXT("ReturnStartUnavailable", "The training return position is no longer available.");
+    }
+    else if (Sessions->GetState() != ETrainingSessionState::Idle)
+    {
+        Failure = LOCTEXT("ReturnStartSessionActive", "End the active training session before returning to the start position.");
+    }
+    else if (!bHasPreTrainingTransform || ReturnArena.Get() != RequestedArena)
+    {
+        Failure = LOCTEXT("ReturnStartMissing", "No saved pre-training position is available. Leave and enter the Training Arena again.");
+    }
+    else if (APawn* ParticipantPawn = ParticipantPlayer->GetPawn())
+    {
+        bSuccess = ParticipantPawn->TeleportTo(
+            PreTrainingTransform.GetLocation(), PreTrainingTransform.Rotator());
+        if (bSuccess)
+        {
+            if (ACharacter* ParticipantCharacter = Cast<ACharacter>(ParticipantPawn))
+            {
+                ParticipantCharacter->GetCharacterMovement()->StopMovementImmediately();
+            }
+            ParticipantPlayer->SetControlRotation(PreTrainingControlRotation);
+            ParticipantPlayer->ClientSetRotation(PreTrainingControlRotation, true);
+            ParticipantPawn->ForceNetUpdate();
+
+            ReturnArena.Reset();
+            PreTrainingTransform = FTransform::Identity;
+            PreTrainingControlRotation = FRotator::ZeroRotator;
+            bHasPreTrainingTransform = false;
+        }
+        else
+        {
+            Failure = LOCTEXT("ReturnStartBlocked", "The saved pre-training position is blocked.");
+        }
+    }
+
+    if (bSuccess)
+    {
+        ClearPendingRequest();
+    }
+    else if (Failure.IsEmpty())
+    {
+        Failure = LOCTEXT("ReturnStartFailed", "Could not return to the saved pre-training position.");
+    }
+
     ClientRequestResult(RequestId, bSuccess, Failure);
 }
 
@@ -360,6 +440,15 @@ void UTrainingPlayerComponent::ClearSessionFeedback()
     FeedbackSessionId = 0;
 }
 
+void UTrainingPlayerComponent::ClearTrainingDamageFeedback()
+{
+    if (TrainingDamageHUDWidget)
+    {
+        TrainingDamageHUDWidget->RemoveFromParent();
+        TrainingDamageHUDWidget = nullptr;
+    }
+}
+
 void UTrainingPlayerComponent::ClearPendingRequest()
 {
     PendingInteractable.Reset();
@@ -439,7 +528,12 @@ void UTrainingPlayerComponent::HandleWorldLeaving(UWorld* DepartingWorld)
     CloseActiveDialog();
     CloseResults();
     ClearSessionFeedback();
+    ClearTrainingDamageFeedback();
     ClearPendingRequest();
+    ReturnArena.Reset();
+    PreTrainingTransform = FTransform::Identity;
+    PreTrainingControlRotation = FRotator::ZeroRotator;
+    bHasPreTrainingTransform = false;
     LastStoppedSessionId = 0;
 }
 
@@ -471,6 +565,48 @@ void UTrainingPlayerComponent::ClientSessionHit_Implementation(const int32 Sessi
     {
         SessionHUDWidget->PresentHit(Kills, Damage, bKilled, WorldPosition);
     }
+}
+
+void UTrainingPlayerComponent::NotifyTrainingDamage(const float Damage, const bool bKilled,
+    const FVector& WorldPosition)
+{
+    if (GetOwner()->HasAuthority() && FMath::IsFinite(Damage) && Damage > 0.0f)
+    {
+        ClientTrainingDamage(Damage, bKilled, WorldPosition);
+    }
+}
+
+void UTrainingPlayerComponent::ClientTrainingDamage_Implementation(const float Damage, const bool bKilled,
+    const FVector WorldPosition)
+{
+    APlayerController* LocalController = GetParticipantController();
+    if (!LocalController || !LocalController->IsLocalController() || !FMath::IsFinite(Damage) || Damage <= 0.0f)
+    {
+        return;
+    }
+
+    if (!TrainingDamageHUDWidget)
+    {
+        UClass* HUDClass = SessionHUDWidgetClass
+            ? SessionHUDWidgetClass.Get() : UTrainingSessionHUDWidget::StaticClass();
+        TrainingDamageHUDWidget = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDClass);
+        if (TrainingDamageHUDWidget)
+        {
+            TrainingDamageHUDWidget->AddToPlayerScreen(18);
+            TrainingDamageHUDWidget->StartDamageOnlyOverlay();
+        }
+    }
+
+    if (!TrainingDamageHUDWidget)
+    {
+        return;
+    }
+
+    if (!TrainingDamageHUDWidget->IsInViewport())
+    {
+        TrainingDamageHUDWidget->AddToPlayerScreen(18);
+    }
+    TrainingDamageHUDWidget->PresentDamage(Damage, bKilled, WorldPosition);
 }
 
 void UTrainingPlayerComponent::NotifyBotSound(const int32 SessionId, USoundBase* Sound,

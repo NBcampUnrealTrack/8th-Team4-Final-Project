@@ -849,7 +849,7 @@ void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 	HideLoadingScreen();
 }
 
-void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill)
+void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill, const bool bPlaySound)
 {
 	OnHitMarker.Broadcast(Type, bKill);
 
@@ -884,7 +884,7 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 		}
 	}
 
-	if (Sound)
+	if (bPlaySound && Sound)
 	{
 		UGameplayStatics::PlaySound2D(this, Sound);
 	}

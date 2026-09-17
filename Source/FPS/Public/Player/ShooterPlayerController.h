@@ -148,7 +148,7 @@ public:
 
 	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커(시각+효과음)를 재생.
 	UFUNCTION(Client, Reliable)
-	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill);
+	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill, bool bPlaySound);
 
 	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드 + 중앙 킬 이펙트(OnKillEffect)를 재생.
 	// KillStreak: 이번 킬이 몇 연속킬인지(1=일반 킬, 2=더블킬, 3=트리플킬, 4 이상=쿼드라킬).

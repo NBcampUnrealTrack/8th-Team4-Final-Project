@@ -1,14 +1,54 @@
 #include "Input/ShooterInteractionComponent.h"
 
+#include "CommonActivatableWidget.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/RogueInteractable.h"
 #include "Player/ShooterPlayerController.h"
+#include "Blueprint/UserWidget.h"
+#include "Tags/UITags.h"
+#include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UObject/SoftObjectPath.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 UShooterInteractionComponent::UShooterInteractionComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bCanEverTick = true;
+    PrimaryComponentTick.bStartWithTickEnabled = true;
     SetIsReplicatedByDefault(true);
+
+    InteractionPromptBlockingLayers = {
+        UITags::UI_Layer_Menu,
+        UITags::UI_Layer_Modal
+    };
+}
+
+void UShooterInteractionComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    const APlayerController* Player = Cast<APlayerController>(GetOwner());
+    SetComponentTickEnabled(Player && Player->IsLocalController());
+}
+
+void UShooterInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (ActiveInteractionPrompt)
+    {
+        ActiveInteractionPrompt->RemoveFromParent();
+        ActiveInteractionPrompt = nullptr;
+    }
+    ProximityInteractables.Reset();
+    Super::EndPlay(EndPlayReason);
+}
+
+void UShooterInteractionComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
+    FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    RefreshInteractionPrompt();
 }
 
 AActor* UShooterInteractionComponent::FindInteractableInView() const
@@ -18,9 +58,11 @@ AActor* UShooterInteractionComponent::FindInteractableInView() const
     {
         return nullptr;
     }
+
     FVector ViewOrigin;
     FRotator ViewRotation;
     Player->GetPlayerViewPoint(ViewOrigin, ViewRotation);
+
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ShooterInteraction), false, Player->GetPawn());
     FHitResult Hit;
     if (!GetWorld()->LineTraceSingleByChannel(Hit, ViewOrigin,
@@ -29,20 +71,116 @@ AActor* UShooterInteractionComponent::FindInteractableInView() const
     {
         return nullptr;
     }
+
     AActor* Candidate = Hit.GetActor();
     const IRogueInteractable* Interactable = Cast<IRogueInteractable>(Candidate);
     return Interactable && Interactable->CanInteract(*Player) ? Candidate : nullptr;
 }
 
+AActor* UShooterInteractionComponent::FindProximityInteractable() const
+{
+    const AShooterPlayerController* Player = Cast<AShooterPlayerController>(GetOwner());
+    const APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+    if (!Pawn)
+    {
+        return nullptr;
+    }
+
+    AActor* BestCandidate = nullptr;
+    double BestDistanceSquared = TNumericLimits<double>::Max();
+    for (const TWeakObjectPtr<AActor>& CandidatePtr : ProximityInteractables)
+    {
+        AActor* Candidate = CandidatePtr.Get();
+        if (!Candidate || !CanReachInteractable(Candidate))
+        {
+            continue;
+        }
+
+        const double DistanceSquared = FVector::DistSquared(Pawn->GetActorLocation(), Candidate->GetActorLocation());
+        if (DistanceSquared < BestDistanceSquared)
+        {
+            BestDistanceSquared = DistanceSquared;
+            BestCandidate = Candidate;
+        }
+    }
+    return BestCandidate;
+}
+
+AActor* UShooterInteractionComponent::FindBestInteractable() const
+{
+    if (AActor* Viewed = FindInteractableInView())
+    {
+        return Viewed;
+    }
+    return FindProximityInteractable();
+}
+
+bool UShooterInteractionComponent::IsInteractionPromptBlockedByUI() const
+{
+    const APlayerController* Player = Cast<APlayerController>(GetOwner());
+    UGameInstance* GameInstance = Player ? Player->GetGameInstance() : nullptr;
+    UShooterUIManagerSubsystem* UIManager = GameInstance
+        ? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+        : nullptr;
+    UShooterPrimaryGameLayout* RootLayout = UIManager ? UIManager->GetRootLayout() : nullptr;
+    if (!IsValid(RootLayout))
+    {
+        return false;
+    }
+
+    for (const FGameplayTag& LayerTag : InteractionPromptBlockingLayers)
+    {
+        if (!LayerTag.IsValid())
+        {
+            continue;
+        }
+
+        UCommonActivatableWidgetContainerBase* Layer = RootLayout->GetLayerContainer(LayerTag);
+        if (IsValid(Layer) && IsValid(Layer->GetActiveWidget()))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool UShooterInteractionComponent::TryInteract()
 {
-    AActor* Candidate = FindInteractableInView();
+    AActor* Candidate = FindBestInteractable();
     if (!Candidate)
     {
         return false;
     }
+
+    HideInteractionPrompt();
     ServerInteract(Candidate);
     return true;
+}
+
+void UShooterInteractionComponent::RegisterProximityInteractable(AActor* Candidate)
+{
+    if (!IsValid(Candidate))
+    {
+        return;
+    }
+
+    ProximityInteractables.RemoveAll([](const TWeakObjectPtr<AActor>& Entry)
+    {
+        return !Entry.IsValid();
+    });
+    ProximityInteractables.AddUnique(TWeakObjectPtr<AActor>(Candidate));
+    RefreshInteractionPrompt();
+}
+
+void UShooterInteractionComponent::UnregisterProximityInteractable(AActor* Candidate)
+{
+    ProximityInteractables.RemoveAll([Candidate](const TWeakObjectPtr<AActor>& Entry)
+    {
+        return !Entry.IsValid() || Entry.Get() == Candidate;
+    });
+
+    RefreshInteractionPrompt();
 }
 
 bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate) const
@@ -64,6 +202,7 @@ bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate)
     {
         return false;
     }
+
     FHitResult Hit;
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ShooterInteractionConfirm), false, Player->GetPawn());
     const bool bBlocked = GetWorld()->LineTraceSingleByChannel(
@@ -71,9 +210,62 @@ bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate)
     return !bBlocked || Hit.GetActor() == Candidate;
 }
 
+void UShooterInteractionComponent::RefreshInteractionPrompt()
+{
+    const APlayerController* Player = Cast<APlayerController>(GetOwner());
+    if (!Player || !Player->IsLocalController() || IsInteractionPromptBlockedByUI() || !FindBestInteractable())
+    {
+        HideInteractionPrompt();
+        return;
+    }
+
+    ShowInteractionPrompt();
+}
+
+void UShooterInteractionComponent::ShowInteractionPrompt()
+{
+    APlayerController* Player = Cast<APlayerController>(GetOwner());
+    if (!Player || !Player->IsLocalController())
+    {
+        return;
+    }
+
+    if (!ActiveInteractionPrompt)
+    {
+        TSubclassOf<UUserWidget> PromptClass = InteractionPromptWidgetClass;
+        if (!PromptClass)
+        {
+            static const FSoftClassPath DefaultPromptPath(
+                TEXT("/Game/UI/Training/WBP_TrainingInteractionPrompt.WBP_TrainingInteractionPrompt_C"));
+            PromptClass = DefaultPromptPath.TryLoadClass<UUserWidget>();
+        }
+
+        if (!PromptClass)
+        {
+            return;
+        }
+
+        ActiveInteractionPrompt = CreateWidget<UUserWidget>(Player, PromptClass);
+        if (!ActiveInteractionPrompt)
+        {
+            return;
+        }
+        ActiveInteractionPrompt->AddToViewport(InteractionPromptZOrder);
+    }
+
+    ActiveInteractionPrompt->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UShooterInteractionComponent::HideInteractionPrompt()
+{
+    if (ActiveInteractionPrompt)
+    {
+        ActiveInteractionPrompt->SetVisibility(ESlateVisibility::Collapsed);
+    }
+}
+
 void UShooterInteractionComponent::ServerInteract_Implementation(AActor* Candidate)
 {
-    // Recheck authority-side reach and occlusion, rather than trusting the client's hit result.
     if (CanReachInteractable(Candidate))
     {
         IRogueInteractable* Interactable = Cast<IRogueInteractable>(Candidate);

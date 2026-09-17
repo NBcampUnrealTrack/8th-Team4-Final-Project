@@ -45,6 +45,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Training")
     void CancelDialog();
 
+    UFUNCTION(BlueprintCallable, Category = "Training")
+    void ReturnToStartPosition();
+
     UFUNCTION(BlueprintPure, Category = "Training")
     FText GetPromptText() const;
 
@@ -87,6 +90,9 @@ protected:
 private:
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Primary;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UButton> Btn_ReturnStart;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Cancel;

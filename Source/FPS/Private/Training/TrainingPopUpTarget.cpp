@@ -1,15 +1,48 @@
 #include "Training/TrainingPopUpTarget.h"
 
+#include "AbilitySystemComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "GAS/RogueAugmentAttributeSet.h"
+#include "GAS/RogueVitalAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
+#include "Tags/RogueActorTags.h"
 #include "TimerManager.h"
+#include "Training/TrainingPlayerComponent.h"
+
+namespace
+{
+APlayerController* ResolveDamageInstigatorController(const UObject* InstigatorObject)
+{
+    const AActor* InstigatorActor = Cast<AActor>(InstigatorObject);
+    if (!IsValid(InstigatorActor))
+    {
+        return nullptr;
+    }
+
+    if (const APlayerController* PlayerController = Cast<APlayerController>(InstigatorActor))
+    {
+        return const_cast<APlayerController*>(PlayerController);
+    }
+
+    if (const APawn* Pawn = Cast<APawn>(InstigatorActor))
+    {
+        return Cast<APlayerController>(Pawn->GetController());
+    }
+
+    return Cast<APlayerController>(InstigatorActor->GetOwner());
+}
+}
 
 ATrainingPopUpTarget::ATrainingPopUpTarget()
 {
+    Tags.AddUnique(RogueActorTags::SuppressCombatFeedbackAudio);
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
     bReplicates = true;
@@ -42,6 +75,12 @@ ATrainingPopUpTarget::ATrainingPopUpTarget()
     HitBox->SetGenerateOverlapEvents(false);
     HitBox->SetCanEverAffectNavigation(false);
     ConfigureHitBoxCollision();
+
+    AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
+    AbilitySystem->SetIsReplicated(true);
+    AbilitySystem->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+    VitalSet = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
+    AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
 }
 
 void ATrainingPopUpTarget::OnConstruction(const FTransform& Transform)
@@ -58,16 +97,122 @@ void ATrainingPopUpTarget::BeginPlay()
 
     ConfigureTargetComponents();
     ConfigureHitBoxCollision();
+
+    AbilitySystem->InitAbilityActorInfo(this, this);
+    if (HasAuthority())
+    {
+        InitializeHealth();
+        DamageTakenHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
+            FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
+            FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
+                this, &ThisClass::HandleDamageTaken));
+        OutOfHealthHandle = VitalSet->OnOutOfHealth.AddUObject(this, &ThisClass::HandleOutOfHealth);
+    }
+
     RaisedRotation = TargetPivot ? TargetPivot->GetRelativeRotation() : FRotator::ZeroRotator;
     MotionAlpha = TargetState == ETrainingPopUpTargetState::Down ? 1.0f : 0.0f;
     UpdateTargetRotation();
     OnRep_TargetState();
 }
 
+
+void ATrainingPopUpTarget::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(ResetTimer);
+
+    if (DamageTakenHandle.IsValid() && AbilitySystem)
+    {
+        AbilitySystem->RemoveGameplayEventTagContainerDelegate(
+            FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken), DamageTakenHandle);
+        DamageTakenHandle.Reset();
+    }
+    if (OutOfHealthHandle.IsValid() && VitalSet)
+    {
+        VitalSet->OnOutOfHealth.Remove(OutOfHealthHandle);
+        OutOfHealthHandle.Reset();
+    }
+
+    Super::EndPlay(EndPlayReason);
+}
+
 void ATrainingPopUpTarget::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ATrainingPopUpTarget, TargetState);
+}
+
+UAbilitySystemComponent* ATrainingPopUpTarget::GetAbilitySystemComponent() const
+{
+    return AbilitySystem;
+}
+
+float ATrainingPopUpTarget::GetCurrentHealth() const
+{
+    return VitalSet ? VitalSet->GetHealth() : 0.0f;
+}
+
+float ATrainingPopUpTarget::GetMaxHealth() const
+{
+    return VitalSet ? VitalSet->GetMaxHealth() : FMath::Max(1.0f, TargetMaxHealth);
+}
+
+void ATrainingPopUpTarget::InitializeHealth()
+{
+    if (!HasAuthority() || !AbilitySystem || !VitalSet)
+    {
+        return;
+    }
+
+    VitalSet->ClearDeathDeclared();
+    AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_IsDead, 0);
+    AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_Deployable, 1);
+
+    const float Health = FMath::Max(1.0f, TargetMaxHealth);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxHealthAttribute(), Health);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetHealthAttribute(), Health);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxShieldAttribute(), 0.0f);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetShieldAttribute(), 0.0f);
+}
+
+void ATrainingPopUpTarget::ResetHealthForNextCycle()
+{
+    InitializeHealth();
+}
+
+void ATrainingPopUpTarget::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
+    const FGameplayEffectContextHandle&)
+{
+    if (!HasAuthority() || VictimASC != AbilitySystem)
+    {
+        return;
+    }
+
+    AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_IsDead, 1);
+    KnockDown();
+}
+
+void ATrainingPopUpTarget::HandleDamageTaken(FGameplayTag, const FGameplayEventData* Payload)
+{
+    if (!HasAuthority() || !Payload)
+    {
+        return;
+    }
+
+    const float Damage = FMath::Max(0.0f, Payload->EventMagnitude);
+    if (Damage <= 0.0f)
+    {
+        return;
+    }
+
+    const bool bKilled = VitalSet && VitalSet->IsDeathDeclared();
+    if (APlayerController* PlayerController = ResolveDamageInstigatorController(Payload->Instigator.Get()))
+    {
+        if (UTrainingPlayerComponent* TrainingUI =
+            PlayerController->FindComponentByClass<UTrainingPlayerComponent>())
+        {
+            TrainingUI->NotifyTrainingDamage(Damage, bKilled, GetActorLocation());
+        }
+    }
 }
 
 void ATrainingPopUpTarget::HandleHitscanImpact(AActor*, const FVector& ImpactPoint, const FVector&)
@@ -78,7 +223,6 @@ void ATrainingPopUpTarget::HandleHitscanImpact(AActor*, const FVector& ImpactPoi
     }
 
     MulticastPlayHitSound(ImpactPoint);
-    KnockDown();
 }
 
 void ATrainingPopUpTarget::MulticastPlayHitSound_Implementation(const FVector_NetQuantize ImpactPoint)
@@ -115,6 +259,7 @@ void ATrainingPopUpTarget::ResetTarget()
     }
 
     GetWorldTimerManager().ClearTimer(ResetTimer);
+    ResetHealthForNextCycle();
 
     if (TargetState == ETrainingPopUpTargetState::Up)
     {
@@ -131,6 +276,7 @@ void ATrainingPopUpTarget::BeginRise()
 {
     if (HasAuthority())
     {
+        ResetHealthForNextCycle();
         SetTargetState(ETrainingPopUpTargetState::Rising);
     }
 }

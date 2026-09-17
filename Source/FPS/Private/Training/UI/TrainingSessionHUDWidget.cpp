@@ -22,6 +22,7 @@ TSharedRef<SWidget> UTrainingSessionHUDWidget::RebuildWidget()
     if (!WidgetTree) { WidgetTree = NewObject<UWidgetTree>(this, TEXT("WidgetTree"), RF_Transient); }
     if (!WidgetTree->RootWidget) { TrainingWidgetLayout::BuildSessionHUD(*WidgetTree); }
     TrainingWidgetLayout::RepairTextFonts(*WidgetTree);
+    SessionInfoContent = WidgetTree->FindWidget(TEXT("Size_Timer"));
     Txt_Mode = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_Mode")));
     Txt_Timer = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_Timer")));
     Txt_TimerLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Txt_TimerLabel")));
@@ -49,6 +50,13 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
     StartServerSeconds = InStartServerSeconds;
     ActiveDurationSeconds = FMath::Max(0.0f, DurationSeconds);
     bSessionActive = true;
+    if (SessionInfoContent) { SessionInfoContent->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    else
+    {
+        if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::HitTestInvisible); }
+        if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::HitTestInvisible); }
+        if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    }
     DisplayedSeconds = INDEX_NONE;
     DisplayedKills = 0;
     ResetKillFeedback();
@@ -76,6 +84,21 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
             ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     }
     RefreshClock();
+}
+
+void UTrainingSessionHUDWidget::StartDamageOnlyOverlay()
+{
+    bSessionActive = false;
+    ResetKillFeedback();
+    ClearDamageNumbers();
+    if (SessionInfoContent) { SessionInfoContent->SetVisibility(ESlateVisibility::Collapsed); }
+    else
+    {
+        if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::Collapsed); }
+        if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::Collapsed); }
+        if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::Collapsed); }
+        if (Bar_TimeRemaining) { Bar_TimeRemaining->SetVisibility(ESlateVisibility::Collapsed); }
+    }
 }
 
 void UTrainingSessionHUDWidget::RefreshClock()
@@ -117,16 +140,27 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const float D
         if (Txt_Kills) { Txt_Kills->SetText(FText::FromString(FString::Printf(TEXT("+%d"), TotalKills))); }
         UpdateKillFeedback(0.0f);
     }
-    if (ActiveMode != ETrainingMode::CombatResponse || !Canvas_Damage || !FMath::IsFinite(Damage) || Damage <= 0.0f)
+    if (ActiveMode == ETrainingMode::CombatResponse)
+    {
+        PresentDamage(Damage, bKilled, WorldPosition);
+    }
+}
+
+void UTrainingSessionHUDWidget::PresentDamage(const float Damage, const bool bKilled,
+    const FVector& WorldPosition)
+{
+    if (!Canvas_Damage || !WidgetTree || !FMath::IsFinite(Damage) || Damage <= 0.0f)
     {
         return;
     }
+
     const int32 Limit = FMath::Clamp(MaxVisibleDamageNumbers, 1, 64);
     while (DamageNumbers.Num() >= Limit)
     {
         if (UTextBlock* OldText = DamageNumbers[0].Text.Get()) { OldText->RemoveFromParent(); }
         DamageNumbers.RemoveAt(0, 1, EAllowShrinking::No);
     }
+
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     DamageText->SetText(FText::AsNumber(FMath::RoundToInt(Damage)));
     DamageText->SetFont(TrainingWidgetLayout::MakeFont(bKilled ? 28 : 24));
@@ -135,9 +169,11 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const float D
     DamageText->SetShadowOffset(FVector2D(1.0, 1.0));
     DamageText->SetShadowColorAndOpacity(FLinearColor::Black);
     DamageText->SetVisibility(ESlateVisibility::Hidden);
+
     UCanvasPanelSlot* DamageSlot = Canvas_Damage->AddChildToCanvas(DamageText);
     DamageSlot->SetAutoSize(true);
     DamageSlot->SetAlignment(FVector2D(0.5, 1.0));
+
     FDamageNumber& Entry = DamageNumbers.AddDefaulted_GetRef();
     Entry.Text = DamageText;
     Entry.WorldPosition = WorldPosition + DamageNumberWorldOffset;
@@ -148,9 +184,12 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const float D
 void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
-    if (!bSessionActive) { return; }
-    RefreshClock();
-    UpdateKillFeedback(InDeltaTime);
+    if (bSessionActive)
+    {
+        RefreshClock();
+        UpdateKillFeedback(InDeltaTime);
+    }
+    if (DamageNumbers.IsEmpty()) { return; }
     const float Lifetime = FMath::Max(0.1f, DamageNumberLifetime);
     APlayerController* ParticipantController = GetOwningPlayer();
     for (int32 Index = DamageNumbers.Num() - 1; Index >= 0; --Index)

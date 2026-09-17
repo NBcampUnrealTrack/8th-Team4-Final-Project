@@ -8,6 +8,7 @@
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "UI/InGame/HUD/ShooterPlayerHUD.h"
+#include "UI/InGame/Domination/DominationClassSelectScreen.h"
 #include "UI/InGame/HUD/DominationCaptureProgressWidget.h"
 #include "UI/InGame/HUD/DominationObjectiveCompassWidget.h"
 #include "UI/InGame/HUD/DominationObjectiveFeedbackWidget.h"
@@ -23,6 +24,38 @@ UTrainingUIInitComponent::UTrainingUIInitComponent()
         UDominationObjectiveTransitionTimerWidget::StaticClass(),
         UDominationSiteTrackerWidget::StaticClass()
     };
+}
+
+bool UTrainingUIInitComponent::OpenClassSelectionForTraining()
+{
+    AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(GetOwner());
+    ADominationPlayerState* ClassState = IsValid(LocalController)
+        ? LocalController->GetPlayerState<ADominationPlayerState>()
+        : nullptr;
+    if (!IsValid(LocalController)
+        || !LocalController->IsLocalController()
+        || !IsValid(ClassState)
+        || !ClassState->HasSelectedCombatClass()
+        || !ClassState->IsAlive()
+        || ClassState->GetParticipationState() != EPlayerParticipationState::Active)
+    {
+        return false;
+    }
+
+    PresentClassSelectionScreen();
+    UDominationClassSelectScreen* ClassScreen = GetClassSelectionScreen();
+    if (!IsValid(ClassScreen))
+    {
+        return false;
+    }
+
+    ClassScreen->SetAllowActiveClassReselection(true);
+    return true;
+}
+
+void UTrainingUIInitComponent::CloseClassSelectionForTraining()
+{
+    RemoveClassSelectionScreen();
 }
 
 bool UTrainingUIInitComponent::PrepareModeBindings()

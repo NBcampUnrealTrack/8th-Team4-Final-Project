@@ -55,36 +55,12 @@ void UDominationClassSelectScreen::NativeOnActivated()
 
 	SpawnPreviewStage();
 
-	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
-	const bool bIsJoinInProgressSelection = IsValid(PlayerState)
-		&& PlayerState->GetParticipationState() == EPlayerParticipationState::WaitingForNextSpawn;
-
 	if (IsValid(Button_LockIn))
 	{
-		Button_LockIn->SetVisibility(
-			bIsJoinInProgressSelection ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 		Button_LockIn->OnClicked().AddUObject(this, &ThisClass::HandleLockInClicked);
 	}
 
-	if (IsValid(Text_Timer))
-	{
-		Text_Timer->SetVisibility(
-			bIsJoinInProgressSelection ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	}
-
-	if (!bIsJoinInProgressSelection)
-	{
-		RefreshTimerText();
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(
-				TimerTextHandle,
-				this,
-				&ThisClass::RefreshTimerText,
-				0.10f,
-				true);
-		}
-	}
+	RefreshSelectionModePresentation();
 }
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
@@ -107,6 +83,9 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	}
 
 	bLockInRequestPending = false;
+	bAllowActiveClassReselection = false;
+	ActiveReselectionPreviewClass = EDominationCombatClass::Unselected;
+	SelectionFailure = FText::GetEmpty();
 
 	DestroyPreviewStage();
 	ClearSlotEntries();
@@ -124,6 +103,10 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 void UDominationClassSelectScreen::HandleCombatClassChanged(
 	const EDominationCombatClass SelectedClass)
 {
+	if (IsActiveClassReselectionMode())
+	{
+		ActiveReselectionPreviewClass = SelectedClass;
+	}
 	RefreshSelectionState();
 	RefreshLockInButton();
 	RefreshClassInfoPanel();
@@ -158,6 +141,13 @@ void UDominationClassSelectScreen::HandleClassCardClicked(
 	}
 
 	SelectionFailure = FText::GetEmpty();
+	if (IsActiveClassReselectionMode())
+	{
+		ActiveReselectionPreviewClass = RequestedClass;
+		RefreshSelectionModePresentation();
+		return;
+	}
+
 	switch (PlayerState->GetParticipationState())
 	{
 	case EPlayerParticipationState::WaitingForMatchStart:
@@ -222,9 +212,16 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
 	IRogueCombatClassSelector* ClassSelector = Cast<IRogueCombatClassSelector>(GetOwningPlayer());
-	if (!IsValid(PlayerState)
-		|| !ClassSelector
-		|| !PlayerState->HasPreviewCombatClass())
+	if (!IsValid(PlayerState) || !ClassSelector)
+	{
+		return;
+	}
+
+	const bool bActiveReselection = IsActiveClassReselectionMode();
+	const EDominationCombatClass RequestedClass = bActiveReselection
+		? ActiveReselectionPreviewClass
+		: PlayerState->GetPreviewCombatClass();
+	if (RequestedClass == EDominationCombatClass::Unselected)
 	{
 		return;
 	}
@@ -241,7 +238,7 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 	}
 
 	if (USoundBase* SelectionVoice =
-			GetCachedSelectionVoice(PlayerState->GetPreviewCombatClass()))
+			GetCachedSelectionVoice(RequestedClass))
 	{
 		UGameplayStatics::PlaySound2D(this, SelectionVoice);
 	}
@@ -251,7 +248,7 @@ void UDominationClassSelectScreen::HandleLockInClicked()
 		PreviewStage->PlayLockInEffect();
 	}
 
-	ClassSelector->SelectCombatClass(PlayerState->GetPreviewCombatClass());
+	ClassSelector->SelectCombatClass(RequestedClass);
 }
 
 UTexture2D* UDominationClassSelectScreen::GetCachedClassIcon(
@@ -284,6 +281,12 @@ EDominationCombatClass UDominationClassSelectScreen::GetDisplayCombatClass() con
 	if (!IsValid(PlayerState))
 	{
 		return EDominationCombatClass::Unselected;
+	}
+
+	if (IsActiveClassReselectionMode()
+		&& ActiveReselectionPreviewClass != EDominationCombatClass::Unselected)
+	{
+		return ActiveReselectionPreviewClass;
 	}
 
 	return PlayerState->HasSelectedCombatClass()
@@ -768,10 +771,15 @@ void UDominationClassSelectScreen::UnbindFromPlayerState()
 void UDominationClassSelectScreen::RefreshSelectionState()
 {
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
-	const EDominationCombatClass PreviewClass = IsValid(PlayerState)
-		? PlayerState->GetPreviewCombatClass()
-		: EDominationCombatClass::Unselected;
-	const bool bLocked = IsValid(PlayerState) && PlayerState->HasSelectedCombatClass();
+	const bool bActiveReselection = IsActiveClassReselectionMode();
+	const EDominationCombatClass PreviewClass = bActiveReselection
+		? ActiveReselectionPreviewClass
+		: IsValid(PlayerState)
+			? PlayerState->GetPreviewCombatClass()
+			: EDominationCombatClass::Unselected;
+	const bool bLocked = !bActiveReselection
+		&& IsValid(PlayerState)
+		&& PlayerState->HasSelectedCombatClass();
 
 	for (UDominationClassSelectCard* ClassCard : ClassCards)
 	{
@@ -785,12 +793,17 @@ void UDominationClassSelectScreen::RefreshSelectionState()
 void UDominationClassSelectScreen::RefreshLockInButton()
 {
 	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
-	const bool bLocked = IsValid(PlayerState) && PlayerState->HasSelectedCombatClass();
-	const bool bHasPreview = IsValid(PlayerState) && PlayerState->HasPreviewCombatClass();
-
+	const bool bActiveReselection = IsActiveClassReselectionMode();
+	const bool bLocked = !bActiveReselection
+		&& IsValid(PlayerState)
+		&& PlayerState->HasSelectedCombatClass();
+	const bool bHasPreview = bActiveReselection
+		? ActiveReselectionPreviewClass != EDominationCombatClass::Unselected
+		: IsValid(PlayerState) && PlayerState->HasPreviewCombatClass();
 	if (IsValid(Button_LockIn))
 	{
-		Button_LockIn->SetIsEnabled(!bLocked && bHasPreview && !bLockInRequestPending);
+		Button_LockIn->SetIsEnabled(
+			!bLockInRequestPending && (bActiveReselection ? bHasPreview : (!bLocked && bHasPreview)));
 	}
 
 	BP_UpdateLockInPresentation(bLocked, bHasPreview, bLockInRequestPending);
@@ -821,5 +834,83 @@ void UDominationClassSelectScreen::NotifySelectionFailed(const FText& Reason)
     bLockInRequestPending = false;
     SelectionFailure = Reason;
     RefreshSelectionState();
-    RefreshTimerText();
+    RefreshLockInButton();
+    RefreshSelectionModePresentation();
+}
+
+void UDominationClassSelectScreen::SetAllowActiveClassReselection(const bool bAllow)
+{
+    bAllowActiveClassReselection = bAllow;
+    const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+    ActiveReselectionPreviewClass = bAllow && IsValid(PlayerState)
+        && PlayerState->HasSelectedCombatClass()
+        && PlayerState->GetParticipationState() == EPlayerParticipationState::Active
+        ? PlayerState->GetCombatClass()
+        : EDominationCombatClass::Unselected;
+    bLockInRequestPending = false;
+    SelectionFailure = FText::GetEmpty();
+    RefreshSelectionModePresentation();
+}
+
+bool UDominationClassSelectScreen::IsActiveClassReselectionMode() const
+{
+    const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+    return bAllowActiveClassReselection
+        && IsValid(PlayerState)
+        && PlayerState->HasSelectedCombatClass()
+        && PlayerState->GetParticipationState() == EPlayerParticipationState::Active;
+}
+
+void UDominationClassSelectScreen::RefreshSelectionModePresentation()
+{
+    const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+    const bool bWaitingForInitialSelection = IsValid(PlayerState)
+        && PlayerState->GetParticipationState() == EPlayerParticipationState::WaitingForMatchStart;
+    const bool bJoinInProgressSelection = IsValid(PlayerState)
+        && PlayerState->GetParticipationState() == EPlayerParticipationState::WaitingForNextSpawn;
+    const bool bActiveReselection = IsActiveClassReselectionMode();
+
+    if (IsValid(Button_LockIn))
+    {
+        Button_LockIn->SetVisibility(
+            (bWaitingForInitialSelection || bActiveReselection) && !bJoinInProgressSelection
+                ? ESlateVisibility::Visible
+                : ESlateVisibility::Collapsed);
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(TimerTextHandle);
+    }
+
+    if (IsValid(Text_Timer))
+    {
+        const bool bShowStatusText = bWaitingForInitialSelection || !SelectionFailure.IsEmpty();
+        Text_Timer->SetVisibility(bShowStatusText
+            ? ESlateVisibility::HitTestInvisible
+            : ESlateVisibility::Collapsed);
+    }
+
+    if (bWaitingForInitialSelection)
+    {
+        RefreshTimerText();
+        if (UWorld* World = GetWorld())
+        {
+            World->GetTimerManager().SetTimer(
+                TimerTextHandle,
+                this,
+                &ThisClass::RefreshTimerText,
+                0.10f,
+                true);
+        }
+    }
+    else if (!SelectionFailure.IsEmpty() && IsValid(Text_Timer))
+    {
+        Text_Timer->SetText(SelectionFailure);
+    }
+
+    RefreshSelectionState();
+    RefreshLockInButton();
+    RefreshClassInfoPanel();
+    RefreshPreviewStage();
 }
