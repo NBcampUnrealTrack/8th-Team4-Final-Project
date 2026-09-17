@@ -9,6 +9,7 @@ class UCommonActivatableWidget;
 class UShooterButtonBase;
 class UShooterConfirmDialog;
 class UShooterOptionsScreen;
+class UWorld;
 
 /**
  * 프론트엔드 첫 화면
@@ -49,8 +50,8 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UCommonActivatableWidget> SessionBrowserClass;
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSoftClassPtr<UCommonActivatableWidget> TrainingScreenClass;
+	UPROPERTY(EditDefaultsOnly, Category = "Travel")
+	TSoftObjectPtr<UWorld> TrainingDestinationMap;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UShooterOptionsScreen> OptionsScreenClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")

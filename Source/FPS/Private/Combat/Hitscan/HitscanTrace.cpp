@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Interfaces/RogueDamageableTarget.h"
+#include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Tags/GameplayTags.h"
@@ -245,6 +246,7 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	const int32 PelletIndex)
 {
 	FHitscanImpactEffectData ImpactEffectData;
+	ImpactEffectData.HitActor = HitResult.GetActor();
 	ImpactEffectData.ImpactPoint = HitResult.ImpactPoint;
 	ImpactEffectData.ImpactNormal = HitResult.ImpactNormal;
 	ImpactEffectData.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
@@ -348,6 +350,13 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 		if (TryBuildImpactSample(HitResult, TraceDirection, PenetrationState, Request, PelletIndex, OutImpactSample))
 		{
 			return true;
+		}
+
+		// 반응형 사격 과녁은 대미지 대상이 아니어도 명중을 받아야 하므로 여기서 탄을 종료한다.
+		if (AActor* HitActor = HitResult.GetActor();
+			IsValid(HitActor) && Cast<IRogueHitscanReactiveTarget>(HitActor) != nullptr)
+		{
+			return false;
 		}
 
 		const float DistanceTraveledCentimeters = FVector::Distance(Request.TraceStart, HitResult.ImpactPoint);

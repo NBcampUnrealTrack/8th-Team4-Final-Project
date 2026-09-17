@@ -120,6 +120,9 @@ struct FHitscanImpactEffectData
 {
 	GENERATED_BODY()
 
+	// 서버 내부에서만 사용하는 피격 액터. FireEffects RPC에는 복제하지 않는다.
+	TWeakObjectPtr<AActor> HitActor;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	FVector ImpactPoint = FVector::ZeroVector;
 
