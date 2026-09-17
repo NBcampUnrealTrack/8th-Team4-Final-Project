@@ -135,6 +135,8 @@ public:
 		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
 
 	void SetKillcamViewTargetSuppressed(bool bSuppressed);
+	virtual void UpdateHiddenComponents(
+		const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
 
 	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
 

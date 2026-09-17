@@ -6,7 +6,9 @@
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GAS/RogueAbilitySystemComponent.h"
@@ -800,6 +802,63 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 	}
 
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
+}
+
+void AShooterPlayerController::UpdateHiddenComponents(
+	const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents)
+{
+	Super::UpdateHiddenComponents(ViewLocation, HiddenComponents);
+	if (!bKillcamViewTargetSuppressed || !IsLocalController() || !GetWorld())
+	{
+		return;
+	}
+
+	const FLevelCollection* LiveCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
+	if (!LiveCollection)
+	{
+		return;
+	}
+
+	TSet<AActor*> LiveActors;
+	for (ULevel* Level : LiveCollection->GetLevels())
+	{
+		if (!IsValid(Level))
+		{
+			continue;
+		}
+
+		for (AActor* Actor : Level->Actors)
+		{
+			if (!IsValid(Actor) || (!Actor->IsA<APawn>() && !Actor->IsA<AWeaponBase>()))
+			{
+				continue;
+			}
+
+			LiveActors.Add(Actor);
+			TArray<AActor*> AttachedActors;
+			Actor->GetAttachedActors(AttachedActors, true, true);
+			for (AActor* AttachedActor : AttachedActors)
+			{
+				if (IsValid(AttachedActor) && UKillcamReplaySubsystem::IsLiveWorldActor(AttachedActor))
+				{
+					LiveActors.Add(AttachedActor);
+				}
+			}
+		}
+	}
+
+	for (AActor* Actor : LiveActors)
+	{
+		TInlineComponentArray<UPrimitiveComponent*> Components;
+		Actor->GetComponents(Components);
+		for (UPrimitiveComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered())
+			{
+				HiddenComponents.Add(Component->GetPrimitiveSceneId());
+			}
+		}
+	}
 }
 
 void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
