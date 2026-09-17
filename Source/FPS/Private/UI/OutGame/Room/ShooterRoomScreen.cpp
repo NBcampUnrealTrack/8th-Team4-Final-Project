@@ -16,7 +16,9 @@
 #include "TimerManager.h"
 #include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
+#include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
+#include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
@@ -29,7 +31,7 @@ namespace ShooterRoomScreenRules
 	// 화면에 그리는 순서
 	constexpr EGameTeam TeamOrder[] = {EGameTeam::TeamA, EGameTeam::TeamB, EGameTeam::None};
 
-	// 레디 수 / 팀 인원
+	// 팀 인원 / 레디 수
 	FText BuildReadyCountText(const TArray<FShooterRoomSlotView>& TeamViews)
 	{
 		int32 ReadyCount = 0;
@@ -39,9 +41,9 @@ namespace ShooterRoomScreenRules
 		}
 
 		return FText::Format(
-			NSLOCTEXT("ShooterLobby", "TeamReadyCount", "{0} / {1}"),
-			FText::AsNumber(ReadyCount),
-			FText::AsNumber(TeamViews.Num()));
+			NSLOCTEXT("TeamReadyCount", "ShooterLobby", "{0} / {1}"),
+			FText::AsNumber(TeamViews.Num()),
+			FText::AsNumber(ReadyCount));
 	}
 }
 
@@ -104,20 +106,138 @@ void UShooterRoomScreen::NativeOnDeactivated()
 	// 확인창이 결과 없이 끝나도 바인딩이 남지 않게. 확인창은 풀에서 재사용됨
 	ClearLeaveConfirmBindings();
 
+	if (UShooterInGameMenuScreen* Menu = RoomMenuInstance.Get())
+	{
+		Menu->OnResumeRequested.RemoveAll(this);
+		Menu->OnOptionsRequested.RemoveAll(this);
+		Menu->OnReturnToLobbyRequested.RemoveAll(this);
+	}
+	RoomMenuInstance.Reset();
+
+	if (UShooterOptionsScreen* Screen = OptionsScreenInstance.Get())
+	{
+		Screen->OnCloseRequested.RemoveAll(this);
+	}
+	OptionsScreenInstance.Reset();
+
 	Super::NativeOnDeactivated();
 }
 
 UWidget* UShooterRoomScreen::NativeGetDesiredFocusTarget() const
 {
-	// 호스트에게 포커스를 주면 Enter 한 번에 매치가 시작됨 방지를 위함
 	return IsLocalPlayerHost() ? nullptr : Btn_Ready;
 }
 
 bool UShooterRoomScreen::NativeOnHandleBackAction()
 {
-	//  전환할 앞 칸이 없다
-	HandleLeaveClicked();
+	PresentRoomMenu();
 	return true;
+}
+
+void UShooterRoomScreen::PresentRoomMenu()
+{
+	if (RoomMenuInstance.IsValid())
+	{
+		return;
+	}
+
+	const TSubclassOf<UShooterInGameMenuScreen> LoadedClass = RoomMenuClass.LoadSynchronous();
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager) || !IsValid(LoadedClass))
+	{
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("RoomMenuClass is not configured."));
+		return;
+	}
+
+	UShooterInGameMenuScreen* Menu = Cast<UShooterInGameMenuScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
+	if (!IsValid(Menu))
+	{
+		return;
+	}
+
+	// 항복 · 게임 종료는 연결하지 않는다
+	Menu->OnResumeRequested.AddUObject(this, &ThisClass::RemoveRoomMenu);
+	Menu->OnOptionsRequested.AddUObject(this, &ThisClass::PresentOptionsScreen);
+	Menu->OnReturnToLobbyRequested.AddUObject(this, &ThisClass::HandleLeaveClicked);
+	RoomMenuInstance = Menu;
+}
+
+void UShooterRoomScreen::RemoveRoomMenu()
+{
+	UShooterInGameMenuScreen* Menu = RoomMenuInstance.Get();
+	if (!IsValid(Menu))
+	{
+		return;
+	}
+
+	Menu->OnResumeRequested.RemoveAll(this);
+	Menu->OnOptionsRequested.RemoveAll(this);
+	Menu->OnReturnToLobbyRequested.RemoveAll(this);
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr)
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Menu);
+	}
+
+	RoomMenuInstance.Reset();
+}
+
+void UShooterRoomScreen::PresentOptionsScreen()
+{
+	if (OptionsScreenInstance.IsValid())
+	{
+		return;
+	}
+
+	const TSubclassOf<UShooterOptionsScreen> LoadedClass = OptionsScreenClass.LoadSynchronous();
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager) || !IsValid(LoadedClass))
+	{
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("OptionsScreenClass is not configured."));
+		return;
+	}
+
+	UShooterOptionsScreen* Screen = Cast<UShooterOptionsScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
+	if (!IsValid(Screen))
+	{
+		return;
+	}
+
+	Screen->OnCloseRequested.AddUObject(this, &ThisClass::HandleOptionsCloseRequested);
+	OptionsScreenInstance = Screen;
+}
+
+void UShooterRoomScreen::HandleOptionsCloseRequested()
+{
+	UShooterOptionsScreen* Screen = OptionsScreenInstance.Get();
+	if (!IsValid(Screen))
+	{
+		return;
+	}
+
+	Screen->FinishEditing();
+	Screen->OnCloseRequested.RemoveAll(this);
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr)
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Screen);
+	}
+
+	OptionsScreenInstance.Reset();
 }
 
 void UShooterRoomScreen::Refresh()
@@ -219,7 +339,6 @@ FString UShooterRoomScreen::BuildPresentationSignature(
 {
 	FString Signature;
 
-	// 그리는 순서 그대로 쌓는다. PlayerArray 순서가 머신마다 달라도 같은 값이 나온다
 	for (const EGameTeam Team : ShooterRoomScreenRules::TeamOrder)
 	{
 		for (const FShooterRoomSlotView& View : FShooterRoomRules::GetTeamPlayers(Views, Team))
@@ -462,7 +581,6 @@ FText UShooterRoomScreen::BuildStatusText(const FLobbyStartState& StartState, co
 
 	case ELobbyStartBlocker::None:
 	default:
-		// 같은 사실은 같은 문구. 시작할 수 있을 때만 호스트와 클라가 갈림
 		return bIsHost
 			? NSLOCTEXT("ShooterLobby", "CanStart", "시작할 수 있습니다")
 			: NSLOCTEXT("ShooterLobby", "WaitingForHost", "호스트가 시작하기를 기다리는 중");

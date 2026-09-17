@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Tags/UITags.h"
+#include "UI/OutGame/ShooterOutGameSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 void UShooterOutGameUIInitComponent::BeginPlay()
@@ -39,7 +40,22 @@ void UShooterOutGameUIInitComponent::BeginPlay()
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_Game, BackdropWidgetClass);
 	}
 
+	UShooterOutGameSubsystem* OutGame = GetOutGameSubsystem();
+
+	// 인트로는 Startup 클래스가 지정된 PC 에서만
+	if (StartupWidgetClass && IsValid(OutGame) && !OutGame->HasShownStartupIntro())
+	{
+		OutGame->MarkStartupIntroShown();
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Transition, StartupWidgetClass);
+		return;
+	}
+
 	UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, InitialWidgetClass);
+
+	if (IsValid(OutGame))
+	{
+		OutGame->SetMusicState(MusicState);
+	}
 }
 
 UShooterUIManagerSubsystem* UShooterOutGameUIInitComponent::GetUIManager() const
@@ -48,5 +64,14 @@ UShooterUIManagerSubsystem* UShooterOutGameUIInitComponent::GetUIManager() const
 	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
 	return IsValid(GameInstance)
 		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+}
+
+UShooterOutGameSubsystem* UShooterOutGameUIInitComponent::GetOutGameSubsystem() const
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
+	return IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterOutGameSubsystem>()
 		: nullptr;
 }

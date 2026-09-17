@@ -4,11 +4,14 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "GameMode/Types/LobbyTypes.h"
+#include "UI/OutGame/ShooterOutGameTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "ShooterUISettings.generated.h"
 
 class UShooterMatchResultScreen;
+class USoundBase;
 class UTexture2D;
+class UWorld;
 
 // 방 화면 모드 패널에 그릴 값
 USTRUCT(BlueprintType)
@@ -67,4 +70,12 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Lobby")
 	FLinearColor LobbyTeamBColor = FLinearColor(1.0f, 0.3f, 0.3f);
+
+	// 상태별 BGM. 두 상태에 같은 에셋이면 맵이 바뀌어도 이어진다
+	UPROPERTY(Config, EditAnywhere, Category = "OutGame Music")
+	TMap<EShooterOutGameMusicState, TSoftObjectPtr<USoundBase>> OutGameMusic;
+
+	// BGM 을 유지하는 맵. 그 밖의 맵으로 떠나거나 로드되면 끈다
+	UPROPERTY(Config, EditAnywhere, Category = "OutGame Music")
+	TArray<TSoftObjectPtr<UWorld>> OutGameMusicMaps;
 };

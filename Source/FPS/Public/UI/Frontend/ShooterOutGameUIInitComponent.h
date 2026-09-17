@@ -4,9 +4,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "UI/OutGame/ShooterOutGameTypes.h"
 #include "ShooterOutGameUIInitComponent.generated.h"
 
 class UCommonActivatableWidget;
+class UShooterOutGameSubsystem;
 class UShooterUIManagerSubsystem;
 
 /**
@@ -23,6 +25,7 @@ protected:
 
 private:
 	UShooterUIManagerSubsystem* GetUIManager() const;
+	UShooterOutGameSubsystem* GetOutGameSubsystem() const;
 
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
@@ -31,4 +34,10 @@ private:
 	TSubclassOf<UCommonActivatableWidget> BackdropWidgetClass;
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UCommonActivatableWidget> InitialWidgetClass;
+
+	// 비워 두면 인트로 없이 첫 화면
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UCommonActivatableWidget> StartupWidgetClass;
+	UPROPERTY(EditAnywhere, Category = "UI")
+	EShooterOutGameMusicState MusicState = EShooterOutGameMusicState::None;
 };

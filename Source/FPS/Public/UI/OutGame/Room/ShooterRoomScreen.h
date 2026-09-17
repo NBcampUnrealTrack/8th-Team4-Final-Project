@@ -16,6 +16,8 @@ class UImage;
 class UPanelWidget;
 class UShooterButtonBase;
 class UShooterConfirmDialog;
+class UShooterInGameMenuScreen;
+class UShooterOptionsScreen;
 class UShooterRoomPlayerSlot;
 class UTextBlock;
 
@@ -82,6 +84,13 @@ private:
 	void HandleModeNextClicked();
 	void HandleLeaveClicked();
 
+	// ESC 로 여는 방 메뉴. Settings 와 나가기를 고르게 한다
+	void PresentRoomMenu();
+	void RemoveRoomMenu();
+
+	void PresentOptionsScreen();
+	void HandleOptionsCloseRequested();
+
 	UFUNCTION()
 	void HandleLobbyPlayerListChanged();
 
@@ -145,6 +154,10 @@ private:
 	TSubclassOf<UShooterRoomPlayerSlot> UnassignedEntryWidgetClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UShooterConfirmDialog> ConfirmDialogClass;
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSoftClassPtr<UShooterInGameMenuScreen> RoomMenuClass;
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSoftClassPtr<UShooterOptionsScreen> OptionsScreenClass;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UShooterRoomPlayerSlot>> TeamSlotsA;
@@ -160,6 +173,8 @@ private:
 	TSharedPtr<FStreamableHandle> ThumbnailHandle;
 
 	TWeakObjectPtr<UShooterConfirmDialog> LeaveConfirmDialog;
+	TWeakObjectPtr<UShooterInGameMenuScreen> RoomMenuInstance;
+	TWeakObjectPtr<UShooterOptionsScreen> OptionsScreenInstance;
 
 	// 서버가 복제한 시작 가능 여부
 	bool bStartAllowedByServer = false;
