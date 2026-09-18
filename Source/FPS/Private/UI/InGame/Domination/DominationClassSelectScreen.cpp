@@ -5,6 +5,8 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelWidget.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/Settings/DominationClassSettings.h"
@@ -47,6 +49,9 @@ void UDominationClassSelectScreen::NativeOnActivated()
 			ResolveBGMComponentVolume());
 		ApplyBGMSettings();
 	}
+
+	// 클릭 시점의 동기 로드를 피하려고 카운트다운 동안 미리 읽어둔다
+	PreloadPreviewPawns();
 
 	BuildIconCache();
 	RebuildClassCards();
@@ -103,6 +108,13 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	SelectionFailure = FText::GetEmpty();
 
 	DestroyPreviewStage();
+
+	if (PawnPreloadHandle.IsValid() && !PawnPreloadHandle->HasLoadCompleted())
+	{
+		PawnPreloadHandle->CancelHandle();
+	}
+	PawnPreloadHandle.Reset();
+
 	ClearSlotEntries();
 	UnbindFromPlayerState();
 	ClearClassCards();
@@ -502,6 +514,32 @@ void UDominationClassSelectScreen::ClearClassCards()
 	{
 		Panel_ClassCards->ClearChildren();
 	}
+}
+
+void UDominationClassSelectScreen::PreloadPreviewPawns()
+{
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	if (!IsValid(ClassSettings))
+	{
+		return;
+	}
+
+	TArray<FSoftObjectPath> PawnPaths;
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		if (!Definition.PawnClass.IsNull())
+		{
+			PawnPaths.AddUnique(Definition.PawnClass.ToSoftObjectPath());
+		}
+	}
+
+	if (PawnPaths.IsEmpty())
+	{
+		return;
+	}
+
+	PawnPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(PawnPaths);
 }
 
 void UDominationClassSelectScreen::SpawnPreviewStage()

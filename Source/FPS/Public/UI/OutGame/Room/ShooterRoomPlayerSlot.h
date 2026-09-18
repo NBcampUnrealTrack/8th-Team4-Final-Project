@@ -7,6 +7,7 @@
 #include "ShooterRoomPlayerSlot.generated.h"
 
 class UShooterButtonBase;
+class UWidget;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnRoomSlotJoinRequested, EGameTeam);
 
@@ -38,6 +39,9 @@ protected:
 	// 칸 전체를 덮는 투명 버튼. 빈 칸일 때만 보임
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Join;
+	// 빈 칸 표시 묶음. 버튼과 함께 켜고 끈다
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_Join;
 
 	EGameTeam SlotTeam = EGameTeam::None;
 

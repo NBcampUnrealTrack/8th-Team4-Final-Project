@@ -17,6 +17,7 @@ class UPanelWidget;
 class UTexture2D;
 class USoundBase;
 class UAudioComponent;
+struct FStreamableHandle;
 
 USTRUCT()
 struct FDominationPlayerSlotEntry
@@ -93,6 +94,7 @@ private:
 	void UnbindSlotPlayerState(FDominationPlayerSlotEntry& Entry);
 
 	// 캐릭터 프리뷰
+	void PreloadPreviewPawns();
 	void SpawnPreviewStage();
 	void DestroyPreviewStage();
 	void RefreshPreviewStage();
@@ -156,6 +158,8 @@ private:
 	TArray<FDominationPlayerSlotEntry> SlotEntries;
 	UPROPERTY(Transient)
 	TObjectPtr<ADominationClassPreviewStage> PreviewStage;
+
+	TSharedPtr<FStreamableHandle> PawnPreloadHandle;
 
 	FDominationCardHoverController CardHoverController;
 
