@@ -21,6 +21,10 @@ void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
 	bCachedIsHost = View.bIsHost;
 
 	Btn_Join->SetVisibility(ESlateVisibility::Collapsed);
+	if (IsValid(Panel_Join))
+	{
+		Panel_Join->SetVisibility(ESlateVisibility::Collapsed);
+	}
 
 	switch (Presentation)
 	{
@@ -48,6 +52,11 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 
 	Btn_Join->SetVisibility(ESlateVisibility::Visible);
 	Btn_Join->SetIsEnabled(bJoinable);
+	if (IsValid(Panel_Join))
+	{
+		Panel_Join->SetVisibility(ESlateVisibility::Visible);
+		Panel_Join->SetIsEnabled(bJoinable);
+	}
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
 }
 
