@@ -16,7 +16,7 @@ class FPS_API USessionWidgetBase : public UUserWidget
 
 public:
 	UFUNCTION(BlueprintCallable)
-	void MenuSetup(int32 InMaxPlayers = 4, const FString& InMapName = TEXT("BombMap"), const FString& InMatchType = TEXT("FreeForAll"));
+	void MenuSetup(int32 InMaxPlayers = 4, const FString& InMapName = TEXT("DominationMap"), const FString& InMatchType = TEXT("Domination"));
 
 protected:
 	virtual bool Initialize() override;
@@ -38,6 +38,6 @@ protected:
 
 	int32 MaxPlayers = 4;
 	FString RoomName = TEXT("");
-	FString MapName = TEXT("BombMap");
-	FString MatchType = TEXT("FreeForAll");
+	FString MapName = TEXT("DominationMap");
+	FString MatchType = TEXT("Domination");
 };

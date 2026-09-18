@@ -384,6 +384,7 @@ private:
 
 	FTSTicker::FDelegateHandle VideoModeConfirmationTickerHandle;
 	bool bVideoModeConfirmationPending = false;
+	bool bVideoModeSelectionDirty = false;
 	FIntPoint PendingResolution = FIntPoint::ZeroValue;
 	EShooterWindowMode PendingWindowMode = EShooterWindowMode::Windowed;
 	FIntPoint VideoModeBaselineResolution = FIntPoint::ZeroValue;

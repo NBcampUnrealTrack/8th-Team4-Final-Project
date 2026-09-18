@@ -30,6 +30,9 @@ private:
 	void HandleSeamlessTravelStart(UWorld* DepartingWorld, const FString& DestinationMap);
 	void HandlePostLoadMapWithWorld(UWorld* LoadedWorld);
 	bool IsOutGameMusicMap(const FString& MapName) const;
+	void HandleAudioSettingsChanged();
+	void ApplyMusicSettingsToComponent(UAudioComponent* MusicComponent) const;
+	float ResolveMusicComponentVolume() const;
 
 	bool bHasShownStartupIntro = false;
 

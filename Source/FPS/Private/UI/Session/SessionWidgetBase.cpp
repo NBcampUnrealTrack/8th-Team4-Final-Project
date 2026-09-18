@@ -13,8 +13,8 @@ void USessionWidgetBase::MenuSetup(int32 InMaxPlayers, const FString& InMapName,
 	UE_LOG(LogSessionWidgetBase, Log, TEXT("MenuSetup: Widget=%s MapName=%s MatchType=%s"), *GetNameSafe(this), *InMapName, *InMatchType);
 
 	MaxPlayers = InMaxPlayers;
-	MapName = InMapName.IsEmpty() ? TEXT("BombMap") : InMapName;
-	MatchType = InMatchType.IsEmpty() ? TEXT("FreeForAll") : InMatchType;
+	MapName = InMapName.IsEmpty() ? TEXT("DominationMap") : InMapName;
+	MatchType = InMatchType.IsEmpty() ? TEXT("Domination") : InMatchType;
 
 	AddToViewport();
 	SetVisibility(ESlateVisibility::Visible);

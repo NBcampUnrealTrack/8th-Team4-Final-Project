@@ -85,7 +85,7 @@ bool ALobbyGameMode::RequestStartRoomGame(
 	// as the single source of truth for the rest of the start sequence.
 	if (!GameMapName.IsEmpty())
 	{
-		ELobbyMatchMode RequestedMatchMode = ELobbyMatchMode::Bomb;
+		ELobbyMatchMode RequestedMatchMode = ELobbyMatchMode::Domination;
 		if (!TryResolveMatchModeFromMapName(GameMapName, RequestedMatchMode)
 			|| !RequestLobbyMatchMode(RequestingPlayer, RequestedMatchMode))
 		{
@@ -231,7 +231,7 @@ ELobbyMatchMode ALobbyGameMode::GetSelectedMatchMode() const
 	const ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
 	return IsValid(LobbyGameState)
 		? LobbyGameState->GetSelectedMatchMode()
-		: ELobbyMatchMode::Bomb;
+		: ELobbyMatchMode::Domination;
 }
 
 FString ALobbyGameMode::GetSelectedGameMapName() const
@@ -253,7 +253,7 @@ void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
 		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
 	}
 
-	// Keep the initial room advertisement aligned with the default Bomb selection.
+	// Keep the initial room advertisement aligned with the default Domination selection.
 	UpdateSessionAdvertisementForMatchMode(GetSelectedMatchMode());
 }
 
@@ -741,9 +741,9 @@ FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
 
 	if (MapName.IsEmpty())
 	{
-		return BombMapName.IsEmpty()
-			? TEXT("/Game/Maps/BombMap")
-			: FString::Printf(TEXT("/Game/Maps/%s"), *BombMapName);
+		return DominationMapName.IsEmpty()
+			? TEXT("/Game/Maps/DominationMap")
+			: FString::Printf(TEXT("/Game/Maps/%s"), *DominationMapName);
 	}
 
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);

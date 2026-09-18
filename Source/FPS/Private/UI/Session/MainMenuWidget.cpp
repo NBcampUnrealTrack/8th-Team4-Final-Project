@@ -44,8 +44,8 @@ void UMainMenuWidget::HostRoomWithOptions(int32 InMaxPlayers, const FString& InR
 {
 	MaxPlayers = FMath::Max(1, InMaxPlayers);
 	RoomName = InRoomName;
-	MapName = InMapName.IsEmpty() ? TEXT("BombMap") : InMapName;
-	MatchType = InMatchType.IsEmpty() ? TEXT("FreeForAll") : InMatchType;
+	MapName = InMapName.IsEmpty() ? TEXT("DominationMap") : InMapName;
+	MatchType = InMatchType.IsEmpty() ? TEXT("Domination") : InMatchType;
 
 	HostRoom();
 }

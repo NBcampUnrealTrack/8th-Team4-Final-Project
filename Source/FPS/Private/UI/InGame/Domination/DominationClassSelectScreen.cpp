@@ -15,6 +15,10 @@
 #include "Components/AudioComponent.h"
 #include "Components/Image.h"
 #include "Kismet/GameplayStatics.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Settings/ShooterGameUserSettings.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
 #include "UI/InGame/Domination/DominationClassInfoPanel.h"
 #include "UI/InGame/Domination/DominationClassPreviewStage.h"
 #include "UI/InGame/Domination/DominationPlayerSlot.h"
@@ -30,12 +34,18 @@ void UDominationClassSelectScreen::NativeOnActivated()
 {
 	Super::NativeOnActivated();
 	
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.AddUObject(this, &ThisClass::HandleAudioSettingsChanged);
+	}
+
 	if (IsValid(ClassSelectBGM))
 	{
 		BGMComponent = UGameplayStatics::SpawnSound2D(
 			this,
-			ClassSelectBGM
-		);
+			ClassSelectBGM,
+			ResolveBGMComponentVolume());
+		ApplyBGMSettings();
 	}
 
 	BuildIconCache();
@@ -65,6 +75,11 @@ void UDominationClassSelectScreen::NativeOnActivated()
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.RemoveAll(this);
+	}
+
 	if (IsValid(BGMComponent))
 	{
 		BGMComponent->FadeOut(0.3f, 0.0f);
@@ -98,6 +113,43 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	ClassVoiceCache.Empty();
 
 	Super::NativeOnDeactivated();
+}
+
+void UDominationClassSelectScreen::HandleAudioSettingsChanged()
+{
+	ApplyBGMSettings();
+}
+
+void UDominationClassSelectScreen::ApplyBGMSettings()
+{
+	if (!IsValid(BGMComponent))
+	{
+		return;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (USoundClass* MusicClass = AudioSettings->MusicSoundClass.LoadSynchronous())
+	{
+		BGMComponent->SoundClassOverride = MusicClass;
+	}
+
+	BGMComponent->SetVolumeMultiplier(ResolveBGMComponentVolume());
+}
+
+float UDominationClassSelectScreen::ResolveBGMComponentVolume() const
+{
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!IsValid(Settings))
+	{
+		return 1.0f;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	const bool bHasMusicClass = IsValid(AudioSettings->MusicSoundClass.LoadSynchronous());
+	const bool bHasUserMix = IsValid(AudioSettings->UserSettingsSoundMix.LoadSynchronous());
+	return bHasMusicClass && bHasUserMix
+		? 1.0f
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
 }
 
 void UDominationClassSelectScreen::HandleCombatClassChanged(

@@ -48,6 +48,7 @@ public:
 
 	virtual void SetToDefaults() override;
 	virtual void ValidateSettings() override;
+	virtual void ApplyNonResolutionSettings() override;
 
 	// The local runtime applies audio changes independently of any options widget.
 	FOnShooterAudioSettingsChanged OnAudioSettingsChanged;
@@ -155,7 +156,7 @@ public:
 	float GetPerformanceTargetFPS() const { return PerformanceTargetFPS; }
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Smart Tuning")
-	void SetPerformanceTargetFPS(float TargetFPS) { PerformanceTargetFPS = FMath::Clamp(TargetFPS, 30.0f, 1000.0f); }
+	void SetPerformanceTargetFPS(float TargetFPS) { PerformanceTargetFPS = FMath::Clamp(TargetFPS, 30.0f, 240.0f); }
 
 protected:
 	UPROPERTY(Config)
@@ -215,6 +216,6 @@ protected:
 	UPROPERTY(Config)
 	EShooterExperienceProfile ExperienceProfile = EShooterExperienceProfile::Balanced120;
 
-	UPROPERTY(Config, meta = (ClampMin = "30.0", ClampMax = "1000.0"))
+	UPROPERTY(Config, meta = (ClampMin = "30.0", ClampMax = "240.0"))
 	float PerformanceTargetFPS = 120.0f;
 };

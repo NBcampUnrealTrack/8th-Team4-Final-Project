@@ -206,8 +206,8 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 		PlayerState->SetAlive(false);
 	}
 
-	RespawnManager->ScheduleRespawn(EliminatedController);
 	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
+	RespawnManager->ScheduleRespawn(EliminatedController);
 }
 
 void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -374,9 +374,20 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 		return;
 	}
 
-	const EDominationPointId SpawnObjectivePointId = DominationGameState->HasActivePoint()
-		? DominationGameState->GetActivePointId()
-		: EDominationPointId::C;
+	if (!DominationGameState->HasActivePoint())
+	{
+		UE_LOG(
+			LogDominationGameMode,
+			Verbose,
+			TEXT("Domination respawn is waiting for the next active objective."));
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
+		return;
+	}
+
+	const EDominationPointId SpawnObjectivePointId = DominationGameState->GetActivePointId();
 
 	if (!RestartPlayerAtObjective(
 		PlayerController,
@@ -384,23 +395,33 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 	{
 		UE_LOG(
 			LogDominationGameMode,
-			Error,
-			TEXT("Could not resolve a Domination respawn for team %d at active point %d."),
+			Warning,
+			TEXT("Domination respawn candidate is temporarily unavailable for team %d at active point %d. Retrying."),
 			static_cast<uint8>(PlayerState->GetTeam()),
 			static_cast<uint8>(SpawnObjectivePointId));
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
 		return;
 	}
 
 	APawn* SpawnedPawn = PlayerController->GetPawn();
 	PlayerState->ServerRespawnReset();
-	if (!IsValid(LoadoutManager)
-		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
+	const bool bLoadoutReady = IsValid(LoadoutManager)
+		&& LoadoutManager->EnsureCombatClassInventory(PlayerState)
+		&& LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn);
+	if (!bLoadoutReady)
 	{
 		UE_LOG(LogDominationGameMode, Error,
-			TEXT("Failed to restore the Domination class loadout for %s."),
+			TEXT("Failed to restore the Domination class loadout for %s. Respawn will retry."),
 			*GetNameSafe(PlayerState));
 		MovePlayerToSpectator(PlayerController);
 		PlayerState->SetAlive(false);
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
 		return;
 	}
 
