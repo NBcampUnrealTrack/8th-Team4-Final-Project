@@ -12,6 +12,12 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Actor/DataJack.h"
 #include "GameMode/State/BombGameState.h"
+#include "TimerManager.h"
+
+namespace TeammateIndicatorLayerRules
+{
+	constexpr float ReconcileInterval = 0.25f;
+}
 
 void UTeammateIndicatorLayer::NativeConstruct()
 {
@@ -22,10 +28,26 @@ void UTeammateIndicatorLayer::NativeConstruct()
 	// 위젯이 라운드 시작 뒤에 만들어졌을 수 있으므로 즉시 1회 시도
 	// 팀이 None이면 빠져나가고, HandleLocalTeamChanged가 나중에 다시 부른다.
 	RebuildRoster();
+	
+	// 합류·이탈·팀 복제 지연은 이벤트로 오지 않아 주기 갱신이 필요하다
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			ReconcileTimerHandle,
+			this,
+			&ThisClass::RebuildRoster,
+			TeammateIndicatorLayerRules::ReconcileInterval,
+			true);
+	}
 }
 
 void UTeammateIndicatorLayer::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReconcileTimerHandle);
+	}
+	
 	UnbindFromGameState();
 	
 	Super::NativeDestruct();

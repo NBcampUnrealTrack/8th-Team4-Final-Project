@@ -223,6 +223,12 @@ bool UTeammateIndicatorEntry::HasLineOfSightToTargetHead(const FVector& HeadLoca
 
 void UTeammateIndicatorEntry::SetPlayerState(AShooterPlayerState* NewPlayerState)
 {
+	// 같은 대상 재배정은 건너뛴다. 주기 갱신마다 재바인딩하면 인디케이터가 깜빡인다
+	if (NewPlayerState != nullptr && BoundPlayerState.Get() == NewPlayerState)
+	{
+		return;
+	}
+	
 	// 이전 대상의 생사 구독 먼저 끊음
 	UnbindFromPlayerState();
 	

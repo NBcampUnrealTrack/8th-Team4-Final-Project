@@ -129,12 +129,11 @@ void UShooterStartupScreen::RefreshOnlineState()
 		break;
 	}
 
-	const bool bCanLogin = State == EStartupOnlineState::Local
-		|| State == EStartupOnlineState::Connected;
-
 	Text_Status->SetText(StatusText);
 	Text_Status->SetVisibility(ESlateVisibility::HitTestInvisible);
-	Btn_Login->SetVisibility(bCanLogin ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+	// 상태와 무관하게 들어갈 수 있다. 문구로 상황만 알린다
+	Btn_Login->SetVisibility(ESlateVisibility::Visible);
 	Btn_Retry->SetVisibility(State == EStartupOnlineState::Offline
 		? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Btn_Quit->SetVisibility(State == EStartupOnlineState::SteamUnavailable

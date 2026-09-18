@@ -71,4 +71,7 @@ private:
 
 	TWeakObjectPtr<ABombGameState> BoundBombGameState;
 	TWeakObjectPtr<ADataJack> BoundDataJack;
+
+	// 합류·이탈은 알려주는 이벤트가 없어 주기 갱신으로 잡는다
+	FTimerHandle ReconcileTimerHandle;
 };
