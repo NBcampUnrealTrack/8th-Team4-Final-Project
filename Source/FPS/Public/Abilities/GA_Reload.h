@@ -7,6 +7,7 @@
 #include "GA_Reload.generated.h"
 
 class UAnimMontage;
+class AWeaponBase;
 
 // 재장전을 트리거하는 GameplayAbility.
 // 실제 재장전 상태 머신(탄약 갱신 타이밍 포함)은 AWeaponBase::StartReload()가 갖고 있고,
@@ -30,11 +31,14 @@ public:
 	                              const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
 
 protected:
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 	// 재장전 시 재생할 몽타주.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Animation")
 	TObjectPtr<UAnimMontage> ReloadMontage;
 
 private:
+	TWeakObjectPtr<AWeaponBase> ReloadingWeapon;
 	UFUNCTION()
 	void HandleReloadFinished();
 };

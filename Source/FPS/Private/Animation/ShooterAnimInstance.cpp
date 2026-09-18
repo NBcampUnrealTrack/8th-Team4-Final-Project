@@ -187,7 +187,7 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 		return;
 	}
 
-	const float PlayedDuration = Montage_Play(MontageData->EquipMontage);
+	const float PlayedDuration = Montage_Play(MontageData->EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(

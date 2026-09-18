@@ -340,6 +340,9 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_PlayFireEffects(const TArray<FHitscanImpactEffectData>& ImpactEffects);
 
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_StopCancelledReload();
+
 	// --- Fire() 단계 분리 ---
 	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.
 	float ResolveRPMForShot(bool bHeavyAttack) const;

@@ -1,6 +1,7 @@
 #include "Data/WeaponData.h"
 
 #include "Animation/AnimMontage.h"
+#include "Tags/GameplayTags.h"
 
 const FPlayerAnims* UWeaponData::FindPlayerAnims(
 	const FGameplayTag WeaponTag,
@@ -54,6 +55,17 @@ const FWeaponMontageData* UWeaponData::FindWeaponMontages(const FGameplayTag Wea
 	return WeaponMontages.Find(WeaponTag);
 }
 
+float UWeaponData::GetSwitchAnimationRate(const FGameplayTag WeaponTag)
+{
+	// Draw presentation and equip readiness share this modest speed-up.
+	// Short first-person holster copies play at 1x with their own 0.2s delay.
+	const bool bGun = WeaponTag == RogueTags::Weapon_Type_Rifle
+		|| WeaponTag == RogueTags::Weapon_Type_Pistol
+		|| WeaponTag == RogueTags::Weapon_Type_Shotgun
+		|| WeaponTag == RogueTags::Weapon_Type_Sniper;
+	return bGun ? 1.5f : 4.f;
+}
+
 float UWeaponData::GetEquipDuration(const FGameplayTag WeaponTag) const
 {
 	float Duration = 0.f;
@@ -74,7 +86,7 @@ float UWeaponData::GetEquipDuration(const FGameplayTag WeaponTag) const
 		}
 	}
 
-	return Duration;
+	return Duration / GetSwitchAnimationRate(WeaponTag);
 }
 
 // 재장전 시간의 소스오브트루스를 실제 리로드 몽타주 길이로 삼는다(1인칭/3인칭 중 더 긴 쪽 기준).
