@@ -13,6 +13,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
+#include "GAS/RogueVitalAttributeSet.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -77,6 +78,8 @@ void AShooterCharacter::BeginPlay()
 	{
 		Movement->GravityScale *= GravityScaleMultiplier;
 	}
+
+	OnCharacterMovementUpdated.AddDynamic(this, &AShooterCharacter::HandleCharacterMovementUpdated);
 
 	if (HasAuthority())
 	{
@@ -227,6 +230,11 @@ void AShooterCharacter::UpdateTagSubscriptions()
 		Combat->SetPresentationSuppressed(
 			AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_UtilityHeld));
 	}
+
+	StaminaChangedHandle = AbilitySystem->GetGameplayAttributeValueChangeDelegate(
+		URogueVitalAttributeSet::GetStaminaAttribute()).AddUObject(this, &ThisClass::HandleStaminaChanged);
+
+	UpdateSprintBlocked(AbilitySystem->GetNumericAttribute(URogueVitalAttributeSet::GetStaminaAttribute()));
 }
 
 void AShooterCharacter::UnsubscribeTags()
@@ -240,16 +248,33 @@ void AShooterCharacter::UnsubscribeTags()
 		AbilitySystem->RegisterGameplayTagEvent(
 			RogueTags::State_Combat_UtilityHeld,
 			EGameplayTagEventType::NewOrRemoved).Remove(UtilityHeldEventHandle);
+
+		AbilitySystem->GetGameplayAttributeValueChangeDelegate(
+			URogueVitalAttributeSet::GetStaminaAttribute()).Remove(StaminaChangedHandle);
 	}
 
 	RevealTagEventHandle.Reset();
 	UtilityHeldEventHandle.Reset();
+	StaminaChangedHandle.Reset();
 	SubscribedAbilitySystem.Reset();
 }
 
 void AShooterCharacter::HandleRevealTagChanged(const FGameplayTag, const int32)
 {
 	RefreshTeamOutline();
+}
+
+void AShooterCharacter::HandleStaminaChanged(const FOnAttributeChangeData& Data)
+{
+	UpdateSprintBlocked(Data.NewValue);
+}
+
+void AShooterCharacter::UpdateSprintBlocked(const float Stamina)
+{
+	if (UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(GetCharacterMovement()))
+	{
+		ShooterMovement->SetSprintBlocked(Stamina <= 0.f);
+	}
 }
 
 void AShooterCharacter::HandleUtilityHeldChanged(const FGameplayTag, const int32 NewCount)
@@ -350,6 +375,22 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
 	{
 		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 0);
+	}
+}
+
+void AShooterCharacter::HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
+{
+	const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(GetCharacterMovement());
+	const bool bIsSprinting = IsValid(Movement) && Movement->IsSprinting() && !Movement->IsCrouching();
+	if (bIsSprinting == bSprintTagApplied)
+	{
+		return;
+	}
+	bSprintTagApplied = bIsSprinting;
+
+	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
+	{
+		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Sprinting, bIsSprinting ? 1 : 0);
 	}
 }
 

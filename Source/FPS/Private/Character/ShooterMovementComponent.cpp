@@ -3,6 +3,63 @@
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Combat/CombatComponent.h"
 #include "Weapon/WeaponBase.h"
+#include "GameFramework/Character.h"
+
+void FSavedMove_Shooter::Clear()
+{
+	Super::Clear();
+	bSavedWantsToSprint = 0;
+}
+
+uint8 FSavedMove_Shooter::GetCompressedFlags() const
+{
+	uint8 Result = Super::GetCompressedFlags();
+	if (bSavedWantsToSprint)
+	{
+		Result |= FLAG_Custom_0;
+	}
+	return Result;
+}
+
+bool FSavedMove_Shooter::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* InCharacter, float MaxDelta) const
+{
+	if (bSavedWantsToSprint != static_cast<const FSavedMove_Shooter*>(NewMove.Get())->bSavedWantsToSprint)
+	{
+		return false;
+	}
+	return Super::CanCombineWith(NewMove, InCharacter, MaxDelta);
+}
+
+void FSavedMove_Shooter::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const& NewAccel,
+	FNetworkPredictionData_Client_Character& ClientData)
+{
+	Super::SetMoveFor(C, InDeltaTime, NewAccel, ClientData);
+
+	if (const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(C->GetCharacterMovement()))
+	{
+		bSavedWantsToSprint = Movement->bWantsToSprint;
+	}
+}
+
+void FSavedMove_Shooter::PrepMoveFor(ACharacter* C)
+{
+	Super::PrepMoveFor(C);
+
+	if (UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(C->GetCharacterMovement()))
+	{
+		Movement->bWantsToSprint = bSavedWantsToSprint;
+	}
+}
+
+FNetworkPredictionData_Client_Shooter::FNetworkPredictionData_Client_Shooter(const UCharacterMovementComponent& ClientMovement)
+	: Super(ClientMovement)
+{
+}
+
+FSavedMovePtr FNetworkPredictionData_Client_Shooter::AllocateNewMove()
+{
+	return FSavedMovePtr(new FSavedMove_Shooter());
+}
 
 UShooterMovementComponent::UShooterMovementComponent()
 {
@@ -24,32 +81,57 @@ void UShooterMovementComponent::BeginPlay()
 
 void UShooterMovementComponent::StartSprint()
 {
-	if (IsCrouching())
+	if (IsCrouching() || bSprintBlocked)
 	{
 		return;
 	}
 
 	bWantsToSprint = true;
-	MaxWalkSpeed = SprintSpeed;
 }
 
 void UShooterMovementComponent::StopSprint()
 {
 	bWantsToSprint = false;
-	MaxWalkSpeed = WalkSpeed;
 }
 
+void UShooterMovementComponent::SetSprintBlocked(bool bBlocked)
+{
+	bSprintBlocked = bBlocked;
+	if (bSprintBlocked)
+	{
+		bWantsToSprint = false;
+	}
+}
 
+FNetworkPredictionData_Client* UShooterMovementComponent::GetPredictionData_Client() const
+{
+	check(PawnOwner != nullptr);
+
+	if (!ClientPredictionData)
+	{
+		UShooterMovementComponent* MutableThis = const_cast<UShooterMovementComponent*>(this);
+		MutableThis->ClientPredictionData = new FNetworkPredictionData_Client_Shooter(*this);
+	}
+	return ClientPredictionData;
+}
+
+void UShooterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
+{
+	Super::UpdateFromCompressedFlags(Flags);
+
+	bWantsToSprint = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0 && !bSprintBlocked;
+}
 float UShooterMovementComponent::GetMaxSpeed() const
 {
-	const float BaseMaxSpeed = Super::GetMaxSpeed();
+	const bool bSprinting = bWantsToSprint && !IsCrouching();
+	const float BaseMaxSpeed = bSprinting ? SprintSpeed : Super::GetMaxSpeed();
 	const AActor* OwnerActor = GetOwner();
 	if (!IsValid(OwnerActor))
 	{
 		return BaseMaxSpeed;
 	}
 
-	const float ResolvedMaxSpeed = bWantsToSprint
+	const float ResolvedMaxSpeed = bSprinting
 		? URogueAugmentStatResolver::GetFinalSprintSpeed(OwnerActor, BaseMaxSpeed)
 		: URogueAugmentStatResolver::GetFinalMoveSpeed(OwnerActor, BaseMaxSpeed);
 
