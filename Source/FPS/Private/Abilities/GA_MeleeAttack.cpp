@@ -68,9 +68,23 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 
 	if (AttackMontage && ActorInfo)
 	{
-		if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
+		UAnimInstance* BodyAnimInstance = ActorInfo->GetAnimInstance();
+		if (BodyAnimInstance)
 		{
-			AnimInstance->Montage_Play(AttackMontage);
+			BodyAnimInstance->Montage_Play(AttackMontage);
+		}
+
+		// GAS caches CharacterMesh0, not the separate owner-visible first-person arms.
+		// Preserve the existing body path and explicitly play on Mesh1P as well.
+		AActor* Avatar = GetAvatarActorFromActorInfo();
+		if (IsValid(Avatar) && Avatar->Implements<UPlayerInterface>())
+		{
+			USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Avatar);
+			UAnimInstance* ArmsAnimInstance = IsValid(Arms) ? Arms->GetAnimInstance() : nullptr;
+			if (ArmsAnimInstance && ArmsAnimInstance != BodyAnimInstance)
+			{
+				ArmsAnimInstance->Montage_Play(AttackMontage);
+			}
 		}
 	}
 

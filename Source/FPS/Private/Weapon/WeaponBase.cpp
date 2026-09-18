@@ -1,6 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Combat/CombatComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
@@ -134,6 +139,17 @@ void AWeaponBase::OnRep_Owner()
 
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
+	if (const AActor* OwnerActor = GetOwner())
+	{
+		if (const UCombatComponent* Combat = OwnerActor->FindComponentByClass<UCombatComponent>())
+		{
+			if (!Combat->IsWeaponReady() || Combat->GetCurrentWeapon() != this) return false;
+		}
+		if (const UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner()))
+		{
+			if (ASC->HasMatchingGameplayTag(RogueTags::State_Combat_IsSwapping)) return false;
+		}
+	}
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
 	const float RPMForRequestedAttack = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
 
@@ -699,9 +715,32 @@ void AWeaponBase::CancelReload()
 	}
 
 	bIsReloading = false;
+	Multicast_StopCancelledReload();
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+	}
+}
+
+void AWeaponBase::Multicast_StopCancelledReload_Implementation()
+{
+	TArray<USkeletalMeshComponent*> Meshes; GetComponents(Meshes);
+	AActor* OwnerActor = GetOwner();
+	// An old weapon's delayed RPC must not stop the new weapon's reload.
+	if (IsValid(OwnerActor) && OwnerActor->Implements<UPlayerInterface>()
+		&& IPlayerInterface::Execute_GetCurrentWeapon(OwnerActor) == this)
+	{
+		Meshes.AddUnique(IPlayerInterface::Execute_GetMesh1P(OwnerActor));
+		Meshes.AddUnique(IPlayerInterface::Execute_GetMesh3P(OwnerActor));
+	}
+	for (USkeletalMeshComponent* Mesh : Meshes)
+	{
+		UAnimInstance* Anim = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
+		if (!Anim) continue;
+		TArray<UAnimMontage*> Montages;
+		for (FAnimMontageInstance* Instance : Anim->MontageInstances)
+			if (Instance && Instance->Montage && Instance->Montage->GetName().Contains(TEXT("Reload"))) Montages.AddUnique(Instance->Montage);
+		for (UAnimMontage* Montage : Montages) Anim->Montage_Stop(0.05f, Montage);
 	}
 }
 
