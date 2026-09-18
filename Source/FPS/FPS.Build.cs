@@ -41,16 +41,6 @@ public class FPS : ModuleRules
 			"InMemoryNetworkReplayStreaming"
 		});
 
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.AddRange(new string[]
-			{
-				"UnrealEd",
-				"UMGEditor",
-				"AssetTools",
-				"AssetRegistry"
-			});
-		}
 
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "Steamworks");
 	}
