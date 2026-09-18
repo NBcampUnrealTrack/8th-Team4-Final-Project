@@ -139,8 +139,23 @@ protected:
 
 	// Top/Bottom 둘을 하나의 축으로 보고 한꺼번에 미세 이동시키는 오프셋(픽셀). Left/Right 기준선과
 	// 안 맞을 때 여기서 X/Y를 같이 조절한다. (+X: 오른쪽, +Y: 아래쪽)
+	// 주의: 0이 아닌 값을 주면 Top/Bottom 쌍의 시각적 중심이 (0,0)에서 벗어나는데, 히트마커/킬이펙트/
+	// Image_Center는 여전히 화면 진짜 중앙인 (0,0)(ComputeSpreadRadius가 쓰는 뷰포트 중심과 동일)에
+	// 고정되어 있어 서로 어긋나 보이게 된다. Top/Bottom 개별 보정이 필요하면 이 값 대신 TopBarLift처럼
+	// 한쪽에만 적용되는 오프셋을 쓴다.
 	UPROPERTY(EditAnywhere, Category = "UI")
-	FVector2D VerticalGroupOffset = FVector2D(4.f, 4.f);
+	FVector2D VerticalGroupOffset = FVector2D::ZeroVector;
+
+	// Left/Right 둘을 하나의 축으로 보고 한꺼번에 미세 이동시키는 오프셋(픽셀). (+X: 오른쪽, +Y: 아래쪽)
+	// VerticalGroupOffset과 마찬가지로 0이 아닌 값을 주면 Left/Right 쌍의 시각적 중심이 화면 진짜
+	// 중앙(0,0)에서 벗어나 히트마커/킬이펙트와 어긋나 보일 수 있다.
+	UPROPERTY(EditAnywhere, Category = "UI")
+	FVector2D HorizontalGroupOffset = FVector2D::ZeroVector;
+
+	// 위쪽 막대(Image_Top)만 중심에서 더 멀리(위로) 밀어내는 추가 간격(픽셀). Image_Bottom에는 영향을
+	// 주지 않으므로, 이 값을 조절해도 히트마커/킬이펙트가 기준으로 삼는 화면 진짜 중앙(0,0)은 그대로다.
+	UPROPERTY(EditAnywhere, Category = "UI")
+	float TopBarLift = 6.f;
 
 	// Anim_HitMarker가 없을 때 히트마커를 표시하는 시간
 	UPROPERTY(EditAnywhere, Category = "UI")

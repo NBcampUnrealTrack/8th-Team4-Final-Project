@@ -445,7 +445,14 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 bool AWeaponBase::FireMelee(bool bHeavyAttack)
 {
-	return FireInternal(bHeavyAttack, 0.0f);
+	// ClientFireServerTime을 0으로 넘기면 FLagCompensationRewindScope가 아예 생성되지 않아
+	// (LagCompensationRewindScope.cpp의 <= 0.0f 가드) 부위별 정밀 히트박스가 계속 NoCollision
+	// 상태로 남는다. 그러면 트레이스가 본 정보 없는 캡슐에 맞아 항상 폴백(Torso) 판정으로
+	// 떨어지고, 머리를 노려도 헤드샷이 잡히지 않는다. 근접무기는 보정할 클라이언트 지연이
+	// 없으므로 현재 서버 시간을 넘겨 "지금 시점"으로 리와인드시켜 정밀 히트박스를 활성화한다.
+	const UWorld* World = GetWorld();
+	const float CurrentServerTime = World ? World->GetTimeSeconds() : 0.0f;
+	return FireInternal(bHeavyAttack, CurrentServerTime);
 }
 
 bool AWeaponBase::FireRanged(float ClientFireServerTime)
@@ -803,13 +810,20 @@ void AWeaponBase::ResolveHitscanShot(
 	// MaximumRangeMeters를 넘어가도 대미지는 0이 아니라 MinimumDamage로 수렴
 	// EffectiveTraceRange 자체를 바꾸면 이펙트 종료 지점도 같이 늘어나 예광탄이
 	// 1km 밖까지 날아가는 것처럼 보이므로 로컬 변수로만 분리
+	// 근접무기(bUsesAmmo=false)는 사거리 감쇠 표현 대상이 아니므로 이 확장 로직을 타면 안 된다 -
+	// 안 그러면 DamageEntry에 MaximumRangeMeters가 잘못 들어있을 때 칼의 물리 Trace가 1km까지
+	// 늘어나서, 실제 근접 사거리 밖의 적에게도 히트(→히트마커)만 등록되고 대미지는 0(MinimumDamage로
+	// 수렴)인 상황이 생긴다.
 	float PhysicalTraceRangeCentimeters = EffectiveTraceRange;
-	if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
+	if (bUsesAmmo)
 	{
-		if (DamageEntry->MaximumRangeMeters > 0.f)
+		if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
 		{
-			constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
-			PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+			if (DamageEntry->MaximumRangeMeters > 0.f)
+			{
+				constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
+				PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+			}
 		}
 	}
 

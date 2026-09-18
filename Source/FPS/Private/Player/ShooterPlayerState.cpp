@@ -130,6 +130,7 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 			ShooterAvatar->bIsCrouched ? 1 : 0);
 		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir,
 			Movement && Movement->IsFalling() ? 1 : 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_Sprinting, 0);
 	}
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -391,6 +392,8 @@ void AShooterPlayerState::ServerResetVitals()
 
 	// 보호막은 증강이 부여한 기본 보호막으로 초기화
 	VitalSet->SetShield(VitalSet->GetMaxShield());
+
+	VitalSet->SetStamina(VitalSet->GetMaxStamina());
 
 	UE_LOG(LogShooterPlayerState, Log,
 		TEXT("[ShooterPlayerState] %s: 바이탈 초기화 체력 %.0f/%.0f 보호막 %.0f/%.0f"),

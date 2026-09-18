@@ -12,6 +12,8 @@ URogueVitalAttributeSet::URogueVitalAttributeSet()
 	InitShield(0.f);
 	InitMaxShield(0.f);
 	InitShopDamageAmplification(0.f);
+	InitStamina(100.f);
+	InitMaxStamina(100.f);
 }
 
 void URogueVitalAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -26,6 +28,8 @@ void URogueVitalAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePropert
 
 	// 본인 HUD 전용
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, Stamina,    COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, MaxStamina, COND_OwnerOnly, REPNOTIFY_Always);
 }
 
 void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -55,6 +59,14 @@ void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attri
 		// 상점 공격력 증가 상한 +25%
 		NewValue = FMath::Clamp(NewValue, 0.f, 0.25f);
 	}
+	else if (Attribute == GetMaxStaminaAttribute())
+	{
+		NewValue = FMath::Max(1.f, FMath::RoundToFloat(NewValue));
+	}
+	else if (Attribute == GetStaminaAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxStamina());
+	}
 }
 
 void URogueVitalAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
@@ -68,6 +80,10 @@ void URogueVitalAttributeSet::PostAttributeChange(const FGameplayAttribute& Attr
 	else if (Attribute == GetMaxShieldAttribute())
 	{
 		AdjustCurrentForNewMax(GetShieldAttribute(), GetShield(), OldValue, NewValue);
+	}
+	else if (Attribute == GetMaxStaminaAttribute())
+	{
+		AdjustCurrentForNewMax(GetStaminaAttribute(), GetStamina(), OldValue, NewValue);
 	}
 }
 
@@ -145,6 +161,10 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 	{
 		SetShield(FMath::Clamp(GetShield(), 0.f, GetMaxShield()));
 	}
+	else if (Attribute == GetStaminaAttribute())
+	{
+		SetStamina(FMath::Clamp(GetStamina(), 0.f, GetMaxStamina()));
+	}
 }
 
 void URogueVitalAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
@@ -170,6 +190,16 @@ void URogueVitalAttributeSet::OnRep_MaxShield(const FGameplayAttributeData& OldV
 void URogueVitalAttributeSet::OnRep_ShopDamageAmplification(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_Stamina(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, Stamina, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, MaxStamina, OldValue);
 }
 
 void URogueVitalAttributeSet::ServerForceDeath(const FGameplayEffectContextHandle& Context)

@@ -36,6 +36,8 @@ protected:
 	UFUNCTION() void OnRep_Shield(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_MaxShield(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ShopDamageAmplification(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_Stamina(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_MaxStamina(const FGameplayAttributeData& OldValue);
 
 private:
 	// Max 계열이 바뀔 때 현재값도 수정
@@ -70,6 +72,16 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ShopDamageAmplification, Category = "Rogue|Vital")
 	FGameplayAttributeData ShopDamageAmplification;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,ShopDamageAmplification)
+
+	// 달리기 중 소모, 0 이 되면 달리기 중단
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Stamina, Category = "Rogue|Vital")
+	FGameplayAttributeData Stamina;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,Stamina)
+
+	// 최대 스태미너
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxStamina, Category = "Rogue|Vital")
+	FGameplayAttributeData MaxStamina;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,MaxStamina)
 
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
 	FGameplayAttributeData IncomingDamage;

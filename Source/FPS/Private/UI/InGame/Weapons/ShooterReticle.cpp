@@ -194,9 +194,9 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	// VerticalGroupOffset으로 둘을 한 축으로 묶어 미세 위치를 맞춘다.
 	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
 	const float VerticalRadius = Radius * VerticalSpreadRadiusScale;
-	SetSlotPosition(Image_Right, FVector2D(Radius, 0.f));
-	SetSlotPosition(Image_Left, FVector2D(-Radius, 0.f));
-	SetSlotPosition(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius));
+	SetSlotPosition(Image_Right, HorizontalGroupOffset + FVector2D(Radius, 0.f));
+	SetSlotPosition(Image_Left, HorizontalGroupOffset + FVector2D(-Radius, 0.f));
+	SetSlotPosition(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius - TopBarLift));
 	SetSlotPosition(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
