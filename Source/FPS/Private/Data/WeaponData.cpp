@@ -63,7 +63,8 @@ float UWeaponData::GetSwitchAnimationRate(const FGameplayTag WeaponTag)
 		|| WeaponTag == RogueTags::Weapon_Type_Pistol
 		|| WeaponTag == RogueTags::Weapon_Type_Shotgun
 		|| WeaponTag == RogueTags::Weapon_Type_Sniper;
-	return bGun ? 1.5f : 4.f;
+	const bool bKnife = WeaponTag == RogueTags::Weapon_Type_Knife;
+	return (bGun || bKnife) ? 1.5f : 4.f;
 }
 
 float UWeaponData::GetEquipDuration(const FGameplayTag WeaponTag) const
