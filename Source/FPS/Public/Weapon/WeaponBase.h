@@ -179,9 +179,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	bool CanADS() const;
 
-	// ADS 중 목표 카메라 FOV(도). CombatComponent의 카메라 줌 보간이 참고한다.
+	// ADS 중 목표 카메라 FOV(도). 가변 줌 무기라면 현재 저장된 줌 단계의 FOV를 반환한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	float GetADSFieldOfView() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	float GetADSCameraInterpSpeedOverride() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	bool SupportsVariableADSZoom() const;
+
+	// 양수 입력은 줌 인, 음수 입력은 줌 아웃. 실제 단계 변경은 ADS 중일 때만 허용한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon|ADS")
+	bool AdjustADSZoom(float InputDelta);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	int32 GetCurrentADSZoomStep() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	int32 GetADSZoomStepCount() const;
 
 	// 스코프 ADS처럼 로컬 1인칭 팔/무기 표현을 숨겨야 하는지 Aim 설정을 그대로 노출한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")

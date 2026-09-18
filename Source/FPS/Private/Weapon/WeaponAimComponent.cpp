@@ -20,6 +20,7 @@ void UWeaponAimComponent::BeginPlay()
 
 	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
 	EffectiveRecoilMultiplier = 1.f;
+	CurrentADSZoomStep = FMath::Clamp(DefaultADSZoomStep, 0, GetADSZoomStepCount() - 1);
 }
 
 void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
@@ -55,12 +56,46 @@ void UWeaponAimComponent::SetADS(const bool bNewIsADS)
 {
 	bIsADS = bCanADS && bNewIsADS;
 
-	// ADS 해제 시 반동 값을 즉시 0으로 리셋한다(서서히 복귀하지 않음) - 지향 사격으로 전환되면
-	// 탄퍼짐 계산으로 넘어가므로 잔여 반동이 이어지면 안 된다.
+	// 줌 단계는 여기서 리셋하지 않는다. 마지막으로 선택한 배율을 무기 인스턴스가 기억해서
+	// ADS를 다시 시작해도 같은 배율로 복귀한다.
 	if (!bIsADS)
 	{
 		ResetRecoilState();
 	}
+}
+
+float UWeaponAimComponent::GetADSFieldOfView() const
+{
+	if (!bEnableVariableADSZoom)
+	{
+		return ADSFieldOfView;
+	}
+
+	const float WideFieldOfView = FMath::Max(MinimumMagnificationFieldOfView, MaximumMagnificationFieldOfView);
+	const float NarrowFieldOfView = FMath::Min(MinimumMagnificationFieldOfView, MaximumMagnificationFieldOfView);
+	const int32 StepCount = GetADSZoomStepCount();
+	const int32 ClampedStep = FMath::Clamp(CurrentADSZoomStep, 0, StepCount - 1);
+	const float ZoomAlpha = static_cast<float>(ClampedStep) / static_cast<float>(StepCount - 1);
+
+	return FMath::Lerp(WideFieldOfView, NarrowFieldOfView, ZoomAlpha);
+}
+
+bool UWeaponAimComponent::AdjustADSZoom(const float InputDelta)
+{
+	if (!bIsADS || !bEnableVariableADSZoom || FMath::IsNearlyZero(InputDelta))
+	{
+		return false;
+	}
+
+	const int32 Direction = InputDelta > 0.f ? 1 : -1;
+	const int32 NewStep = FMath::Clamp(CurrentADSZoomStep + Direction, 0, GetADSZoomStepCount() - 1);
+	if (NewStep == CurrentADSZoomStep)
+	{
+		return false;
+	}
+
+	CurrentADSZoomStep = NewStep;
+	return true;
 }
 
 void UWeaponAimComponent::SetMovementSpreadMultiplier(const float NewMultiplier)

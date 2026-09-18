@@ -266,6 +266,14 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	ImpactEffectData.ImpactSurfaceType = ResolveImpactSurfaceType(HitResult);
 	ImpactEffectData.PelletIndex = PelletIndex;
 	ImpactEffectData.bHasHit = true;
+
+	if (AActor* TargetActor = HitResult.GetActor();
+		IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
+	{
+		ImpactEffectData.bSpawnImpactParticle =
+			IRogueDamageableTarget::Execute_ShouldSpawnHitscanImpactParticle(TargetActor);
+	}
+
 	return ImpactEffectData;
 }
 

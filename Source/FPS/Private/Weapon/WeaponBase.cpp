@@ -304,6 +304,31 @@ float AWeaponBase::GetADSFieldOfView() const
 	return Aim ? Aim->GetADSFieldOfView() : 0.f;
 }
 
+float AWeaponBase::GetADSCameraInterpSpeedOverride() const
+{
+	return Aim ? Aim->GetADSCameraInterpSpeedOverride() : 0.f;
+}
+
+bool AWeaponBase::SupportsVariableADSZoom() const
+{
+	return Aim && Aim->SupportsVariableADSZoom();
+}
+
+bool AWeaponBase::AdjustADSZoom(const float InputDelta)
+{
+	return Aim && Aim->AdjustADSZoom(InputDelta);
+}
+
+int32 AWeaponBase::GetCurrentADSZoomStep() const
+{
+	return Aim ? Aim->GetCurrentADSZoomStep() : 0;
+}
+
+int32 AWeaponBase::GetADSZoomStepCount() const
+{
+	return Aim ? Aim->GetADSZoomStepCount() : 0;
+}
+
 bool AWeaponBase::ShouldHideFirstPersonPresentationWhileADS() const
 {
 	return Aim && Aim->ShouldHideFirstPersonPresentationWhileADS();
@@ -566,7 +591,7 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 			LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
 			LastImpactPelletIndex = ImpactEffect.PelletIndex;
 
-			if (SurfaceDefinition)
+			if (SurfaceDefinition && ImpactEffect.bSpawnImpactParticle)
 			{
 				// 혈흔 등 임팩트 파티클은 헤드샷 고정 / 그 외 랜덤 규칙으로 직접 스폰한다.
 				// 임팩트 사운드(바디/헤드샷/사망)는 PlayerController가 소유한 기존 히트 피드백 시스템에서 처리한다.

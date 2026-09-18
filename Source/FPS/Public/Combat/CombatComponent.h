@@ -172,8 +172,9 @@ protected:
 	float SpreadMultiplierAirOrSprint = 2.5f;
 
 	// --- ADS 카메라 줌 ---
-	// 평상시 FOV <-> 장착 무기의 AWeaponBase::ADSFieldOfView 사이를 보간하는 속도(FInterpTo).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|ADS")
+	// ADS 진입/해제와 가변 줌 단계 전환에 공통으로 쓰는 카메라 FOV 보간 속도(FInterpTo).
+	// 캐릭터 BP의 CombatComponent에서 조정할 수 있다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Combat|ADS", meta = (ClampMin = "0.0"))
 	float ADSZoomInterpSpeed = 10.f;
 
 private:

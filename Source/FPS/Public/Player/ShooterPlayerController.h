@@ -323,6 +323,7 @@ private:
 	void Input_InteractReleased(const FInputActionValue& Value);
 	void Input_Move(const FInputActionValue& Value);
 	void Input_Look(const FInputActionValue& Value);
+	void Input_AdjustADSZoom(const FInputActionValue& Value);
 	void Input_JumpPressed();
 	void Input_JumpReleased();
 	void Input_SprintPressed();

@@ -160,7 +160,17 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 		return;
 	}
 
-	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
+	float InterpSpeed = ADSZoomInterpSpeed;
+	if (IsValid(Weapon))
+	{
+		const float WeaponInterpSpeed = Weapon->GetADSCameraInterpSpeedOverride();
+		if (WeaponInterpSpeed > 0.f)
+		{
+			InterpSpeed = WeaponInterpSpeed;
+		}
+	}
+
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, InterpSpeed));
 }
 
 void UCombatComponent::SetInfiniteAmmo(const bool bNewInfiniteAmmo)

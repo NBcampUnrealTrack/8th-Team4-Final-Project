@@ -333,6 +333,11 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		EnhancedInputComponent->BindAction(InputConfig->LookAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Look);
 	}
+	if (InputConfig->AdjustADSZoomAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->AdjustADSZoomAction, ETriggerEvent::Triggered, this, &ThisClass::Input_AdjustADSZoom);
+	}
 	if (InputConfig->JumpAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_JumpPressed);
@@ -1899,6 +1904,31 @@ void AShooterPlayerController::HandleChatChannelSwitchRequested()
 	if (ChatInputWidget.IsValid())
 	{
 		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+	}
+}
+
+void AShooterPlayerController::Input_AdjustADSZoom(const FInputActionValue& Value)
+{
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
+	const float ZoomInput = Value.Get<float>();
+	if (FMath::IsNearlyZero(ZoomInput))
+	{
+		return;
+	}
+
+	APawn* ControlledPawn = GetPawn();
+	if (!IsValid(ControlledPawn) || !ControlledPawn->Implements<UPlayerInterface>())
+	{
+		return;
+	}
+
+	if (AWeaponBase* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ControlledPawn))
+	{
+		Weapon->AdjustADSZoom(ZoomInput);
 	}
 }
 

@@ -53,6 +53,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> LookAction;
 
+	// Axis1D 입력. DefaultMappingContext에서 Mouse Wheel Axis를 연결하면
+	// ADS 중 가변 줌 무기의 배율을 한 단계씩 조절한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> AdjustADSZoomAction;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> JumpAction;
 

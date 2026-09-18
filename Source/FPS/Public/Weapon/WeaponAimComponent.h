@@ -29,7 +29,12 @@ public:
 	void SetADS(bool bNewIsADS);
 	bool IsADS() const { return bIsADS; }
 	bool CanADS() const { return bCanADS; }
-	float GetADSFieldOfView() const { return ADSFieldOfView; }
+	float GetADSFieldOfView() const;
+	float GetADSCameraInterpSpeedOverride() const { return ADSCameraInterpSpeedOverride; }
+	bool SupportsVariableADSZoom() const { return bEnableVariableADSZoom; }
+	bool AdjustADSZoom(float InputDelta);
+	int32 GetCurrentADSZoomStep() const { return CurrentADSZoomStep; }
+	int32 GetADSZoomStepCount() const { return FMath::Max(2, ADSZoomStepCount); }
 	bool ShouldHideFirstPersonPresentationWhileADS() const { return bHideFirstPersonPresentationWhileADS; }
 	bool ShouldHideMainHUDWhileADS() const { return bHideMainHUDWhileADS; }
 
@@ -98,6 +103,39 @@ protected:
 	// 값을 갖는다. CombatComponent가 bAiming/CanADS()를 보고 이 값과 평상시 FOV 사이를 보간한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float ADSFieldOfView = 60.f;
+
+	// 이 무기만의 FOV 보간 속도 오버라이드. 0이면 CombatComponent의 ADSZoomInterpSpeed를 사용한다.
+	// 스나이퍼처럼 다른 무기보다 ADS 진입/해제와 줌 단계 전환을 느리게 만들고 싶을 때 설정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "0.0"))
+	float ADSCameraInterpSpeedOverride = 0.f;
+
+	// 켜면 고정 ADS FOV 대신 마우스 휠로 단계형 줌을 조절한다. 현재 단계는 ADS를 해제해도
+	// 리셋하지 않으므로 같은 무기로 다시 ADS했을 때 마지막 줌 단계가 그대로 유지된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom")
+	bool bEnableVariableADSZoom = false;
+
+	// 최소 배율(가장 넓게 보이는 상태)의 FOV. 값이 클수록 덜 확대된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom",
+		meta = (EditCondition = "bEnableVariableADSZoom", ClampMin = "5.0", ClampMax = "170.0"))
+	float MinimumMagnificationFieldOfView = 40.f;
+
+	// 최대 배율(가장 좁게 보이는 상태)의 FOV. 값이 작을수록 더 확대된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom",
+		meta = (EditCondition = "bEnableVariableADSZoom", ClampMin = "5.0", ClampMax = "170.0"))
+	float MaximumMagnificationFieldOfView = 15.f;
+
+	// 최소~최대 배율 사이의 단계 수. 0번 단계가 최소 배율, 마지막 단계가 최대 배율이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom",
+		meta = (EditCondition = "bEnableVariableADSZoom", ClampMin = "2", UIMin = "2", UIMax = "10"))
+	int32 ADSZoomStepCount = 4;
+
+	// 무기가 처음 생성됐을 때 시작할 줌 단계. 이후 ADS On/Off로는 변경되지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom",
+		meta = (EditCondition = "bEnableVariableADSZoom", ClampMin = "0"))
+	int32 DefaultADSZoomStep = 0;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS|Variable Zoom")
+	int32 CurrentADSZoomStep = 0;
 
 	// 스코프처럼 ADS 중 1인칭 팔/무기 표현을 가려야 하는 무기만 true로 설정한다. 실제 표시 전환은
 	// CombatComponent가 로컬 플레이어의 Mesh1P에만 적용하며, 다른 플레이어가 보는 Mesh3P에는 영향이 없다.

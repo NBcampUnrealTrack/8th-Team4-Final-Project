@@ -120,17 +120,31 @@ UTrainingDamageFeedbackWidget* UTrainingPlayerPresentation::EnsureDamageFeedback
 {
     UTrainingPlayerComponent* Bridge = Owner.Get();
     APlayerController* LocalController = Bridge ? Bridge->GetParticipantController() : nullptr;
-    if (!LocalController || !LocalController->IsLocalController() || !Bridge->DamageFeedbackWidgetClass)
+    if (!LocalController || !LocalController->IsLocalController())
     {
         return nullptr;
     }
+
+    const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    TSubclassOf<UTrainingDamageFeedbackWidget> WidgetClass = Bridge->DamageFeedbackWidgetClass;
+    if (!WidgetClass && Settings)
+    {
+        WidgetClass = Settings->DamageFeedbackWidgetClass.LoadSynchronous();
+    }
+    if (!WidgetClass)
+    {
+        UE_LOG(LogTemp, Error,
+            TEXT("[Training] Damage feedback widget is not configured. Set Training > UI > Damage Feedback Widget Class or a component override."));
+        return nullptr;
+    }
+
     if (!DamageFeedbackWidget)
     {
-        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, Bridge->DamageFeedbackWidgetClass);
+        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, WidgetClass);
     }
     if (DamageFeedbackWidget && !DamageFeedbackWidget->IsInViewport())
     {
-        DamageFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->DamageFeedbackZOrder);
+        DamageFeedbackWidget->AddToPlayerScreen(Settings ? Settings->DamageFeedbackZOrder : 18);
     }
     return DamageFeedbackWidget;
 }

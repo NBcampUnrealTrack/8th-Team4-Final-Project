@@ -7,6 +7,8 @@
 #include "Training/TrainingModeDefinition.h"
 #include "TrainingSettings.generated.h"
 
+class UTrainingDamageFeedbackWidget;
+
 
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "Training"))
 class FPS_API UTrainingSettings : public UDeveloperSettings
@@ -80,6 +82,10 @@ public:
 
     UPROPERTY(Config, EditAnywhere, Category = "UI", meta = (ClampMin = "0"))
     int32 InteractionPromptZOrder = 25;
+
+    // Global default. A TrainingPlayerComponent can still override this per controller/BP.
+    UPROPERTY(Config, EditAnywhere, Category = "UI")
+    TSoftClassPtr<UTrainingDamageFeedbackWidget> DamageFeedbackWidgetClass;
 
     UPROPERTY(Config, EditAnywhere, Category = "UI")
     TSoftClassPtr<UUserWidget> InteractionPromptWidgetClass;

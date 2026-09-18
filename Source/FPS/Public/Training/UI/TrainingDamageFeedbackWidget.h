@@ -45,6 +45,27 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback", meta = (ClampMin = "0.0"))
     float DamageHorizontalSpreadPixels = 18.0f;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Style", meta = (ClampMin = "0", ClampMax = "4"))
+    int32 DamageOutlineSize = 1;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Style")
+    FLinearColor DamageOutlineColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.82f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Style")
+    FVector2D DamageShadowOffset = FVector2D(1.0f, 1.0f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Style")
+    FLinearColor DamageShadowColor = FLinearColor(0.0f, 0.0f, 0.0f, 0.72f);
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Animation", meta = (ClampMin = "0.01", ClampMax = "0.5", Units = "s"))
+    float DamageScaleInSeconds = 0.10f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Animation", meta = (ClampMin = "0.1", ClampMax = "2.0"))
+    float NormalDamageStartScale = 0.86f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage Feedback|Animation", meta = (ClampMin = "0.1", ClampMax = "2.0"))
+    float LethalDamageStartScale = 1.12f;
+
 protected:
     virtual void NativePreConstruct() override;
     virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -60,6 +81,7 @@ private:
         FVector WorldPosition = FVector::ZeroVector;
         float Age = 0.0f;
         float HorizontalOffset = 0.0f;
+        bool bLethal = false;
     };
 
     TArray<FDamageNumber> DamageNumbers;

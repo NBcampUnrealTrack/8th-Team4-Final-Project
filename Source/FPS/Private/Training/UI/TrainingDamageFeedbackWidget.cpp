@@ -44,10 +44,18 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
 
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
     DamageText->SetText(FText::AsNumber(FMath::RoundToInt(Damage)));
-    DamageText->SetFont(TrainingWidgetStyle::MakeFont(bLethal ? LethalDamageFontSize : NormalDamageFontSize));
+
+    FSlateFontInfo DamageFont = TrainingWidgetStyle::MakeFont(bLethal ? LethalDamageFontSize : NormalDamageFontSize);
+    DamageFont.OutlineSettings.OutlineSize = FMath::Clamp(DamageOutlineSize, 0, 4);
+    DamageFont.OutlineSettings.OutlineColor = DamageOutlineColor;
+    DamageText->SetFont(DamageFont);
     DamageText->SetColorAndOpacity(FSlateColor(bLethal ? LethalDamageColor : NormalDamageColor));
-    DamageText->SetShadowOffset(FVector2D(1.0, 1.0));
-    DamageText->SetShadowColorAndOpacity(FLinearColor::Black);
+    DamageText->SetJustification(ETextJustify::Center);
+    DamageText->SetShadowOffset(DamageShadowOffset);
+    DamageText->SetShadowColorAndOpacity(DamageShadowColor);
+    DamageText->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+    const float StartScale = bLethal ? LethalDamageStartScale : NormalDamageStartScale;
+    DamageText->SetRenderScale(FVector2D(StartScale, StartScale));
     DamageText->SetVisibility(ESlateVisibility::Hidden);
 
     UCanvasPanelSlot* DamageSlot = Canvas_Damage->AddChildToCanvas(DamageText);
@@ -58,6 +66,7 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
     Entry.Text = DamageText;
     Entry.WorldPosition = WorldPosition + DamageNumberWorldOffset;
     Entry.HorizontalOffset = static_cast<float>(DamageSequence - 1) * FMath::Max(0.0f, DamageHorizontalSpreadPixels);
+    Entry.bLethal = bLethal;
     DamageSequence = (DamageSequence + 1) % 3;
 }
 
@@ -93,11 +102,19 @@ void UTrainingDamageFeedbackWidget::NativeTick(const FGeometry& MyGeometry, cons
         {
             if (UCanvasPanelSlot* DamageSlot = Cast<UCanvasPanelSlot>(DamageText->Slot))
             {
-                const float Rise = FMath::Max(0.0f, DamageRisePixels) * Entry.Age / Lifetime;
+                const float Progress = FMath::Clamp(Entry.Age / Lifetime, 0.0f, 1.0f);
+                const float RiseAlpha = 1.0f - FMath::Square(1.0f - Progress);
+                const float Rise = FMath::Max(0.0f, DamageRisePixels) * RiseAlpha;
                 DamageSlot->SetPosition(Position + FVector2D(Entry.HorizontalOffset, -Rise));
             }
+
+            const float ScaleDuration = FMath::Max(0.01f, DamageScaleInSeconds);
+            const float ScaleAlpha = FMath::Clamp(Entry.Age / ScaleDuration, 0.0f, 1.0f);
+            const float StartScale = Entry.bLethal ? LethalDamageStartScale : NormalDamageStartScale;
+            const float Scale = FMath::Lerp(StartScale, 1.0f, FMath::InterpEaseOut(0.0f, 1.0f, ScaleAlpha, 3.0f));
+            DamageText->SetRenderScale(FVector2D(Scale, Scale));
             DamageText->SetVisibility(ESlateVisibility::HitTestInvisible);
-            DamageText->SetRenderOpacity(FMath::Clamp((Lifetime - Entry.Age) / (Lifetime * 0.4f), 0.0f, 1.0f));
+            DamageText->SetRenderOpacity(FMath::Clamp((Lifetime - Entry.Age) / (Lifetime * 0.36f), 0.0f, 1.0f));
         }
         else
         {
