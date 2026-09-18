@@ -771,13 +771,20 @@ void AWeaponBase::ResolveHitscanShot(
 	// MaximumRangeMeters를 넘어가도 대미지는 0이 아니라 MinimumDamage로 수렴
 	// EffectiveTraceRange 자체를 바꾸면 이펙트 종료 지점도 같이 늘어나 예광탄이
 	// 1km 밖까지 날아가는 것처럼 보이므로 로컬 변수로만 분리
+	// 근접무기(bUsesAmmo=false)는 사거리 감쇠 표현 대상이 아니므로 이 확장 로직을 타면 안 된다 -
+	// 안 그러면 DamageEntry에 MaximumRangeMeters가 잘못 들어있을 때 칼의 물리 Trace가 1km까지
+	// 늘어나서, 실제 근접 사거리 밖의 적에게도 히트(→히트마커)만 등록되고 대미지는 0(MinimumDamage로
+	// 수렴)인 상황이 생긴다.
 	float PhysicalTraceRangeCentimeters = EffectiveTraceRange;
-	if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
+	if (bUsesAmmo)
 	{
-		if (DamageEntry->MaximumRangeMeters > 0.f)
+		if (const FWeaponDamageEntry* DamageEntry = UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack)))
 		{
-			constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
-			PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+			if (DamageEntry->MaximumRangeMeters > 0.f)
+			{
+				constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
+				PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+			}
 		}
 	}
 
