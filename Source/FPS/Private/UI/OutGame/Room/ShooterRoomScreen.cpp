@@ -1,16 +1,26 @@
 // ShooterRoomScreen.cpp
 #include "UI/OutGame/Room/ShooterRoomScreen.h"
 
+#include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Engine/AssetManager.h"
+#include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
 #include "GameMode/State/LobbyGameState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "Tags/UITags.h"
 #include "TimerManager.h"
+#include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
+#include "UI/OutGame/Room/ShooterRoomMenuScreen.h"
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
+#include "UI/Settings/ShooterOptionsScreen.h"
+#include "UI/ShooterUISettings.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterRoomScreen, Log, All);
 
@@ -21,34 +31,7 @@ namespace ShooterRoomScreenRules
 	// 화면에 그리는 순서
 	constexpr EGameTeam TeamOrder[] = {EGameTeam::TeamA, EGameTeam::TeamB, EGameTeam::None};
 
-	// GameMode 선택 순서
-	constexpr ELobbyMatchMode ModeOrder[] = {ELobbyMatchMode::Bomb, ELobbyMatchMode::Domination};
-
-	ELobbyMatchMode CycleMatchMode(const ELobbyMatchMode Current, const int32 Delta)
-	{
-		const int32 Count = UE_ARRAY_COUNT(ModeOrder);
-
-		int32 Index = 0;
-		for (int32 Cursor = 0; Cursor < Count; ++Cursor)
-		{
-			if (ModeOrder[Cursor] == Current)
-			{
-				Index = Cursor;
-				break;
-			}
-		}
-
-		return ModeOrder[(Index + Delta + Count) % Count];
-	}
-
-	FText GetMatchModeName(const ELobbyMatchMode MatchMode)
-	{
-		return MatchMode == ELobbyMatchMode::Domination
-			       ? NSLOCTEXT("ShooterLobby", "MatchModeDomination", "Domination")
-			       : NSLOCTEXT("ShooterLobby", "MatchModeBomb", "Bomb");
-	}
-
-	// 레디 수 / 팀 인원
+	// 팀 인원 / 레디 수
 	FText BuildReadyCountText(const TArray<FShooterRoomSlotView>& TeamViews)
 	{
 		int32 ReadyCount = 0;
@@ -58,9 +41,9 @@ namespace ShooterRoomScreenRules
 		}
 
 		return FText::Format(
-			NSLOCTEXT("ShooterLobby", "TeamReadyCount", "{0} / {1}"),
-			FText::AsNumber(ReadyCount),
-			FText::AsNumber(TeamViews.Num()));
+			NSLOCTEXT("TeamReadyCount", "ShooterLobby", "{0} / {1}"),
+			FText::AsNumber(TeamViews.Num()),
+			FText::AsNumber(ReadyCount));
 	}
 }
 
@@ -96,10 +79,17 @@ void UShooterRoomScreen::NativeOnActivated()
 	}
 
 	Refresh();
+	RequestThumbnails();
 }
 
 void UShooterRoomScreen::NativeOnDeactivated()
 {
+	if (ThumbnailHandle.IsValid() && !ThumbnailHandle->HasLoadCompleted())
+	{
+		ThumbnailHandle->CancelHandle();
+	}
+	ThumbnailHandle.Reset();
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ReconcileTimerHandle);
@@ -113,20 +103,141 @@ void UShooterRoomScreen::NativeOnDeactivated()
 
 	UnbindFromLobbyGameState();
 
+	// 확인창이 결과 없이 끝나도 바인딩이 남지 않게. 확인창은 풀에서 재사용됨
+	ClearLeaveConfirmBindings();
+
+	if (UShooterRoomMenuScreen* Menu = RoomMenuInstance.Get())
+	{
+		Menu->OnCloseRequested.RemoveAll(this);
+		Menu->OnSettingsRequested.RemoveAll(this);
+		Menu->OnLeaveRequested.RemoveAll(this);
+	}
+	RoomMenuInstance.Reset();
+
+	if (UShooterOptionsScreen* Screen = OptionsScreenInstance.Get())
+	{
+		Screen->OnCloseRequested.RemoveAll(this);
+	}
+	OptionsScreenInstance.Reset();
+
 	Super::NativeOnDeactivated();
 }
 
 UWidget* UShooterRoomScreen::NativeGetDesiredFocusTarget() const
 {
-	// 호스트에게 포커스를 주면 Enter 한 번에 매치가 시작됨 방지를 위함
 	return IsLocalPlayerHost() ? nullptr : Btn_Ready;
 }
 
 bool UShooterRoomScreen::NativeOnHandleBackAction()
 {
-	//  전환할 앞 칸이 없다
-	HandleLeaveClicked();
+	PresentRoomMenu();
 	return true;
+}
+
+void UShooterRoomScreen::PresentRoomMenu()
+{
+	if (RoomMenuInstance.IsValid())
+	{
+		return;
+	}
+
+	const TSubclassOf<UShooterRoomMenuScreen> LoadedClass = RoomMenuClass.LoadSynchronous();
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager) || !IsValid(LoadedClass))
+	{
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("RoomMenuClass is not configured."));
+		return;
+	}
+
+	UShooterRoomMenuScreen* Menu = Cast<UShooterRoomMenuScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
+	if (!IsValid(Menu))
+	{
+		return;
+	}
+
+	// 항복 · 게임 종료는 연결하지 않는다
+	Menu->OnCloseRequested.AddUObject(this, &ThisClass::RemoveRoomMenu);
+	Menu->OnSettingsRequested.AddUObject(this, &ThisClass::PresentOptionsScreen);
+	Menu->OnLeaveRequested.AddUObject(this, &ThisClass::HandleLeaveClicked);
+	RoomMenuInstance = Menu;
+}
+
+void UShooterRoomScreen::RemoveRoomMenu()
+{
+	UShooterRoomMenuScreen* Menu = RoomMenuInstance.Get();
+	if (!IsValid(Menu))
+	{
+		return;
+	}
+
+	Menu->OnCloseRequested.RemoveAll(this);
+	Menu->OnSettingsRequested.RemoveAll(this);
+	Menu->OnLeaveRequested.RemoveAll(this);
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr)
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Menu);
+	}
+
+	RoomMenuInstance.Reset();
+}
+
+void UShooterRoomScreen::PresentOptionsScreen()
+{
+	if (OptionsScreenInstance.IsValid())
+	{
+		return;
+	}
+
+	const TSubclassOf<UShooterOptionsScreen> LoadedClass = OptionsScreenClass.LoadSynchronous();
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager) || !IsValid(LoadedClass))
+	{
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("OptionsScreenClass is not configured."));
+		return;
+	}
+
+	UShooterOptionsScreen* Screen = Cast<UShooterOptionsScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
+	if (!IsValid(Screen))
+	{
+		return;
+	}
+
+	Screen->OnCloseRequested.AddUObject(this, &ThisClass::HandleOptionsCloseRequested);
+	OptionsScreenInstance = Screen;
+}
+
+void UShooterRoomScreen::HandleOptionsCloseRequested()
+{
+	UShooterOptionsScreen* Screen = OptionsScreenInstance.Get();
+	if (!IsValid(Screen))
+	{
+		return;
+	}
+
+	Screen->FinishEditing();
+	Screen->OnCloseRequested.RemoveAll(this);
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr)
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Screen);
+	}
+
+	OptionsScreenInstance.Reset();
 }
 
 void UShooterRoomScreen::Refresh()
@@ -157,6 +268,7 @@ void UShooterRoomScreen::Refresh()
 	CachedPresentationSignature = Signature;
 
 	RefreshTeamPanels(Views);
+	RefreshRoomHeader(Views, LobbyGameState);
 	RefreshModePanel(LobbyGameState->GetSelectedMatchMode(), bIsHost);
 	RefreshActions(LobbyGameState, bIsHost);
 }
@@ -227,7 +339,6 @@ FString UShooterRoomScreen::BuildPresentationSignature(
 {
 	FString Signature;
 
-	// 그리는 순서 그대로 쌓는다. PlayerArray 순서가 머신마다 달라도 같은 값이 나온다
 	for (const EGameTeam Team : ShooterRoomScreenRules::TeamOrder)
 	{
 		for (const FShooterRoomSlotView& View : FShooterRoomRules::GetTeamPlayers(Views, Team))
@@ -293,7 +404,6 @@ void UShooterRoomScreen::EnsureTeamSlots(
 	const EGameTeam Team,
 	const int32 Capacity)
 {
-	// 갱신마다 다시 만들면 칸별 캐시가 비어 모든 갱신이 Snap 이 됨
 	if (OutSlots.Num() == Capacity)
 	{
 		return;
@@ -390,12 +500,40 @@ void UShooterRoomScreen::HandleSlotJoinRequested(const EGameTeam Team)
 
 void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMode, const bool bIsHost)
 {
-	Text_ModeName->SetText(ShooterRoomScreenRules::GetMatchModeName(SelectedMatchMode));
-
 	// 모드를 고르는 사람은 호스트뿐
 	const ESlateVisibility ArrowVisibility = bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
 	Btn_ModePrev->SetVisibility(ArrowVisibility);
 	Btn_ModeNext->SetVisibility(ArrowVisibility);
+
+	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
+	const int32 TeamCapacity = IsValid(LobbyGameState) ? LobbyGameState->GetRoomSettings().MaxPlayersPerTeam : 0;
+	Text_TeamSize->SetVisibility(TeamCapacity > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	Text_TeamSize->SetText(FText::Format(
+		NSLOCTEXT("ShooterLobby", "TeamSize", "{0}V{0}"),
+		FText::AsNumber(TeamCapacity)));
+
+	const TArray<FShooterLobbyModeDisplay>& Modes = GetDefault<UShooterUISettings>()->LobbyModes;
+	const FShooterLobbyModeDisplay* Entry = Modes.FindByPredicate(
+		[SelectedMatchMode](const FShooterLobbyModeDisplay& It) { return It.Mode == SelectedMatchMode; });
+
+	if (!Entry)
+	{
+		Text_ModeName->SetText(UEnum::GetDisplayValueAsText(SelectedMatchMode));
+		Text_MapName->SetVisibility(ESlateVisibility::Collapsed);
+		Img_MapThumbnail->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	Text_ModeName->SetText(Entry->ModeName);
+	Text_MapName->SetText(Entry->MapName);
+	Text_MapName->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	UTexture2D* Thumbnail = Entry->Thumbnail.Get();
+	Img_MapThumbnail->SetVisibility(Thumbnail ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (Thumbnail)
+	{
+		Img_MapThumbnail->SetBrushFromTexture(Thumbnail);
+	}
 }
 
 void UShooterRoomScreen::RefreshActions(const ALobbyGameState* LobbyGameState, const bool bIsHost)
@@ -411,8 +549,53 @@ void UShooterRoomScreen::RefreshActions(const ALobbyGameState* LobbyGameState, c
 
 	Btn_Start->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
+	Text_Status->SetText(BuildStatusText(LobbyGameState->GetStartState(), bIsHost));
+
 	bStartAllowedByServer = (LobbyGameState->GetStartState().Blocker == ELobbyStartBlocker::None);
 	RefreshLocalActions();
+}
+
+FText UShooterRoomScreen::BuildStatusText(const FLobbyStartState& StartState, const bool bIsHost) const
+{
+	switch (StartState.Blocker)
+	{
+	case ELobbyStartBlocker::Starting:
+		return NSLOCTEXT("ShooterLobby", "StartingGame", "게임 시작 중");
+
+	case ELobbyStartBlocker::NotEnoughPlayers:
+	{
+		const ALobbyGameState* LobbyGameState = GetLobbyGameState();
+		return FText::Format(
+			NSLOCTEXT("ShooterLobby", "NeedMorePlayers", "최소 {0}명이 필요합니다"),
+			FText::AsNumber(IsValid(LobbyGameState) ? LobbyGameState->GetRoomSettings().MinimumPlayersToStart : 0));
+	}
+
+	case ELobbyStartBlocker::TeamsCannotBeFinalized:
+		return NSLOCTEXT("ShooterLobby", "BalanceTeams", "팀 인원을 맞춰 주세요");
+
+	case ELobbyStartBlocker::WaitingForReady:
+		return FText::Format(
+			NSLOCTEXT("ShooterLobby", "ReadyCount", "READY {0} / {1}"),
+			FText::AsNumber(StartState.ReadyCount),
+			FText::AsNumber(StartState.ReadyRequired));
+
+	case ELobbyStartBlocker::None:
+	default:
+		return bIsHost
+			? NSLOCTEXT("ShooterLobby", "CanStart", "시작할 수 있습니다")
+			: NSLOCTEXT("ShooterLobby", "WaitingForHost", "호스트가 시작하기를 기다리는 중");
+	}
+}
+
+void UShooterRoomScreen::RefreshRoomHeader(const TArray<FShooterRoomSlotView>& Views, const ALobbyGameState* LobbyGameState)
+{
+	const FLobbyRoomSettings& RoomSettings = LobbyGameState->GetRoomSettings();
+	Text_RoomTitle->SetText(FText::FromString(RoomSettings.RoomName));
+
+	Text_PlayerCount->SetText(FText::Format(
+		NSLOCTEXT("ShooterLobby", "RoomPlayerCountHeader", "{0} / {1}"),
+		FText::AsNumber(Views.Num()),
+		FText::AsNumber(RoomSettings.MaxPlayers)));
 }
 
 void UShooterRoomScreen::RefreshLocalActions()
@@ -447,31 +630,129 @@ void UShooterRoomScreen::HandleStartClicked()
 
 void UShooterRoomScreen::HandleModePrevClicked()
 {
-	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
-	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
-	if (!IsValid(PlayerController) || !IsValid(LobbyGameState))
-	{
-		return;
-	}
-
-	PlayerController->RequestLobbyMatchMode(
-		ShooterRoomScreenRules::CycleMatchMode(LobbyGameState->GetSelectedMatchMode(), -1));
+	StepMatchMode(-1);
 }
 
 void UShooterRoomScreen::HandleModeNextClicked()
 {
-	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+	StepMatchMode(+1);
+}
+
+void UShooterRoomScreen::StepMatchMode(const int32 Delta)
+{
 	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
-	if (!IsValid(PlayerController) || !IsValid(LobbyGameState))
+	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+	if (!IsValid(LobbyGameState) || !IsValid(PlayerController))
 	{
 		return;
 	}
 
-	PlayerController->RequestLobbyMatchMode(
-		ShooterRoomScreenRules::CycleMatchMode(LobbyGameState->GetSelectedMatchMode(), 1));
+	const TArray<FShooterLobbyModeDisplay>& Modes = GetDefault<UShooterUISettings>()->LobbyModes;
+	if (Modes.IsEmpty())
+	{
+		return;
+	}
+
+	const ELobbyMatchMode Current = LobbyGameState->GetSelectedMatchMode();
+	int32 Index = Modes.IndexOfByPredicate(
+		[Current](const FShooterLobbyModeDisplay& Entry) { return Entry.Mode == Current; });
+	if (Index == INDEX_NONE)
+	{
+		Index = 0;
+	}
+
+	const int32 NextIndex = (Index + Delta + Modes.Num()) % Modes.Num();
+
+	PlayerController->RequestLobbyMatchMode(Modes[NextIndex].Mode);
+}
+
+void UShooterRoomScreen::RequestThumbnails()
+{
+	TArray<FSoftObjectPath> Paths;
+	for (const FShooterLobbyModeDisplay& Entry : GetDefault<UShooterUISettings>()->LobbyModes)
+	{
+		if (!Entry.Thumbnail.IsNull())
+		{
+			Paths.Add(Entry.Thumbnail.ToSoftObjectPath());
+		}
+	}
+
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	ThumbnailHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths,
+		FStreamableDelegate::CreateWeakLambda(this, [this]()
+		{
+			// 요청할 때의 모드가 아니라 지금 선택된 모드로 다시 그림
+			if (const ALobbyGameState* LobbyGameState = GetLobbyGameState())
+			{
+				RefreshModePanel(LobbyGameState->GetSelectedMatchMode(), IsLocalPlayerHost());
+			}
+		}));
 }
 
 void UShooterRoomScreen::HandleLeaveClicked()
+{
+	if (!IsLocalPlayerHost())
+	{
+		LeaveToFrontend();
+		return;
+	}
+
+	if (LeaveConfirmDialog.IsValid())
+	{
+		return;
+	}
+
+	const TSubclassOf<UShooterConfirmDialog> LoadedClass = ConfirmDialogClass.LoadSynchronous();
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager) || !IsValid(LoadedClass))
+	{
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("ConfirmDialogClass is not configured."));
+		return;
+	}
+
+	UShooterConfirmDialog* Dialog = Cast<UShooterConfirmDialog>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
+	if (!IsValid(Dialog))
+	{
+		return;
+	}
+
+	Dialog->SetupMessage(NSLOCTEXT("ShooterLobby", "LeaveRoomHost", "방이 닫히고 모두 나가게 됩니다"));
+	Dialog->OnConfirmed.AddDynamic(this, &ThisClass::HandleLeaveConfirmed);
+	Dialog->OnCanceled.AddDynamic(this, &ThisClass::HandleLeaveCanceled);
+	LeaveConfirmDialog = Dialog;
+}
+
+void UShooterRoomScreen::HandleLeaveConfirmed()
+{
+	ClearLeaveConfirmBindings();
+	LeaveToFrontend();
+}
+
+void UShooterRoomScreen::HandleLeaveCanceled()
+{
+	ClearLeaveConfirmBindings();
+}
+
+void UShooterRoomScreen::ClearLeaveConfirmBindings()
+{
+	if (UShooterConfirmDialog* Dialog = LeaveConfirmDialog.Get())
+	{
+		Dialog->OnConfirmed.RemoveAll(this);
+		Dialog->OnCanceled.RemoveAll(this);
+	}
+	LeaveConfirmDialog.Reset();
+}
+
+void UShooterRoomScreen::LeaveToFrontend()
 {
 	if (AShooterPlayerController* PlayerController = GetLocalShooterPlayerController())
 	{
@@ -492,6 +773,8 @@ void UShooterRoomScreen::HandleLobbyMatchModeChanged(ELobbyMatchMode SelectedMat
 void UShooterRoomScreen::HandleLobbyStartFailed()
 {
 	bLocalStartPending = false;
+
+	Text_Status->SetText(NSLOCTEXT("ShooterLobby", "StartFailed", "게임을 시작하지 못했습니다"));
 	RefreshLocalActions();
 }
 

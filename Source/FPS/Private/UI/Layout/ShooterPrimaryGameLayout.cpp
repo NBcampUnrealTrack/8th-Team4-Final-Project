@@ -14,6 +14,7 @@ void UShooterPrimaryGameLayout::NativeOnInitialized()
 	RegisterLayer(UITags::UI_Layer_GameMenu, Stack_GameMenu);
 	RegisterLayer(UITags::UI_Layer_Menu,  Stack_Menu);
 	RegisterLayer(UITags::UI_Layer_Modal, Stack_Modal);
+	RegisterLayer(UITags::UI_Layer_Transition, Stack_Transition);
 }
 
 void UShooterPrimaryGameLayout::RegisterLayer(

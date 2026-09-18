@@ -45,6 +45,8 @@ protected:
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Menu;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Modal;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonActivatableWidgetStack> Stack_Transition;
 	
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UCommonActivatableWidgetContainerBase>> LayerContainers;
