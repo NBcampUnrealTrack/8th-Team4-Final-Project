@@ -9,6 +9,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "GameFramework/SpectatorPawn.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Weapon/WeaponLoadoutService.h"
@@ -729,8 +730,14 @@ bool UTeamPlayerManager::IsSpawnLocationClear(const FVector& SpawnLocation) cons
 	for (TActorIterator<APawn> Iterator(World); Iterator; ++Iterator)
 	{
 		const APawn* ExistingPawn = *Iterator;
-		if (IsValid(ExistingPawn)
-			&& FVector::DistSquared(ExistingPawn->GetActorLocation(), SpawnLocation) < ClearanceRadiusSquared)
+		// 관전 Pawn은 실제 전투 점유자가 아니다. 사망/레이트 조인 대기 중 생성된
+		// SpectatorPawn이 거리 검사만으로 스폰 슬롯을 영구 점유하지 않게 제외한다.
+		if (!IsValid(ExistingPawn) || ExistingPawn->IsA<ASpectatorPawn>())
+		{
+			continue;
+		}
+
+		if (FVector::DistSquared(ExistingPawn->GetActorLocation(), SpawnLocation) < ClearanceRadiusSquared)
 		{
 			return false;
 		}

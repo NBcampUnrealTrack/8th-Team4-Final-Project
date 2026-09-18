@@ -103,7 +103,7 @@ void UDominationObjectiveManager::StopObjectiveFlow()
 
 bool UDominationObjectiveManager::ActivateInitialPoint()
 {
-	ADominationCapturePoint* CenterPoint = GetCapturePoint(EDominationPointId::C);
+	ADominationCapturePoint* CenterPoint = GetCapturePoint(DominationRules::InitialPointId);
 	ADominationGameState* DominationGameState = GetDominationGameState();
 	FTimerManager* TimerManager = GetTimerManager();
 	if (!IsValid(CenterPoint)
@@ -115,7 +115,7 @@ bool UDominationObjectiveManager::ActivateInitialPoint()
 
 	StopCaptureTracking();
 	TimerManager->ClearTimer(PointTransitionTimerHandle);
-	TransitionTargetPointId = EDominationPointId::C;
+	TransitionTargetPointId = DominationRules::InitialPointId;
 	CapturingTeam = EGameTeam::None;
 	CaptureProgress = 0.0f;
 	EmptyZoneElapsedSeconds = 0.0f;
@@ -129,7 +129,7 @@ bool UDominationObjectiveManager::ActivateInitialPoint()
 	}
 
 	DominationGameState->BeginInitialObjectiveTransition(
-		EDominationPointId::C,
+		DominationRules::InitialPointId,
 		PointTransitionDuration);
 	TimerManager->SetTimer(
 		PointTransitionTimerHandle,

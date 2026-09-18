@@ -12,6 +12,11 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
 
+namespace
+{
+	constexpr float RespawnRetryDelaySeconds = 0.5f;
+}
+
 bool UDominationRespawnManager::Initialize(
 	ADominationGameMode* InOwnerGameMode,
 	UDominationObjectiveManager* InObjectiveManager,
@@ -48,7 +53,7 @@ bool UDominationRespawnManager::Initialize(
 	}
 
 	// 최초 참가자는 활성 거점 공개 전에 중앙 C를 기준으로 스폰한다.
-	if (!UpdateTeamSpawnVolumes(EDominationPointId::C))
+	if (!UpdateTeamSpawnVolumes(DominationRules::InitialPointId))
 	{
 		Shutdown();
 		return false;
@@ -112,7 +117,7 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingController)
 {
 	// 스폰 지점이 잠깐 막혀도 관전 상태에 고정되지 않도록 재시도한다.
-	ScheduleRespawnInternal(WaitingController, 0.5f);
+	ScheduleRespawnInternal(WaitingController, RespawnRetryDelaySeconds);
 }
 
 void UDominationRespawnManager::ScheduleRespawnInternal(
@@ -127,11 +132,20 @@ void UDominationRespawnManager::ScheduleRespawnInternal(
 	}
 
 	FTimerManager* TimerManager = GetTimerManager();
-	if (TimerManager == nullptr
-		|| !IsValid(WaitingController)
-		|| PendingRespawnTimers.Contains(ControllerKey))
+	if (TimerManager == nullptr || !IsValid(WaitingController))
 	{
 		return;
+	}
+
+	if (FTimerHandle* ExistingTimer = PendingRespawnTimers.Find(ControllerKey))
+	{
+		if (TimerManager->TimerExists(*ExistingTimer))
+		{
+			return;
+		}
+
+		// 타이머는 끝났는데 키만 남아 있으면 이후 사망/재시도 예약이 영구 차단된다.
+		PendingRespawnTimers.Remove(ControllerKey);
 	}
 
 	FTimerHandle& RespawnTimer = PendingRespawnTimers.Add(ControllerKey);
@@ -158,6 +172,14 @@ bool UDominationRespawnManager::TryGetSpawnTransform(
 	const EDominationPointId ActivePointId,
 	FTransform& OutSpawnTransform)
 {
+	// 리스폰 타이머와 거점 전환 이벤트의 실행 순서에 의존하지 않는다.
+	// 실제 스폰을 시도하는 순간의 활성 거점 기준으로 캐시를 동기화한다.
+	if (ActivePointId == EDominationPointId::None
+		|| !UpdateTeamSpawnVolumes(ActivePointId))
+	{
+		return false;
+	}
+
 	ADominationSpawnVolume* SpawnVolume = GetTeamSpawnVolume(Team);
 	UDominationObjectiveManager* Manager = ObjectiveManager.Get();
 	ADominationCapturePoint* ActiveCapturePoint = IsValid(Manager)

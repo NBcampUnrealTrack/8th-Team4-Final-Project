@@ -54,6 +54,7 @@ namespace DominationRules
 {
 	inline constexpr int32 PointCount = 5;
 	inline constexpr int32 SpawnBoundaryCount = PointCount + 2;
+	inline constexpr EDominationPointId InitialPointId = EDominationPointId::C;
 	inline constexpr int32 RoundsToWin = 3;
 	inline constexpr int32 MaxRounds = RoundsToWin * 2 - 1;
 

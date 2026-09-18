@@ -330,7 +330,7 @@ bool UDominationMatchStartManager::SpawnInitialParticipants()
 		if (!LoadoutManager->InitializeCombatClassInventory(PlayerState)
 			|| !GameMode->RestartPlayerAtObjective(
 				PlayerController,
-				EDominationPointId::C))
+				DominationRules::InitialPointId))
 		{
 			return false;
 		}
