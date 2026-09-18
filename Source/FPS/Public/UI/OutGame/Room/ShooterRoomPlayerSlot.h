@@ -20,7 +20,8 @@ class FPS_API UShooterRoomPlayerSlot : public UCommonUserWidget
 
 public:
 	void SetPlayer(const FShooterRoomSlotView& View);
-	void SetEmpty(EGameTeam InSlotTeam);
+	// bJoinable 이 false 면 칸은 비어 보이되 눌리지 않는다
+	void SetEmpty(EGameTeam InSlotTeam, bool bJoinable = true);
 
 	FOnRoomSlotJoinRequested OnJoinRequested;
 
