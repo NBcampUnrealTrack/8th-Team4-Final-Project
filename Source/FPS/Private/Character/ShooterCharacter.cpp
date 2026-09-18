@@ -235,6 +235,14 @@ void AShooterCharacter::UpdateTagSubscriptions()
 		URogueVitalAttributeSet::GetStaminaAttribute()).AddUObject(this, &ThisClass::HandleStaminaChanged);
 
 	UpdateSprintBlocked(AbilitySystem->GetNumericAttribute(URogueVitalAttributeSet::GetStaminaAttribute()));
+
+	AimingTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
+		RogueTags::State_Combat_IsAiming,
+		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleAimingTagChanged);
+
+	WeaponFiredEventHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
+		FGameplayTagContainer(RogueTags::Event_Weapon_Fired),
+		FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleWeaponFired));
 }
 
 void AShooterCharacter::UnsubscribeTags()
@@ -251,17 +259,39 @@ void AShooterCharacter::UnsubscribeTags()
 
 		AbilitySystem->GetGameplayAttributeValueChangeDelegate(
 			URogueVitalAttributeSet::GetStaminaAttribute()).Remove(StaminaChangedHandle);
+
+		AbilitySystem->RegisterGameplayTagEvent(
+			RogueTags::State_Combat_IsAiming,
+			EGameplayTagEventType::NewOrRemoved).Remove(AimingTagEventHandle);
+
+		AbilitySystem->RemoveGameplayEventTagContainerDelegate(
+			FGameplayTagContainer(RogueTags::Event_Weapon_Fired), WeaponFiredEventHandle);
 	}
 
 	RevealTagEventHandle.Reset();
 	UtilityHeldEventHandle.Reset();
 	StaminaChangedHandle.Reset();
+	AimingTagEventHandle.Reset();
+	WeaponFiredEventHandle.Reset();
 	SubscribedAbilitySystem.Reset();
 }
 
 void AShooterCharacter::HandleRevealTagChanged(const FGameplayTag, const int32)
 {
 	RefreshTeamOutline();
+}
+
+void AShooterCharacter::HandleAimingTagChanged(const FGameplayTag, const int32 NewCount)
+{
+	if (NewCount > 0)
+	{
+		HandleSprintReleased();
+	}
+}
+
+void AShooterCharacter::HandleWeaponFired(FGameplayTag, const FGameplayEventData*)
+{
+	HandleSprintReleased();
 }
 
 void AShooterCharacter::HandleStaminaChanged(const FOnAttributeChangeData& Data)
@@ -528,6 +558,13 @@ void AShooterCharacter::HandleJumpReleased()
 
 void AShooterCharacter::HandleSprintPressed()
 {
+	// 조준 중에는 달리기 시작 불가
+	const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+	if (IsValid(AbilitySystem) && AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_IsAiming))
+	{
+		return;
+	}
+
 	if (UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(GetCharacterMovement()))
 	{
 		ShooterMovement->StartSprint();
