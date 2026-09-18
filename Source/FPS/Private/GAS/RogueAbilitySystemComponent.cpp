@@ -221,6 +221,14 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 		GiveAbility(Spec);
 	}
 
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : AbilitySet->Effects)
+	{
+		if (EffectClass)
+		{
+			ApplyGameplayEffectToSelf(EffectClass.GetDefaultObject(), 1.f, MakeEffectContext());
+		}
+	}
+
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s 어빌리티 %d개 부여"), *AbilitySet->GetName(), AbilitySet->Abilities.Num());
 }

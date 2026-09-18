@@ -21,6 +21,7 @@ class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
 struct FOnAttributeChangeData;
+struct FGameplayEventData;
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter,
@@ -168,10 +169,16 @@ private:
 	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
 	void UpdateSprintBlocked(float Stamina);
 
+	// 조준 시작과 발사(근접 포함) 시 달리기 중단
+	void HandleAimingTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
+	void HandleWeaponFired(FGameplayTag EventTag, const FGameplayEventData* Payload);
+
 	TWeakObjectPtr<UAbilitySystemComponent> SubscribedAbilitySystem;
 	FDelegateHandle RevealTagEventHandle;
 	FDelegateHandle UtilityHeldEventHandle;
 	FDelegateHandle StaminaChangedHandle;
+	FDelegateHandle AimingTagEventHandle;
+	FDelegateHandle WeaponFiredEventHandle;
 
 	// 랙돌에 피격 임펄스 적용
 
