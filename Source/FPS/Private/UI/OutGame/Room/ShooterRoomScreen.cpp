@@ -16,7 +16,7 @@
 #include "TimerManager.h"
 #include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
-#include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
+#include "UI/OutGame/Room/ShooterRoomMenuScreen.h"
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
@@ -106,11 +106,11 @@ void UShooterRoomScreen::NativeOnDeactivated()
 	// 확인창이 결과 없이 끝나도 바인딩이 남지 않게. 확인창은 풀에서 재사용됨
 	ClearLeaveConfirmBindings();
 
-	if (UShooterInGameMenuScreen* Menu = RoomMenuInstance.Get())
+	if (UShooterRoomMenuScreen* Menu = RoomMenuInstance.Get())
 	{
-		Menu->OnResumeRequested.RemoveAll(this);
-		Menu->OnOptionsRequested.RemoveAll(this);
-		Menu->OnReturnToLobbyRequested.RemoveAll(this);
+		Menu->OnCloseRequested.RemoveAll(this);
+		Menu->OnSettingsRequested.RemoveAll(this);
+		Menu->OnLeaveRequested.RemoveAll(this);
 	}
 	RoomMenuInstance.Reset();
 
@@ -141,7 +141,7 @@ void UShooterRoomScreen::PresentRoomMenu()
 		return;
 	}
 
-	const TSubclassOf<UShooterInGameMenuScreen> LoadedClass = RoomMenuClass.LoadSynchronous();
+	const TSubclassOf<UShooterRoomMenuScreen> LoadedClass = RoomMenuClass.LoadSynchronous();
 	const UGameInstance* GameInstance = GetGameInstance();
 	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
 		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
@@ -152,7 +152,7 @@ void UShooterRoomScreen::PresentRoomMenu()
 		return;
 	}
 
-	UShooterInGameMenuScreen* Menu = Cast<UShooterInGameMenuScreen>(
+	UShooterRoomMenuScreen* Menu = Cast<UShooterRoomMenuScreen>(
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, LoadedClass));
 	if (!IsValid(Menu))
 	{
@@ -160,23 +160,23 @@ void UShooterRoomScreen::PresentRoomMenu()
 	}
 
 	// 항복 · 게임 종료는 연결하지 않는다
-	Menu->OnResumeRequested.AddUObject(this, &ThisClass::RemoveRoomMenu);
-	Menu->OnOptionsRequested.AddUObject(this, &ThisClass::PresentOptionsScreen);
-	Menu->OnReturnToLobbyRequested.AddUObject(this, &ThisClass::HandleLeaveClicked);
+	Menu->OnCloseRequested.AddUObject(this, &ThisClass::RemoveRoomMenu);
+	Menu->OnSettingsRequested.AddUObject(this, &ThisClass::PresentOptionsScreen);
+	Menu->OnLeaveRequested.AddUObject(this, &ThisClass::HandleLeaveClicked);
 	RoomMenuInstance = Menu;
 }
 
 void UShooterRoomScreen::RemoveRoomMenu()
 {
-	UShooterInGameMenuScreen* Menu = RoomMenuInstance.Get();
+	UShooterRoomMenuScreen* Menu = RoomMenuInstance.Get();
 	if (!IsValid(Menu))
 	{
 		return;
 	}
 
-	Menu->OnResumeRequested.RemoveAll(this);
-	Menu->OnOptionsRequested.RemoveAll(this);
-	Menu->OnReturnToLobbyRequested.RemoveAll(this);
+	Menu->OnCloseRequested.RemoveAll(this);
+	Menu->OnSettingsRequested.RemoveAll(this);
+	Menu->OnLeaveRequested.RemoveAll(this);
 
 	const UGameInstance* GameInstance = GetGameInstance();
 	if (UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)

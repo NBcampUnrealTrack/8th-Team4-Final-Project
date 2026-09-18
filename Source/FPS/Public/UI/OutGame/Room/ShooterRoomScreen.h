@@ -16,7 +16,7 @@ class UImage;
 class UPanelWidget;
 class UShooterButtonBase;
 class UShooterConfirmDialog;
-class UShooterInGameMenuScreen;
+class UShooterRoomMenuScreen;
 class UShooterOptionsScreen;
 class UShooterRoomPlayerSlot;
 class UTextBlock;
@@ -155,7 +155,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UShooterConfirmDialog> ConfirmDialogClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSoftClassPtr<UShooterInGameMenuScreen> RoomMenuClass;
+	TSoftClassPtr<UShooterRoomMenuScreen> RoomMenuClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UShooterOptionsScreen> OptionsScreenClass;
 
@@ -173,7 +173,7 @@ private:
 	TSharedPtr<FStreamableHandle> ThumbnailHandle;
 
 	TWeakObjectPtr<UShooterConfirmDialog> LeaveConfirmDialog;
-	TWeakObjectPtr<UShooterInGameMenuScreen> RoomMenuInstance;
+	TWeakObjectPtr<UShooterRoomMenuScreen> RoomMenuInstance;
 	TWeakObjectPtr<UShooterOptionsScreen> OptionsScreenInstance;
 
 	// 서버가 복제한 시작 가능 여부

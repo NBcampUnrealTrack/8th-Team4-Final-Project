@@ -12,6 +12,7 @@ class UShooterButtonBase;
 class UShooterRoomListEntry;
 class USessionSubSystem;
 class UTextBlock;
+class UWidget;
 
 /**
  * Menu 1번 칸. 방 찾기 · 목록 · 참가 요청
@@ -60,6 +61,8 @@ private:
 	TObjectPtr<UTextBlock> Text_Status;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterButtonBase> Btn_LocalJoin;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_Join;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UShooterRoomListEntry> RoomEntryWidgetClass;
