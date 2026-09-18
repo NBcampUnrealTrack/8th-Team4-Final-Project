@@ -24,6 +24,7 @@ protected:
     virtual bool IsSurrenderRequestAllowed() const override;
     virtual void OnCombatHUDCreated(UShooterPlayerHUD* HUD) override;
     virtual void OnClassSelectionPresented() override;
+    virtual void RequestReturnToOutGame(AShooterPlayerController& PlayerController) override;
 private:
     void HideRuleOnlyWidgets(UUserWidget& RootWidget);
     void CompleteLocalLoading();

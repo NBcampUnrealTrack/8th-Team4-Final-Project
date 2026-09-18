@@ -105,6 +105,11 @@ void UTrainingUIInitComponent::CompleteLocalLoading()
     }
 }
 
+void UTrainingUIInitComponent::RequestReturnToOutGame(AShooterPlayerController& PlayerController)
+{
+    PlayerController.RequestReturnToFrontend();
+}
+
 void UTrainingUIInitComponent::HideRuleOnlyWidgets(UUserWidget& RootWidget)
 {
     if (!RootWidget.WidgetTree) { return; }

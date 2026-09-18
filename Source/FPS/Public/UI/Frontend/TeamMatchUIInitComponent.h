@@ -78,6 +78,7 @@ protected:
 	bool IsTeamMatchUIReady() const;
 	bool IsSurrenderVoteOpen() const;
 	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
+	virtual void RequestReturnToOutGame(AShooterPlayerController& PlayerController);
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
 	

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Abilities/GameplayAbility.h"   // TSubclassOf 는 StaticClass() 가 필요해 전방 선언으로 부족하다
 #include "Engine/DataAsset.h"
+#include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 
 #include "RogueAbilitySet.generated.h"
@@ -36,4 +37,8 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Ability")
 	TArray<FRogueGrantedAbility> Abilities;
+
+	// 부여 시 자신에게 적용할 상시 GE (스태미너 소모/회복 등)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Ability")
+	TArray<TSubclassOf<UGameplayEffect>> Effects;
 };

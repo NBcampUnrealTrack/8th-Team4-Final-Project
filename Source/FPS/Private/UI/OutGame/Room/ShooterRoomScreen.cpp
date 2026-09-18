@@ -42,7 +42,7 @@ namespace ShooterRoomScreenRules
 
 		return FText::Format(
 			NSLOCTEXT("ShooterLobby", "TeamReadyCount", "{0} / {1}"),
-			FText::AsNumber(ReadyCount).
+			FText::AsNumber(ReadyCount),
 			FText::AsNumber(TeamViews.Num()));
 	}
 }
@@ -591,8 +591,8 @@ FText UShooterRoomScreen::BuildStatusText(const FLobbyStartState& StartState, co
 	case ELobbyStartBlocker::WaitingForReady:
 		return FText::Format(
 			NSLOCTEXT("ShooterLobby", "ReadyCount", "READY {0} / {1}"),
-			FText::AsNumber(StartState.ReadyCount),
-			FText::AsNumber(StartState.ReadyRequired));
+			FText::AsNumber(StartState.ReadyCount + 1),
+			FText::AsNumber(StartState.ReadyRequired + 1));
 
 	case ELobbyStartBlocker::None:
 	default:

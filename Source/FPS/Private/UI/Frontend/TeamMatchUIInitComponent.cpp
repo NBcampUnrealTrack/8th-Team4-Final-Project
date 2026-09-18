@@ -550,8 +550,13 @@ void UTeamMatchUIInitComponent::HandleReturnToLobbyRequested()
 {
 	if (AShooterPlayerController* PlayerController = BoundPlayerController.Get())
 	{
-		PlayerController->RequestReturnToLobby();
+		RequestReturnToOutGame(*PlayerController);
 	}
+}
+
+void UTeamMatchUIInitComponent::RequestReturnToOutGame(AShooterPlayerController& PlayerController)
+{
+	PlayerController.RequestReturnToLobby();
 }
 
 void UTeamMatchUIInitComponent::HandleQuitGameRequested()

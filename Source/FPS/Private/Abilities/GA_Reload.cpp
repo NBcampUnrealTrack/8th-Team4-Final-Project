@@ -15,6 +15,7 @@
 UGA_Reload::UGA_Reload()
 {
 	ActivationOwnedTags.AddTag(RogueTags::State_Combat_IsReloading);
+	SetAssetTags(FGameplayTagContainer(RogueTags::State_Combat_IsReloading));
 }
 
 bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -94,6 +95,7 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 		Weapon->SetEffectiveReloadDuration(FinalReloadDuration);
 	}
 
+	ReloadingWeapon = Weapon;
 	Weapon->StartReload();
 	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadStart);
 
@@ -123,4 +125,12 @@ void UGA_Reload::HandleReloadFinished()
 {
 	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadComplete);
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
+}
+
+void UGA_Reload::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	if (bWasCancelled && ReloadingWeapon.IsValid()) ReloadingWeapon->CancelReload();
+	ReloadingWeapon.Reset();
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

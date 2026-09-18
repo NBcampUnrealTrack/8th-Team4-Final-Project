@@ -79,6 +79,10 @@ public:
 		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 	const FWeaponMontageData* FindWeaponMontages(FGameplayTag WeaponTag, bool bFirstPerson) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
+
+	// Draw presentation must use the same rate as the equip readiness timer.
+	UFUNCTION(BlueprintPure, Category = "FPS|WeaponData")
+	static float GetSwitchAnimationRate(FGameplayTag WeaponTag);
 	float GetReloadDuration(FGameplayTag WeaponTag) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|WeaponData|Weapons")
