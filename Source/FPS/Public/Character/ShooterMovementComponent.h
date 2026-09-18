@@ -1,24 +1,56 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "ShooterMovementComponent.generated.h"
+
+class FSavedMove_Shooter : public FSavedMove_Character
+{
+public:
+	typedef FSavedMove_Character Super;
+
+	virtual void Clear() override;
+	virtual uint8 GetCompressedFlags() const override;
+	virtual bool CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* InCharacter, float MaxDelta) const override;
+	virtual void SetMoveFor(ACharacter* C, float InDeltaTime, FVector const& NewAccel,
+		class FNetworkPredictionData_Client_Character& ClientData) override;
+	virtual void PrepMoveFor(ACharacter* C) override;
+
+	uint8 bSavedWantsToSprint : 1;
+};
+
+class FNetworkPredictionData_Client_Shooter : public FNetworkPredictionData_Client_Character
+{
+public:
+	typedef FNetworkPredictionData_Client_Character Super;
+
+	FNetworkPredictionData_Client_Shooter(const UCharacterMovementComponent& ClientMovement);
+
+	virtual FSavedMovePtr AllocateNewMove() override;
+};
 
 UCLASS(ClassGroup=(Movement), meta=(BlueprintSpawnableComponent))
 class FPS_API UShooterMovementComponent : public UCharacterMovementComponent
 {
 	GENERATED_BODY()
 
+	friend class FSavedMove_Shooter;
+
 public:
 	UShooterMovementComponent();
 
 	virtual void BeginPlay() override;
+
+	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Movement")
 	void StartSprint();
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Movement")
 	void StopSprint();
+
+	// 차단 중에는 입력과 이동 패킷 모두 달리기를 켜지 않는다
+	void SetSprintBlocked(bool bBlocked);
 
 	virtual float GetMaxSpeed() const override;
 
@@ -29,6 +61,8 @@ public:
 	bool IsSprinting() const { return bWantsToSprint; }
 
 protected:
+	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float WalkSpeed = 600.f;
 
@@ -43,5 +77,7 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Movement")
 	bool bWantsToSprint = false;
+
+	bool bSprintBlocked = false;
 
 };

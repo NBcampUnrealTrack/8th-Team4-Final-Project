@@ -20,6 +20,7 @@ class UPlayerCustomizationComponent;
 class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
+struct FOnAttributeChangeData;
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter,
@@ -147,6 +148,12 @@ protected:
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
 
 private:
+	// 달리기 태그 - 이동 갱신마다 CMC 상태와 비교
+	UFUNCTION()
+	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+
+	bool bSprintTagApplied = false;
+
 	// 태그 구독 갱신
 	void UpdateTagSubscriptions();
 	void UnsubscribeTags();
@@ -157,9 +164,14 @@ private:
 	// 유틸리티 홀드 태그 - 무기 표현 억제와 복귀 시 장착 사이클
 	void HandleUtilityHeldChanged(const FGameplayTag ChangedTag, int32 NewCount);
 
+	// 스태미너 - 0 이면 달리기 차단
+	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
+	void UpdateSprintBlocked(float Stamina);
+
 	TWeakObjectPtr<UAbilitySystemComponent> SubscribedAbilitySystem;
 	FDelegateHandle RevealTagEventHandle;
 	FDelegateHandle UtilityHeldEventHandle;
+	FDelegateHandle StaminaChangedHandle;
 
 	// 랙돌에 피격 임펄스 적용
 

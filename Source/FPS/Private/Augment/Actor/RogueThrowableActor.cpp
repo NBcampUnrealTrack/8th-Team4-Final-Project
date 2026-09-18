@@ -7,6 +7,9 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/RotatingMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Sound/SoundAttenuation.h"
 #include "Tags/GameplayTags.h"
 
 ARogueThrowableActor::ARogueThrowableActor()
@@ -66,6 +69,8 @@ void ARogueThrowableActor::BeginPlay()
 
 	BaseSpinRate = Spin->RotationRate;
 
+	StartTrail();
+
 	Super::BeginPlay();
 }
 
@@ -90,7 +95,8 @@ void ARogueThrowableActor::HandleBounce(const FHitResult& ImpactResult, const FV
 		const float Reference = FMath::Max(Movement->InitialSpeed, 1.f);
 		const float Volume = FMath::Clamp(ImpactSpeed / Reference, 0.2f, 1.f);
 
-		UGameplayStatics::PlaySoundAtLocation(this, BounceSound, ImpactResult.ImpactPoint, Volume);
+		UGameplayStatics::PlaySoundAtLocation(this, BounceSound, ImpactResult.ImpactPoint,
+			FRotator::ZeroRotator, Volume, 1.f, 0.f, BounceAttenuation);
 	}
 
 	OnBounced(ImpactResult, ImpactSpeed);
@@ -100,6 +106,8 @@ void ARogueThrowableActor::HandleBounce(const FHitResult& ImpactResult, const FV
 
 void ARogueThrowableActor::HandleStop(const FHitResult& ImpactResult)
 {
+	StopTrail();
+
 	HandleImpact();
 }
 
@@ -116,4 +124,34 @@ void ARogueThrowableActor::HandleImpact()
 	{
 		StartFuse();
 	}
+}
+
+void ARogueThrowableActor::StartTrail()
+{
+	if (!TrailEffect || TrailComponent || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	TrailComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		TrailEffect, Collision, NAME_None, TrailOffset, FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset, /*bAutoDestroy*/ false, /*bAutoActivate*/ true);
+
+	if (TrailComponent && bOverrideTrailColor)
+	{
+		TrailComponent->SetVariableLinearColor(TEXT("User.Team_Color"), TrailColor);
+	}
+}
+
+void ARogueThrowableActor::StopTrail()
+{
+	if (!IsValid(TrailComponent))
+	{
+		return;
+	}
+
+	// 남은 입자가 수명대로 사라진 뒤 자동 정리
+	TrailComponent->SetAutoDestroy(true);
+	TrailComponent->Deactivate();
+	TrailComponent = nullptr;
 }
