@@ -57,8 +57,13 @@ const FWeaponMontageData* UWeaponData::FindWeaponMontages(const FGameplayTag Wea
 
 float UWeaponData::GetSwitchAnimationRate(const FGameplayTag WeaponTag)
 {
-	// Shared by holster/draw presentation and readiness timers; reload/fire are unchanged.
-	return WeaponTag == RogueTags::Weapon_Type_Pistol ? 6.f : 4.f;
+	// Draw presentation and equip readiness share this modest speed-up.
+	// Short first-person holster copies play at 1x with their own 0.2s delay.
+	const bool bGun = WeaponTag == RogueTags::Weapon_Type_Rifle
+		|| WeaponTag == RogueTags::Weapon_Type_Pistol
+		|| WeaponTag == RogueTags::Weapon_Type_Shotgun
+		|| WeaponTag == RogueTags::Weapon_Type_Sniper;
+	return bGun ? 1.5f : 4.f;
 }
 
 float UWeaponData::GetEquipDuration(const FGameplayTag WeaponTag) const

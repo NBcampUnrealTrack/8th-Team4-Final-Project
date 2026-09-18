@@ -80,7 +80,7 @@ public:
 	const FWeaponMontageData* FindWeaponMontages(FGameplayTag WeaponTag, bool bFirstPerson) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
 
-	// Draw and holster must use the same rate as the equip readiness timer.
+	// Draw presentation must use the same rate as the equip readiness timer.
 	UFUNCTION(BlueprintPure, Category = "FPS|WeaponData")
 	static float GetSwitchAnimationRate(FGameplayTag WeaponTag);
 	float GetReloadDuration(FGameplayTag WeaponTag) const;
