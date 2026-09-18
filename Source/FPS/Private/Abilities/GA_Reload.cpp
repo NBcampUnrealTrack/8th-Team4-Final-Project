@@ -124,24 +124,3 @@ void UGA_Reload::HandleReloadFinished()
 	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadComplete);
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
 }
-
-void UGA_Reload::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
-                             const FGameplayAbilityActivationInfo ActivationInfo, const bool bReplicateEndAbility, const bool bWasCancelled)
-{
-	// ReloadMontage는 UAbilityTask_PlayMontageAndWait이 아니라 AnimInstance->Montage_Play로 직접 재생해서
-	// GAS가 추적하지 않는다. 정상 완료(HandleReloadFinished)는 몽타주 길이와 타이밍이 같아 자연히 끝나지만,
-	// 무기 스왑 등으로 도중에 취소되면(bWasCancelled) 이 몽타주를 직접 멈추지 않는 한 계속 재생된다 -
-	// 내부 상태(bIsReloading)/장착 무기는 이미 바뀌었는데 재장전 애니메이션만 남아 스왑이 안 된 것처럼 보인다.
-	if (bWasCancelled && ReloadMontage && ActorInfo)
-	{
-		if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
-		{
-			if (AnimInstance->Montage_IsPlaying(ReloadMontage))
-			{
-				AnimInstance->Montage_Stop(0.f, ReloadMontage);
-			}
-		}
-	}
-
-	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
-}
