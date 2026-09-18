@@ -38,7 +38,7 @@ void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
 	}
 }
 
-void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam)
+void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJoinable)
 {
 	SlotTeam = InSlotTeam;
 
@@ -47,6 +47,7 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam)
 	bCachedIsHost = false;
 
 	Btn_Join->SetVisibility(ESlateVisibility::Visible);
+	Btn_Join->SetIsEnabled(bJoinable);
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
 }
 

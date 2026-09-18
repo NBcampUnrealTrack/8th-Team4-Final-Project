@@ -41,9 +41,9 @@ namespace ShooterRoomScreenRules
 		}
 
 		return FText::Format(
-			NSLOCTEXT("TeamReadyCount", "ShooterLobby", "{0} / {1}"),
-			FText::AsNumber(TeamViews.Num()),
-			FText::AsNumber(ReadyCount));
+			NSLOCTEXT("ShooterLobby", "TeamReadyCount", "{0} / {1}"),
+			FText::AsNumber(ReadyCount).
+			FText::AsNumber(TeamViews.Num()));
 	}
 }
 
@@ -438,6 +438,9 @@ void UShooterRoomScreen::ApplyTeamSlots(
 	const TArray<FShooterRoomSlotView>& TeamViews,
 	const EGameTeam Team)
 {
+	const AShooterPlayerState* LocalPlayerState = GetLocalShooterPlayerState();
+	const bool bJoinable = !IsValid(LocalPlayerState) || !LocalPlayerState->IsLobbyReady();
+
 	for (int32 Index = 0; Index < Slots.Num(); ++Index)
 	{
 		UShooterRoomPlayerSlot* RoomSlot = Slots[Index];
@@ -453,7 +456,7 @@ void UShooterRoomScreen::ApplyTeamSlots(
 		}
 		else
 		{
-			RoomSlot->SetEmpty(Team);
+			RoomSlot->SetEmpty(Team, bJoinable);
 		}
 	}
 }
@@ -497,9 +500,15 @@ void UShooterRoomScreen::RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& 
 
 void UShooterRoomScreen::HandleSlotJoinRequested(const EGameTeam Team)
 {
+	// 레디한 뒤에는 팀을 바꿀 수 없음
+	const AShooterPlayerState* LocalPlayerState = GetLocalShooterPlayerState();
+	if (IsValid(LocalPlayerState) && LocalPlayerState->IsLobbyReady())
+	{
+		return;
+	}
+
 	if (AShooterPlayerController* PlayerController = GetLocalShooterPlayerController())
 	{
-		// 정원 초과·같은 팀은 서버가 판단함
 		PlayerController->SetLobbyTeam(Team);
 	}
 }
