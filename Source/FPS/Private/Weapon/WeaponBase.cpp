@@ -429,7 +429,14 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 
 bool AWeaponBase::FireMelee(bool bHeavyAttack)
 {
-	return FireInternal(bHeavyAttack, 0.0f);
+	// ClientFireServerTime을 0으로 넘기면 FLagCompensationRewindScope가 아예 생성되지 않아
+	// (LagCompensationRewindScope.cpp의 <= 0.0f 가드) 부위별 정밀 히트박스가 계속 NoCollision
+	// 상태로 남는다. 그러면 트레이스가 본 정보 없는 캡슐에 맞아 항상 폴백(Torso) 판정으로
+	// 떨어지고, 머리를 노려도 헤드샷이 잡히지 않는다. 근접무기는 보정할 클라이언트 지연이
+	// 없으므로 현재 서버 시간을 넘겨 "지금 시점"으로 리와인드시켜 정밀 히트박스를 활성화한다.
+	const UWorld* World = GetWorld();
+	const float CurrentServerTime = World ? World->GetTimeSeconds() : 0.0f;
+	return FireInternal(bHeavyAttack, CurrentServerTime);
 }
 
 bool AWeaponBase::FireRanged(float ClientFireServerTime)
