@@ -76,6 +76,9 @@ private:
 	void RefreshTimerText();
 	void RefreshClassInfoPanel();
 	void RefreshSelectionModePresentation();
+	void HandleAudioSettingsChanged();
+	void ApplyBGMSettings();
+	float ResolveBGMComponentVolume() const;
 	bool IsActiveClassReselectionMode() const;
 
 	// 팀원 슬롯 수명. PlayerArray를 주기적으로 훑어 자리를 맞춘다.

@@ -134,9 +134,9 @@ private:
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");
-	FString CachedMapName = TEXT("BombMap");
-	FString CachedMatchType = TEXT("FreeForAll");
-	FString CachedMapPath = TEXT("/Game/Maps/BombMap");
+	FString CachedMapName = TEXT("DominationMap");
+	FString CachedMatchType = TEXT("Domination");
+	FString CachedMapPath = TEXT("/Game/Maps/DominationMap");
 
 	UPROPERTY(EditDefaultsOnly, Category = "Session|Travel")
 	FString LobbyMapPath = TEXT("/Game/Maps/Lobby");

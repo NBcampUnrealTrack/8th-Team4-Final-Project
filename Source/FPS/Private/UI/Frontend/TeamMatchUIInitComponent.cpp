@@ -192,14 +192,24 @@ void UTeamMatchUIInitComponent::PresentOptionsScreen()
 	}
 
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !IsValid(OptionsScreenClass))
+	TSubclassOf<UShooterOptionsScreen> ResolvedOptionsClass = OptionsScreenClass;
+	if (!IsValid(ResolvedOptionsClass))
 	{
-		UE_LOG(LogTeamMatchUIInit, Error, TEXT("OptionsScreenClass is not configured."));
+		ResolvedOptionsClass = LoadClass<UShooterOptionsScreen>(
+			nullptr,
+			TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen.WBP_OptionsScreen_C"));
+	}
+
+
+	if (!IsValid(UIManager) || !IsValid(ResolvedOptionsClass))
+	{
+		UE_LOG(LogTeamMatchUIInit, Error,
+			TEXT("Options screen class is unavailable. Assign OptionsScreenClass or verify /Game/FPS/UI/InGame/Option/WBP_OptionsScreen."));
 		return;
 	}
 
 	OptionsScreenInstance = Cast<UShooterOptionsScreen>(
-		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, OptionsScreenClass));
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ResolvedOptionsClass));
 	if (!IsValid(OptionsScreenInstance))
 	{
 		return;

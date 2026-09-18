@@ -33,6 +33,7 @@ public:
 	// 매치 종료 시 남아 있는 보호 태그, 만료 타이머, 발사 이벤트 구독을 모두 해제한다.
 	void ClearAllRespawnProtections();
 	void ScheduleRespawn(AController* WaitingController);
+	void ScheduleRespawnRetry(AController* WaitingController);
 	void BeginRespawnProtection(AShooterPlayerState* PlayerState);
 	bool TryGetSpawnTransform(
 		EGameTeam Team,
@@ -48,6 +49,7 @@ private:
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
 	void HandleRespawnTimer(TWeakObjectPtr<AController> WaitingController);
+	void ScheduleRespawnInternal(AController* WaitingController, float DelaySeconds);
 	void EndRespawnProtection(AShooterPlayerState* PlayerState);
 
     UPROPERTY(Transient)

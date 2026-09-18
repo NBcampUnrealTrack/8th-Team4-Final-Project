@@ -107,7 +107,7 @@ bool FShooterSmartTuningSettingsTest::RunTest(const FString& Parameters)
 	Settings->SetPerformanceTargetFPS(10.0f);
 	TestEqual(TEXT("Performance target clamps to 30 FPS"), Settings->GetPerformanceTargetFPS(), 30.0f);
 	Settings->SetPerformanceTargetFPS(2000.0f);
-	TestEqual(TEXT("Performance target clamps to 1000 FPS"), Settings->GetPerformanceTargetFPS(), 1000.0f);
+	TestEqual(TEXT("Performance target clamps to 240 FPS"), Settings->GetPerformanceTargetFPS(), 240.0f);
 	Settings->SetPerformanceTargetFPS(240.0f);
 	TestEqual(TEXT("Performance target keeps supported in-range values"), Settings->GetPerformanceTargetFPS(), 240.0f);
 
@@ -266,6 +266,8 @@ bool FShooterSettingsDefaultsTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reset restores Korean language"), Settings->GetLanguage(), EShooterOptionsLanguage::Korean);
 	TestEqual(TEXT("Reset restores Balanced120 profile"), Settings->GetExperienceProfile(), EShooterExperienceProfile::Balanced120);
 	TestEqual(TEXT("Reset restores 120 FPS performance target"), Settings->GetPerformanceTargetFPS(), 120.0f);
+	TestEqual(TEXT("Reset restores 1920x1080 resolution"), Settings->GetScreenResolution(), FIntPoint(1920, 1080));
+	TestEqual(TEXT("Reset restores 240 FPS frame limit"), Settings->GetFrameRateLimit(), 240.0f);
 
 	Settings->OnAudioSettingsChanged.Remove(Handle);
 	return true;

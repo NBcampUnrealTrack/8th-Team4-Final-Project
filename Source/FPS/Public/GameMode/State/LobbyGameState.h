@@ -71,7 +71,7 @@ private:
 	int32 LobbyRevision = 0;
 
 	UPROPERTY(ReplicatedUsing = OnRep_SelectedMatchMode, VisibleInstanceOnly, Category = "Lobby|Game Mode")
-	ELobbyMatchMode SelectedMatchMode = ELobbyMatchMode::Bomb;
+	ELobbyMatchMode SelectedMatchMode = ELobbyMatchMode::Domination;
 
 	UPROPERTY(ReplicatedUsing = OnRep_RoomSettings, VisibleInstanceOnly, Category = "Lobby|Room")
 	FLobbyRoomSettings RoomSettings;

@@ -70,8 +70,8 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 
 	CachedMaxPlayers = MaxPlayers;
 	CachedRoomName = RoomName.IsEmpty() ? BuildDefaultRoomName() : RoomName;
-	CachedMapName = MapName.IsEmpty() ? TEXT("BombMap") : MapName;
-	CachedMatchType = MatchType.IsEmpty() ? TEXT("FreeForAll") : MatchType;
+	CachedMapName = MapName.IsEmpty() ? TEXT("DominationMap") : MapName;
+	CachedMatchType = MatchType.IsEmpty() ? TEXT("Domination") : MatchType;
 	CachedMapPath = ResolveMapPathFromName(CachedMapName);
 
 	if (SessionInterface->GetNamedSession(NAME_GameSession) != nullptr)
@@ -455,7 +455,7 @@ FString USessionSubSystem::ResolveMapPathFromName(const FString& MapName) const
 
 	if (MapName.IsEmpty())
 	{
-		return TEXT("/Game/Maps/BombMap");
+		return TEXT("/Game/Maps/DominationMap");
 	}
 
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);

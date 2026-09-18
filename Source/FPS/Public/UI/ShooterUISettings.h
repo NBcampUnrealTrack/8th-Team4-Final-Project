@@ -20,7 +20,7 @@ struct FShooterLobbyModeDisplay
 	GENERATED_BODY()
 
 	UPROPERTY(Config, EditAnywhere, Category = "Lobby")
-	ELobbyMatchMode Mode = ELobbyMatchMode::Bomb;
+	ELobbyMatchMode Mode = ELobbyMatchMode::Domination;
 
 	UPROPERTY(Config, EditAnywhere, Category = "Lobby")
 	FText ModeName;

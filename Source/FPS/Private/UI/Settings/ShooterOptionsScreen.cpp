@@ -26,10 +26,17 @@
 
 namespace
 {
+	static constexpr int32 MaxResolutionWidth = 1920;
+	static constexpr int32 MaxResolutionHeight = 1080;
+	static constexpr float FrameRateLimitChoices[] =
+	{
+		30.0f, 60.0f, 120.0f, 144.0f, 165.0f, 200.0f, 240.0f
+	};
+
 	static constexpr float SmartTargetFPSChoices[] =
 	{
 		30.0f, 60.0f, 75.0f, 90.0f, 100.0f, 120.0f, 144.0f, 165.0f,
-		180.0f, 200.0f, 240.0f, 300.0f, 360.0f, 480.0f, 500.0f, 540.0f, 600.0f, 1000.0f
+		180.0f, 200.0f, 240.0f
 	};
 
 	static int32 FindNearestSmartTargetIndex(const float TargetFPS)
@@ -75,10 +82,25 @@ void UShooterOptionsScreen::RequestClose()
 
 void UShooterOptionsScreen::SaveOptions()
 {
-	// Never persist a temporary resolution/window preview.
-	RevertVideoModeInternal(true);
-	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
 	{
+		return;
+	}
+
+	// 해상도/창 모드는 선택만 보관하고 적용 버튼에서 한 번만 미리보기한다.
+	if (bVideoModeSelectionDirty && !bVideoModeConfirmationPending)
+	{
+		Settings->ApplyNonResolutionSettings();
+		Settings->SaveSettings();
+		PreviewVideoMode(PendingResolution, PendingWindowMode);
+		return;
+	}
+
+	// 화면 설정 확인 창이 열린 동안에는 임시 화면 모드를 저장하지 않는다.
+	if (!bVideoModeConfirmationPending)
+	{
+		Settings->ApplyNonResolutionSettings();
 		Settings->SaveSettings();
 	}
 }
@@ -86,7 +108,11 @@ void UShooterOptionsScreen::SaveOptions()
 void UShooterOptionsScreen::FinishEditing()
 {
 	RevertVideoModeInternal(false);
-	SaveOptions();
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		Settings->ApplyNonResolutionSettings();
+		Settings->SaveSettings();
+	}
 }
 
 void UShooterOptionsScreen::NativeOnActivated()
@@ -198,10 +224,23 @@ TArray<FIntPoint> UShooterOptionsScreen::GetSupportedResolutions() const
 	TArray<FIntPoint> Resolutions;
 	UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
 
+	Resolutions.RemoveAll([](const FIntPoint& Resolution)
+	{
+		return Resolution.X <= 0 || Resolution.Y <= 0
+			|| Resolution.X > MaxResolutionWidth
+			|| Resolution.Y > MaxResolutionHeight;
+	});
+
+	// Keep a deterministic FHD ceiling even on editor/remote displays that do not
+	// enumerate every common mode. Lower modes remain selectable when reported.
+	Resolutions.AddUnique(FIntPoint(MaxResolutionWidth, MaxResolutionHeight));
+
 	if (const UGameUserSettings* Settings = GetGameUserSettings())
 	{
 		const FIntPoint CurrentResolution = Settings->GetScreenResolution();
-		if (CurrentResolution.X > 0 && CurrentResolution.Y > 0)
+		if (CurrentResolution.X > 0 && CurrentResolution.Y > 0
+			&& CurrentResolution.X <= MaxResolutionWidth
+			&& CurrentResolution.Y <= MaxResolutionHeight)
 		{
 			Resolutions.AddUnique(CurrentResolution);
 		}
@@ -217,7 +256,7 @@ TArray<FIntPoint> UShooterOptionsScreen::GetSupportedResolutions() const
 
 FIntPoint UShooterOptionsScreen::GetScreenResolution() const
 {
-	if (bVideoModeConfirmationPending)
+	if (bVideoModeSelectionDirty || bVideoModeConfirmationPending)
 	{
 		return PendingResolution;
 	}
@@ -228,12 +267,31 @@ FIntPoint UShooterOptionsScreen::GetScreenResolution() const
 
 void UShooterOptionsScreen::SetScreenResolution(const FIntPoint Resolution)
 {
-	PreviewVideoMode(Resolution, GetWindowMode());
+	UGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings) || bVideoModeConfirmationPending
+		|| Resolution.X <= 0 || Resolution.Y <= 0)
+	{
+		return;
+	}
+
+	const FIntPoint ClampedResolution(
+		FMath::Min(Resolution.X, MaxResolutionWidth),
+		FMath::Min(Resolution.Y, MaxResolutionHeight));
+	if (!bVideoModeSelectionDirty)
+	{
+		PendingResolution = Settings->GetScreenResolution();
+		PendingWindowMode = FromEngineWindowMode(Settings->GetFullscreenMode());
+	}
+
+	PendingResolution = ClampedResolution;
+	bVideoModeSelectionDirty = PendingResolution != Settings->GetScreenResolution()
+		|| PendingWindowMode != FromEngineWindowMode(Settings->GetFullscreenMode());
+	OnSettingsChanged.Broadcast();
 }
 
 EShooterWindowMode UShooterOptionsScreen::GetWindowMode() const
 {
-	if (bVideoModeConfirmationPending)
+	if (bVideoModeSelectionDirty || bVideoModeConfirmationPending)
 	{
 		return PendingWindowMode;
 	}
@@ -246,7 +304,22 @@ EShooterWindowMode UShooterOptionsScreen::GetWindowMode() const
 
 void UShooterOptionsScreen::SetWindowMode(const EShooterWindowMode WindowMode)
 {
-	PreviewVideoMode(GetScreenResolution(), WindowMode);
+	UGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings) || bVideoModeConfirmationPending)
+	{
+		return;
+	}
+
+	if (!bVideoModeSelectionDirty)
+	{
+		PendingResolution = Settings->GetScreenResolution();
+		PendingWindowMode = FromEngineWindowMode(Settings->GetFullscreenMode());
+	}
+
+	PendingWindowMode = WindowMode;
+	bVideoModeSelectionDirty = PendingResolution != Settings->GetScreenResolution()
+		|| PendingWindowMode != FromEngineWindowMode(Settings->GetFullscreenMode());
+	OnSettingsChanged.Broadcast();
 }
 
 void UShooterOptionsScreen::PreviewVideoMode(
@@ -254,7 +327,8 @@ void UShooterOptionsScreen::PreviewVideoMode(
 	const EShooterWindowMode WindowMode)
 {
 	UGameUserSettings* Settings = GetGameUserSettings();
-	if (!IsValid(Settings) || Resolution.X <= 0 || Resolution.Y <= 0)
+	if (!IsValid(Settings) || bVideoModeConfirmationPending
+		|| Resolution.X <= 0 || Resolution.Y <= 0)
 	{
 		return;
 	}
@@ -265,14 +339,14 @@ void UShooterOptionsScreen::PreviewVideoMode(
 		return;
 	}
 
-	if (!bVideoModeConfirmationPending)
-	{
-		VideoModeBaselineResolution = CurrentResolution;
-		VideoModeBaselineWindowMode = FromEngineWindowMode(Settings->GetFullscreenMode());
-	}
+	VideoModeBaselineResolution = CurrentResolution;
+	VideoModeBaselineWindowMode = FromEngineWindowMode(Settings->GetFullscreenMode());
 
-	PendingResolution = Resolution;
+	PendingResolution = FIntPoint(
+		FMath::Min(Resolution.X, MaxResolutionWidth),
+		FMath::Min(Resolution.Y, MaxResolutionHeight));
 	PendingWindowMode = WindowMode;
+	bVideoModeSelectionDirty = false;
 	bVideoModeConfirmationPending = true;
 
 	// Apply through UGameUserSettings so standalone/packaged windows actually resize
@@ -330,8 +404,9 @@ void UShooterOptionsScreen::ConfirmVideoMode()
 
 	ClearVideoModeConfirmationTimeout();
 	bVideoModeConfirmationPending = false;
+	bVideoModeSelectionDirty = false;
 	VideoModeBaselineResolution = FIntPoint::ZeroValue;
-	SaveOptions();
+	Settings->SaveSettings();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -344,7 +419,7 @@ void UShooterOptionsScreen::RevertVideoModeInternal(const bool bNotifySettingsCh
 {
 	ClearVideoModeConfirmationTimeout();
 
-	if (!bVideoModeConfirmationPending)
+	if (!bVideoModeConfirmationPending && !bVideoModeSelectionDirty)
 	{
 		return;
 	}
@@ -353,41 +428,47 @@ void UShooterOptionsScreen::RevertVideoModeInternal(const bool bNotifySettingsCh
 	if (!IsValid(Settings))
 	{
 		bVideoModeConfirmationPending = false;
+		bVideoModeSelectionDirty = false;
 		VideoModeBaselineResolution = FIntPoint::ZeroValue;
 		return;
 	}
 
-	const FIntPoint Resolution =
-		VideoModeBaselineResolution.X > 0 && VideoModeBaselineResolution.Y > 0
-			? VideoModeBaselineResolution
-			: Settings->GetLastConfirmedScreenResolution();
-	const EShooterWindowMode WindowMode =
-		VideoModeBaselineResolution.X > 0 && VideoModeBaselineResolution.Y > 0
-			? VideoModeBaselineWindowMode
-			: FromEngineWindowMode(Settings->GetLastConfirmedFullscreenMode());
-
-	Settings->SetScreenResolution(Resolution);
-	Settings->SetFullscreenMode(ToEngineWindowMode(WindowMode));
-	Settings->ApplyResolutionSettings(false);
-
-	if (UGameInstance* GameInstance = GetGameInstance())
+	if (bVideoModeConfirmationPending)
 	{
-		if (UGameViewportClient* ViewportClient = GameInstance->GetGameViewportClient())
+		const FIntPoint Resolution =
+			VideoModeBaselineResolution.X > 0 && VideoModeBaselineResolution.Y > 0
+				? VideoModeBaselineResolution
+				: Settings->GetLastConfirmedScreenResolution();
+		const EShooterWindowMode WindowMode =
+			VideoModeBaselineResolution.X > 0 && VideoModeBaselineResolution.Y > 0
+				? VideoModeBaselineWindowMode
+				: FromEngineWindowMode(Settings->GetLastConfirmedFullscreenMode());
+
+		Settings->SetScreenResolution(Resolution);
+		Settings->SetFullscreenMode(ToEngineWindowMode(WindowMode));
+		Settings->ApplyResolutionSettings(false);
+
+		if (UGameInstance* GameInstance = GetGameInstance())
 		{
-			if (ViewportClient->bIsPlayInEditorViewport)
+			if (UGameViewportClient* ViewportClient = GameInstance->GetGameViewportClient())
 			{
-				if (FSceneViewport* SceneViewport = ViewportClient->GetGameViewport())
+				if (ViewportClient->bIsPlayInEditorViewport)
 				{
-					SceneViewport->ResizeFrame(
-						static_cast<uint32>(Resolution.X),
-						static_cast<uint32>(Resolution.Y),
-						ToEngineWindowMode(WindowMode));
+					if (FSceneViewport* SceneViewport = ViewportClient->GetGameViewport())
+					{
+						SceneViewport->ResizeFrame(
+							static_cast<uint32>(Resolution.X),
+							static_cast<uint32>(Resolution.Y),
+							ToEngineWindowMode(WindowMode));
+					}
 				}
 			}
 		}
 	}
 
 	bVideoModeConfirmationPending = false;
+	bVideoModeSelectionDirty = false;
+	PendingResolution = FIntPoint::ZeroValue;
 	VideoModeBaselineResolution = FIntPoint::ZeroValue;
 
 	if (bNotifySettingsChanged)
@@ -538,8 +619,7 @@ void UShooterOptionsScreen::SetFrameRateLimit(const float FramesPerSecond)
 		return;
 	}
 
-	// UGameUserSettings에서 0은 제한 없음이다.
-	Settings->SetFrameRateLimit(FMath::Max(0.0f, FramesPerSecond));
+	Settings->SetFrameRateLimit(FMath::Clamp(FramesPerSecond, 30.0f, 240.0f));
 	Settings->ApplyNonResolutionSettings();
 	InvalidatePerformanceSamples();
 	OnSettingsChanged.Broadcast();
@@ -1320,20 +1400,19 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 		const int32 ResolutionIndex = Resolutions.IndexOfByKey(GetScreenResolution());
 		SetGeneratedChoiceSegments(TEXT("Resolution"), ResolutionIndex, Resolutions.Num());
 
-		static const float Limits[] = {0.0f, 30.0f, 60.0f, 120.0f, 144.0f, 165.0f, 240.0f, 360.0f};
 		const float CurrentLimit = GetFrameRateLimit();
 		int32 BestIndex = 0;
 		float BestDistance = TNumericLimits<float>::Max();
-		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Limits); ++Index)
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(FrameRateLimitChoices); ++Index)
 		{
-			const float Distance = FMath::Abs(CurrentLimit - Limits[Index]);
+			const float Distance = FMath::Abs(CurrentLimit - FrameRateLimitChoices[Index]);
 			if (Distance < BestDistance)
 			{
 				BestDistance = Distance;
 				BestIndex = Index;
 			}
 		}
-		SetGeneratedChoiceSegments(TEXT("FrameRate"), BestIndex, UE_ARRAY_COUNT(Limits));
+		SetGeneratedChoiceSegments(TEXT("FrameRate"), BestIndex, UE_ARRAY_COUNT(FrameRateLimitChoices));
 
 		const int32 Overall = GetOverallQualityLevel();
 		SetGeneratedChoiceSegments(TEXT("Overall"), Overall >= 0 && Overall <= 4 ? Overall : INDEX_NONE, 5);
@@ -1743,10 +1822,10 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 		Title = FText::FromString(TEXT("FPS 제한"));
 		Current = FText::Format(FText::FromString(TEXT("현재 {0}")), Value);
 		Body = FText::FromString(TEXT("게임이 출력하려는 최대 프레임 수를 제한해 발열, 전력 사용량, 프레임 변동 폭을 조절합니다."));
-		Help = FText::FromString(TEXT("UNLIMITED는 별도의 제한을 두지 않습니다. 보통 모니터 주사율과 시스템 성능을 기준으로 선택합니다."));
+		Help = FText::FromString(TEXT("30~240 FPS 범위에서 제한합니다. 240Hz 환경에서는 최대 240 FPS까지 선택할 수 있습니다."));
 		MetricValue0 = Value;
 		MetricLabel1 = FText::FromString(TEXT("선택 수"));
-		MetricValue1 = FText::FromString(TEXT("8 단계"));
+		MetricValue1 = FText::FromString(TEXT("7 단계"));
 		MetricLabel2 = FText::FromString(TEXT("적용"));
 		MetricValue2 = FText::FromString(TEXT("즉시 / 로컬"));
 	}
@@ -2615,7 +2694,7 @@ void UShooterOptionsScreen::StepResolution(const int32 Delta)
 		Index = 0;
 	}
 	Index = (Index + Delta + Resolutions.Num()) % Resolutions.Num();
-	PreviewVideoMode(Resolutions[Index], GetWindowMode());
+	SetScreenResolution(Resolutions[Index]);
 	RefreshGeneratedUI();
 }
 
@@ -2629,27 +2708,26 @@ void UShooterOptionsScreen::StepWindowMode(const int32 Delta)
 
 	int32 Index = GetWindowMode() == EShooterWindowMode::Windowed ? 1 : 0;
 	Index = (Index + Delta + UE_ARRAY_COUNT(Modes)) % UE_ARRAY_COUNT(Modes);
-	PreviewVideoMode(GetScreenResolution(), Modes[Index]);
+	SetWindowMode(Modes[Index]);
 	RefreshGeneratedUI();
 }
 
 void UShooterOptionsScreen::StepFrameRate(const int32 Delta)
 {
-	static const float Limits[] = {0.0f, 30.0f, 60.0f, 120.0f, 144.0f, 165.0f, 240.0f, 360.0f};
 	const float Current = GetFrameRateLimit();
 	int32 BestIndex = 0;
 	float BestDistance = TNumericLimits<float>::Max();
-	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Limits); ++Index)
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(FrameRateLimitChoices); ++Index)
 	{
-		const float Distance = FMath::Abs(Current - Limits[Index]);
+		const float Distance = FMath::Abs(Current - FrameRateLimitChoices[Index]);
 		if (Distance < BestDistance)
 		{
 			BestDistance = Distance;
 			BestIndex = Index;
 		}
 	}
-	BestIndex = (BestIndex + Delta + UE_ARRAY_COUNT(Limits)) % UE_ARRAY_COUNT(Limits);
-	SetFrameRateLimit(Limits[BestIndex]);
+	BestIndex = (BestIndex + Delta + UE_ARRAY_COUNT(FrameRateLimitChoices)) % UE_ARRAY_COUNT(FrameRateLimitChoices);
+	SetFrameRateLimit(FrameRateLimitChoices[BestIndex]);
 	RefreshGeneratedUI();
 }
 
@@ -2714,13 +2792,13 @@ void UShooterOptionsScreen::HandleWindowModeNext() { ActiveGeneratedOption = TEX
 void UShooterOptionsScreen::HandleWindowModeFullscreen()
 {
 	ActiveGeneratedOption = TEXT("WindowMode");
-	PreviewVideoMode(GetScreenResolution(), EShooterWindowMode::Fullscreen);
+	SetWindowMode(EShooterWindowMode::Fullscreen);
 	RefreshGeneratedUI();
 }
 void UShooterOptionsScreen::HandleWindowModeWindowed()
 {
 	ActiveGeneratedOption = TEXT("WindowMode");
-	PreviewVideoMode(GetScreenResolution(), EShooterWindowMode::Windowed);
+	SetWindowMode(EShooterWindowMode::Windowed);
 	RefreshGeneratedUI();
 }
 void UShooterOptionsScreen::HandleFrameRatePrev() { ActiveGeneratedOption = TEXT("FrameRate"); StepFrameRate(-1); }

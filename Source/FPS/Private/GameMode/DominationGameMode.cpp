@@ -206,8 +206,8 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 		PlayerState->SetAlive(false);
 	}
 
-	RespawnManager->ScheduleRespawn(EliminatedController);
 	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
+	RespawnManager->ScheduleRespawn(EliminatedController);
 }
 
 void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -384,10 +384,14 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 	{
 		UE_LOG(
 			LogDominationGameMode,
-			Error,
-			TEXT("Could not resolve a Domination respawn for team %d at active point %d."),
+			Warning,
+			TEXT("Domination respawn candidate is temporarily unavailable for team %d at active point %d. Retrying."),
 			static_cast<uint8>(PlayerState->GetTeam()),
 			static_cast<uint8>(SpawnObjectivePointId));
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
 		return;
 	}
 

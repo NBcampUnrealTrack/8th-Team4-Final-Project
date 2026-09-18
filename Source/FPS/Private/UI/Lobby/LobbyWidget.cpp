@@ -115,7 +115,7 @@ ELobbyMatchMode ULobbyWidget::GetSelectedGameMode() const
 
 	return IsValid(LobbyGameState)
 		? LobbyGameState->GetSelectedMatchMode()
-		: ELobbyMatchMode::Bomb;
+		: ELobbyMatchMode::Domination;
 }
 
 void ULobbyWidget::StartRoomGame()

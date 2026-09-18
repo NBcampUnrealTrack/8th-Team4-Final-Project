@@ -2,6 +2,7 @@
 
 #include "Engine/Engine.h"
 #include "Internationalization/Internationalization.h"
+#include "HAL/IConsoleManager.h"
 
 namespace ShooterGameUserSettings
 {
@@ -11,6 +12,10 @@ namespace ShooterGameUserSettings
 	constexpr float MaxAimSensitivityMultiplier = 2.0f;
 	constexpr float MinAudioVolume = 0.0f;
 	constexpr float MaxAudioVolume = 1.0f;
+	constexpr int32 MaxResolutionWidth = 1920;
+	constexpr int32 MaxResolutionHeight = 1080;
+	constexpr float MinFrameRateLimit = 30.0f;
+	constexpr float MaxFrameRateLimit = 240.0f;
 }
 
 UShooterGameUserSettings* UShooterGameUserSettings::Get()
@@ -52,6 +57,8 @@ void UShooterGameUserSettings::SetToDefaults()
 	Language = EShooterOptionsLanguage::Korean;
 	ExperienceProfile = EShooterExperienceProfile::Balanced120;
 	PerformanceTargetFPS = 120.0f;
+	SetScreenResolution(FIntPoint(ShooterGameUserSettings::MaxResolutionWidth, ShooterGameUserSettings::MaxResolutionHeight));
+	SetFrameRateLimit(ShooterGameUserSettings::MaxFrameRateLimit);
 	OnAudioSettingsChanged.Broadcast();
 	OnCrosshairSettingsChanged.Broadcast();
 }
@@ -78,11 +85,56 @@ void UShooterGameUserSettings::ValidateSettings()
 	SoundEffectsVolume = FMath::Clamp(SoundEffectsVolume, 0.0f, 1.0f);
 	UserInterfaceVolume = FMath::Clamp(UserInterfaceVolume, 0.0f, 1.0f);
 	VoiceVolume = FMath::Clamp(VoiceVolume, 0.0f, 1.0f);
-	PerformanceTargetFPS = FMath::Clamp(PerformanceTargetFPS, 30.0f, 1000.0f);
+	PerformanceTargetFPS = FMath::Clamp(PerformanceTargetFPS, 30.0f, ShooterGameUserSettings::MaxFrameRateLimit);
+
+	const FIntPoint CurrentResolution = GetScreenResolution();
+	if (CurrentResolution.X <= 0 || CurrentResolution.Y <= 0
+		|| CurrentResolution.X > ShooterGameUserSettings::MaxResolutionWidth
+		|| CurrentResolution.Y > ShooterGameUserSettings::MaxResolutionHeight)
+	{
+		SetScreenResolution(FIntPoint(
+			ShooterGameUserSettings::MaxResolutionWidth,
+			ShooterGameUserSettings::MaxResolutionHeight));
+	}
+
+	const float CurrentFrameRateLimit = GetFrameRateLimit();
+	SetFrameRateLimit(
+		!FMath::IsFinite(CurrentFrameRateLimit) || CurrentFrameRateLimit <= 0.0f
+			? ShooterGameUserSettings::MaxFrameRateLimit
+			: FMath::Clamp(
+				CurrentFrameRateLimit,
+				ShooterGameUserSettings::MinFrameRateLimit,
+				ShooterGameUserSettings::MaxFrameRateLimit));
 
 	CrosshairThickness = FMath::Clamp(CrosshairThickness, -1.0f, 0.0f);
 	CrosshairGap = FMath::Clamp(CrosshairGap, -1.0f, 0.0f);
 	CrosshairOutlineThickness = FMath::Clamp(CrosshairOutlineThickness, -1.0f, 1.0f);
+}
+
+
+void UShooterGameUserSettings::ApplyNonResolutionSettings()
+{
+	const float CurrentFrameRateLimit = GetFrameRateLimit();
+	const float EffectiveFrameRateLimit =
+		!FMath::IsFinite(CurrentFrameRateLimit) || CurrentFrameRateLimit <= 0.0f
+			? ShooterGameUserSettings::MaxFrameRateLimit
+			: FMath::Clamp(
+				CurrentFrameRateLimit,
+				ShooterGameUserSettings::MinFrameRateLimit,
+				ShooterGameUserSettings::MaxFrameRateLimit);
+
+	if (!FMath::IsNearlyEqual(CurrentFrameRateLimit, EffectiveFrameRateLimit))
+	{
+		SetFrameRateLimit(EffectiveFrameRateLimit);
+	}
+
+	Super::ApplyNonResolutionSettings();
+
+	// 다른 초기화 경로에서 t.MaxFPS가 바뀌어도 옵션의 프레임 제한을 최종값으로 맞춘다.
+	if (IConsoleVariable* MaxFPSCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS")))
+	{
+		MaxFPSCVar->Set(EffectiveFrameRateLimit, ECVF_SetByGameSetting);
+	}
 }
 
 void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)

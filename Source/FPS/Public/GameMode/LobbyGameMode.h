@@ -97,7 +97,7 @@ private:
 
 private:
 	TWeakObjectPtr<APlayerState> HostPlayerState;
-	FString PendingGameMapPath = TEXT("/Game/Maps/BombMap");
+	FString PendingGameMapPath = TEXT("/Game/Maps/DominationMap");
 	bool bStartRoomGamePending = false;
 	bool bTravelingToGameMap = false;
 };

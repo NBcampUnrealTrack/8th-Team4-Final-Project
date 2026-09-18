@@ -7,6 +7,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "Misc/PackageName.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "UI/ShooterUISettings.h"
 
 namespace
@@ -34,10 +38,20 @@ void UShooterOutGameSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		this, &ThisClass::HandleSeamlessTravelStart);
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
 		this, &ThisClass::HandlePostLoadMapWithWorld);
+
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.AddUObject(this, &ThisClass::HandleAudioSettingsChanged);
+	}
 }
 
 void UShooterOutGameSubsystem::Deinitialize()
 {
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.RemoveAll(this);
+	}
+
 	if (SeamlessTravelHandle.IsValid())
 	{
 		FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessTravelHandle);
@@ -85,9 +99,10 @@ void UShooterOutGameSubsystem::SetMusicState(const EShooterOutGameMusicState New
 		}
 	}
 
-	// 같은 곡이면 이어 튼다
+	// 같은 곡이면 이어 틀되, 옵션에서 바뀐 음악 볼륨/라우팅은 즉시 갱신한다.
 	if (IsAudible(ActiveMusic) && ActiveMusic->Sound == NewMusic)
 	{
+		ApplyMusicSettingsToComponent(ActiveMusic);
 		return;
 	}
 
@@ -107,12 +122,53 @@ void UShooterOutGameSubsystem::SetMusicState(const EShooterOutGameMusicState New
 		return;
 	}
 
+	const float MusicComponentVolume = ResolveMusicComponentVolume();
 	ActiveMusic = UGameplayStatics::CreateSound2D(
-		this, NewMusic, 1.0f, 1.0f, 0.0f, nullptr, true, false);
+		this, NewMusic, MusicComponentVolume, 1.0f, 0.0f, nullptr, true, false);
 	if (IsValid(ActiveMusic))
 	{
-		ActiveMusic->FadeIn(MusicFadeSeconds);
+		ApplyMusicSettingsToComponent(ActiveMusic);
+		ActiveMusic->FadeIn(MusicFadeSeconds, MusicComponentVolume);
 	}
+}
+
+void UShooterOutGameSubsystem::HandleAudioSettingsChanged()
+{
+	ApplyMusicSettingsToComponent(ActiveMusic);
+}
+
+void UShooterOutGameSubsystem::ApplyMusicSettingsToComponent(UAudioComponent* MusicComponent) const
+{
+	if (!IsValid(MusicComponent))
+	{
+		return;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (USoundClass* MusicClass = AudioSettings->MusicSoundClass.LoadSynchronous())
+	{
+		MusicComponent->SoundClassOverride = MusicClass;
+	}
+
+	MusicComponent->SetVolumeMultiplier(ResolveMusicComponentVolume());
+}
+
+float UShooterOutGameSubsystem::ResolveMusicComponentVolume() const
+{
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!IsValid(Settings))
+	{
+		return 1.0f;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	const bool bHasMusicClass = IsValid(AudioSettings->MusicSoundClass.LoadSynchronous());
+	const bool bHasUserMix = IsValid(AudioSettings->UserSettingsSoundMix.LoadSynchronous());
+
+	// 정상 설정이면 Music SoundClass/SoundMix를 사용하고, 누락 시 컴포넌트 볼륨으로 보정한다.
+	return bHasMusicClass && bHasUserMix
+		? 1.0f
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
 }
 
 void UShooterOutGameSubsystem::HandleSeamlessTravelStart(UWorld* DepartingWorld, const FString& DestinationMap)

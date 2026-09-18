@@ -30,7 +30,7 @@ bool UDominationRespawnManager::Initialize(
 	}
 
 	ObjectiveManager = InObjectiveManager;
-	RespawnDelay = InRespawnDelay;
+	RespawnDelay = FMath::Max(0.1f, InRespawnDelay);
 	if (IsValid(RespawnProtection)) { RespawnProtection->Shutdown(); }
 	RespawnProtection = NewObject<UPlayerRespawnProtection>(this);
 	RespawnProtection->Initialize(GetWorld(), InRespawnProtectionDuration);
@@ -106,6 +106,19 @@ void UDominationRespawnManager::ClearAllRespawnProtections()
 
 void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 {
+	ScheduleRespawnInternal(WaitingController, RespawnDelay);
+}
+
+void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingController)
+{
+	// 스폰 지점이 잠깐 막혀도 관전 상태에 고정되지 않도록 재시도한다.
+	ScheduleRespawnInternal(WaitingController, 0.5f);
+}
+
+void UDominationRespawnManager::ScheduleRespawnInternal(
+	AController* WaitingController,
+	const float DelaySeconds)
+{
 	const TWeakObjectPtr<AController> ControllerKey(WaitingController);
 	if (IsValid(WaitingController))
 	{
@@ -128,7 +141,7 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 			this,
 			&ThisClass::HandleRespawnTimer,
 			ControllerKey),
-		RespawnDelay,
+		FMath::Max(0.1f, DelaySeconds),
 		false);
 }
 

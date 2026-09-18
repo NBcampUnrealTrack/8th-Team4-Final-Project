@@ -88,7 +88,7 @@ void UShooterCreateRoomDialog::HandleConfirmClicked()
 
 	// 상태부터 바꾸고 호출. 실패는 CreateRoom 안에서 즉시 돌아옴
 	SetBusy(true, NSLOCTEXT("ShooterLobby", "CreatingRoom", "방 만드는 중"));
-	Session->CreateRoom(GetSelectedMaxPlayers(), RoomName, TEXT("BombMap"), TEXT("Bomb"));
+	Session->CreateRoom(GetSelectedMaxPlayers(), RoomName, TEXT("DominationMap"), TEXT("Domination"));
 }
 
 void UShooterCreateRoomDialog::HandleCancelClicked()
