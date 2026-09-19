@@ -20,6 +20,7 @@
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
+#include "UI/Subsystem/ShooterProfileImageSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterRoomScreen, Log, All);
@@ -310,6 +311,11 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 	const APlayerState* HostState = LobbyGameState->GetHostPlayerState();
 	const APlayerState* LocalState = GetOwningPlayerState();
 
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterProfileImageSubsystem* ProfileImages = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterProfileImageSubsystem>()
+		: nullptr;
+
 	for (APlayerState* PlayerState : LobbyGameState->PlayerArray)
 	{
 		// 서버는 256 부터 줌
@@ -332,6 +338,10 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 		// 호스트 칸은 항상 채워진 상태이므로 서버도 레디 검사에서 호스트를 뺀다
 		View.bIsReady = View.bIsHost || ShooterPlayerState->IsLobbyReady();
 		View.bIsLocal = (PlayerState == LocalState);
+		// 없으면 다음 reconcile 에서 다시 물음
+		View.ProfileImage = IsValid(ProfileImages)
+			? ProfileImages->FindOrRequestProfileImage(PlayerState->GetUniqueId())
+			: nullptr;
 		Views.Add(View);
 	}
 
@@ -348,12 +358,13 @@ FString UShooterRoomScreen::BuildPresentationSignature(
 	{
 		for (const FShooterRoomSlotView& View : FShooterRoomRules::GetTeamPlayers(Views, Team))
 		{
-			Signature += FString::Printf(TEXT("%d:%s:%d:%d:%d|"),
+			Signature += FString::Printf(TEXT("%d:%s:%d:%d:%d:%d|"),
 			                             View.PlayerId,
 			                             *View.PlayerName,
 			                             static_cast<int32>(View.Team),
 			                             View.bIsReady ? 1 : 0,
-			                             View.bIsHost ? 1 : 0);
+			                             View.bIsHost ? 1 : 0,
+			                             View.ProfileImage ? 1 : 0);
 		}
 	}
 

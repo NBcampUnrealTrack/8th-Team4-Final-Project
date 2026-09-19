@@ -5,6 +5,8 @@
 #include "GameMode/Types/TeamTypes.h"
 #include "ShooterRoomTypes.generated.h"
 
+class UTexture2D;
+
 /**
  * 사설 방 화면 한 칸에 그릴 값
  */
@@ -26,6 +28,10 @@ struct FShooterRoomSlotView
 	bool bIsReady = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
 	bool bIsLocal = false;
+
+	// 없으면 nullptr. 칸이 기본 이미지로 그림
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	TObjectPtr<UTexture2D> ProfileImage = nullptr;
 };
 
 // 한 칸을 어떻게 갱신할지

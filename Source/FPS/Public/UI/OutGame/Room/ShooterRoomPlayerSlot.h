@@ -3,9 +3,11 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
+#include "Styling/SlateBrush.h"
 #include "UI/OutGame/Room/ShooterRoomTypes.h"
 #include "ShooterRoomPlayerSlot.generated.h"
 
+class UImage;
 class UShooterButtonBase;
 class UWidget;
 
@@ -31,21 +33,20 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_ApplySlotState(bool bHasPlayer, const FShooterRoomSlotView& View, EGameTeam InSlotTeam);
-
-	// 같은 사람의 레디가 바뀌었을 때만. 색만 굴리고 이름·왕관은 두는 이벤트
+	// 같은 사람의 레디가 바뀌었을 때
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_PlayReadyTransition(bool bIsReady);
-
-	// 애니 없이 레디 색만 맞춘다
+	// 애니 없이 레디 색만
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_ApplyReadyColor(bool bIsReady);
 
-	// 칸 전체를 덮는 투명 버튼. 빈 칸일 때만 보임
+	// 칸 전체를 덮는 투명 버튼
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Join;
-	// 빈 칸 표시 묶음. 버튼과 함께 켜고 끈다
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Panel_Join;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> Img_Profile;
 
 	EGameTeam SlotTeam = EGameTeam::None;
 
@@ -56,4 +57,7 @@ private:
 	int32 CachedPlayerId = INDEX_NONE;
 	bool bCachedReady = false;
 	bool bCachedIsHost = false;
+
+	UPROPERTY(Transient)
+	FSlateBrush DefaultProfileBrush;
 };

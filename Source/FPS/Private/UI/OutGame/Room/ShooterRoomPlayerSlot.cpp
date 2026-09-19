@@ -1,6 +1,8 @@
 // ShooterRoomPlayerSlot.cpp
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
 
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
 #include "UI/Foundation/ShooterButtonBase.h"
 
 void UShooterRoomPlayerSlot::NativeOnInitialized()
@@ -8,6 +10,7 @@ void UShooterRoomPlayerSlot::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	Btn_Join->OnClicked().AddUObject(this, &ThisClass::HandleJoinClicked);
+	DefaultProfileBrush = Img_Profile->GetBrush();
 }
 
 void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
@@ -24,6 +27,17 @@ void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
 	if (IsValid(Panel_Join))
 	{
 		Panel_Join->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	// 연출 판정과 무관하게 매번 덮어씀
+	Img_Profile->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (View.ProfileImage)
+	{
+		Img_Profile->SetBrushFromTexture(View.ProfileImage);
+	}
+	else
+	{
+		Img_Profile->SetBrush(DefaultProfileBrush);
 	}
 
 	switch (Presentation)
@@ -58,6 +72,7 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 		Panel_Join->SetVisibility(ESlateVisibility::Visible);
 		Panel_Join->SetIsEnabled(bJoinable);
 	}
+	Img_Profile->SetVisibility(ESlateVisibility::Collapsed);
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
 	BP_ApplyReadyColor(false);
 }
