@@ -54,7 +54,6 @@ void UShooterRoomScreen::NativeOnInitialized()
 	Btn_Ready->OnClicked().AddUObject(this, &ThisClass::HandleReadyClicked);
 	Btn_Start->OnClicked().AddUObject(this, &ThisClass::HandleStartClicked);
 	Btn_Leave->OnClicked().AddUObject(this, &ThisClass::HandleLeaveClicked);
-	Btn_ModePrev->OnClicked().AddUObject(this, &ThisClass::HandleModePrevClicked);
 	Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
 }
 
@@ -517,7 +516,6 @@ void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMod
 {
 	// 모드를 고르는 사람은 호스트뿐
 	const ESlateVisibility ArrowVisibility = bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	Btn_ModePrev->SetVisibility(ArrowVisibility);
 	Btn_ModeNext->SetVisibility(ArrowVisibility);
 
 	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
@@ -641,11 +639,6 @@ void UShooterRoomScreen::HandleStartClicked()
 	bLocalStartPending = true;
 	Btn_Start->SetIsEnabled(false);
 	PlayerController->RequestStartRoomGame();
-}
-
-void UShooterRoomScreen::HandleModePrevClicked()
-{
-	StepMatchMode(-1);
 }
 
 void UShooterRoomScreen::HandleModeNextClicked()

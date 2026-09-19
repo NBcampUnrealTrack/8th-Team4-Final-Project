@@ -80,7 +80,6 @@ private:
 
 	void HandleReadyClicked();
 	void HandleStartClicked();
-	void HandleModePrevClicked();
 	void HandleModeNextClicked();
 	void HandleLeaveClicked();
 
@@ -118,8 +117,6 @@ private:
 	TObjectPtr<UShooterButtonBase> Btn_Start;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Leave;
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterButtonBase> Btn_ModePrev;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_ModeNext;
 	UPROPERTY(meta = (BindWidget))
