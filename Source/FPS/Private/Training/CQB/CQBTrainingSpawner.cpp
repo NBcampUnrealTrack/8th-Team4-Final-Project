@@ -57,10 +57,26 @@ void ACQBTrainingSpawner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 
 bool ACQBTrainingSpawner::CanInteract(const APlayerController& RequestingPlayer) const
 {
-    return SessionState == ECQBTrainingSessionState::Idle
-        && !TrooperClass.IsNull()
-        && RequestingPlayer.GetPawn() != nullptr
-        && RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>() != nullptr;
+    if (!RequestingPlayer.GetPawn())
+    {
+        return false;
+    }
+
+    const UTrainingPlayerComponent* Training =
+        RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>();
+    if (!Training)
+    {
+        return false;
+    }
+
+    if (SessionState == ECQBTrainingSessionState::Idle)
+    {
+        return !TrooperClass.IsNull() && StartDialogWidgetClass != nullptr;
+    }
+
+    return SessionState == ECQBTrainingSessionState::Running
+        && GetCancelDialogWidgetClass() != nullptr
+        && Training->IsCQBTrainingActiveWith(*this);
 }
 
 void ACQBTrainingSpawner::Interact(APlayerController& RequestingPlayer)
@@ -78,6 +94,12 @@ void ACQBTrainingSpawner::Interact(APlayerController& RequestingPlayer)
 
     if (UTrainingPlayerComponent* Training = RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>())
     {
+        if (SessionState == ECQBTrainingSessionState::Running)
+        {
+            Training->OpenCQBCancelDialog(*this);
+            return;
+        }
+
         Training->OpenCQBStartDialog(*this);
     }
 }
@@ -104,6 +126,19 @@ bool ACQBTrainingSpawner::StartTrainingFor(APlayerController& Participant, const
     }
 
     BeginTraining();
+    return true;
+}
+
+bool ACQBTrainingSpawner::CancelTrainingFor(APlayerController& Participant)
+{
+    if (!HasAuthority()
+        || SessionState != ECQBTrainingSessionState::Running
+        || ActiveParticipant.Get() != &Participant)
+    {
+        return false;
+    }
+
+    ResetSessionState(true);
     return true;
 }
 

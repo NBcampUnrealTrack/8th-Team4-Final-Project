@@ -63,7 +63,8 @@ UENUM(BlueprintType)
 enum class ECQBTrainingDialogKind : uint8
 {
     Start,
-    End
+    End,
+    Cancel
 };
 
 USTRUCT(BlueprintType)

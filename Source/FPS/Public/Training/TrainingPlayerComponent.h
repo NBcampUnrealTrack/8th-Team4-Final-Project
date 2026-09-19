@@ -38,9 +38,13 @@ public:
     UTrainingPlayerComponent();
     void OpenDialogFor(ATrainingInteractionActor& Interactable);
     void OpenCQBStartDialog(ACQBTrainingSpawner& Spawner);
+    void OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner);
     void OpenCQBEndDialog(ACQBTrainingEndActor& EndActor);
     void SubmitTrainingDestination(int32 RequestId, ETrainingDestination Destination);
     void SubmitCQBStart(int32 RequestId);
+    void SubmitCQBCancel(int32 RequestId);
+    void SubmitCQBClassSelection(int32 RequestId);
+    void ResumeCQBStartDialogAfterClassSelection();
     void SubmitCQBReturnToOrigin(int32 RequestId);
     void SubmitCQBEndToStart(int32 RequestId);
     void SubmitCQBEndToOrigin(int32 RequestId);
@@ -71,6 +75,7 @@ public:
 
     virtual bool UsesStandardEliminationFeedback() const override;
     bool IsCQBTrainingActive() const;
+    bool IsCQBTrainingActiveWith(const ACQBTrainingSpawner& Spawner) const;
     bool TryGetCQBRespawnTransform(FTransform& OutTransform) const;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|UI")
@@ -168,7 +173,11 @@ private:
     void ClientCQBRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
 
     UFUNCTION(Client, Reliable)
-    void ClientCQBStarted(int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
+    void ClientSuspendCQBDialogForClassSelection(int32 RequestId);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCQBStarted(ACQBTrainingSpawner* Spawner, int32 TotalTroopers,
+        TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
 
     UFUNCTION(Client, Reliable)
     void ClientCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
@@ -181,6 +190,12 @@ private:
 
     UFUNCTION(Server, Reliable)
     void ServerStartCQB(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerCancelActiveCQB(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerOpenCQBClassSelection(int32 RequestId);
 
     UFUNCTION(Server, Reliable)
     void ServerReturnFromCQBStart(int32 RequestId);
@@ -241,6 +256,8 @@ private:
     int32 RequestSequence = 0;
     int32 PendingSessionId = 0;
     int32 PendingCQBRequestId = 0;
+    int32 SuspendedCQBRequestId = 0;
+    TSubclassOf<UCQBTrainingDialogWidget> SuspendedCQBDialogClass;
 
     TWeakObjectPtr<ATrainingArena> ReturnArena;
     TWeakObjectPtr<ACQBTrainingPlayerSpawnPoint> ReturnCQBEntryPoint;

@@ -156,6 +156,10 @@ void ATrainingPlayerController::ClientTrainingClassSelectionSucceeded_Implementa
     {
         UIInitComponent->CloseClassSelectionForTraining();
     }
+    if (UTrainingPlayerComponent* TrainingUI = FindComponentByClass<UTrainingPlayerComponent>())
+    {
+        TrainingUI->ResumeCQBStartDialogAfterClassSelection();
+    }
 }
 
 void ATrainingPlayerController::ServerSetPreviewCombatClass_Implementation(const EDominationCombatClass RequestedClass)

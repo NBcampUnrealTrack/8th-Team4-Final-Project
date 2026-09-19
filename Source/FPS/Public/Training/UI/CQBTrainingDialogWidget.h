@@ -8,6 +8,7 @@
 class UButton;
 class UTextBlock;
 class UTrainingPlayerComponent;
+class UWidget;
 
 UCLASS(Abstract, Blueprintable)
 class FPS_API UCQBTrainingDialogWidget : public UShooterActivatableWidget
@@ -38,6 +39,9 @@ private:
     UFUNCTION()
     void HandleClose();
 
+    UFUNCTION()
+    void HandleClassSelection();
+
     void RefreshText();
     void SetPending(bool bPending);
 
@@ -46,6 +50,9 @@ private:
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Secondary;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UButton> Btn_Class;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Close;
@@ -61,6 +68,9 @@ private:
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UTextBlock> Txt_Secondary;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UTextBlock> Txt_Class;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UTextBlock> Txt_Error;

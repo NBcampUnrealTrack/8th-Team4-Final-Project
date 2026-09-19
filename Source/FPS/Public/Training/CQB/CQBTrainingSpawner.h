@@ -65,6 +65,9 @@ public:
     TSubclassOf<UCQBTrainingDialogWidget> StartDialogWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CQB|UI")
+    TSubclassOf<UCQBTrainingDialogWidget> CancelDialogWidgetClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CQB|UI")
     TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "CQB|Audio")
@@ -86,11 +89,16 @@ public:
     void DespawnSpawnedTroopers();
 
     bool StartTrainingFor(APlayerController& Participant, int32 RequestId);
+    bool CancelTrainingFor(APlayerController& Participant);
     void CancelPendingStart(APlayerController& Participant, int32 RequestId);
     void NotifyTrooperDeath(APawn& Trooper);
     bool IsTrainingComplete() const { return SessionState == ECQBTrainingSessionState::Completed; }
     bool IsTrainingRunning() const { return SessionState == ECQBTrainingSessionState::Running; }
     bool UsesStandardEliminationFeedback() const { return !bSuppressStandardEliminationFeedback; }
+    TSubclassOf<UCQBTrainingDialogWidget> GetCancelDialogWidgetClass() const
+    {
+        return CancelDialogWidgetClass ? CancelDialogWidgetClass : StartDialogWidgetClass;
+    }
     ACQBTrainingPlayerSpawnPoint* GetPlayerStartPoint() const { return PlayerStartPoint; }
     void FinishTrainingAndReset();
 
