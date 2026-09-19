@@ -1475,15 +1475,26 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 			Slider->SetValue(Value);
 		}
 
-		const FString ValueText = FractionDigits > 1
-			? FString::Printf(TEXT("%.2f"), Value)
-			: FString::Printf(TEXT("%.1f"), Value);
+		const FString ValueText = FString::Printf(TEXT("%.*f"), FractionDigits, Value);
 		SetGeneratedText(TextName, FText::FromString(ValueText));
 	};
 
-	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 2);
-	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 2);
-	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 2);
+	auto ConfigureSensitivitySlider = [this](const FName SliderName)
+	{
+		if (USlider* Slider = Cast<USlider>(GetWidgetFromName(SliderName)))
+		{
+			Slider->SetMinValue(0.0f);
+			Slider->SetMaxValue(1.0f);
+			Slider->SetStepSize(0.001f);
+		}
+	};
+
+	ConfigureSensitivitySlider(TEXT("SLD_HorizontalSensitivity"));
+	ConfigureSensitivitySlider(TEXT("SLD_VerticalSensitivity"));
+	ConfigureSensitivitySlider(TEXT("SLD_AimSensitivity"));
+	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 3);
+	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 3);
+	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 3);
 
 	auto SetVolume = [this](const FName SliderName, const FName TextName, const EShooterAudioChannel Channel)
 	{
@@ -1959,25 +1970,25 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 		{
 			Title = FText::FromString(TEXT("수평 감도"));
 			Body = FText::FromString(TEXT("마우스 X축 회전 속도를 조절합니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseHorizontalSensitivity()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetMouseHorizontalSensitivity()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("VerticalSensitivity")))
 		{
 			Title = FText::FromString(TEXT("수직 감도"));
 			Body = FText::FromString(TEXT("마우스 Y축 회전 속도를 조절합니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseVerticalSensitivity()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetMouseVerticalSensitivity()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("AimSensitivity")))
 		{
 			Title = FText::FromString(TEXT("ADS 감도 배율"));
 			Body = FText::FromString(TEXT("조준 중 기본 마우스 감도에 곱해지는 배율입니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetAimSensitivityMultiplier()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetAimSensitivityMultiplier()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 2.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("InvertY")))
 		{
@@ -2193,11 +2204,11 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 			else {Title=FText::FromString(TEXT("Dynamic Crosshair")); Body=FText::FromString(TEXT("Enables or disables dynamic behavior on the in-game crosshair."));}
 			Help = FText::FromString(TEXT("Sensitivity, invert-Y and ADS scaling are applied directly to player look input; dynamic crosshair is consumed by the in-game reticle."));
 			MetricLabel1 = FText::FromString(TEXT("Range"));
-			MetricValue1 = FText::FromString(TEXT("0.01 - 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 - 1.000"));
 			MetricValue2 = FText::FromString(TEXT("Immediate"));
 			if (Option == FName(TEXT("AimSensitivity")))
 			{
-				MetricValue1 = FText::FromString(TEXT("0.01 - 2.00"));
+				MetricValue1 = FText::FromString(TEXT("0.000 - 1.000"));
 			}
 			else if (Option == FName(TEXT("InvertY")))
 			{
@@ -2976,7 +2987,7 @@ void UShooterOptionsScreen::HandleHorizontalSensitivityChanged(const float Value
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("HorizontalSensitivity");
 	SetMouseHorizontalSensitivity(Value);
-	SetGeneratedText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }
@@ -2986,7 +2997,7 @@ void UShooterOptionsScreen::HandleVerticalSensitivityChanged(const float Value)
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("VerticalSensitivity");
 	SetMouseVerticalSensitivity(Value);
-	SetGeneratedText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }
@@ -2996,7 +3007,7 @@ void UShooterOptionsScreen::HandleAimSensitivityChanged(const float Value)
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("AimSensitivity");
 	SetAimSensitivityMultiplier(Value);
-	SetGeneratedText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }

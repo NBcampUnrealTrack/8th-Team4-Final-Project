@@ -4,6 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "TrainingInteractionRegistration.h"
 #include "Training/TrainingArena.h"
+#include "Training/CQB/CQBTrainingPlayerSpawnPoint.h"
 #include "Training/TrainingPlayerComponent.h"
 
 ATrainingInteractionActor::ATrainingInteractionActor()
@@ -29,7 +30,11 @@ void ATrainingInteractionActor::EndPlay(const EEndPlayReason::Type EndPlayReason
 
 bool ATrainingInteractionActor::CanInteract(const APlayerController& RequestingPlayer) const
 {
-    return IsValid(Arena) && RequestingPlayer.GetPawn()
+    const bool bHasDestination = InteractionRole == ETrainingInteractionRole::Entrance
+        ? (IsValid(Arena) || IsValid(CQBEntryPoint))
+        : IsValid(Arena);
+
+    return bHasDestination && RequestingPlayer.GetPawn()
         && RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>() != nullptr;
 }
 

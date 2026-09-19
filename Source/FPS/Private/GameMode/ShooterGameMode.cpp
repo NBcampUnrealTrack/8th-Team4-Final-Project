@@ -8,8 +8,10 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpectatorPawn.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Player/ShooterPlayerState.h"
@@ -53,49 +55,55 @@ void AShooterGameMode::HandleStartingNewPlayer_Implementation(APlayerController*
 }
 
 void AShooterGameMode::HandlePlayerEliminated(
-	AController* EliminatedController,
-	const FRogueDeathContext& DeathContext)
+    AController* EliminatedController,
+    const FRogueDeathContext& DeathContext)
 {
-	if (!HasAuthority() || !IsValid(EliminatedController))
-	{
-		return;
-	}
+    if (!HasAuthority() || !IsValid(EliminatedController))
+    {
+        return;
+    }
 
-	AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
-	AShooterPlayerState* VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+    AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
+    AShooterPlayerState* VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+    APawn* VictimPawn = EliminatedController->GetPawn();
+    const IRogueCombatFeedbackPolicy* FeedbackPolicy = RogueCombatFeedbackPolicy::Resolve(
+        IsValid(VictimPawn) ? static_cast<AActor*>(VictimPawn) : static_cast<AActor*>(EliminatedController));
+    const bool bUsesStandardEliminationFeedback = !FeedbackPolicy || FeedbackPolicy->UsesStandardEliminationFeedback();
 
-	if (IsValid(VictimPlayerState))
-	{
-		VictimPlayerState->ServerAddDeath();
-	}
+    if (bUsesStandardEliminationFeedback)
+    {
+        if (IsValid(VictimPlayerState))
+        {
+            VictimPlayerState->ServerAddDeath();
+        }
 
-	// 자살/팀킬은 킬 증가 X
-	if (IsValid(KillerPlayerState)
-		&& KillerPlayerState != VictimPlayerState
-		&& (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
-	{
-		KillerPlayerState->ServerAddKill();
+        if (IsValid(KillerPlayerState)
+            && KillerPlayerState != VictimPlayerState
+            && (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
+        {
+            KillerPlayerState->ServerAddKill();
 
-		const int32 KillStreak = KillerPlayerState->ServerRegisterKillStreak();
-		if (AShooterPlayerController* KillerController =
-			Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
-		{
-			KillerController->ClientPlayKillSound(KillStreak);
-		}
-	}
+            const int32 KillStreak = KillerPlayerState->ServerRegisterKillStreak();
+            if (AShooterPlayerController* KillerController =
+                Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
+            {
+                KillerController->ClientPlayKillSound(KillStreak);
+            }
+        }
 
-	if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
-	{
-		FShooterEliminationEvent EliminationEvent;
-		EliminationEvent.KillerPlayerState = KillerPlayerState;
-		EliminationEvent.VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
-		EliminationEvent.WeaponTag = DeathContext.WeaponTag;
-		EliminationEvent.bHeadshot = DeathContext.bHeadshot;
+        if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
+        {
+            FShooterEliminationEvent EliminationEvent;
+            EliminationEvent.KillerPlayerState = KillerPlayerState;
+            EliminationEvent.VictimPlayerState = VictimPlayerState;
+            EliminationEvent.WeaponTag = DeathContext.WeaponTag;
+            EliminationEvent.bHeadshot = DeathContext.bHeadshot;
+            TeamGameState->BroadcastPlayerEliminated(EliminationEvent);
+        }
+    }
 
-		TeamGameState->BroadcastPlayerEliminated(EliminationEvent);
-	}
-
-	NotifyPlayerEliminatedBy(EliminatedController, KillerPlayerState);
+    // Mode-specific death flow (respawn, objectives, etc.) still runs for synthetic training eliminations.
+    NotifyPlayerEliminatedBy(EliminatedController, KillerPlayerState);
 }
 
 AShooterPlayerState* AShooterGameMode::ResolveKillerPlayerState(const FRogueDeathContext& DeathContext)

@@ -1,6 +1,7 @@
 #include "Player/TrainingPlayerController.h"
 
 #include "Character/ShooterCharacter.h"
+#include "Camera/PlayerCameraManager.h"
 #include "EnhancedInputComponent.h"
 #include "Engine/World.h"
 #include "GameMode/TrainingGameMode.h"
@@ -172,5 +173,23 @@ void ATrainingPlayerController::ClientCombatClassSelectionFailed_Implementation(
     if (UTrainingPlayerComponent* TrainingUI = FindComponentByClass<UTrainingPlayerComponent>())
     {
         TrainingUI->OnTrainingMessage.Broadcast(Reason);
+    }
+}
+
+void ATrainingPlayerController::ClientBeginRespawnFade_Implementation(const float FadeOutSeconds)
+{
+    if (PlayerCameraManager)
+    {
+        PlayerCameraManager->StartCameraFade(
+            0.0f, 1.0f, FMath::Max(0.0f, FadeOutSeconds), FLinearColor::Black, false, true);
+    }
+}
+
+void ATrainingPlayerController::ClientFinishRespawnFade_Implementation(const float FadeInSeconds)
+{
+    if (PlayerCameraManager)
+    {
+        PlayerCameraManager->StartCameraFade(
+            1.0f, 0.0f, FMath::Max(0.0f, FadeInSeconds), FLinearColor::Black, false, false);
     }
 }

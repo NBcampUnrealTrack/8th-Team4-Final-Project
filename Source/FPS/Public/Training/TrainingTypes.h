@@ -52,6 +52,20 @@ enum class ETrainingDialogKind : uint8
     EndSession
 };
 
+UENUM(BlueprintType)
+enum class ETrainingDestination : uint8
+{
+    Arena,
+    CQB
+};
+
+UENUM(BlueprintType)
+enum class ECQBTrainingDialogKind : uint8
+{
+    Start,
+    End
+};
+
 USTRUCT(BlueprintType)
 struct FPS_API FTrainingDistanceBand
 {

@@ -1,17 +1,22 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Training/UI/CQBTrainingDialogWidget.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Training/TrainingTypes.h"
 #include "Training/TrainingLoadoutSnapshot.h"
 #include "Training/UI/TrainingPlayerPresentation.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "TrainingPlayerComponent.generated.h"
 
 class APlayerController;
 class UAugmentInventoryComponent;
 class ATrainingInteractionActor;
 class ATrainingArena;
+class ACQBTrainingSpawner;
+class ACQBTrainingEndActor;
+class ACQBTrainingPlayerSpawnPoint;
 class UTrainingDamageFeedbackWidget;
 class UTrainingDialogWidget;
 class UTrainingStartFeedbackWidget;
@@ -25,13 +30,26 @@ class UShooterUIManagerSubsystem;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTrainingMessage, const FText&, Message);
 
 UCLASS(ClassGroup = (Training), meta = (BlueprintSpawnableComponent))
-class FPS_API UTrainingPlayerComponent : public UActorComponent
+class FPS_API UTrainingPlayerComponent : public UActorComponent, public IRogueCombatFeedbackPolicy
 {
     GENERATED_BODY()
 
 public:
     UTrainingPlayerComponent();
     void OpenDialogFor(ATrainingInteractionActor& Interactable);
+    void OpenCQBStartDialog(ACQBTrainingSpawner& Spawner);
+    void OpenCQBEndDialog(ACQBTrainingEndActor& EndActor);
+    void SubmitTrainingDestination(int32 RequestId, ETrainingDestination Destination);
+    void SubmitCQBStart(int32 RequestId);
+    void SubmitCQBReturnToOrigin(int32 RequestId);
+    void SubmitCQBEndToStart(int32 RequestId);
+    void SubmitCQBEndToOrigin(int32 RequestId);
+    void DismissCQBDialog(int32 RequestId);
+    void NotifyCQBDialogRemoved(UCQBTrainingDialogWidget& Dialog);
+    void NotifyCQBStartRequestResolved(ACQBTrainingSpawner& Spawner, int32 RequestId, bool bSuccess, const FText& Failure);
+    void NotifyCQBStarted(ACQBTrainingSpawner& Spawner, int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
+    void NotifyCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
+    void NotifyCQBStopped(ACQBTrainingSpawner& Spawner);
     void SubmitConfirmation(int32 RequestId);
     void SubmitMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
     void ReturnToPreTrainingPosition(int32 RequestId);
@@ -50,6 +68,10 @@ public:
     void DismissResults(UTrainingResultsWidget& Widget);
     void NotifyResultsRemoved(UTrainingResultsWidget& Widget);
     void ApplyButtonSounds(UUserWidget& Widget) const;
+
+    virtual bool UsesStandardEliminationFeedback() const override;
+    bool IsCQBTrainingActive() const;
+    bool TryGetCQBRespawnTransform(FTransform& OutTransform) const;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|UI")
     TSubclassOf<UTrainingDialogWidget> ConfirmationWidgetClass;
@@ -104,10 +126,16 @@ private:
     void CloseResults(bool bPlayCloseSound = false);
     void HandleWorldLeaving(UWorld* DepartingWorld);
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
+    bool TeleportParticipant(const FTransform& Destination, const FRotator& TargetControlRotation);
+    bool TeleportToSavedPreTrainingPosition(FText& OutFailure, bool bClearSavedPosition);
+    void SavePreTrainingPosition(APawn& ParticipantPawn, APlayerController& ParticipantPlayer);
+    void CloseActiveCQBDialog();
+    void ClearPendingCQBRequest();
+    bool ValidatePendingCQBRequest(int32 RequestId, FText& OutFailure) const;
 
     UFUNCTION(Client, Reliable)
     void ClientOpenDialog(ETrainingDialogKind Kind, int32 RequestId, USoundBase* InteractionSound, float SoundVolume,
-        const FTrainingLoadoutSnapshot& LoadoutSnapshot);
+        TSubclassOf<UTrainingDialogWidget> WidgetClassOverride, const FTrainingLoadoutSnapshot& LoadoutSnapshot);
 
     UFUNCTION(Client, Reliable)
     void ClientRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
@@ -131,6 +159,40 @@ private:
 
     UFUNCTION(Client, Reliable)
     void ClientNotify(const FText& Message);
+
+    UFUNCTION(Client, Reliable)
+    void ClientOpenCQBDialog(ECQBTrainingDialogKind Kind, int32 RequestId,
+        TSubclassOf<UCQBTrainingDialogWidget> WidgetClass);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCQBRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCQBStarted(int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
+
+    UFUNCTION(Client, Reliable)
+    void ClientCQBStopped();
+
+    UFUNCTION(Server, Reliable)
+    void ServerEnterTrainingDestination(int32 RequestId, ETrainingDestination Destination);
+
+    UFUNCTION(Server, Reliable)
+    void ServerStartCQB(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerReturnFromCQBStart(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerFinishCQBToStart(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerFinishCQBToOrigin(int32 RequestId);
+
+    UFUNCTION(Server, Reliable)
+    void ServerCancelCQB(int32 RequestId);
 
     UFUNCTION(Server, Reliable)
     void ServerConfirm(int32 RequestId);
@@ -169,12 +231,19 @@ private:
 
     TWeakObjectPtr<ATrainingInteractionActor> PendingInteractable;
     TWeakObjectPtr<UTrainingDialogWidget> ActiveDialog;
+    TWeakObjectPtr<ACQBTrainingSpawner> PendingCQBSpawner;
+    TWeakObjectPtr<ACQBTrainingSpawner> ActiveCQBSpawner;
+    TWeakObjectPtr<ACQBTrainingEndActor> PendingCQBEndActor;
+    TWeakObjectPtr<UCQBTrainingDialogWidget> ActiveCQBDialog;
+    TWeakObjectPtr<UTrainingSessionHUDWidget> CQBHUDWidget;
     ETrainingDialogKind PendingKind = ETrainingDialogKind::EnterArena;
     int32 PendingRequestId = 0;
     int32 RequestSequence = 0;
     int32 PendingSessionId = 0;
+    int32 PendingCQBRequestId = 0;
 
     TWeakObjectPtr<ATrainingArena> ReturnArena;
+    TWeakObjectPtr<ACQBTrainingPlayerSpawnPoint> ReturnCQBEntryPoint;
     FTransform PreTrainingTransform = FTransform::Identity;
     FRotator PreTrainingControlRotation = FRotator::ZeroRotator;
     bool bHasPreTrainingTransform = false;

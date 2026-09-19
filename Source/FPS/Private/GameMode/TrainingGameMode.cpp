@@ -13,6 +13,7 @@
 #include "Player/DominationPlayerState.h"
 #include "Player/TrainingPlayerController.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingPlayerComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTrainingGameMode, Log, All);
 #define LOCTEXT_NAMESPACE "TrainingGameMode"
@@ -152,7 +153,18 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
     if (!IsValid(ClassState) || !ClassState->HasSelectedCombatClass()) { return false; }
 
     UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer);
-    RestartPlayer(WaitingPlayer);
+
+    FTransform CQBRespawnTransform;
+    const UTrainingPlayerComponent* TrainingBridge = WaitingPlayer->FindComponentByClass<UTrainingPlayerComponent>();
+    if (!bInitialSpawn && TrainingBridge && TrainingBridge->TryGetCQBRespawnTransform(CQBRespawnTransform))
+    {
+        RestartPlayerAtTransform(WaitingPlayer, CQBRespawnTransform);
+    }
+    else
+    {
+        RestartPlayer(WaitingPlayer);
+    }
+
     APawn* CombatPawn = WaitingPlayer->GetPawn();
     if (!IsValid(CombatPawn) || CombatPawn->GetController() != WaitingPlayer) { return false; }
     ClassState->ServerRespawnReset();
@@ -166,7 +178,11 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
     WaitingPlayer->ClientGotoState(NAME_Playing);
     WaitingPlayer->ClientExitSpectatorMode();
     ClassState->SetParticipationState(EPlayerParticipationState::Active);
-    if (!bInitialSpawn) { RespawnProtection->BeginProtection(ClassState); }
+    if (!bInitialSpawn)
+    {
+        RespawnProtection->BeginProtection(ClassState);
+        WaitingPlayer->ClientFinishRespawnFade(RespawnFadeInSeconds);
+    }
     return true;
 }
 
@@ -205,12 +221,43 @@ void ATrainingGameMode::NotifyPlayerEliminatedBy(AController* EliminatedControll
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForNextSpawn);
     ClassState->SetAlive(false);
     RespawnProtection->EndProtection(ClassState);
-    MovePlayerToSpectator(WaitingPlayer);
+    WaitingPlayer->ClientBeginRespawnFade(RespawnFadeOutSeconds);
+
     FTimerHandle& RespawnTimer = PendingRespawns.Add(WaitingPlayer);
+    const float FadeOutDelay = FMath::Max(0.0f, RespawnFadeOutSeconds);
+    if (FadeOutDelay <= KINDA_SMALL_NUMBER)
+    {
+        HandleRespawnFadeOutComplete(TWeakObjectPtr<ATrainingPlayerController>(WaitingPlayer));
+        return;
+    }
+
     GetWorldTimerManager().SetTimer(RespawnTimer,
-        FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnTimer,
+        FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnFadeOutComplete,
             TWeakObjectPtr<ATrainingPlayerController>(WaitingPlayer)),
-        FMath::Max(0.1f, RespawnDelay), false);
+        FadeOutDelay, false);
+}
+
+void ATrainingGameMode::HandleRespawnFadeOutComplete(
+    const TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer)
+{
+    if (!WaitingPlayer.IsValid())
+    {
+        PendingRespawns.Remove(WaitingPlayer);
+        return;
+    }
+
+    MovePlayerToSpectator(WaitingPlayer.Get());
+
+    FTimerHandle* RespawnTimer = PendingRespawns.Find(WaitingPlayer);
+    if (!RespawnTimer)
+    {
+        return;
+    }
+
+    const float RemainingDelay = FMath::Max(0.1f, RespawnDelay - FMath::Max(0.0f, RespawnFadeOutSeconds));
+    GetWorldTimerManager().SetTimer(*RespawnTimer,
+        FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnTimer, WaitingPlayer),
+        RemainingDelay, false);
 }
 
 void ATrainingGameMode::HandleRespawnTimer(const TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer)
@@ -221,6 +268,7 @@ void ATrainingGameMode::HandleRespawnTimer(const TWeakObjectPtr<ATrainingPlayerC
     {
         UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer.Get());
         MovePlayerToSpectator(WaitingPlayer.Get());
+        WaitingPlayer->ClientFinishRespawnFade(RespawnFadeInSeconds);
         if (ADominationPlayerState* ClassState = WaitingPlayer->GetPlayerState<ADominationPlayerState>())
         {
             ClassState->SetAlive(false);

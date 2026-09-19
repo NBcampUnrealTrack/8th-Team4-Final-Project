@@ -116,4 +116,5 @@ private:
 	TWeakObjectPtr<AWeaponBase> LastAnimationWeapon;
 	bool bWasReloading = false;
 	bool bWasUtilityHeld = false;
+	bool bCQBTrainingAI = false;
 };

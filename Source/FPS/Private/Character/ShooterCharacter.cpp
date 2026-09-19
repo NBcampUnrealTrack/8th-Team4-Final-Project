@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Character/ShooterCharacter.h"
 #include "Combat/RogueDeathPresentation.h"
@@ -22,6 +22,7 @@
 #include "InputActionValue.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
+#include "Perception/AISense_Hearing.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -46,6 +47,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 	SpringArm->SetupAttachment(GetRootComponent());
 	SpringArm->TargetArmLength = 0.f;
 	SpringArm->bUsePawnControlRotation = true;
+	SpringArm->bEnableCameraLag = false;
+	SpringArm->bEnableCameraRotationLag = false;
 
 	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	FirstPersonCamera->SetupAttachment(SpringArm);
@@ -292,6 +295,11 @@ void AShooterCharacter::HandleAimingTagChanged(const FGameplayTag, const int32 N
 void AShooterCharacter::HandleWeaponFired(FGameplayTag, const FGameplayEventData*)
 {
 	HandleSprintReleased();
+	if (HasAuthority())
+	{
+		UAISense_Hearing::ReportNoiseEvent(
+			this, GetActorLocation(), 2.0f, this, 3500.0f, TEXT("Gunshot"));
+	}
 }
 
 void AShooterCharacter::HandleStaminaChanged(const FOnAttributeChangeData& Data)
@@ -385,6 +393,16 @@ void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, ui
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
 	{
 		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir, bIsInAir ? 1 : 0);
+	}
+}
+
+void AShooterCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	if (HasAuthority())
+	{
+		UAISense_Hearing::ReportNoiseEvent(
+			this, GetActorLocation(), 1.25f, this, 2200.0f, TEXT("Landing"));
 	}
 }
 

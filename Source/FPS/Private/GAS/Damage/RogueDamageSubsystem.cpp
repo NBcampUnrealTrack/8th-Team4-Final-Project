@@ -405,7 +405,7 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
 
 	AActor* Src = Params.Instigator;
 	AActor* Tgt = TargetActor;
-	const IRogueCombatFeedbackPolicy* FeedbackPolicy = Cast<IRogueCombatFeedbackPolicy>(Tgt);
+	const IRogueCombatFeedbackPolicy* FeedbackPolicy = RogueCombatFeedbackPolicy::Resolve(Tgt);
 	const bool bCountsAsCombatKill = !FeedbackPolicy || FeedbackPolicy->CountsAsCombatKill();
 	const bool bPlayCombatFeedbackAudio = !FeedbackPolicy || FeedbackPolicy->PlaysCombatFeedbackAudio();
 

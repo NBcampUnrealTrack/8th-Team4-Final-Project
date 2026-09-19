@@ -39,6 +39,7 @@ protected:
 private:
     void TryOpenClassSelection(ATrainingPlayerController* ReadyPlayer);
     bool RestartTrainingPlayer(ATrainingPlayerController* WaitingPlayer, bool bInitialSpawn);
+    void HandleRespawnFadeOutComplete(TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer);
     void HandleRespawnTimer(TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer);
     void HandleAugmentDependenciesReady();
     void GrantInitialAugments(ATrainingPlayerController* ReadyPlayer);
@@ -47,6 +48,10 @@ private:
     float RespawnDelay = 5.0f;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn", meta = (ClampMin = "0.0", Units = "s"))
     float RespawnProtectionDuration = 2.0f;
+    UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn|Fade", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float RespawnFadeOutSeconds = 0.25f;
+    UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn|Fade", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float RespawnFadeInSeconds = 0.35f;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment")
     bool bUseManualAugmentSelection = true;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment", meta = (EditCondition = "!bUseManualAugmentSelection"))

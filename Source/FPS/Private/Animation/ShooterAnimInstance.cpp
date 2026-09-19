@@ -8,6 +8,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
+#include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
@@ -59,12 +60,14 @@ void UShooterAnimInstance::CacheReferences()
 	{
 		CharacterMovementComponent = nullptr;
 		Combat = nullptr;
+		bCQBTrainingAI = false;
 		return;
 	}
 
 	CharacterMovementComponent = ShooterCharacter->GetCharacterMovement();
 	Combat = ShooterCharacter->FindComponentByClass<UCombatComponent>();
 	bFirstPersonAnimation = GetSkelMeshComponent() == ShooterCharacter->GetMesh1P_Implementation();
+	bCQBTrainingAI = ShooterCharacter->FindComponentByClass<UCQBTrainingAIComponent>() != nullptr;
 }
 
 void UShooterAnimInstance::UpdateMovementValues()
@@ -92,6 +95,15 @@ void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 {
 	AimRotation = ShooterCharacter->CalculateFixedAimRotation();
 	AO_Pitch = AimRotation.Pitch;
+
+	if (bCQBTrainingAI)
+	{
+		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetActorRotation().Yaw, 0.f);
+		AO_Yaw = 0.f;
+		InterpAO_Yaw = 0.f;
+		TurningStatus = ETurningInPlace::NotTurning;
+		return;
+	}
 
 	if (!bIsMoving && !bIsFalling)
 	{

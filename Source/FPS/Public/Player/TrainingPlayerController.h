@@ -20,6 +20,12 @@ public:
     virtual void SetPreviewCombatClass(EDominationCombatClass RequestedClass) override;
     virtual float GetCombatClassSelectionTimeRemaining() const override;
     void RequestTrainingClassSelection();
+
+    UFUNCTION(Client, Reliable)
+    void ClientBeginRespawnFade(float FadeOutSeconds);
+
+    UFUNCTION(Client, Reliable)
+    void ClientFinishRespawnFade(float FadeInSeconds);
 protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;

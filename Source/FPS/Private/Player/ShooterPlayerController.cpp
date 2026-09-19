@@ -14,6 +14,7 @@
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "GameFramework/InputSettings.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -77,6 +78,14 @@ void AShooterPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	// FPS 마우스 입력은 보간/가속 없이 선형 입력으로 사용한다.
+	if (UInputSettings* EngineInputSettings = GetMutableDefault<UInputSettings>())
+	{
+		EngineInputSettings->bEnableMouseSmoothing = false;
+		EngineInputSettings->bEnableFOVScaling = false;
+		EngineInputSettings->bEnableLegacyInputScales = false;
 	}
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
