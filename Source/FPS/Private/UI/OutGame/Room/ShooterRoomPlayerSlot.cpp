@@ -40,14 +40,23 @@ void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
 		Img_Profile->SetBrush(DefaultProfileBrush);
 	}
 
+	const EShooterRoomSlotState State = View.bIsReady
+		? EShooterRoomSlotState::Ready
+		: EShooterRoomSlotState::Waiting;
+
 	switch (Presentation)
 	{
 	case EShooterRoomSlotPresentation::Snap:
+		StopReadyTransition();
+		ApplyStateBackground(State);
 		BP_ApplySlotState(true, View, SlotTeam);
 		BP_ApplyReadyColor(View.bIsReady);
 		break;
 
 	case EShooterRoomSlotPresentation::Animate:
+		StopReadyTransition();
+		ApplyStateBackground(State);
+		BP_ApplyReadyColor(View.bIsReady);
 		BP_PlayReadyTransition(View.bIsReady);
 		break;
 
@@ -73,6 +82,8 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 		Panel_Join->SetIsEnabled(bJoinable);
 	}
 	Img_Profile->SetVisibility(ESlateVisibility::Collapsed);
+	StopReadyTransition();
+	ApplyStateBackground(EShooterRoomSlotState::Empty);
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
 	BP_ApplyReadyColor(false);
 }
@@ -80,4 +91,32 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 void UShooterRoomPlayerSlot::HandleJoinClicked()
 {
 	OnJoinRequested.Broadcast(SlotTeam);
+}
+
+void UShooterRoomPlayerSlot::ApplyStateBackground(const EShooterRoomSlotState State)
+{
+	const auto SetShown = [](UWidget* Widget, const bool bShown)
+	{
+		if (IsValid(Widget))
+		{
+			Widget->SetVisibility(bShown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
+	};
+
+	const bool bHasPlayer = State != EShooterRoomSlotState::Empty;
+	const bool bIsReady = State == EShooterRoomSlotState::Ready;
+	const bool bTeamA = bHasPlayer && SlotTeam == EGameTeam::TeamA;
+	const bool bTeamB = bHasPlayer && SlotTeam == EGameTeam::TeamB;
+
+	// 팀 배경이 기본 레이어, 레디 배경은 그 위 상태 레이어
+	SetShown(Image_Background_TeamA, bTeamA);
+	SetShown(Image_Background_TeamB, bTeamB);
+	SetShown(Image_BG_Ready_A, bTeamA && bIsReady);
+	SetShown(Image_BG_Ready_B, bTeamB && bIsReady);
+}
+
+void UShooterRoomPlayerSlot::StopReadyTransition()
+{
+	// 슬롯 애니가 레디 연출뿐이라 전부 멈춤
+	StopAllAnimations();
 }

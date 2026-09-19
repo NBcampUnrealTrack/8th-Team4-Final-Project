@@ -33,7 +33,7 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_ApplySlotState(bool bHasPlayer, const FShooterRoomSlotView& View, EGameTeam InSlotTeam);
-	// 같은 사람의 레디가 바뀌었을 때
+	// 같은 사람의 레디가 바뀌었을 때 연출만
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_PlayReadyTransition(bool bIsReady);
 	// 애니 없이 레디 색만
@@ -48,10 +48,22 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Img_Profile;
 
+	// 지속 상태 배경. C++ 만 켜고 끔
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Image_Background_TeamA;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Image_Background_TeamB;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Image_BG_Ready_A;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Image_BG_Ready_B;
+
 	EGameTeam SlotTeam = EGameTeam::None;
 
 private:
 	void HandleJoinClicked();
+	void ApplyStateBackground(EShooterRoomSlotState State);
+	void StopReadyTransition();
 
 	// 연출 판정용. 칸이 아니라 사람을 기억함
 	int32 CachedPlayerId = INDEX_NONE;

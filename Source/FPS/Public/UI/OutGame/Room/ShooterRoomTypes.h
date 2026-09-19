@@ -46,6 +46,14 @@ enum class EShooterRoomSlotPresentation : uint8
 	Animate
 };
 
+// 칸의 지속 상태
+enum class EShooterRoomSlotState : uint8
+{
+	Empty,
+	Waiting,
+	Ready
+};
+
 /**
  * 방 화면의 순수 규칙. 월드·위젯 없이 도는 정적 함수만 둠
  */
@@ -59,7 +67,6 @@ struct FShooterRoomRules
 	// PlayerId 오름차순
 	static TArray<FShooterRoomSlotView> GetTeamPlayers(const TArray<FShooterRoomSlotView>& AllViews, EGameTeam Team);
 
-	// 칸 번호가 아니라 PlayerId 로 비교
 	static EShooterRoomSlotPresentation DecideReadyPresentation(
 		int32 CachedPlayerId,
 		bool bCachedReady,
