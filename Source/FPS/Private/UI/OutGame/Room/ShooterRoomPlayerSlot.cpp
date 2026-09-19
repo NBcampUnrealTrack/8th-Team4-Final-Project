@@ -30,6 +30,7 @@ void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
 	{
 	case EShooterRoomSlotPresentation::Snap:
 		BP_ApplySlotState(true, View, SlotTeam);
+		BP_ApplyReadyColor(View.bIsReady);
 		break;
 
 	case EShooterRoomSlotPresentation::Animate:
@@ -58,6 +59,7 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 		Panel_Join->SetIsEnabled(bJoinable);
 	}
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
+	BP_ApplyReadyColor(false);
 }
 
 void UShooterRoomPlayerSlot::HandleJoinClicked()

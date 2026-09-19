@@ -36,6 +36,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
 	void BP_PlayReadyTransition(bool bIsReady);
 
+	// 애니 없이 레디 색만 맞춘다
+	UFUNCTION(BlueprintImplementableEvent, Category = "Lobby")
+	void BP_ApplyReadyColor(bool bIsReady);
+
 	// 칸 전체를 덮는 투명 버튼. 빈 칸일 때만 보임
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Join;
