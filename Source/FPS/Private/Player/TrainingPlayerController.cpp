@@ -24,7 +24,7 @@ void ATrainingPlayerController::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsLocalController())
+    if (!GetWorld() || GetWorld()->GetNetMode() != NM_Standalone || !IsLocalController())
     {
         return;
     }
@@ -40,10 +40,23 @@ void ATrainingPlayerController::BeginPlay()
     Interaction->SetInteractionPromptWidgetClass(Settings->InteractionPromptWidgetClass.LoadSynchronous());
 }
 
+void ATrainingPlayerController::OnUnPossess()
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (UTrainingSessionSubsystem* Session = World->GetSubsystem<UTrainingSessionSubsystem>())
+        {
+            Session->EndSessionForParticipant(this);
+        }
+    }
+    Super::OnUnPossess();
+}
+
 bool ATrainingPlayerController::CanProcessGameplayInput() const
 {
     const ADominationPlayerState* ClassState = GetPlayerState<ADominationPlayerState>();
-    return Super::CanProcessGameplayInput()
+    return GetWorld() && GetWorld()->GetNetMode() == NM_Standalone
+        && IsLocalController() && Super::CanProcessGameplayInput()
         && IsValid(ClassState) && ClassState->HasSelectedCombatClass()
         && ClassState->GetParticipationState() == EPlayerParticipationState::Active
         && ClassState->IsAlive() && IsValid(GetPawn<AShooterCharacter>());
@@ -65,16 +78,6 @@ void ATrainingPlayerController::Input_ToggleAugmentSelect()
     UIInitComponent->ToggleAugmentSelect();
 }
 
-void ATrainingPlayerController::SelectCombatClass(const EDominationCombatClass RequestedClass)
-{
-    ServerSelectCombatClass(RequestedClass);
-}
-
-void ATrainingPlayerController::SetPreviewCombatClass(const EDominationCombatClass RequestedClass)
-{
-    ServerSetPreviewCombatClass(RequestedClass);
-}
-
 float ATrainingPlayerController::GetCombatClassSelectionTimeRemaining() const
 {
     return -1.0f;
@@ -82,7 +85,7 @@ float ATrainingPlayerController::GetCombatClassSelectionTimeRemaining() const
 
 void ATrainingPlayerController::RequestTrainingClassSelection()
 {
-    if (!HasAuthority())
+    if (!GetWorld() || GetWorld()->GetNetMode() != NM_Standalone || !IsLocalController())
     {
         return;
     }
@@ -97,22 +100,24 @@ void ATrainingPlayerController::RequestTrainingClassSelection()
         || !ClassState->IsAlive()
         || ClassState->GetParticipationState() != EPlayerParticipationState::Active)
     {
-        ClientCombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "ClassChangeUnavailable",
+        CombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "ClassChangeUnavailable",
             "Class selection is not available right now."));
         return;
     }
 
-    if (!Sessions || Sessions->GetState() != ETrainingSessionState::Idle)
+    const UTrainingPlayerComponent* TrainingBridge = FindComponentByClass<UTrainingPlayerComponent>();
+    if (!Sessions || Sessions->GetState() != ETrainingSessionState::Idle
+        || (TrainingBridge && TrainingBridge->IsCQBTrainingActive()))
     {
-        ClientCombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "ClassChangeDuringSession",
+        CombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "ClassChangeDuringSession",
             "End the current training session before changing class."));
         return;
     }
 
-    ClientOpenTrainingClassSelection();
+    OpenTrainingClassSelection();
 }
 
-void ATrainingPlayerController::ClientOpenTrainingClassSelection_Implementation()
+void ATrainingPlayerController::OpenTrainingClassSelection()
 {
     if (!IsValid(UIInitComponent) || !UIInitComponent->OpenClassSelectionForTraining())
     {
@@ -120,14 +125,14 @@ void ATrainingPlayerController::ClientOpenTrainingClassSelection_Implementation(
     }
 }
 
-void ATrainingPlayerController::ServerSelectCombatClass_Implementation(const EDominationCombatClass RequestedClass)
+void ATrainingPlayerController::SelectCombatClass(const EDominationCombatClass RequestedClass)
 {
     ATrainingGameMode* TrainingMode = GetWorld()
         ? GetWorld()->GetAuthGameMode<ATrainingGameMode>() : nullptr;
     FText Failure;
     if (!IsValid(TrainingMode))
     {
-        ClientCombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "WrongGameMode",
+        CombatClassSelectionFailed(NSLOCTEXT("TrainingGameMode", "WrongGameMode",
             "This controller requires TrainingGameMode. Check the level's GameMode Override."));
         return;
     }
@@ -142,15 +147,15 @@ void ATrainingPlayerController::ServerSelectCombatClass_Implementation(const EDo
 
     if (!bSuccess)
     {
-        ClientCombatClassSelectionFailed(Failure);
+        CombatClassSelectionFailed(Failure);
     }
     else if (bChangingActiveClass)
     {
-        ClientTrainingClassSelectionSucceeded();
+        TrainingClassSelectionSucceeded();
     }
 }
 
-void ATrainingPlayerController::ClientTrainingClassSelectionSucceeded_Implementation()
+void ATrainingPlayerController::TrainingClassSelectionSucceeded()
 {
     if (IsValid(UIInitComponent))
     {
@@ -162,25 +167,30 @@ void ATrainingPlayerController::ClientTrainingClassSelectionSucceeded_Implementa
     }
 }
 
-void ATrainingPlayerController::ServerSetPreviewCombatClass_Implementation(const EDominationCombatClass RequestedClass)
+void ATrainingPlayerController::SetPreviewCombatClass(const EDominationCombatClass RequestedClass)
 {
-    if (ATrainingGameMode* TrainingMode = GetWorld()->GetAuthGameMode<ATrainingGameMode>())
+    ATrainingGameMode* TrainingMode = GetWorld()
+        ? GetWorld()->GetAuthGameMode<ATrainingGameMode>() : nullptr;
+    if (IsValid(TrainingMode))
     {
         TrainingMode->RequestPreviewCombatClass(this, RequestedClass);
     }
 }
 
-void ATrainingPlayerController::ClientCombatClassSelectionFailed_Implementation(const FText& Reason)
+void ATrainingPlayerController::CombatClassSelectionFailed(const FText& Reason)
 {
     UE_LOG(LogTrainingController, Error, TEXT("Training class selection: %s"), *Reason.ToString());
-    UIInitComponent->NotifyClassSelectionRequestFailed(Reason);
+    if (IsValid(UIInitComponent))
+    {
+        UIInitComponent->NotifyClassSelectionRequestFailed(Reason);
+    }
     if (UTrainingPlayerComponent* TrainingUI = FindComponentByClass<UTrainingPlayerComponent>())
     {
         TrainingUI->OnTrainingMessage.Broadcast(Reason);
     }
 }
 
-void ATrainingPlayerController::ClientBeginRespawnFade_Implementation(const float FadeOutSeconds)
+void ATrainingPlayerController::BeginRespawnFade(const float FadeOutSeconds)
 {
     if (PlayerCameraManager)
     {
@@ -189,7 +199,7 @@ void ATrainingPlayerController::ClientBeginRespawnFade_Implementation(const floa
     }
 }
 
-void ATrainingPlayerController::ClientFinishRespawnFade_Implementation(const float FadeInSeconds)
+void ATrainingPlayerController::FinishRespawnFade(const float FadeInSeconds)
 {
     if (PlayerCameraManager)
     {

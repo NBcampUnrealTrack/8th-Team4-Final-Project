@@ -132,7 +132,7 @@ void UCQBTrainingDialogWidget::HandleClassSelection()
 
 void UCQBTrainingDialogWidget::HandleClose()
 {
-    if (bRequestPending) return;
+    if (bRequestPending && DialogKind != ECQBTrainingDialogKind::Start) return;
 
     if (Bridge.IsValid())
     {
@@ -194,7 +194,7 @@ void UCQBTrainingDialogWidget::SetPending(const bool bPending)
     if (Btn_Primary) Btn_Primary->SetIsEnabled(!bPending);
     if (Btn_Secondary) Btn_Secondary->SetIsEnabled(!bPending);
     if (Btn_Class) Btn_Class->SetIsEnabled(!bPending);
-    if (Btn_Close) Btn_Close->SetIsEnabled(!bPending);
+    if (Btn_Close) Btn_Close->SetIsEnabled(!bPending || DialogKind == ECQBTrainingDialogKind::Start);
 
     if (bPending && Txt_Error)
     {

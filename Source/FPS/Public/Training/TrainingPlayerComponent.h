@@ -36,6 +36,9 @@ class FPS_API UTrainingPlayerComponent : public UActorComponent, public IRogueCo
 
 public:
     UTrainingPlayerComponent();
+    void ResetTrainingState();
+    void HandleParticipantDeath();
+    void NotifyMessage(const FText& Message);
     void OpenDialogFor(ATrainingInteractionActor& Interactable);
     void OpenCQBStartDialog(ACQBTrainingSpawner& Spawner);
     void OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner);
@@ -51,6 +54,7 @@ public:
     void DismissCQBDialog(int32 RequestId);
     void NotifyCQBDialogRemoved(UCQBTrainingDialogWidget& Dialog);
     void NotifyCQBStartRequestResolved(ACQBTrainingSpawner& Spawner, int32 RequestId, bool bSuccess, const FText& Failure);
+    void NotifyCQBLoading(ACQBTrainingSpawner& Spawner);
     void NotifyCQBStarted(ACQBTrainingSpawner& Spawner, int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
     void NotifyCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
     void NotifyCQBStopped(ACQBTrainingSpawner& Spawner);
@@ -62,7 +66,7 @@ public:
     bool GetAugmentAvailabilityTags(FGameplayTagContainer& OutTags) const;
     void DismissDialog(int32 RequestId);
     void NotifyDialogRemoved(UTrainingDialogWidget& Dialog);
-    void NotifySessionPhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds,
+    void NotifySessionPhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartSeconds,
         ETrainingMode Mode, float DurationSeconds);
     void NotifySessionHit(int32 SessionId, int32 Kills, float Damage, bool bKilled, const FVector& WorldPosition);
     void NotifyTrainingDamage(float Damage, bool bKilled, const FVector& WorldPosition);
@@ -133,116 +137,37 @@ private:
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
     bool TeleportParticipant(const FTransform& Destination, const FRotator& TargetControlRotation);
     bool TeleportToSavedPreTrainingPosition(FText& OutFailure, bool bClearSavedPosition);
-    void SavePreTrainingPosition(APawn& ParticipantPawn, APlayerController& ParticipantPlayer);
     void CloseActiveCQBDialog();
     void ClearPendingCQBRequest();
     bool ValidatePendingCQBRequest(int32 RequestId, FText& OutFailure) const;
 
-    UFUNCTION(Client, Reliable)
-    void ClientOpenDialog(ETrainingDialogKind Kind, int32 RequestId, USoundBase* InteractionSound, float SoundVolume,
+    void ShowDialog(ETrainingDialogKind Kind, int32 RequestId, USoundBase* InteractionSound, float SoundVolume,
         TSubclassOf<UTrainingDialogWidget> WidgetClassOverride, const FTrainingLoadoutSnapshot& LoadoutSnapshot);
 
-    UFUNCTION(Client, Reliable)
-    void ClientRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
+    void ResolveDialogRequest(int32 RequestId, bool bSuccess, const FText& Failure);
 
-    UFUNCTION(Client, Reliable)
-    void ClientSessionPhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds,
-        ETrainingMode Mode, float DurationSeconds);
-
-    UFUNCTION(Client, Reliable)
-    void ClientSessionHit(int32 SessionId, int32 Kills, float Damage, bool bKilled, FVector WorldPosition);
-
-    UFUNCTION(Client, Reliable)
-    void ClientTrainingDamage(float Damage, bool bKilled, FVector WorldPosition);
-
-    UFUNCTION(Client, Reliable)
-    void ClientSessionFinished(const FTrainingSessionResult& Result);
-
-    UFUNCTION(Client, Reliable)
-    void ClientPlayBotSound(int32 SessionId, USoundBase* Sound, USoundAttenuation* Attenuation,
-        FVector WorldPosition, float Volume);
-
-    UFUNCTION(Client, Reliable)
-    void ClientNotify(const FText& Message);
-
-    UFUNCTION(Client, Reliable)
-    void ClientOpenCQBDialog(ECQBTrainingDialogKind Kind, int32 RequestId,
+    void ShowCQBDialog(ECQBTrainingDialogKind Kind, int32 RequestId,
         TSubclassOf<UCQBTrainingDialogWidget> WidgetClass);
 
-    UFUNCTION(Client, Reliable)
-    void ClientCQBRequestResult(int32 RequestId, bool bSuccess, const FText& Failure);
+    void ResolveCQBRequest(int32 RequestId, bool bSuccess, const FText& Failure);
 
-    UFUNCTION(Client, Reliable)
-    void ClientSuspendCQBDialogForClassSelection(int32 RequestId);
+    void SuspendCQBDialogForClassSelection(int32 RequestId);
 
-    UFUNCTION(Client, Reliable)
-    void ClientCQBStarted(ACQBTrainingSpawner* Spawner, int32 TotalTroopers,
-        TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass);
+    void CancelCQBDialogRequest(int32 RequestId);
 
-    UFUNCTION(Client, Reliable)
-    void ClientCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
-
-    UFUNCTION(Client, Reliable)
-    void ClientCQBStopped();
-
-    UFUNCTION(Server, Reliable)
-    void ServerEnterTrainingDestination(int32 RequestId, ETrainingDestination Destination);
-
-    UFUNCTION(Server, Reliable)
-    void ServerStartCQB(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerCancelActiveCQB(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerOpenCQBClassSelection(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerReturnFromCQBStart(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerFinishCQBToStart(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerFinishCQBToOrigin(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerCancelCQB(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerConfirm(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerStartMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
-
-    UFUNCTION(Server, Reliable)
-    void ServerReturnToPreTrainingPosition(int32 RequestId);
-
-    UFUNCTION(Server, Reliable)
-    void ServerApplyAugments(int32 RequestId, const TArray<FPrimaryAssetId>& Selection);
-
-    UFUNCTION(Client, Reliable)
-    void ClientAugmentResult(int32 RequestId, bool bSuccess,
+    void ResolveAugmentRequest(int32 RequestId, bool bSuccess,
         const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure);
 
-    UFUNCTION(Server, Reliable)
-    void ServerChangeCombatClass(int32 RequestId, EDominationCombatClass RequestedClass);
-
-    UFUNCTION(Client, Reliable)
-    void ClientCombatClassResult(int32 RequestId, bool bSuccess,
+    void ResolveCombatClassRequest(int32 RequestId, bool bSuccess,
         const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure);
 
-    UFUNCTION(Server, Reliable)
-    void ServerCancel(int32 RequestId);
+    void CancelDialogRequest(int32 RequestId);
 
     UPROPERTY(Transient)
     TObjectPtr<UTrainingPlayerPresentation> Presentation;
 
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
     int32 LastStoppedSessionId = 0;
-    UPROPERTY(Transient)
-    FTrainingLoadoutSnapshot ClientLoadout;
-    bool bHasClientLoadout = false;
 
     TWeakObjectPtr<ATrainingInteractionActor> PendingInteractable;
     TWeakObjectPtr<UTrainingDialogWidget> ActiveDialog;
@@ -257,6 +182,7 @@ private:
     int32 PendingSessionId = 0;
     int32 PendingCQBRequestId = 0;
     int32 SuspendedCQBRequestId = 0;
+    UPROPERTY(Transient)
     TSubclassOf<UCQBTrainingDialogWidget> SuspendedCQBDialogClass;
 
     TWeakObjectPtr<ATrainingArena> ReturnArena;

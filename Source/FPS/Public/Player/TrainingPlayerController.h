@@ -21,25 +21,16 @@ public:
     virtual float GetCombatClassSelectionTimeRemaining() const override;
     void RequestTrainingClassSelection();
 
-    UFUNCTION(Client, Reliable)
-    void ClientBeginRespawnFade(float FadeOutSeconds);
-
-    UFUNCTION(Client, Reliable)
-    void ClientFinishRespawnFade(float FadeInSeconds);
+    void BeginRespawnFade(float FadeOutSeconds);
+    void FinishRespawnFade(float FadeInSeconds);
 protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
+    virtual void OnUnPossess() override;
 private:
-    UFUNCTION(Server, Reliable)
-    void ServerSelectCombatClass(EDominationCombatClass RequestedClass);
-    UFUNCTION(Server, Reliable)
-    void ServerSetPreviewCombatClass(EDominationCombatClass RequestedClass);
-    UFUNCTION(Client, Reliable)
-    void ClientCombatClassSelectionFailed(const FText& Reason);
-    UFUNCTION(Client, Reliable)
-    void ClientOpenTrainingClassSelection();
-    UFUNCTION(Client, Reliable)
-    void ClientTrainingClassSelectionSucceeded();
+    void CombatClassSelectionFailed(const FText& Reason);
+    void OpenTrainingClassSelection();
+    void TrainingClassSelectionSucceeded();
     void Input_ToggleAugmentSelect();
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training|UI", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UTrainingUIInitComponent> UIInitComponent;

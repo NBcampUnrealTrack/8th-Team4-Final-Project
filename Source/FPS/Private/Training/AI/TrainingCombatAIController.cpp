@@ -14,10 +14,13 @@
 ATrainingCombatAIController::ATrainingCombatAIController()
 {
     bStartAILogicOnPossess = false;
+    bReplicates = false;
+    PrimaryActorTick.bStartWithTickEnabled = false;
     bAllowStrafe = true;
     PersonalityComponent = CreateDefaultSubobject<UTrainingBotPersonalityComponent>(TEXT("PersonalityComponent"));
     StateTreeComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeComponent"));
     StateTreeComponent->SetStartLogicAutomatically(false);
+    StateTreeComponent->PrimaryComponentTick.bStartWithTickEnabled = false;
     StateTreeComponent->AddTickPrerequisiteComponent(PersonalityComponent);
     BrainComponent = StateTreeComponent;
 }
@@ -30,7 +33,7 @@ bool ATrainingCombatAIController::HasConfiguredStateTree() const
 bool ATrainingCombatAIController::StartTrainingBrain()
 {
     const ATrainingCombatAI* TrainingPawn = Cast<ATrainingCombatAI>(GetPawn());
-    if (!HasAuthority() || !TrainingPawn || !TrainingPawn->IsAlive()
+    if (!TrainingPawn || !TrainingPawn->IsAlive()
         || !TrainingPawn->GetTrainingArena() || !HasConfiguredStateTree())
     {
         return false;
@@ -42,6 +45,8 @@ bool ATrainingCombatAIController::StartTrainingBrain()
     PersonalityComponent->BeginTraining();
     StateTreeComponent->SetStateTree(StrafeStateTree);
     RefreshParticipantFocus();
+    SetActorTickEnabled(true);
+    StateTreeComponent->SetComponentTickEnabled(true);
     StateTreeComponent->StartLogic();
     if (!StateTreeComponent->IsRunning())
     {
@@ -54,6 +59,8 @@ bool ATrainingCombatAIController::StartTrainingBrain()
 void ATrainingCombatAIController::StopTrainingBrain()
 {
     StateTreeComponent->StopLogic(TEXT("Training stopped"));
+    StateTreeComponent->SetComponentTickEnabled(false);
+    SetActorTickEnabled(false);
     PersonalityComponent->EndTraining();
     RestoreTrainingSpeed();
     StopMovement();
@@ -83,7 +90,7 @@ bool ATrainingCombatAIController::RequestPersonalityStep(const bool bClockwise, 
 {
     const ATrainingCombatAI* TrainingPawn = Cast<ATrainingCombatAI>(GetPawn());
     const ATrainingArena* Arena = TrainingPawn ? TrainingPawn->GetTrainingArena() : nullptr;
-    if (!HasAuthority() || !TrainingPawn || !TrainingPawn->IsAlive() || !Arena)
+    if (!TrainingPawn || !TrainingPawn->IsAlive() || !Arena)
     {
         return false;
     }
@@ -163,6 +170,12 @@ void ATrainingCombatAIController::OnUnPossess()
 {
     StopTrainingBrain();
     Super::OnUnPossess();
+}
+
+void ATrainingCombatAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    StopTrainingBrain();
+    Super::EndPlay(EndPlayReason);
 }
 
 void ATrainingCombatAIController::SetTrainingSpeedMultiplier(const float Multiplier)

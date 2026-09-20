@@ -6,12 +6,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/GameStateBase.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
 #include "Training/TrainingSettings.h"
 
@@ -20,8 +18,8 @@ ATrainingCharacter::ATrainingCharacter()
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     DissolveDurationSeconds = FMath::Max(0.1f, Settings->DissolveDurationSeconds);
 
-    bReplicates = true;
-    SetReplicateMovement(true);
+    bReplicates = false;
+    SetReplicateMovement(false);
     AIControllerClass = nullptr;
     AutoPossessAI = EAutoPossessAI::Disabled;
     bUseControllerRotationYaw = false;
@@ -41,17 +39,11 @@ ATrainingCharacter::ATrainingCharacter()
     GetCharacterMovement()->bUseControllerDesiredRotation = false;
 
     AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
-    AbilitySystem->SetIsReplicated(true);
-    AbilitySystem->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+    AbilitySystem->SetIsReplicated(false);
     VitalSet = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
     AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
     HealthComponent = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
-}
-
-void ATrainingCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(ATrainingCharacter, DissolveStartServerSeconds);
+    HealthComponent->SetIsReplicated(false);
 }
 
 UAbilitySystemComponent* ATrainingCharacter::GetAbilitySystemComponent() const
@@ -68,34 +60,24 @@ void ATrainingCharacter::BeginPlay()
 {
     Super::BeginPlay();
     AbilitySystem->InitAbilityActorInfo(this, this);
-    if (HasAuthority())
-    {
-        const float InitialHealth = GetInitialTrainingHealth();
-        AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxHealthAttribute(), InitialHealth);
-        AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetHealthAttribute(), InitialHealth);
-        AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxShieldAttribute(), 0.0f);
-        AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetShieldAttribute(), 0.0f);
-    }
+    const float InitialHealth = GetInitialTrainingHealth();
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxHealthAttribute(), InitialHealth);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetHealthAttribute(), InitialHealth);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxShieldAttribute(), 0.0f);
+    AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetShieldAttribute(), 0.0f);
     if (!GetMesh()->GetPhysicsAsset())
     {
         GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
     }
     HealthComponent->InitializeWithAbilitySystem(AbilitySystem);
-    if (HasAuthority())
-    {
-        TrainingDamageTakenHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
-            FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
-            FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleTrainingDamageTaken));
-    }
-    if (DissolveStartServerSeconds >= 0.0)
-    {
-        StartDissolvePresentation();
-    }
+    TrainingDamageTakenHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
+        FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
+        FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(this, &ThisClass::HandleTrainingDamageTaken));
 }
 
 bool ATrainingCharacter::IsAlive() const
 {
-    return DissolveStartServerSeconds < 0.0 && !HealthComponent->IsDead();
+    return DissolveStartSeconds < 0.0 && !HealthComponent->IsDead();
 }
 
 UCombatHitZoneDefinition* ATrainingCharacter::GetCombatHitZoneDefinition_Implementation() const
@@ -115,18 +97,7 @@ void ATrainingCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 
 void ATrainingCharacter::PlayDeathReaction_Implementation(const FRogueDeathReaction&)
 {
-    if (HasAuthority())
-    {
-        BeginDissolveRemoval();
-    }
-    else if (DissolveStartServerSeconds >= 0.0)
-    {
-        StartDissolvePresentation();
-    }
-    else
-    {
-        StopTrainingMotion();
-    }
+    BeginDissolveRemoval();
 }
 
 float ATrainingCharacter::GetDissolveDuration() const
@@ -136,58 +107,45 @@ float ATrainingCharacter::GetDissolveDuration() const
 
 void ATrainingCharacter::BeginDissolveRemoval()
 {
-    if (!HasAuthority() || DissolveStartServerSeconds >= 0.0)
+    if (DissolveStartSeconds >= 0.0)
     {
         return;
     }
-    DissolveStartServerSeconds = GetWorld()->GetTimeSeconds();
+    DissolveStartSeconds = GetWorld()->GetTimeSeconds();
     AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Combat_IsDead, 1);
     StartDissolvePresentation();
     SetLifeSpan(GetDissolveDuration());
-    ForceNetUpdate();
 }
 
 void ATrainingCharacter::StopTrainingMotion()
 {
     GetCharacterMovement()->StopMovementImmediately();
     GetCharacterMovement()->DisableMovement();
+    GetCharacterMovement()->SetComponentTickEnabled(false);
+    SetActorTickEnabled(false);
     SetActorEnableCollision(false);
     GetMesh()->bPauseAnims = true;
     GetMesh()->SetSimulatePhysics(false);
-}
-
-void ATrainingCharacter::OnRep_DissolveStartServerSeconds()
-{
-    if (HasActorBegunPlay() && DissolveStartServerSeconds >= 0.0)
-    {
-        StartDissolvePresentation();
-    }
+    GetMesh()->SetComponentTickEnabled(false);
 }
 
 void ATrainingCharacter::StartDissolvePresentation()
 {
-    if (bDeathPresentationStarted || DissolveStartServerSeconds < 0.0)
+    if (bDeathPresentationStarted || DissolveStartSeconds < 0.0)
     {
         return;
     }
     bDeathPresentationStarted = true;
     StopTrainingMotion();
-    if (GetNetMode() == NM_DedicatedServer)
-    {
-        return;
-    }
     if (!DissolveMaterial)
     {
         UE_LOG(LogTemp, Warning, TEXT("[Training] %s: Dissolve Material is not assigned. Removal will still finish."),
             *GetName());
+        return;
     }
     else
     {
-        const AGameStateBase* WorldGameState = GetWorld()->GetGameState();
-        const double ServerNow = WorldGameState ? WorldGameState->GetServerWorldTimeSeconds()
-            : GetWorld()->GetTimeSeconds();
-        const float AlreadyElapsed = static_cast<float>(FMath::Max(0.0, ServerNow - DissolveStartServerSeconds));
-        const float LocalMaterialStart = static_cast<float>(GetWorld()->GetTimeSeconds()) - AlreadyElapsed;
+        const float LocalMaterialStart = static_cast<float>(DissolveStartSeconds);
         const FVector EffectOrigin = GetMesh()->Bounds.Origin - FVector(0.0, 0.0, GetMesh()->Bounds.BoxExtent.Z);
         const float EffectHeight = FMath::Max(1.0f, static_cast<float>(GetMesh()->Bounds.BoxExtent.Z * 2.0));
         DissolveInstance = UMaterialInstanceDynamic::Create(DissolveMaterial, this);
@@ -206,17 +164,18 @@ void ATrainingCharacter::StartDissolvePresentation()
             }
         }
     }
-    GetWorld()->GetTimerManager().SetTimer(DissolveUpdateTimer, this,
-        &ThisClass::UpdateDissolvePresentation, 1.0f / 60.0f, true);
-    UpdateDissolvePresentation();
+    if (DissolveInstance)
+    {
+        GetWorld()->GetTimerManager().SetTimer(DissolveUpdateTimer, this,
+            &ThisClass::UpdateDissolvePresentation, 1.0f / 60.0f, true);
+        UpdateDissolvePresentation();
+    }
 }
 
 void ATrainingCharacter::UpdateDissolvePresentation()
 {
-    const AGameStateBase* WorldGameState = GetWorld()->GetGameState();
-    const double ServerNow = WorldGameState ? WorldGameState->GetServerWorldTimeSeconds()
-        : GetWorld()->GetTimeSeconds();
-    const float Elapsed = static_cast<float>(FMath::Max(0.0, ServerNow - DissolveStartServerSeconds));
+    const double Now = GetWorld()->GetTimeSeconds();
+    const float Elapsed = static_cast<float>(FMath::Max(0.0, Now - DissolveStartSeconds));
     const float Alpha = FMath::Clamp(Elapsed / GetDissolveDuration(), 0.0f, 1.0f);
     const float Value = FMath::Lerp(DissolveStartValue, DissolveEndValue, Alpha);
     if (DissolveInstance)
@@ -232,7 +191,7 @@ void ATrainingCharacter::UpdateDissolvePresentation()
 
 void ATrainingCharacter::HandleTrainingDamageTaken(FGameplayTag, const FGameplayEventData* Payload)
 {
-    if (!HasAuthority() || !Payload || bEliminationReported) { return; }
+    if (!Payload || bEliminationReported) { return; }
     const bool bKilled = HealthComponent->IsDead() || RemovesOnAnyAcceptedHit();
     if (bKilled)
     {

@@ -19,7 +19,6 @@ class FPS_API ATrainingArena : public AActor
 
 public:
     ATrainingArena();
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     UFUNCTION(BlueprintPure, Category = "Training")
     FVector GetCenterLocation() const;
@@ -28,10 +27,10 @@ public:
     FTransform GetEntryTransform() const;
 
     UFUNCTION(BlueprintPure, Category = "Training")
-    ETrainingSessionState GetSessionState() const { return SessionState; }
+    ETrainingSessionState GetSessionState() const;
 
     UFUNCTION(BlueprintPure, Category = "Training")
-    ETrainingMode GetActiveMode() const { return ActiveMode; }
+    ETrainingMode GetActiveMode() const;
 
     bool IsInMovementArea(const AActor& Participant) const;
     bool ProjectGroundPosition(const FVector& Candidate, const FTrainingDistanceBand& Band,
@@ -41,15 +40,9 @@ public:
         FVector& OutNavPosition) const;
     bool ProjectNavPosition(const FVector& Candidate, const FTrainingDistanceBand& Band,
         const FNavAgentProperties& AgentProperties, FVector& OutNavPosition) const;
-    bool FindStrafeDestination(const FVector& CurrentPosition, const FTrainingDistanceBand& Band,
-        const FNavAgentProperties& AgentProperties, bool bClockwise, FVector& OutNavPosition) const;
-
     bool FindBotStepDestination(const FVector& CurrentPosition, const FTrainingDistanceBand& Band,
         const FNavAgentProperties& AgentProperties, float SignedArcCentimeters,
         float RadialStepCentimeters, FVector& OutNavPosition) const;
-
-    void SetSessionContext(ETrainingSessionState NewState, ETrainingMode NewMode);
-    void SetSessionState(ETrainingSessionState NewState);
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Rules", meta = (ClampMin = "0.0", Units = "s"))
     float CombatDurationSeconds = 0.0f;
@@ -90,10 +83,4 @@ private:
 
     UPROPERTY(VisibleAnywhere, Category = "Training|Geometry")
     TArray<TObjectPtr<UBoxComponent>> MovementBoundary;
-
-    UPROPERTY(Replicated)
-    ETrainingSessionState SessionState = ETrainingSessionState::Idle;
-
-    UPROPERTY(Replicated)
-    ETrainingMode ActiveMode = ETrainingMode::TargetAcquisition;
 };

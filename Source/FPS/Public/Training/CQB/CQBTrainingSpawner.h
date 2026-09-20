@@ -36,7 +36,6 @@ public:
     ACQBTrainingSpawner();
 
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual bool CanInteract(const APlayerController& RequestingPlayer) const override;
     virtual void Interact(APlayerController& RequestingPlayer) override;
 
@@ -82,16 +81,17 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "CQB|Interaction")
     TObjectPtr<UStaticMeshComponent> DisplayMesh;
 
-    UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "CQB|State")
+    UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Category = "CQB|State")
     ECQBTrainingSessionState SessionState = ECQBTrainingSessionState::Idle;
 
     UFUNCTION(BlueprintCallable, Category = "CQB|Spawn")
     void DespawnSpawnedTroopers();
 
-    bool StartTrainingFor(APlayerController& Participant, int32 RequestId);
-    bool CancelTrainingFor(APlayerController& Participant);
-    void CancelPendingStart(APlayerController& Participant, int32 RequestId);
+    bool StartTrainingFor(APlayerController& InParticipant, int32 RequestId);
+    bool CancelTraining();
+    void CancelPendingStart(int32 RequestId);
     void NotifyTrooperDeath(APawn& Trooper);
+    bool IsTrainingActive() const { return SessionState != ECQBTrainingSessionState::Idle; }
     bool IsTrainingComplete() const { return SessionState == ECQBTrainingSessionState::Completed; }
     bool IsTrainingRunning() const { return SessionState == ECQBTrainingSessionState::Running; }
     bool UsesStandardEliminationFeedback() const { return !bSuppressStandardEliminationFeedback; }
@@ -113,33 +113,39 @@ protected:
 
 private:
     void BeginTraining();
-    void HandleTrooperClassLoaded();
+    void HandleTrooperClassLoaded(int32 RequestId, uint32 ExpectedGeneration);
     void StartLoadedTraining(UClass& LoadedTrooperClass);
     bool CollectSpawnPoints();
     bool SpawnUntilFull(UClass& LoadedTrooperClass);
     APawn* SpawnFromPoint(ACQBTrainingSpawnPoint& SpawnPoint, UClass& LoadedTrooperClass);
     int32 CountAliveTroopers() const;
-    void RegisterTrooperDeath(int32 TrooperIndex);
+    void RegisterTrooperDeath(APawn& Trooper);
+
+    UFUNCTION()
+    void HandleTrooperDestroyed(AActor* DestroyedActor);
     bool RefillAfterDeath();
     void CompleteTraining();
 
     void ResolvePendingStart(bool bSuccess, const FText& Failure);
     void AbortPendingStart(const FText& Failure);
+    void DestroyTrooper(APawn& Trooper);
     void DestroySpawnedTroopersOnly();
     void ResetRuntimeData();
-    void ResetSessionState(bool bNotifyParticipant);
+    void ResetSessionState();
 
     void NotifyParticipantStarted();
     void NotifyParticipantProgress();
     void NotifyParticipantStopped();
 
+    uint32 SessionGeneration = 0;
     int32 PendingStartRequestId = 0;
     int32 NextSpawnIndex = 0;
     int32 KilledTroopers = 0;
-    TSet<int32> CountedDeathIndices;
+    TSet<TWeakObjectPtr<APawn>> CountedDeadTroopers;
 
     TWeakObjectPtr<APlayerController> LocalOverlappingController;
-    TWeakObjectPtr<APlayerController> ActiveParticipant;
+    TWeakObjectPtr<APlayerController> Participant;
+    bool bStopping = false;
     TSharedPtr<FStreamableHandle> PendingLoadHandle;
     TArray<TWeakObjectPtr<ACQBTrainingSpawnPoint>> OrderedSpawnPoints;
     TArray<TWeakObjectPtr<APawn>> SpawnedTroopers;

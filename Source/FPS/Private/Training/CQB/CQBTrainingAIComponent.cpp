@@ -219,6 +219,10 @@ void UCQBTrainingAIComponent::ApplyRuntimeOptimization()
 
 void UCQBTrainingAIComponent::PrepareForDeathCleanup(const float CorpseLifetimeSeconds)
 {
+    if (bDeathCleanupStarted)
+    {
+        return;
+    }
     bDeathCleanupStarted = true;
 
     ACharacter* Character = GetOwnerCharacter();

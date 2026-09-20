@@ -6,6 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Input/ShooterInteractionComponent.h"
+#include "Player/TrainingPlayerController.h"
 #include "Tags/UITags.h"
 #include "Training/TrainingArena.h"
 #include "Training/CQB/CQBTrainingEndActor.h"
@@ -29,12 +30,15 @@
 UTrainingPlayerComponent::UTrainingPlayerComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
-    SetIsReplicatedByDefault(true);
 }
 
 void UTrainingPlayerComponent::BeginPlay()
 {
     Super::BeginPlay();
+    if (!GetParticipantController())
+    {
+        return;
+    }
     Presentation = NewObject<UTrainingPlayerPresentation>(this);
     if (Presentation)
     {
@@ -46,7 +50,9 @@ void UTrainingPlayerComponent::BeginPlay()
 
 APlayerController* UTrainingPlayerComponent::GetParticipantController() const
 {
-    return Cast<APlayerController>(GetOwner());
+    ATrainingPlayerController* Controller = Cast<ATrainingPlayerController>(GetOwner());
+    return Controller && Controller->IsLocalController() && GetWorld()
+        && GetWorld()->GetNetMode() == NM_Standalone ? Controller : nullptr;
 }
 
 UShooterUIManagerSubsystem* UTrainingPlayerComponent::GetUIManager() const
@@ -59,7 +65,7 @@ UShooterUIManagerSubsystem* UTrainingPlayerComponent::GetUIManager() const
 void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interactable)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !ParticipantPlayer->HasAuthority())
+    if (!ParticipantPlayer)
     {
         return;
     }
@@ -77,21 +83,27 @@ void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interact
         return;
     }
 
+    if (IsCQBTrainingActive())
+    {
+        NotifyMessage(LOCTEXT("CQBActive", "End CQB training before entering the Training Arena."));
+        return;
+    }
+
     const bool bSessionActive = Sessions->GetState() != ETrainingSessionState::Idle;
     ETrainingDialogKind Kind = ETrainingDialogKind::EnterArena;
     if (bEntrance)
     {
         if (bSessionActive)
         {
-            ClientNotify(LOCTEXT("ArenaBusy", "A training session is already active. End it before entering again."));
+            NotifyMessage(LOCTEXT("ArenaBusy", "A training session is already active. End it before entering again."));
             return;
         }
     }
     else if (bSessionActive)
     {
-        if (Sessions->GetParticipant() != ParticipantPlayer || Sessions->GetActiveArena() != RequestedArena)
+        if (Sessions->GetActiveArena() != RequestedArena)
         {
-            ClientNotify(LOCTEXT("OtherPlayer", "Another player is using the Training Arena."));
+            NotifyMessage(LOCTEXT("OtherArena", "End the current training session before using another arena."));
             return;
         }
         Kind = ETrainingDialogKind::EndSession;
@@ -100,22 +112,24 @@ void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interact
     {
         if (!ParticipantPlayer->GetPawn() || !RequestedArena->IsInMovementArea(*ParticipantPlayer->GetPawn()))
         {
-            ClientNotify(LOCTEXT("NotInside", "Enter the central training area first."));
+            NotifyMessage(LOCTEXT("NotInside", "Enter the central training area first."));
             return;
         }
         Kind = ETrainingDialogKind::SelectMode;
     }
 
+    CancelCQBDialogRequest(PendingCQBRequestId);
+    CloseActiveCQBDialog();
     RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
     PendingRequestId = RequestSequence;
     PendingSessionId = Sessions->GetSessionId();
     PendingKind = Kind;
     PendingInteractable = &Interactable;
-    ClientOpenDialog(Kind, PendingRequestId, Interactable.InteractionSound, Interactable.InteractionSoundVolume,
+    ShowDialog(Kind, PendingRequestId, Interactable.InteractionSound, Interactable.InteractionSoundVolume,
         Interactable.DialogWidgetClass, BuildLoadoutSnapshot());
 }
 
-void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDialogKind Kind, const int32 RequestId,
+void UTrainingPlayerComponent::ShowDialog(const ETrainingDialogKind Kind, const int32 RequestId,
     USoundBase* InteractionSound, const float SoundVolume, TSubclassOf<UTrainingDialogWidget> WidgetClassOverride,
     const FTrainingLoadoutSnapshot& LoadoutSnapshot)
 {
@@ -140,54 +154,25 @@ void UTrainingPlayerComponent::ClientOpenDialog_Implementation(const ETrainingDi
     }
     if (!UIManager || !UIManager->IsUIInitialized() || !WidgetClass)
     {
-        ClientNotify_Implementation(LOCTEXT("UISetup", "Training UI is not configured: initialize the existing PrimaryGameLayout and assign both Training widget classes."));
-        ServerCancel(RequestId);
+        NotifyMessage(LOCTEXT("UISetup", "Training UI is not configured: initialize the existing PrimaryGameLayout and assign both Training widget classes."));
+        CancelDialogRequest(RequestId);
         return;
     }
     UTrainingDialogWidget* NewDialog = Cast<UTrainingDialogWidget>(
         UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, WidgetClass));
     if (!NewDialog)
     {
-        ClientNotify_Implementation(LOCTEXT("NoLayer", "The existing PrimaryGameLayout could not open the Training modal."));
-        ServerCancel(RequestId);
+        NotifyMessage(LOCTEXT("NoLayer", "The existing PrimaryGameLayout could not open the Training modal."));
+        CancelDialogRequest(RequestId);
         return;
     }
     ActiveDialog = NewDialog;
-    ClientLoadout = LoadoutSnapshot;
-    bHasClientLoadout = true;
+
+
     NewDialog->SetAppliedLoadout(LoadoutSnapshot);
     NewDialog->InitializeDialog(*this, Kind, RequestId);
     USoundBase* OpenSound = InteractionSound ? InteractionSound : WidgetOpenSound.Get();
     if (OpenSound) { UGameplayStatics::PlaySound2D(this, OpenSound, InteractionSound ? FMath::Max(0.0f, SoundVolume) : 1.0f); }
-}
-
-void UTrainingPlayerComponent::SubmitConfirmation(const int32 RequestId)
-{
-    ServerConfirm(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitMode(const int32 RequestId, const ETrainingMode Mode,
-    const ETrainingDistancePreset Preset, const float CustomMeters)
-{
-    ServerStartMode(RequestId, Mode, Preset, CustomMeters);
-}
-
-void UTrainingPlayerComponent::ReturnToPreTrainingPosition(const int32 RequestId)
-{
-    ServerReturnToPreTrainingPosition(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitTrainingDestination(const int32 RequestId, const ETrainingDestination Destination)
-{
-    ServerEnterTrainingDestination(RequestId, Destination);
-}
-
-void UTrainingPlayerComponent::SavePreTrainingPosition(
-    APawn& ParticipantPawn, APlayerController& ParticipantPlayer)
-{
-    PreTrainingTransform = ParticipantPawn.GetActorTransform();
-    PreTrainingControlRotation = ParticipantPlayer.GetControlRotation();
-    bHasPreTrainingTransform = true;
 }
 
 bool UTrainingPlayerComponent::TeleportParticipant(
@@ -205,8 +190,6 @@ bool UTrainingPlayerComponent::TeleportParticipant(
         ParticipantCharacter->GetCharacterMovement()->StopMovementImmediately();
     }
     ParticipantPlayer->SetControlRotation(TargetControlRotation);
-    ParticipantPlayer->ClientSetRotation(TargetControlRotation, true);
-    ParticipantPawn->ForceNetUpdate();
     return true;
 }
 
@@ -237,13 +220,13 @@ bool UTrainingPlayerComponent::TeleportToSavedPreTrainingPosition(
     return true;
 }
 
-void UTrainingPlayerComponent::ServerEnterTrainingDestination_Implementation(
+void UTrainingPlayerComponent::SubmitTrainingDestination(
     const int32 RequestId, const ETrainingDestination Destination)
 {
     FText Failure;
     if (!ValidatePendingRequest(RequestId, Failure) || PendingKind != ETrainingDialogKind::EnterArena)
     {
-        ClientRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveDialogRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("DestinationExpired", "Training destination request expired.") : Failure);
         return;
     }
@@ -251,9 +234,9 @@ void UTrainingPlayerComponent::ServerEnterTrainingDestination_Implementation(
     APlayerController* ParticipantPlayer = GetParticipantController();
     APawn* ParticipantPawn = ParticipantPlayer ? ParticipantPlayer->GetPawn() : nullptr;
     UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
-    if (!ParticipantPlayer || !ParticipantPawn || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle)
+    if (!ParticipantPlayer || !ParticipantPawn || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle || IsCQBTrainingActive())
     {
-        ClientRequestResult(RequestId, false,
+        ResolveDialogRequest(RequestId, false,
             LOCTEXT("DestinationBusy", "Training is currently unavailable."));
         return;
     }
@@ -265,7 +248,7 @@ void UTrainingPlayerComponent::ServerEnterTrainingDestination_Implementation(
     {
         if (!RequestedArena)
         {
-            ClientRequestResult(RequestId, false,
+            ResolveDialogRequest(RequestId, false,
                 LOCTEXT("ArenaDestinationMissing", "Training Arena is not assigned to the entrance actor."));
             return;
         }
@@ -275,7 +258,7 @@ void UTrainingPlayerComponent::ServerEnterTrainingDestination_Implementation(
     {
         if (!CQBEntry)
         {
-            ClientRequestResult(RequestId, false,
+            ResolveDialogRequest(RequestId, false,
                 LOCTEXT("CQBDestinationMissing", "CQB Entry Point is not assigned to the entrance actor."));
             return;
         }
@@ -306,7 +289,7 @@ void UTrainingPlayerComponent::ServerEnterTrainingDestination_Implementation(
     {
         Failure = LOCTEXT("DestinationBlocked", "The selected training entry point is blocked.");
     }
-    ClientRequestResult(RequestId, bSuccess, Failure);
+    ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
 bool UTrainingPlayerComponent::ValidatePendingRequest(const int32 RequestId, FText& OutFailure) const
@@ -325,26 +308,25 @@ bool UTrainingPlayerComponent::ValidatePendingRequest(const int32 RequestId, FTe
     return true;
 }
 
-void UTrainingPlayerComponent::ServerConfirm_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitConfirmation(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingRequest(RequestId, Failure))
     {
-        ClientRequestResult(RequestId, false, Failure);
+        ResolveDialogRequest(RequestId, false, Failure);
         return;
     }
     APlayerController* ParticipantPlayer = GetParticipantController();
     UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
-    ATrainingArena* RequestedArena = PendingInteractable->Arena;
     bool bSuccess = false;
     if (PendingKind == ETrainingDialogKind::EnterArena)
     {
-        ServerEnterTrainingDestination_Implementation(RequestId, ETrainingDestination::Arena);
+        SubmitTrainingDestination(RequestId, ETrainingDestination::Arena);
         return;
     }
     else if (PendingKind == ETrainingDialogKind::EndSession && ParticipantPlayer && Sessions)
     {
-        bSuccess = Sessions->RequestEndSession(*ParticipantPlayer, PendingSessionId);
+        bSuccess = Sessions->RequestEndSession(PendingSessionId);
         if (!bSuccess)
         {
             Failure = LOCTEXT("ChangedSession", "That session has already ended or changed. Close the dialog and interact again.");
@@ -358,16 +340,16 @@ void UTrainingPlayerComponent::ServerConfirm_Implementation(const int32 RequestI
     {
         Failure = LOCTEXT("InvalidConfirmation", "This confirmation can no longer be applied.");
     }
-    ClientRequestResult(RequestId, bSuccess, Failure);
+    ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::ServerStartMode_Implementation(const int32 RequestId, const ETrainingMode Mode,
+void UTrainingPlayerComponent::SubmitMode(const int32 RequestId, const ETrainingMode Mode,
     const ETrainingDistancePreset Preset, const float CustomMeters)
 {
     FText Failure;
     if (!ValidatePendingRequest(RequestId, Failure))
     {
-        ClientRequestResult(RequestId, false, Failure);
+        ResolveDialogRequest(RequestId, false, Failure);
         return;
     }
     UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
@@ -382,16 +364,16 @@ void UTrainingPlayerComponent::ServerStartMode_Implementation(const int32 Reques
     {
         Failure = LOCTEXT("InvalidSelection", "This mode selection is no longer valid.");
     }
-    ClientRequestResult(RequestId, bSuccess, Failure);
+    ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
 
-void UTrainingPlayerComponent::ServerReturnToPreTrainingPosition_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::ReturnToPreTrainingPosition(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingRequest(RequestId, Failure))
     {
-        ClientRequestResult(RequestId, false, Failure);
+        ResolveDialogRequest(RequestId, false, Failure);
         return;
     }
 
@@ -416,29 +398,9 @@ void UTrainingPlayerComponent::ServerReturnToPreTrainingPosition_Implementation(
     {
         Failure = LOCTEXT("ReturnStartMissing", "No saved pre-training position is available. Leave and enter the Training Arena again.");
     }
-    else if (APawn* ParticipantPawn = ParticipantPlayer->GetPawn())
+    else
     {
-        bSuccess = ParticipantPawn->TeleportTo(
-            PreTrainingTransform.GetLocation(), PreTrainingTransform.Rotator());
-        if (bSuccess)
-        {
-            if (ACharacter* ParticipantCharacter = Cast<ACharacter>(ParticipantPawn))
-            {
-                ParticipantCharacter->GetCharacterMovement()->StopMovementImmediately();
-            }
-            ParticipantPlayer->SetControlRotation(PreTrainingControlRotation);
-            ParticipantPlayer->ClientSetRotation(PreTrainingControlRotation, true);
-            ParticipantPawn->ForceNetUpdate();
-
-            ReturnArena.Reset();
-            PreTrainingTransform = FTransform::Identity;
-            PreTrainingControlRotation = FRotator::ZeroRotator;
-            bHasPreTrainingTransform = false;
-        }
-        else
-        {
-            Failure = LOCTEXT("ReturnStartBlocked", "The saved pre-training position is blocked.");
-        }
+        bSuccess = TeleportToSavedPreTrainingPosition(Failure, true);
     }
 
     if (bSuccess)
@@ -450,10 +412,10 @@ void UTrainingPlayerComponent::ServerReturnToPreTrainingPosition_Implementation(
         Failure = LOCTEXT("ReturnStartFailed", "Could not return to the saved pre-training position.");
     }
 
-    ClientRequestResult(RequestId, bSuccess, Failure);
+    ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::ClientRequestResult_Implementation(const int32 RequestId,
+void UTrainingPlayerComponent::ResolveDialogRequest(const int32 RequestId,
     const bool bSuccess, const FText& Failure)
 {
     UTrainingDialogWidget* Dialog = ActiveDialog.Get();
@@ -471,26 +433,14 @@ void UTrainingPlayerComponent::ClientRequestResult_Implementation(const int32 Re
     }
 }
 
-void UTrainingPlayerComponent::ClientNotify_Implementation(const FText& Message)
+void UTrainingPlayerComponent::NotifyMessage(const FText& Message)
 {
     UE_LOG(LogTemp, Warning, TEXT("[Training] %s"), *Message.ToString());
     OnTrainingMessage.Broadcast(Message);
 }
 
 void UTrainingPlayerComponent::NotifySessionPhase(const int32 SessionId,
-    const ETrainingFeedbackPhase Phase, const double PhaseStartServerSeconds,
-    const ETrainingMode Mode, const float DurationSeconds)
-{
-    const APlayerController* ParticipantPlayer = GetParticipantController();
-    if (ParticipantPlayer && ParticipantPlayer->HasAuthority())
-    {
-        if (Phase == ETrainingFeedbackPhase::Stopped) { ClearPendingRequest(); }
-        ClientSessionPhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
-    }
-}
-
-void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 SessionId,
-    const ETrainingFeedbackPhase Phase, const double PhaseStartServerSeconds,
+    const ETrainingFeedbackPhase Phase, const double PhaseStartSeconds,
     const ETrainingMode Mode, const float DurationSeconds)
 {
     APlayerController* LocalController = GetParticipantController();
@@ -503,8 +453,9 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
     {
         if (Presentation && Presentation->GetSessionId() == SessionId)
         {
+            ClearPendingRequest();
             LastStoppedSessionId = SessionId;
-            Presentation->HandlePhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
+            Presentation->HandlePhase(SessionId, Phase, PhaseStartSeconds, Mode, DurationSeconds);
             CloseActiveDialog();
         }
         return;
@@ -518,7 +469,7 @@ void UTrainingPlayerComponent::ClientSessionPhase_Implementation(const int32 Ses
 
     if (Presentation)
     {
-        Presentation->HandlePhase(SessionId, Phase, PhaseStartServerSeconds, Mode, DurationSeconds);
+        Presentation->HandlePhase(SessionId, Phase, PhaseStartSeconds, Mode, DurationSeconds);
     }
 }
 
@@ -529,7 +480,7 @@ void UTrainingPlayerComponent::ClearPendingRequest()
     PendingSessionId = 0;
 }
 
-void UTrainingPlayerComponent::ServerCancel_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::CancelDialogRequest(const int32 RequestId)
 {
     if (PendingRequestId == RequestId)
     {
@@ -539,7 +490,7 @@ void UTrainingPlayerComponent::ServerCancel_Implementation(const int32 RequestId
 
 void UTrainingPlayerComponent::DismissDialog(const int32 RequestId)
 {
-    ServerCancel(RequestId);
+    CancelDialogRequest(RequestId);
     if (ActiveDialog.IsValid() && ActiveDialog->GetRequestId() == RequestId)
     {
         if (WidgetCloseSound) { UGameplayStatics::PlaySound2D(this, WidgetCloseSound); }
@@ -549,11 +500,10 @@ void UTrainingPlayerComponent::DismissDialog(const int32 RequestId)
 
 void UTrainingPlayerComponent::NotifyDialogRemoved(UTrainingDialogWidget& Dialog)
 {
-    ServerCancel(Dialog.GetRequestId());
+    CancelDialogRequest(Dialog.GetRequestId());
     if (ActiveDialog.Get() == &Dialog)
     {
         ActiveDialog.Reset();
-        bHasClientLoadout = false;
     }
     Dialog.DetachRequest();
 }
@@ -562,7 +512,6 @@ void UTrainingPlayerComponent::CloseActiveDialog()
 {
     UTrainingDialogWidget* Dialog = ActiveDialog.Get();
     ActiveDialog.Reset();
-    bHasClientLoadout = false;
     if (Dialog)
     {
         Dialog->DetachRequest();
@@ -588,37 +537,52 @@ void UTrainingPlayerComponent::HandleWorldLeaving(UWorld* DepartingWorld)
     {
         return;
     }
+    ResetTrainingState();
+}
+
+void UTrainingPlayerComponent::HandleParticipantDeath()
+{
+    CancelCQBDialogRequest(PendingCQBRequestId);
+    ClearPendingCQBRequest();
+    ClearPendingRequest();
+    LastStoppedSessionId = 0;
+    CloseActiveDialog();
+    CloseActiveCQBDialog();
+    CloseResults();
+    if (Presentation)
+    {
+        Presentation->Clear();
+    }
+}
+
+void UTrainingPlayerComponent::ResetTrainingState()
+{
     if (APlayerController* ParticipantPlayer = GetParticipantController())
     {
-        if (ParticipantPlayer->HasAuthority())
+        if (UWorld* World = GetWorld())
         {
-            if (UTrainingSessionSubsystem* Sessions = DepartingWorld->GetSubsystem<UTrainingSessionSubsystem>())
+            if (UTrainingSessionSubsystem* Sessions = World->GetSubsystem<UTrainingSessionSubsystem>())
             {
                 Sessions->EndSessionForParticipant(ParticipantPlayer);
             }
         }
     }
-    CloseActiveDialog();
-    CloseActiveCQBDialog();
-    CloseResults();
+    if (ACQBTrainingSpawner* Spawner = ActiveCQBSpawner.Get())
+    {
+        Spawner->CancelTraining();
+    }
+    HandleParticipantDeath();
     if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
     {
         HUD->RemoveFromParent();
     }
     CQBHUDWidget.Reset();
-    if (Presentation)
-    {
-        Presentation->Clear();
-    }
-    ClearPendingRequest();
-    ClearPendingCQBRequest();
     ActiveCQBSpawner.Reset();
     ReturnArena.Reset();
     ReturnCQBEntryPoint.Reset();
     PreTrainingTransform = FTransform::Identity;
     PreTrainingControlRotation = FRotator::ZeroRotator;
     bHasPreTrainingTransform = false;
-    LastStoppedSessionId = 0;
 }
 
 void UTrainingPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

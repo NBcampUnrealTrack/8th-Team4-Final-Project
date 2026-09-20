@@ -3,6 +3,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "TrainingInteractionRegistration.h"
+#include "Player/TrainingPlayerController.h"
 #include "Training/TrainingArena.h"
 #include "Training/CQB/CQBTrainingPlayerSpawnPoint.h"
 #include "Training/TrainingPlayerComponent.h"
@@ -10,7 +11,6 @@
 ATrainingInteractionActor::ATrainingInteractionActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
 
     InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
     SetRootComponent(InteractionCollision);
@@ -34,13 +34,15 @@ bool ATrainingInteractionActor::CanInteract(const APlayerController& RequestingP
         ? (IsValid(Arena) || IsValid(CQBEntryPoint))
         : IsValid(Arena);
 
-    return bHasDestination && RequestingPlayer.GetPawn()
+    return GetNetMode() == NM_Standalone && RequestingPlayer.IsLocalController()
+        && RequestingPlayer.IsA<ATrainingPlayerController>()
+        && bHasDestination && RequestingPlayer.GetPawn()
         && RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>() != nullptr;
 }
 
 void ATrainingInteractionActor::Interact(APlayerController& RequestingPlayer)
 {
-    if (HasAuthority() && CanInteract(RequestingPlayer))
+    if (CanInteract(RequestingPlayer))
     {
         RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>()->OpenDialogFor(*this);
     }

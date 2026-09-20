@@ -4,6 +4,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Training/CQB/CQBTrainingAIController.h"
 #include "Training/CQB/CQBTrainingEndActor.h"
@@ -111,19 +112,28 @@ bool ACQBTrainingSpawner::CollectSpawnPoints()
 
 void ACQBTrainingSpawner::StartLoadedTraining(UClass& LoadedTrooperClass)
 {
-    if (!HasAuthority()
-        || SessionState != ECQBTrainingSessionState::Loading
-        || OrderedSpawnPoints.IsEmpty())
+    if (bStopping || SessionState != ECQBTrainingSessionState::Loading)
     {
         return;
     }
+    if (!Participant.IsValid() || !Participant->GetPawn() || OrderedSpawnPoints.IsEmpty())
+    {
+        AbortPendingStart(LOCTEXT("StartContextLost", "The CQB start context is no longer available."));
+        return;
+    }
 
+    const uint32 StartGeneration = SessionGeneration;
     NextSpawnIndex = 0;
     KilledTroopers = 0;
-    CountedDeathIndices.Reset();
+    CountedDeadTroopers.Reset();
     SpawnedTroopers.Reset();
 
-    if (!SpawnUntilFull(LoadedTrooperClass))
+    const bool bSpawned = SpawnUntilFull(LoadedTrooperClass);
+    if (SessionGeneration != StartGeneration || SessionState != ECQBTrainingSessionState::Loading)
+    {
+        return;
+    }
+    if (!bSpawned)
     {
         AbortPendingStart(LOCTEXT("InitialSpawnFailed",
             "CQB could not create the initial troopers. Check the Trooper Class, StateTree and navigation setup."));
@@ -132,8 +142,11 @@ void ACQBTrainingSpawner::StartLoadedTraining(UClass& LoadedTrooperClass)
 
     SessionState = ECQBTrainingSessionState::Running;
     NotifyParticipantStarted();
+    if (SessionGeneration != StartGeneration || SessionState != ECQBTrainingSessionState::Running)
+    {
+        return;
+    }
     ResolvePendingStart(true, FText::GetEmpty());
-    ForceNetUpdate();
 
     UE_LOG(LogCQBTrainingSpawnerTroopers, Log,
         TEXT("%s: CQB training started. Initial alive=%d, spawn points=%d, next index=%d."),
@@ -142,6 +155,7 @@ void ACQBTrainingSpawner::StartLoadedTraining(UClass& LoadedTrooperClass)
 
 bool ACQBTrainingSpawner::SpawnUntilFull(UClass& LoadedTrooperClass)
 {
+    const uint32 SpawnGeneration = SessionGeneration;
     int32 AliveCount = CountAliveTroopers();
     const int32 ConcurrentLimit = FMath::Clamp(MaxConcurrentTroopers, 1, 32);
 
@@ -159,6 +173,10 @@ bool ACQBTrainingSpawner::SpawnUntilFull(UClass& LoadedTrooperClass)
         APawn* SpawnedPawn = SpawnFromPoint(*SpawnPoint, LoadedTrooperClass);
         if (!SpawnedPawn)
         {
+            if (SessionGeneration != SpawnGeneration || !IsTrainingActive())
+            {
+                return false;
+            }
             UE_LOG(LogCQBTrainingSpawnerTroopers, Error,
                 TEXT("%s: SpawnOrder %d failed. The designed route will not be skipped."),
                 *GetName(), SpawnPoint->SpawnOrder);
@@ -166,6 +184,7 @@ bool ACQBTrainingSpawner::SpawnUntilFull(UClass& LoadedTrooperClass)
         }
 
         SpawnedTroopers.Add(SpawnedPawn);
+        SpawnedPawn->OnDestroyed.AddDynamic(this, &ThisClass::HandleTrooperDestroyed);
         ++NextSpawnIndex;
         ++AliveCount;
     }
@@ -203,19 +222,29 @@ APawn* ACQBTrainingSpawner::SpawnFromPoint(
         return nullptr;
     }
 
+    const uint32 SpawnGeneration = SessionGeneration;
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = this;
     SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
     APawn* SpawnedPawn = World->SpawnActor<APawn>(
         &LoadedTrooperClass, SpawnPoint.GetActorTransform(), SpawnParams);
-    if (!SpawnedPawn)
+    if (!IsValid(SpawnedPawn))
     {
         UE_LOG(LogCQBTrainingSpawnerTroopers, Warning,
             TEXT("%s: Failed to spawn order %d at %s."),
             *GetName(), SpawnPoint.SpawnOrder, *SpawnPoint.GetActorLocation().ToString());
         return nullptr;
     }
+
+    if (bStopping || SessionGeneration != SpawnGeneration || !IsTrainingActive())
+    {
+        DestroyTrooper(*SpawnedPawn);
+        return nullptr;
+    }
+
+    SpawnedPawn->SetReplicates(false);
+    SpawnedPawn->SetReplicateMovement(false);
 
     UCQBTrainingAIComponent* CQBConfig =
         SpawnedPawn->FindComponentByClass<UCQBTrainingAIComponent>();
@@ -224,7 +253,7 @@ APawn* ACQBTrainingSpawner::SpawnFromPoint(
         UE_LOG(LogCQBTrainingSpawnerTroopers, Error,
             TEXT("%s: %s has no CQB Training AI component."),
             *GetName(), *GetNameSafe(SpawnedPawn));
-        SpawnedPawn->Destroy();
+        DestroyTrooper(*SpawnedPawn);
         return nullptr;
     }
 
@@ -259,29 +288,56 @@ APawn* ACQBTrainingSpawner::SpawnFromPoint(
             }
         }
 
+        if (!IsValid(SpawnedPawn))
+        {
+            return nullptr;
+        }
+        if (bStopping || SessionGeneration != SpawnGeneration || !IsTrainingActive())
+        {
+            DestroyTrooper(*SpawnedPawn);
+            return nullptr;
+        }
+
         CQBController = World->SpawnActor<ACQBTrainingAIController>(
             ACQBTrainingAIController::StaticClass(),
             SpawnedPawn->GetActorLocation(),
             SpawnedPawn->GetActorRotation());
 
-        if (CQBController)
+        if (IsValid(CQBController) && IsValid(SpawnedPawn))
         {
             CQBController->Possess(SpawnedPawn);
         }
     }
 
-    if (!CQBController || !CQBController->RefreshFromPawnConfiguration())
+    if (!IsValid(SpawnedPawn))
+    {
+        if (IsValid(CQBController))
+        {
+            CQBController->Destroy();
+        }
+        return nullptr;
+    }
+    if (bStopping || SessionGeneration != SpawnGeneration || !IsTrainingActive())
+    {
+        DestroyTrooper(*SpawnedPawn);
+        return nullptr;
+    }
+
+    const bool bControllerReady = IsValid(CQBController) && CQBController->RefreshFromPawnConfiguration();
+    if (!IsValid(SpawnedPawn))
+    {
+        if (IsValid(CQBController))
+        {
+            CQBController->Destroy();
+        }
+        return nullptr;
+    }
+    if (!bControllerReady || bStopping || SessionGeneration != SpawnGeneration || !IsTrainingActive())
     {
         UE_LOG(LogCQBTrainingSpawnerTroopers, Error,
-            TEXT("%s: CQB controller or StateTree initialization failed for %s."),
+            TEXT("%s: CQB controller initialization failed or the session was cancelled for %s."),
             *GetName(), *GetNameSafe(SpawnedPawn));
-
-        if (CQBController)
-        {
-            CQBController->StopCQBBrain();
-            CQBController->UnPossess();
-        }
-        SpawnedPawn->Destroy();
+        DestroyTrooper(*SpawnedPawn);
         return nullptr;
     }
 
@@ -292,53 +348,66 @@ APawn* ACQBTrainingSpawner::SpawnFromPoint(
     return SpawnedPawn;
 }
 
+void ACQBTrainingSpawner::DestroyTrooper(APawn& Trooper)
+{
+    Trooper.OnDestroyed.RemoveDynamic(this, &ThisClass::HandleTrooperDestroyed);
+    if (UCQBTrainingAIComponent* Config = Trooper.FindComponentByClass<UCQBTrainingAIComponent>())
+    {
+        Config->SetTrainingSpawner(nullptr);
+    }
+
+    if (AController* Controller = Trooper.GetController())
+    {
+        if (ACQBTrainingAIController* CQBController = Cast<ACQBTrainingAIController>(Controller))
+        {
+            CQBController->StopCQBBrain();
+        }
+        Controller->UnPossess();
+        if (IsValid(Controller) && !Controller->IsActorBeingDestroyed())
+        {
+            Controller->Destroy();
+        }
+    }
+
+    Trooper.SetLifeSpan(0.0f);
+    Trooper.Destroy();
+}
+
 void ACQBTrainingSpawner::DestroySpawnedTroopersOnly()
 {
-    for (const TWeakObjectPtr<APawn>& PawnPtr : SpawnedTroopers)
+    TArray<TWeakObjectPtr<APawn>> Troopers = MoveTemp(SpawnedTroopers);
+    for (const TWeakObjectPtr<APawn>& PawnPtr : Troopers)
     {
-        APawn* SpawnedPawn = PawnPtr.Get();
-        if (!IsValid(SpawnedPawn))
+        if (APawn* SpawnedPawn = PawnPtr.Get())
         {
-            continue;
+            DestroyTrooper(*SpawnedPawn);
         }
-
-        if (AController* Controller = SpawnedPawn->GetController())
-        {
-            if (ACQBTrainingAIController* CQBController = Cast<ACQBTrainingAIController>(Controller))
-            {
-                CQBController->StopCQBBrain();
-                CQBController->UnPossess();
-            }
-            else
-            {
-                Controller->UnPossess();
-                if (IsValid(Controller) && !Controller->IsActorBeingDestroyed())
-                {
-                    Controller->Destroy();
-                }
-            }
-        }
-
-        SpawnedPawn->SetLifeSpan(0.0f);
-        SpawnedPawn->Destroy();
     }
-    SpawnedTroopers.Reset();
+}
+
+void ACQBTrainingSpawner::HandleTrooperDestroyed(AActor* DestroyedActor)
+{
+    APawn* Trooper = Cast<APawn>(DestroyedActor);
+    const TWeakObjectPtr<APawn> TrooperRef(Trooper);
+    const bool bDeathWasCounted = CountedDeadTroopers.Remove(TrooperRef) > 0;
+    SpawnedTroopers.RemoveAll([TrooperRef](const TWeakObjectPtr<APawn>& Entry)
+    {
+        return !Entry.IsValid() || Entry == TrooperRef;
+    });
+
+    if (!bStopping && !bDeathWasCounted && SessionState == ECQBTrainingSessionState::Running)
+    {
+        UE_LOG(LogCQBTrainingSpawnerTroopers, Warning,
+            TEXT("%s: A live CQB trooper was removed; resetting the incomplete session."), *GetName());
+        DespawnSpawnedTroopers();
+    }
 }
 
 void ACQBTrainingSpawner::NotifyTrooperDeath(APawn& Trooper)
 {
-    if (!HasAuthority() || SessionState != ECQBTrainingSessionState::Running)
-    {
-        return;
-    }
-
-    const int32 TrooperIndex = SpawnedTroopers.IndexOfByPredicate(
-        [&Trooper](const TWeakObjectPtr<APawn>& Entry)
-        {
-            return Entry.Get() == &Trooper;
-        });
-
-    if (TrooperIndex == INDEX_NONE || CountedDeathIndices.Contains(TrooperIndex))
+    const TWeakObjectPtr<APawn> TrooperRef(&Trooper);
+    if (bStopping || SessionState != ECQBTrainingSessionState::Running
+        || !SpawnedTroopers.Contains(TrooperRef) || CountedDeadTroopers.Contains(TrooperRef))
     {
         return;
     }
@@ -348,23 +417,26 @@ void ACQBTrainingSpawner::NotifyTrooperDeath(APawn& Trooper)
         Config->PrepareForDeathCleanup(CorpseLifetimeSeconds);
     }
 
-    RegisterTrooperDeath(TrooperIndex);
+    RegisterTrooperDeath(Trooper);
 }
 
-void ACQBTrainingSpawner::RegisterTrooperDeath(const int32 TrooperIndex)
+void ACQBTrainingSpawner::RegisterTrooperDeath(APawn& Trooper)
 {
-    if (SessionState != ECQBTrainingSessionState::Running
-        || !SpawnedTroopers.IsValidIndex(TrooperIndex)
-        || CountedDeathIndices.Contains(TrooperIndex))
+    const uint32 DeathGeneration = SessionGeneration;
+    CountedDeadTroopers.Add(&Trooper);
+    KilledTroopers = FMath::Min(KilledTroopers + 1, OrderedSpawnPoints.Num());
+    NotifyParticipantProgress();
+    if (SessionGeneration != DeathGeneration || SessionState != ECQBTrainingSessionState::Running)
     {
         return;
     }
 
-    CountedDeathIndices.Add(TrooperIndex);
-    KilledTroopers = FMath::Min(KilledTroopers + 1, OrderedSpawnPoints.Num());
-    NotifyParticipantProgress();
-
-    if (!RefillAfterDeath())
+    const bool bRefilled = RefillAfterDeath();
+    if (SessionGeneration != DeathGeneration || SessionState != ECQBTrainingSessionState::Running)
+    {
+        return;
+    }
+    if (!bRefilled)
     {
         UE_LOG(LogCQBTrainingSpawnerTroopers, Error,
             TEXT("%s: Refill failed. CQB session is being reset."), *GetName());
@@ -409,14 +481,13 @@ void ACQBTrainingSpawner::CompleteTraining()
 
     SessionState = ECQBTrainingSessionState::Completed;
 
-    if (EndActor)
+    if (IsValid(EndActor))
     {
         EndActor->Spawner = this;
         EndActor->SetEndEnabled(true);
     }
 
     NotifyParticipantProgress();
-    ForceNetUpdate();
 }
 
 

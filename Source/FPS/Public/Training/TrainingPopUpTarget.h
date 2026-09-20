@@ -38,7 +38,6 @@ public:
     ATrainingPopUpTarget();
 
     virtual void Tick(float DeltaSeconds) override;
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
     virtual void HandleHitscanImpact(AActor* InstigatorActor, const FVector& ImpactPoint,
         const FVector& ShotDirection) override;
@@ -115,14 +114,8 @@ protected:
     virtual void OnConstruction(const FTransform& Transform) override;
 
 private:
-    UFUNCTION()
-    void OnRep_TargetState();
-
-    UFUNCTION()
-    void OnRep_FallDirectionSign();
-
-    UFUNCTION(NetMulticast, Unreliable)
-    void MulticastPlayHitSound(FVector_NetQuantize ImpactPoint);
+    void ApplyTargetState();
+    void PlayHitSound(const FVector& ImpactPoint);
 
     void HandleDamageTaken(FGameplayTag EventTag, const FGameplayEventData* Payload);
     void HandleOutOfHealth(UAbilitySystemComponent* VictimASC, const FGameplayEffectContextHandle& ContextHandle);
@@ -148,11 +141,10 @@ private:
     UPROPERTY()
     TObjectPtr<URogueAugmentAttributeSet> AugmentSet;
 
-    UPROPERTY(ReplicatedUsing = OnRep_TargetState, VisibleInstanceOnly,
+    UPROPERTY(VisibleInstanceOnly,
         Category = "Training|PopUpTarget|State")
     ETrainingPopUpTargetState TargetState = ETrainingPopUpTargetState::Up;
 
-    UPROPERTY(ReplicatedUsing = OnRep_FallDirectionSign)
     int8 FallDirectionSign = 1;
 
     int8 PendingFallDirectionSign = 1;

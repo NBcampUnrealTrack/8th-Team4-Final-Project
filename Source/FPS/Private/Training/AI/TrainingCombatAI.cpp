@@ -25,7 +25,7 @@ bool ATrainingCombatAI::HasConfiguredBehavior() const
 bool ATrainingCombatAI::InitializeForTraining(ATrainingArena& InArena,
     APlayerController& InParticipant, const FTrainingDistanceBand& InBand)
 {
-    if (!HasAuthority() || !IsAlive())
+    if (!IsAlive())
     {
         return false;
     }
@@ -51,13 +51,10 @@ void ATrainingCombatAI::StopTrainingMotion()
 
 void ATrainingCombatAI::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (HasAuthority())
+    if (AController* TrainingController = GetController())
     {
-        if (ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetController()))
-        {
-            TrainingController->UnPossess();
-            TrainingController->Destroy();
-        }
+        TrainingController->UnPossess();
+        TrainingController->Destroy();
     }
     TrainingArena.Reset();
     Participant.Reset();

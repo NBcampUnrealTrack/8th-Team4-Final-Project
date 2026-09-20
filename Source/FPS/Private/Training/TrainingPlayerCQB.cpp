@@ -22,7 +22,7 @@ bool UTrainingPlayerComponent::UsesStandardEliminationFeedback() const
 
 bool UTrainingPlayerComponent::IsCQBTrainingActive() const
 {
-    return ActiveCQBSpawner.IsValid();
+    return ActiveCQBSpawner.IsValid() && ActiveCQBSpawner->IsTrainingActive();
 }
 
 bool UTrainingPlayerComponent::IsCQBTrainingActiveWith(const ACQBTrainingSpawner& Spawner) const
@@ -52,97 +52,71 @@ bool UTrainingPlayerComponent::TryGetCQBRespawnTransform(FTransform& OutTransfor
     return true;
 }
 
-void UTrainingPlayerComponent::SubmitCQBStart(const int32 RequestId)
-{
-    ServerStartCQB(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitCQBCancel(const int32 RequestId)
-{
-    ServerCancelActiveCQB(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitCQBClassSelection(const int32 RequestId)
-{
-    ServerOpenCQBClassSelection(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitCQBReturnToOrigin(const int32 RequestId)
-{
-    ServerReturnFromCQBStart(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitCQBEndToStart(const int32 RequestId)
-{
-    ServerFinishCQBToStart(RequestId);
-}
-
-void UTrainingPlayerComponent::SubmitCQBEndToOrigin(const int32 RequestId)
-{
-    ServerFinishCQBToOrigin(RequestId);
-}
-
 void UTrainingPlayerComponent::OpenCQBStartDialog(ACQBTrainingSpawner& Spawner)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !ParticipantPlayer->HasAuthority() || !Spawner.CanInteract(*ParticipantPlayer))
+    if (!ParticipantPlayer || !Spawner.CanInteract(*ParticipantPlayer))
     {
         return;
     }
 
+    CancelCQBDialogRequest(PendingCQBRequestId);
     RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
     PendingCQBRequestId = RequestSequence;
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
-    ClientOpenCQBDialog(ECQBTrainingDialogKind::Start, PendingCQBRequestId, Spawner.StartDialogWidgetClass);
+    ShowCQBDialog(ECQBTrainingDialogKind::Start, PendingCQBRequestId, Spawner.StartDialogWidgetClass);
 }
 
 void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !ParticipantPlayer->HasAuthority()
+    if (!ParticipantPlayer
         || !Spawner.CanInteract(*ParticipantPlayer)
         || !IsCQBTrainingActiveWith(Spawner))
     {
         return;
     }
 
+    CancelCQBDialogRequest(PendingCQBRequestId);
     RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
     PendingCQBRequestId = RequestSequence;
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
-    ClientOpenCQBDialog(ECQBTrainingDialogKind::Cancel, PendingCQBRequestId, Spawner.GetCancelDialogWidgetClass());
+    ShowCQBDialog(ECQBTrainingDialogKind::Cancel, PendingCQBRequestId, Spawner.GetCancelDialogWidgetClass());
 }
 
 void UTrainingPlayerComponent::OpenCQBEndDialog(ACQBTrainingEndActor& EndActor)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !ParticipantPlayer->HasAuthority() || !EndActor.CanInteract(*ParticipantPlayer))
+    if (!ParticipantPlayer || !EndActor.CanInteract(*ParticipantPlayer))
     {
         return;
     }
 
+    CancelCQBDialogRequest(PendingCQBRequestId);
     RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
     PendingCQBRequestId = RequestSequence;
     PendingCQBEndActor = &EndActor;
     PendingCQBSpawner = EndActor.Spawner;
-    ClientOpenCQBDialog(ECQBTrainingDialogKind::End, PendingCQBRequestId, EndActor.EndDialogWidgetClass);
+    ShowCQBDialog(ECQBTrainingDialogKind::End, PendingCQBRequestId, EndActor.EndDialogWidgetClass);
 }
 
-void UTrainingPlayerComponent::ClientOpenCQBDialog_Implementation(
+void UTrainingPlayerComponent::ShowCQBDialog(
     const ECQBTrainingDialogKind Kind, const int32 RequestId,
     TSubclassOf<UCQBTrainingDialogWidget> WidgetClass)
 {
     CloseResults();
+    ClearPendingRequest();
     CloseActiveDialog();
     CloseActiveCQBDialog();
 
     UShooterUIManagerSubsystem* UIManager = GetUIManager();
     if (!UIManager || !UIManager->IsUIInitialized() || !WidgetClass)
     {
-        ClientNotify_Implementation(LOCTEXT("CQBUISetup",
+        NotifyMessage(LOCTEXT("CQBUISetup",
             "CQB UI is not configured. Assign the CQB dialog widget class on the interaction actor."));
-        ServerCancelCQB(RequestId);
+        CancelCQBDialogRequest(RequestId);
         return;
     }
 
@@ -150,8 +124,8 @@ void UTrainingPlayerComponent::ClientOpenCQBDialog_Implementation(
         UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, WidgetClass));
     if (!NewDialog)
     {
-        ClientNotify_Implementation(LOCTEXT("CQBNoLayer", "Could not open the CQB training dialog."));
-        ServerCancelCQB(RequestId);
+        NotifyMessage(LOCTEXT("CQBNoLayer", "Could not open the CQB training dialog."));
+        CancelCQBDialogRequest(RequestId);
         return;
     }
 
@@ -162,7 +136,7 @@ void UTrainingPlayerComponent::ClientOpenCQBDialog_Implementation(
 
 void UTrainingPlayerComponent::DismissCQBDialog(const int32 RequestId)
 {
-    ServerCancelCQB(RequestId);
+    CancelCQBDialogRequest(RequestId);
     if (ActiveCQBDialog.IsValid() && ActiveCQBDialog->GetRequestId() == RequestId)
     {
         if (WidgetCloseSound) UGameplayStatics::PlaySound2D(this, WidgetCloseSound);
@@ -172,7 +146,7 @@ void UTrainingPlayerComponent::DismissCQBDialog(const int32 RequestId)
 
 void UTrainingPlayerComponent::NotifyCQBDialogRemoved(UCQBTrainingDialogWidget& Dialog)
 {
-    ServerCancelCQB(Dialog.GetRequestId());
+    CancelCQBDialogRequest(Dialog.GetRequestId());
     if (ActiveCQBDialog.Get() == &Dialog)
     {
         ActiveCQBDialog.Reset();
@@ -202,6 +176,8 @@ void UTrainingPlayerComponent::ClearPendingCQBRequest()
     PendingCQBRequestId = 0;
     PendingCQBSpawner.Reset();
     PendingCQBEndActor.Reset();
+    SuspendedCQBRequestId = 0;
+    SuspendedCQBDialogClass = nullptr;
 }
 
 bool UTrainingPlayerComponent::ValidatePendingCQBRequest(const int32 RequestId, FText& OutFailure) const
@@ -219,24 +195,21 @@ bool UTrainingPlayerComponent::ValidatePendingCQBRequest(const int32 RequestId, 
     return true;
 }
 
-void UTrainingPlayerComponent::ServerCancelCQB_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::CancelCQBDialogRequest(const int32 RequestId)
 {
-    if (PendingCQBRequestId != RequestId)
+    if (RequestId <= 0 || PendingCQBRequestId != RequestId)
     {
         return;
     }
 
-    if (APlayerController* Participant = GetParticipantController())
+    if (ACQBTrainingSpawner* Spawner = PendingCQBSpawner.Get())
     {
-        if (ACQBTrainingSpawner* Spawner = PendingCQBSpawner.Get())
-        {
-            Spawner->CancelPendingStart(*Participant, RequestId);
-        }
+        Spawner->CancelPendingStart(RequestId);
     }
     ClearPendingCQBRequest();
 }
 
-void UTrainingPlayerComponent::ClientCQBRequestResult_Implementation(
+void UTrainingPlayerComponent::ResolveCQBRequest(
     const int32 RequestId, const bool bSuccess, const FText& Failure)
 {
     UCQBTrainingDialogWidget* Dialog = ActiveCQBDialog.Get();
@@ -252,7 +225,7 @@ void UTrainingPlayerComponent::ClientCQBRequestResult_Implementation(
     }
 }
 
-void UTrainingPlayerComponent::ClientSuspendCQBDialogForClassSelection_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SuspendCQBDialogForClassSelection(const int32 RequestId)
 {
     UCQBTrainingDialogWidget* Dialog = ActiveCQBDialog.Get();
     if (!Dialog || Dialog->GetRequestId() != RequestId) return;
@@ -270,15 +243,21 @@ void UTrainingPlayerComponent::ResumeCQBStartDialogAfterClassSelection()
     const TSubclassOf<UCQBTrainingDialogWidget> WidgetClass = SuspendedCQBDialogClass;
     SuspendedCQBRequestId = 0;
     SuspendedCQBDialogClass = nullptr;
-    ClientOpenCQBDialog_Implementation(ECQBTrainingDialogKind::Start, RequestId, WidgetClass);
+    FText Failure;
+    if (!ValidatePendingCQBRequest(RequestId, Failure) || IsCQBTrainingActive())
+    {
+        CancelCQBDialogRequest(RequestId);
+        return;
+    }
+    ShowCQBDialog(ECQBTrainingDialogKind::Start, RequestId, WidgetClass);
 }
 
-void UTrainingPlayerComponent::ServerStartCQB_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBStart(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingCQBRequest(RequestId, Failure) || !PendingCQBSpawner.IsValid())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBStartMissing", "CQB spawner is unavailable.") : Failure);
         return;
     }
@@ -286,12 +265,12 @@ void UTrainingPlayerComponent::ServerStartCQB_Implementation(const int32 Request
     APlayerController* Participant = GetParticipantController();
     if (!Participant || !PendingCQBSpawner->StartTrainingFor(*Participant, RequestId))
     {
-        ClientCQBRequestResult(RequestId, false,
+        ResolveCQBRequest(RequestId, false,
             LOCTEXT("CQBStartFailed", "Could not start CQB training. Check the CQB spawner state and Trooper Class."));
     }
 }
 
-void UTrainingPlayerComponent::ServerOpenCQBClassSelection_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBClassSelection(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingCQBRequest(RequestId, Failure)
@@ -299,7 +278,7 @@ void UTrainingPlayerComponent::ServerOpenCQBClassSelection_Implementation(const 
         || !PendingCQBSpawner.IsValid()
         || IsCQBTrainingActive())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBClassSelectionUnavailable", "Class selection is only available before CQB starts.")
             : Failure);
         return;
@@ -308,31 +287,29 @@ void UTrainingPlayerComponent::ServerOpenCQBClassSelection_Implementation(const 
     ATrainingPlayerController* TrainingController = Cast<ATrainingPlayerController>(GetParticipantController());
     if (!TrainingController)
     {
-        ClientCQBRequestResult(RequestId, false,
+        ResolveCQBRequest(RequestId, false,
             LOCTEXT("CQBClassControllerMissing", "Training class selection is unavailable for this controller."));
         return;
     }
 
-    ClientSuspendCQBDialogForClassSelection(RequestId);
+    SuspendCQBDialogForClassSelection(RequestId);
     TrainingController->RequestTrainingClassSelection();
 }
 
-void UTrainingPlayerComponent::ServerCancelActiveCQB_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBCancel(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingCQBRequest(RequestId, Failure)
         || !PendingCQBSpawner.IsValid()
         || PendingCQBEndActor.IsValid())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBCancelExpired", "CQB cancellation is no longer available.") : Failure);
         return;
     }
 
-    APlayerController* Participant = GetParticipantController();
-    const bool bSuccess = Participant
-        && IsCQBTrainingActiveWith(*PendingCQBSpawner)
-        && PendingCQBSpawner->CancelTrainingFor(*Participant);
+    const bool bSuccess = IsCQBTrainingActiveWith(*PendingCQBSpawner)
+        && PendingCQBSpawner->CancelTraining();
     if (bSuccess)
     {
         ClearPendingCQBRequest();
@@ -341,7 +318,7 @@ void UTrainingPlayerComponent::ServerCancelActiveCQB_Implementation(const int32 
     {
         Failure = LOCTEXT("CQBCancelFailed", "Could not cancel the active CQB training session.");
     }
-    ClientCQBRequestResult(RequestId, bSuccess, Failure);
+    ResolveCQBRequest(RequestId, bSuccess, Failure);
 }
 
 void UTrainingPlayerComponent::NotifyCQBStartRequestResolved(
@@ -350,8 +327,7 @@ void UTrainingPlayerComponent::NotifyCQBStartRequestResolved(
     const bool bSuccess,
     const FText& Failure)
 {
-    if (!GetOwner()->HasAuthority()
-        || RequestId <= 0
+    if (RequestId <= 0
         || PendingCQBRequestId != RequestId
         || PendingCQBSpawner.Get() != &Spawner)
     {
@@ -362,15 +338,16 @@ void UTrainingPlayerComponent::NotifyCQBStartRequestResolved(
     {
         ClearPendingCQBRequest();
     }
-    ClientCQBRequestResult(RequestId, bSuccess, Failure);
+    ResolveCQBRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::ServerReturnFromCQBStart_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBReturnToOrigin(const int32 RequestId)
 {
     FText Failure;
-    if (!ValidatePendingCQBRequest(RequestId, Failure) || PendingCQBEndActor.IsValid())
+    if (!ValidatePendingCQBRequest(RequestId, Failure) || PendingCQBEndActor.IsValid()
+        || IsCQBTrainingActive())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBReturnWrongDialog", "Return is only available before CQB starts.") : Failure);
         return;
     }
@@ -380,16 +357,16 @@ void UTrainingPlayerComponent::ServerReturnFromCQBStart_Implementation(const int
     {
         ClearPendingCQBRequest();
     }
-    ClientCQBRequestResult(RequestId, bSuccess, Failure);
+    ResolveCQBRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::ServerFinishCQBToStart_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBEndToStart(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingCQBRequest(RequestId, Failure) || !PendingCQBSpawner.IsValid()
         || !PendingCQBEndActor.IsValid() || !PendingCQBSpawner->IsTrainingComplete())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBEndUnavailable", "CQB completion is no longer available.") : Failure);
         return;
     }
@@ -398,7 +375,7 @@ void UTrainingPlayerComponent::ServerFinishCQBToStart_Implementation(const int32
     if (!StartPoint) StartPoint = ReturnCQBEntryPoint.Get();
     if (!StartPoint)
     {
-        ClientCQBRequestResult(RequestId, false,
+        ResolveCQBRequest(RequestId, false,
             LOCTEXT("CQBStartPointMissing", "Assign a CQB Training Player Spawn Point to the spawner."));
         return;
     }
@@ -414,16 +391,16 @@ void UTrainingPlayerComponent::ServerFinishCQBToStart_Implementation(const int32
     {
         Failure = LOCTEXT("CQBStartBlocked", "The CQB start point is blocked.");
     }
-    ClientCQBRequestResult(RequestId, bSuccess, Failure);
+    ResolveCQBRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::ServerFinishCQBToOrigin_Implementation(const int32 RequestId)
+void UTrainingPlayerComponent::SubmitCQBEndToOrigin(const int32 RequestId)
 {
     FText Failure;
     if (!ValidatePendingCQBRequest(RequestId, Failure) || !PendingCQBSpawner.IsValid()
         || !PendingCQBEndActor.IsValid() || !PendingCQBSpawner->IsTrainingComplete())
     {
-        ClientCQBRequestResult(RequestId, false, Failure.IsEmpty()
+        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
             ? LOCTEXT("CQBEndOriginUnavailable", "CQB completion is no longer available.") : Failure);
         return;
     }
@@ -434,47 +411,36 @@ void UTrainingPlayerComponent::ServerFinishCQBToOrigin_Implementation(const int3
         PendingCQBSpawner->FinishTrainingAndReset();
         ClearPendingCQBRequest();
     }
-    ClientCQBRequestResult(RequestId, bSuccess, Failure);
+    ResolveCQBRequest(RequestId, bSuccess, Failure);
 }
 
-void UTrainingPlayerComponent::NotifyCQBStarted(
-    ACQBTrainingSpawner& Spawner, const int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass)
+void UTrainingPlayerComponent::NotifyCQBLoading(ACQBTrainingSpawner& Spawner)
 {
-    if (!GetOwner()->HasAuthority())
-    {
-        return;
-    }
     ActiveCQBSpawner = &Spawner;
-    ClientCQBStarted(&Spawner, TotalTroopers, HUDWidgetClass);
-}
-
-void UTrainingPlayerComponent::NotifyCQBProgress(
-    const int32 KilledTroopers, const int32 TotalTroopers, const bool bComplete)
-{
-    if (GetOwner()->HasAuthority()) ClientCQBProgress(KilledTroopers, TotalTroopers, bComplete);
 }
 
 void UTrainingPlayerComponent::NotifyCQBStopped(ACQBTrainingSpawner& Spawner)
 {
-    if (!GetOwner()->HasAuthority())
+    if (ActiveCQBSpawner.IsValid() && ActiveCQBSpawner.Get() != &Spawner)
     {
         return;
     }
-    if (!ActiveCQBSpawner.IsValid() || ActiveCQBSpawner.Get() == &Spawner)
+    ActiveCQBSpawner.Reset();
+    if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
     {
-        ActiveCQBSpawner.Reset();
+        HUD->RemoveFromParent();
     }
-    ClientCQBStopped();
+    CQBHUDWidget.Reset();
 }
 
-void UTrainingPlayerComponent::ClientCQBStarted_Implementation(
-    ACQBTrainingSpawner* Spawner, const int32 TotalTroopers,
+void UTrainingPlayerComponent::NotifyCQBStarted(
+    ACQBTrainingSpawner& Spawner, const int32 TotalTroopers,
     TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass)
 {
     APlayerController* LocalController = GetParticipantController();
     if (!LocalController || !LocalController->IsLocalController()) return;
 
-    ActiveCQBSpawner = Spawner;
+    ActiveCQBSpawner = &Spawner;
 
     if (UTrainingSessionHUDWidget* Existing = CQBHUDWidget.Get())
     {
@@ -484,19 +450,30 @@ void UTrainingPlayerComponent::ClientCQBStarted_Implementation(
 
     if (!HUDWidgetClass)
     {
-        ClientNotify_Implementation(LOCTEXT("CQBHUDMissing",
+        NotifyMessage(LOCTEXT("CQBHUDMissing",
             "CQB HUD is not configured. Assign HUD Widget Class on BP_CQBTrainingSpawner."));
         return;
     }
 
     UTrainingSessionHUDWidget* HUD = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDWidgetClass);
     if (!HUD) return;
+    if (!IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
+    {
+        HUD->RemoveFromParent();
+        return;
+    }
     CQBHUDWidget = HUD;
     HUD->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
+    if (!IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
+    {
+        HUD->RemoveFromParent();
+        if (CQBHUDWidget.Get() == HUD) CQBHUDWidget.Reset();
+        return;
+    }
     HUD->StartCQBSession(TotalTroopers);
 }
 
-void UTrainingPlayerComponent::ClientCQBProgress_Implementation(
+void UTrainingPlayerComponent::NotifyCQBProgress(
     const int32 KilledTroopers, const int32 TotalTroopers, const bool bComplete)
 {
     if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
@@ -504,16 +481,6 @@ void UTrainingPlayerComponent::ClientCQBProgress_Implementation(
         HUD->PresentCQBKill(KilledTroopers, TotalTroopers);
         if (bComplete) HUD->FinishCQBSession();
     }
-}
-
-void UTrainingPlayerComponent::ClientCQBStopped_Implementation()
-{
-    ActiveCQBSpawner.Reset();
-    if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
-    {
-        HUD->RemoveFromParent();
-    }
-    CQBHUDWidget.Reset();
 }
 
 #undef LOCTEXT_NAMESPACE

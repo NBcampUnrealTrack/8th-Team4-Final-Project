@@ -3,7 +3,6 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
-#include "GameFramework/GameStateBase.h"
 #include "Training/TrainingSettings.h"
 #include "Training/TrainingModeDefinition.h"
 
@@ -21,9 +20,9 @@ void UTrainingSessionHUDWidget::NativePreConstruct()
 }
 
 void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
-    const double InStartServerSeconds, const float DurationSeconds)
+    const double InStartSeconds, const float DurationSeconds)
 {
-    StartServerSeconds = InStartServerSeconds;
+    StartSeconds = InStartSeconds;
     ActiveDurationSeconds = FMath::Max(0.0f, DurationSeconds);
     bSessionActive = true;
     bCQBSession = false;
@@ -111,9 +110,7 @@ void UTrainingSessionHUDWidget::FinishCQBSession()
 void UTrainingSessionHUDWidget::RefreshClock()
 {
     if (!bSessionActive || !GetWorld()) { return; }
-    const AGameStateBase* GameState = GetWorld()->GetGameState();
-    const double ServerNow = GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
-    const float Elapsed = static_cast<float>(FMath::Max(0.0, ServerNow - StartServerSeconds));
+    const float Elapsed = static_cast<float>(FMath::Max(0.0, GetWorld()->GetTimeSeconds() - StartSeconds));
     const int32 Seconds = ActiveDurationSeconds > 0.0f
         ? TrainingRules::RemainingWholeSeconds(ActiveDurationSeconds, Elapsed) : FMath::FloorToInt(Elapsed);
     if (Seconds != DisplayedSeconds)

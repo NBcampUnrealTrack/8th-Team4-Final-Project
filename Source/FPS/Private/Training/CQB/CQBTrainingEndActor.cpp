@@ -2,7 +2,6 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Net/UnrealNetwork.h"
 #include "Training/CQB/CQBTrainingSpawner.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "../TrainingInteractionRegistration.h"
@@ -10,7 +9,6 @@
 ACQBTrainingEndActor::ACQBTrainingEndActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
 
     InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
     SetRootComponent(InteractionCollision);
@@ -26,8 +24,6 @@ void ACQBTrainingEndActor::BeginPlay()
 {
     Super::BeginPlay();
 
-    // 에디터에서는 배치 위치를 확인할 수 있도록 메시를 보이게 두고,
-    // 실제 플레이가 시작될 때 완료 상태에 맞춰 숨김/상호작용 상태를 적용한다.
     RefreshEnabledState();
 }
 
@@ -35,12 +31,6 @@ void ACQBTrainingEndActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     TrainingInteractionRegistration::Cleanup(*this, LocalOverlappingController);
     Super::EndPlay(EndPlayReason);
-}
-
-void ACQBTrainingEndActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(ThisClass, bEndEnabled);
 }
 
 bool ACQBTrainingEndActor::CanInteract(const APlayerController& RequestingPlayer) const
@@ -67,18 +57,11 @@ void ACQBTrainingEndActor::Interact(APlayerController& RequestingPlayer)
 
 void ACQBTrainingEndActor::SetEndEnabled(const bool bEnabled)
 {
-    if (!HasAuthority())
+    if (!bEnabled)
     {
-        return;
+        TrainingInteractionRegistration::Cleanup(*this, LocalOverlappingController);
     }
-
     bEndEnabled = bEnabled;
-    RefreshEnabledState();
-    ForceNetUpdate();
-}
-
-void ACQBTrainingEndActor::OnRep_EndEnabled()
-{
     RefreshEnabledState();
 }
 

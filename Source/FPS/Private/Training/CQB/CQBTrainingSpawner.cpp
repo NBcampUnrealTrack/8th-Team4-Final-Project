@@ -4,28 +4,21 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/AssetManager.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
-#include "GameFramework/Controller.h"
-#include "GameFramework/Pawn.h"
+#include "Engine/GameInstance.h"
+#include "GameMode/TrainingGameMode.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
 #include "../TrainingInteractionRegistration.h"
-#include "Training/CQB/CQBTrainingAIComponent.h"
-#include "Training/CQB/CQBTrainingAIController.h"
 #include "Training/CQB/CQBTrainingEndActor.h"
 #include "Training/CQB/CQBTrainingPlayerSpawnPoint.h"
-#include "Training/CQB/CQBTrainingPatrolPoint.h"
-#include "Training/CQB/CQBTrainingSpawnPoint.h"
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/TrainingSessionSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "CQBTrainingSpawner"
-
-DEFINE_LOG_CATEGORY_STATIC(LogCQBTrainingSpawner, Log, All);
 
 ACQBTrainingSpawner::ACQBTrainingSpawner()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
 
     InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
     SetRootComponent(InteractionCollision);
@@ -39,25 +32,17 @@ ACQBTrainingSpawner::ACQBTrainingSpawner()
 
 void ACQBTrainingSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    if (PendingLoadHandle.IsValid())
-    {
-        PendingLoadHandle->CancelHandle();
-        PendingLoadHandle.Reset();
-    }
-
+    ResetSessionState();
     TrainingInteractionRegistration::Cleanup(*this, LocalOverlappingController);
     Super::EndPlay(EndPlayReason);
 }
 
-void ACQBTrainingSpawner::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(ThisClass, SessionState);
-}
-
 bool ACQBTrainingSpawner::CanInteract(const APlayerController& RequestingPlayer) const
 {
-    if (!RequestingPlayer.GetPawn())
+    const UWorld* World = GetWorld();
+    if (bStopping || !World || !World->GetAuthGameMode<ATrainingGameMode>()
+        || !RequestingPlayer.IsLocalPlayerController() || RequestingPlayer.GetWorld() != World
+        || !RequestingPlayer.GetPawn())
     {
         return false;
     }
@@ -71,7 +56,10 @@ bool ACQBTrainingSpawner::CanInteract(const APlayerController& RequestingPlayer)
 
     if (SessionState == ECQBTrainingSessionState::Idle)
     {
-        return !TrooperClass.IsNull() && StartDialogWidgetClass != nullptr;
+        const UTrainingSessionSubsystem* Sessions = World->GetSubsystem<UTrainingSessionSubsystem>();
+        return Sessions && Sessions->GetState() == ETrainingSessionState::Idle
+            && !Training->IsCQBTrainingActive()
+            && !TrooperClass.IsNull() && StartDialogWidgetClass != nullptr;
     }
 
     return SessionState == ECQBTrainingSessionState::Running
@@ -104,22 +92,32 @@ void ACQBTrainingSpawner::Interact(APlayerController& RequestingPlayer)
     }
 }
 
-bool ACQBTrainingSpawner::StartTrainingFor(APlayerController& Participant, const int32 RequestId)
+bool ACQBTrainingSpawner::StartTrainingFor(APlayerController& InParticipant, const int32 RequestId)
 {
-    if (!HasAuthority()
+    UWorld* World = GetWorld();
+    const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+    UTrainingPlayerComponent* Training = InParticipant.FindComponentByClass<UTrainingPlayerComponent>();
+    const UTrainingSessionSubsystem* Sessions = World ? World->GetSubsystem<UTrainingSessionSubsystem>() : nullptr;
+    if (bStopping || IsActorBeingDestroyed()
+        || !World || World->GetNetMode() != NM_Standalone || !World->GetAuthGameMode<ATrainingGameMode>()
+        || !GameInstance || GameInstance->GetLocalPlayers().Num() != 1
+        || !InParticipant.IsLocalPlayerController() || InParticipant.GetWorld() != World
+        || !Training || Training->IsCQBTrainingActive()
+        || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle
+        || !InParticipant.GetPawn()
         || SessionState != ECQBTrainingSessionState::Idle
-        || TrooperClass.IsNull()
-        || RequestId <= 0)
+        || TrooperClass.IsNull() || RequestId <= 0)
     {
         return false;
     }
 
-    ActiveParticipant = &Participant;
+    ++SessionGeneration;
+    Participant = &InParticipant;
     PendingStartRequestId = RequestId;
     SessionState = ECQBTrainingSessionState::Loading;
-    ForceNetUpdate();
+    Training->NotifyCQBLoading(*this);
 
-    if (EndActor)
+    if (IsValid(EndActor))
     {
         EndActor->Spawner = this;
         EndActor->SetEndEnabled(false);
@@ -129,34 +127,23 @@ bool ACQBTrainingSpawner::StartTrainingFor(APlayerController& Participant, const
     return true;
 }
 
-bool ACQBTrainingSpawner::CancelTrainingFor(APlayerController& Participant)
+bool ACQBTrainingSpawner::CancelTraining()
 {
-    if (!HasAuthority()
-        || SessionState != ECQBTrainingSessionState::Running
-        || ActiveParticipant.Get() != &Participant)
+    if (bStopping || SessionState == ECQBTrainingSessionState::Idle)
     {
         return false;
     }
 
-    ResetSessionState(true);
+    ResetSessionState();
     return true;
 }
 
-void ACQBTrainingSpawner::CancelPendingStart(APlayerController& Participant, const int32 RequestId)
+void ACQBTrainingSpawner::CancelPendingStart(const int32 RequestId)
 {
-    if (!HasAuthority()
-        || SessionState != ECQBTrainingSessionState::Loading
-        || ActiveParticipant.Get() != &Participant
-        || PendingStartRequestId != RequestId)
+    if (SessionState == ECQBTrainingSessionState::Loading && PendingStartRequestId == RequestId)
     {
-        return;
+        ResetSessionState();
     }
-
-    ResetRuntimeData();
-    PendingStartRequestId = 0;
-    ActiveParticipant.Reset();
-    SessionState = ECQBTrainingSessionState::Idle;
-    ForceNetUpdate();
 }
 
 void ACQBTrainingSpawner::BeginTraining()
@@ -200,7 +187,8 @@ void ACQBTrainingSpawner::BeginTraining()
 
     PendingLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
         TrooperClass.ToSoftObjectPath(),
-        FStreamableDelegate::CreateUObject(this, &ThisClass::HandleTrooperClassLoaded));
+        FStreamableDelegate::CreateUObject(
+            this, &ThisClass::HandleTrooperClassLoaded, PendingStartRequestId, SessionGeneration));
 
     if (!PendingLoadHandle.IsValid())
     {
@@ -209,16 +197,17 @@ void ACQBTrainingSpawner::BeginTraining()
     }
 }
 
-void ACQBTrainingSpawner::HandleTrooperClassLoaded()
+void ACQBTrainingSpawner::HandleTrooperClassLoaded(const int32 RequestId, const uint32 ExpectedGeneration)
 {
-    PendingLoadHandle.Reset();
-
-    if (SessionState != ECQBTrainingSessionState::Loading)
+    if (bStopping || SessionState != ECQBTrainingSessionState::Loading
+        || PendingStartRequestId != RequestId || SessionGeneration != ExpectedGeneration)
     {
         return;
     }
 
-    if (!ActiveParticipant.IsValid())
+    PendingLoadHandle.Reset();
+
+    if (!Participant.IsValid() || !Participant->GetPawn())
     {
         AbortPendingStart(LOCTEXT("ParticipantLost", "The CQB participant is no longer available."));
         return;
@@ -244,45 +233,41 @@ void ACQBTrainingSpawner::ResetRuntimeData()
 
     DestroySpawnedTroopersOnly();
     OrderedSpawnPoints.Reset();
-    CountedDeathIndices.Reset();
+    CountedDeadTroopers.Reset();
     NextSpawnIndex = 0;
     KilledTroopers = 0;
 
-    if (EndActor)
+    if (IsValid(EndActor))
     {
         EndActor->SetEndEnabled(false);
     }
 }
 
-void ACQBTrainingSpawner::ResetSessionState(const bool bNotifyParticipant)
+void ACQBTrainingSpawner::ResetSessionState()
 {
-    ResetRuntimeData();
-    PendingStartRequestId = 0;
-    SessionState = ECQBTrainingSessionState::Idle;
-
-    if (bNotifyParticipant)
-    {
-        NotifyParticipantStopped();
-    }
-    ActiveParticipant.Reset();
-    ForceNetUpdate();
-}
-
-void ACQBTrainingSpawner::DespawnSpawnedTroopers()
-{
-    if (!HasAuthority())
+    if (bStopping)
     {
         return;
     }
 
+    TGuardValue<bool> StopGuard(bStopping, true);
+    SessionState = ECQBTrainingSessionState::Idle;
+    ResetRuntimeData();
+    PendingStartRequestId = 0;
+
+    NotifyParticipantStopped();
+    Participant.Reset();
+}
+
+void ACQBTrainingSpawner::DespawnSpawnedTroopers()
+{
     if (SessionState == ECQBTrainingSessionState::Loading)
     {
         AbortPendingStart(LOCTEXT("StartCancelled", "CQB start was cancelled."));
         return;
     }
 
-    ResetSessionState(SessionState == ECQBTrainingSessionState::Running
-        || SessionState == ECQBTrainingSessionState::Completed);
+    ResetSessionState();
 }
 
 void ACQBTrainingSpawner::FinishTrainingAndReset()
@@ -300,9 +285,9 @@ void ACQBTrainingSpawner::ResolvePendingStart(const bool bSuccess, const FText& 
         return;
     }
 
-    if (APlayerController* Participant = ActiveParticipant.Get())
+    if (APlayerController* Player = Participant.Get())
     {
-        if (UTrainingPlayerComponent* Training = Participant->FindComponentByClass<UTrainingPlayerComponent>())
+        if (UTrainingPlayerComponent* Training = Player->FindComponentByClass<UTrainingPlayerComponent>())
         {
             Training->NotifyCQBStartRequestResolved(*this, RequestId, bSuccess, Failure);
         }
@@ -311,23 +296,24 @@ void ACQBTrainingSpawner::ResolvePendingStart(const bool bSuccess, const FText& 
 
 void ACQBTrainingSpawner::AbortPendingStart(const FText& Failure)
 {
-    if (SessionState != ECQBTrainingSessionState::Loading)
+    if (bStopping || SessionState != ECQBTrainingSessionState::Loading)
     {
         return;
     }
 
-    ResetRuntimeData();
+    TGuardValue<bool> StopGuard(bStopping, true);
     SessionState = ECQBTrainingSessionState::Idle;
+    ResetRuntimeData();
+    NotifyParticipantStopped();
     ResolvePendingStart(false, Failure);
-    ActiveParticipant.Reset();
-    ForceNetUpdate();
+    Participant.Reset();
 }
 
 void ACQBTrainingSpawner::NotifyParticipantStarted()
 {
-    if (APlayerController* Participant = ActiveParticipant.Get())
+    if (APlayerController* Player = Participant.Get())
     {
-        if (UTrainingPlayerComponent* Training = Participant->FindComponentByClass<UTrainingPlayerComponent>())
+        if (UTrainingPlayerComponent* Training = Player->FindComponentByClass<UTrainingPlayerComponent>())
         {
             Training->NotifyCQBStarted(*this, OrderedSpawnPoints.Num(), HUDWidgetClass);
         }
@@ -336,9 +322,9 @@ void ACQBTrainingSpawner::NotifyParticipantStarted()
 
 void ACQBTrainingSpawner::NotifyParticipantProgress()
 {
-    if (APlayerController* Participant = ActiveParticipant.Get())
+    if (APlayerController* Player = Participant.Get())
     {
-        if (UTrainingPlayerComponent* Training = Participant->FindComponentByClass<UTrainingPlayerComponent>())
+        if (UTrainingPlayerComponent* Training = Player->FindComponentByClass<UTrainingPlayerComponent>())
         {
             Training->NotifyCQBProgress(KilledTroopers, OrderedSpawnPoints.Num(), IsTrainingComplete());
         }
@@ -347,9 +333,9 @@ void ACQBTrainingSpawner::NotifyParticipantProgress()
 
 void ACQBTrainingSpawner::NotifyParticipantStopped()
 {
-    if (APlayerController* Participant = ActiveParticipant.Get())
+    if (APlayerController* Player = Participant.Get())
     {
-        if (UTrainingPlayerComponent* Training = Participant->FindComponentByClass<UTrainingPlayerComponent>())
+        if (UTrainingPlayerComponent* Training = Player->FindComponentByClass<UTrainingPlayerComponent>())
         {
             Training->NotifyCQBStopped(*this);
         }

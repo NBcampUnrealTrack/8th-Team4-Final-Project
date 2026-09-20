@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AIController.h"
 #include "Perception/AIPerceptionTypes.h"
+#include "TimerManager.h"
 #include "CQBTrainingAIController.generated.h"
 
 class UAIPerceptionComponent;
@@ -34,6 +35,7 @@ class FPS_API ACQBTrainingAIController : public AAIController
 
 public:
     ACQBTrainingAIController();
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "CQB|AI")
     TObjectPtr<UAIPerceptionComponent> CQBPerceptionComponent;
@@ -105,5 +107,6 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<URogueHealthComponent> BoundHealthComponent;
 
+    FTimerHandle DeathShutdownTimer;
     bool bDeathShutdownStarted = false;
 };

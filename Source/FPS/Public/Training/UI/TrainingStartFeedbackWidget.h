@@ -16,8 +16,8 @@ class FPS_API UTrainingStartFeedbackWidget : public UUserWidget
 
 public:
     UTrainingStartFeedbackWidget(const FObjectInitializer& ObjectInitializer);
-    void ShowCountdown(float ElapsedServerSeconds);
-    void ShowStarted(float ElapsedServerSeconds);
+    void ShowCountdown(float ElapsedSeconds);
+    void ShowStarted(float ElapsedSeconds);
     void ClearFeedback();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Feedback")

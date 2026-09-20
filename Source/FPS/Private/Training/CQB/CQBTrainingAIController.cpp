@@ -68,6 +68,24 @@ ACQBTrainingAIController::ACQBTrainingAIController()
     CombatComponent = CreateDefaultSubobject<UCQBTrainingCombatComponent>(TEXT("CQBCombat"));
 }
 
+void ACQBTrainingAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DeathShutdownTimer);
+    }
+    UnbindHealthEvents();
+    StopCQBBrain();
+    if (CQBPerceptionComponent)
+    {
+        CQBPerceptionComponent->OnTargetPerceptionUpdated.RemoveDynamic(
+            this, &ThisClass::HandleTargetPerceptionUpdated);
+        CQBPerceptionComponent->ForgetAll();
+        CQBPerceptionComponent->Deactivate();
+    }
+    Super::EndPlay(EndPlayReason);
+}
+
 void ACQBTrainingAIController::OnPossess(APawn* InPawn)
 {
     Super::OnPossess(InPawn);
@@ -107,6 +125,10 @@ void ACQBTrainingAIController::OnPossess(APawn* InPawn)
 
 void ACQBTrainingAIController::OnUnPossess()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(DeathShutdownTimer);
+    }
     UnbindHealthEvents();
     if (CQBPerceptionComponent)
     {
@@ -122,7 +144,7 @@ void ACQBTrainingAIController::OnUnPossess()
 
     Super::OnUnPossess();
 
-    if (HasAuthority() && !IsActorBeingDestroyed())
+    if (!IsActorBeingDestroyed())
     {
         Destroy();
     }
@@ -131,7 +153,7 @@ void ACQBTrainingAIController::OnUnPossess()
 bool ACQBTrainingAIController::StartCQBBrain()
 {
     UCQBTrainingAIComponent* Config = GetCQBComponent();
-    if (!HasAuthority() || !Config || !Config->IsAlive() || !CQBStateTreeComponent)
+    if (!Config || !Config->IsAlive() || !CQBStateTreeComponent)
     {
         return false;
     }
@@ -183,11 +205,6 @@ void ACQBTrainingAIController::StopCQBBrain()
 
 bool ACQBTrainingAIController::RefreshFromPawnConfiguration()
 {
-    if (!HasAuthority())
-    {
-        return false;
-    }
-
     UCQBTrainingAIComponent* Config = GetCQBComponent();
     if (!Config || !Config->HasValidPatrolRoute()
         || !AwarenessComponent || !LocomotionComponent || !PatrolComponent
@@ -336,7 +353,7 @@ void ACQBTrainingAIController::HandleTargetPerceptionUpdated(
     AActor* Actor,
     const FAIStimulus Stimulus)
 {
-    if (!HasAuthority() || !AwarenessComponent || !IsControlledPawnAlive() || !IsValid(Actor))
+    if (!AwarenessComponent || !IsControlledPawnAlive() || !IsValid(Actor))
     {
         return;
     }
@@ -422,7 +439,7 @@ void ACQBTrainingAIController::HandlePawnDamageTaken(
     const AActor* InstigatorActor,
     FVector)
 {
-    if (!HasAuthority() || !IsControlledPawnAlive())
+    if (!IsControlledPawnAlive())
     {
         return;
     }
@@ -500,10 +517,13 @@ void ACQBTrainingAIController::BeginDeathShutdown()
         }
     }
 
-    if (UWorld* World = GetWorld())
+    if (!IsActorBeingDestroyed())
     {
-        World->GetTimerManager().SetTimerForNextTick(
-            FTimerDelegate::CreateUObject(this, &ThisClass::FinalizeDeathShutdown));
+        if (UWorld* World = GetWorld())
+        {
+            DeathShutdownTimer = World->GetTimerManager().SetTimerForNextTick(
+                FTimerDelegate::CreateUObject(this, &ThisClass::FinalizeDeathShutdown));
+        }
     }
 }
 

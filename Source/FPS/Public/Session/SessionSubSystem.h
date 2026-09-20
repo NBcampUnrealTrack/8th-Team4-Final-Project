@@ -39,6 +39,8 @@ public:
 	// 세션 종료는 비동기이므로 이동은 DestroySession 완료 뒤에 수행한다.
 	void LeaveRoomAndReturnToFrontend();
 
+	bool LeaveRoomAndOpenLocalMap(const TSoftObjectPtr<UWorld>& DestinationMap);
+
 	// 리슨 서버가 현재 방을 유지한 채 공유 로비 맵으로 돌아간다.
 	// 일반 클라이언트에서는 호출할 수 없다.
 	bool ReturnRoomToLobby();
@@ -102,7 +104,8 @@ private:
 		None,
 		CreateRoom,
 		JoinRoom,
-		ReturnToFrontend
+		ReturnToFrontend,
+		OpenLocalMap
 	};
 
 	IOnlineSessionPtr SessionInterface;
@@ -131,6 +134,7 @@ private:
 	bool bStartRoomGamePending = false;
 	bool bReturnRoomToLobbyPending = false;
 	int32 CachedJoinSessionIndex = INDEX_NONE;
+	TSoftObjectPtr<UWorld> PendingLocalMap;
 
 	int32 CachedMaxPlayers = 4;
 	FString CachedRoomName = TEXT("Player's Room");

@@ -22,7 +22,6 @@ public:
 
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual bool CanInteract(const APlayerController& RequestingPlayer) const override;
     virtual void Interact(APlayerController& RequestingPlayer) override;
 
@@ -50,13 +49,10 @@ protected:
     void HandleInteractionEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
         UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
 
-    UFUNCTION()
-    void OnRep_EndEnabled();
-
 private:
     void RefreshEnabledState();
 
-    UPROPERTY(ReplicatedUsing = OnRep_EndEnabled)
+    UPROPERTY(Transient)
     bool bEndEnabled = false;
 
     TWeakObjectPtr<APlayerController> LocalOverlappingController;

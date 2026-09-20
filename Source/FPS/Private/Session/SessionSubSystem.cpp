@@ -7,6 +7,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 #include "Interfaces/OnlineIdentityInterface.h"
 #include "Online/OnlineSessionNames.h"
 #include "OnlineSessionSettings.h"
@@ -62,7 +63,7 @@ USessionSubSystem::USessionSubSystem()
 
 void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, const FString& MapName, const FString& MatchType)
 {
-	if (!EnsureSessionInterface())
+	if (!PendingLocalMap.IsNull() || !EnsureSessionInterface())
 	{
 		OnCreateRoomComplete.Broadcast(false);
 		return;
@@ -104,6 +105,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 	if (!LocalPlayer || !LocalPlayer->GetPreferredUniqueNetId().IsValid())
 	{
 		SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
+		CreateSessionCompleteDelegateHandle.Reset();
 		OnCreateRoomComplete.Broadcast(false);
 		return;
 	}
@@ -111,6 +113,7 @@ void USessionSubSystem::CreateRoom(int32 MaxPlayers, const FString& RoomName, co
 	if (!SessionInterface->CreateSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, *LastSessionSettings))
 	{
 		SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
+		CreateSessionCompleteDelegateHandle.Reset();
 		OnCreateRoomComplete.Broadcast(false);
 	}
 }
@@ -154,7 +157,7 @@ void USessionSubSystem::FindRooms()
 
 void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 {
-	if (!EnsureSessionInterface() || !LastSessionSearch.IsValid() || !LastSessionSearch->SearchResults.IsValidIndex(SessionIndex))
+	if (!PendingLocalMap.IsNull() || !EnsureSessionInterface() || !LastSessionSearch.IsValid() || !LastSessionSearch->SearchResults.IsValidIndex(SessionIndex))
 	{
 		OnJoinRoomComplete.Broadcast(false);
 		return;
@@ -184,6 +187,7 @@ void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 	if (!LocalPlayer || !LocalPlayer->GetPreferredUniqueNetId().IsValid())
 	{
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
+		JoinSessionCompleteDelegateHandle.Reset();
 		OnJoinRoomComplete.Broadcast(false);
 		return;
 	}
@@ -191,12 +195,18 @@ void USessionSubSystem::JoinRoomByIndex(int32 SessionIndex)
 	if (!SessionInterface->JoinSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, LastSessionSearch->SearchResults[SessionIndex]))
 	{
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
+		JoinSessionCompleteDelegateHandle.Reset();
 		OnJoinRoomComplete.Broadcast(false);
 	}
 }
 
 void USessionSubSystem::LeaveRoom()
 {
+	if (DestroySessionCompleteDelegateHandle.IsValid())
+	{
+		return;
+	}
+
 	if (!EnsureSessionInterface())
 	{
 		CompleteLeaveRoom(false);
@@ -214,12 +224,18 @@ void USessionSubSystem::LeaveRoom()
 	if (!SessionInterface->DestroySession(NAME_GameSession))
 	{
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
+		DestroySessionCompleteDelegateHandle.Reset();
 		CompleteLeaveRoom(false);
 	}
 }
 
 void USessionSubSystem::LeaveRoomAndReturnToFrontend()
 {
+	if (!PendingLocalMap.IsNull())
+	{
+		return;
+	}
+
 	LeaveRoomContinuation = ELeaveRoomContinuation::ReturnToFrontend;
 	CachedJoinSessionIndex = INDEX_NONE;
 
@@ -236,10 +252,48 @@ void USessionSubSystem::LeaveRoomAndReturnToFrontend()
 	LeaveRoom();
 }
 
+bool USessionSubSystem::LeaveRoomAndOpenLocalMap(const TSoftObjectPtr<UWorld>& DestinationMap)
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (DestinationMap.IsNull() || !World || World->GetNetMode() == NM_DedicatedServer
+		|| !GameInstance || GameInstance->GetLocalPlayers().Num() != 1
+		|| bStartRoomGamePending || bReturnRoomToLobbyPending
+		|| LeaveRoomContinuation != ELeaveRoomContinuation::None
+		|| DestroySessionCompleteDelegateHandle.IsValid()
+		|| CreateSessionCompleteDelegateHandle.IsValid() || JoinSessionCompleteDelegateHandle.IsValid())
+	{
+		return false;
+	}
+
+	if (EnsureSessionInterface())
+	{
+		const EOnlineSessionState::Type State = SessionInterface->GetSessionState(NAME_GameSession);
+		if (State == EOnlineSessionState::Creating || State == EOnlineSessionState::Starting
+			|| State == EOnlineSessionState::Ending || State == EOnlineSessionState::Destroying)
+		{
+			return false;
+		}
+	}
+
+	PendingLocalMap = DestinationMap;
+	LeaveRoomContinuation = ELeaveRoomContinuation::OpenLocalMap;
+	CachedJoinSessionIndex = INDEX_NONE;
+	if (!SessionInterface.IsValid() || !SessionInterface->GetNamedSession(NAME_GameSession))
+	{
+		CompleteLeaveRoom(true);
+	}
+	else
+	{
+		LeaveRoom();
+	}
+	return true;
+}
+
 bool USessionSubSystem::ReturnRoomToLobby()
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(World) || World->GetNetMode() == NM_Client || bReturnRoomToLobbyPending)
+	if (!IsValid(World) || World->GetNetMode() == NM_Client || bReturnRoomToLobbyPending || !PendingLocalMap.IsNull())
 	{
 		return false;
 	}
@@ -359,6 +413,7 @@ void USessionSubSystem::StartRoomGameWithSettings(
 
 	if (!EnsureSessionInterface()
 		|| SessionInterface->GetNamedSession(NAME_GameSession) == nullptr
+		|| !PendingLocalMap.IsNull()
 		|| bStartRoomGamePending
 		|| bReturnRoomToLobbyPending)
 	{
@@ -584,6 +639,7 @@ void USessionSubSystem::OnCreateSessionComplete(FName SessionName, bool bWasSucc
 	if (SessionInterface)
 	{
 		SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
+		CreateSessionCompleteDelegateHandle.Reset();
 	}
 
 	OnCreateRoomComplete.Broadcast(bWasSuccessful);
@@ -618,6 +674,7 @@ void USessionSubSystem::OnJoinSessionComplete(FName SessionName, EOnJoinSessionC
 	if (SessionInterface)
 	{
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
+		JoinSessionCompleteDelegateHandle.Reset();
 	}
 
 	if (Result != EOnJoinSessionCompleteResult::Success)
@@ -646,10 +703,15 @@ void USessionSubSystem::OnJoinSessionComplete(FName SessionName, EOnJoinSessionC
 
 void USessionSubSystem::OnDestroySessionComplete(FName SessionName, bool bWasSuccessful)
 {
+	if (SessionName != NAME_GameSession)
+	{
+		return;
+	}
 	if (SessionInterface)
 	{
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
 	}
+	DestroySessionCompleteDelegateHandle.Reset();
 
 	CompleteLeaveRoom(bWasSuccessful);
 }
@@ -657,6 +719,8 @@ void USessionSubSystem::OnDestroySessionComplete(FName SessionName, bool bWasSuc
 void USessionSubSystem::CompleteLeaveRoom(const bool bWasSuccessful)
 {
 	const ELeaveRoomContinuation Continuation = LeaveRoomContinuation;
+	const TSoftObjectPtr<UWorld> LocalMap = PendingLocalMap;
+	PendingLocalMap.Reset();
 	LeaveRoomContinuation = ELeaveRoomContinuation::None;
 
 	if (!bWasSuccessful)
@@ -696,6 +760,11 @@ void USessionSubSystem::CompleteLeaveRoom(const bool bWasSuccessful)
 	case ELeaveRoomContinuation::ReturnToFrontend:
 		OnLeaveRoomComplete.Broadcast(true);
 		ReturnToFrontendNow();
+		return;
+
+	case ELeaveRoomContinuation::OpenLocalMap:
+		// 이전 방의 listen 옵션을 넘기지 않고 이 인스턴스만 이동한다.
+		UGameplayStatics::OpenLevelBySoftObjectPtr(GetGameInstance(), LocalMap, true, FString());
 		return;
 
 	default:
@@ -812,14 +881,18 @@ void USessionSubSystem::Deinitialize()
 	if (SessionInterface.IsValid())
 	{
 		SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
+		CreateSessionCompleteDelegateHandle.Reset();
 		SessionInterface->ClearOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegateHandle);
 		SessionInterface->ClearOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegateHandle);
+		JoinSessionCompleteDelegateHandle.Reset();
 		SessionInterface->ClearOnDestroySessionCompleteDelegate_Handle(DestroySessionCompleteDelegateHandle);
 		SessionInterface->ClearOnStartSessionCompleteDelegate_Handle(StartSessionCompleteDelegateHandle);
 		SessionInterface->ClearOnEndSessionCompleteDelegate_Handle(EndSessionCompleteDelegateHandle);
 	}
 
 	LastSessionSettings.Reset();
+	PendingLocalMap.Reset();
+	LeaveRoomContinuation = ELeaveRoomContinuation::None;
 	LastSessionSearch.Reset();
 	SessionInterface.Reset();
 

@@ -31,11 +31,6 @@ UAugmentInventoryComponent* UTrainingPlayerComponent::GetAugmentInventory() cons
 
 bool UTrainingPlayerComponent::GetAugmentAvailabilityTags(FGameplayTagContainer& OutTags) const
 {
-    if (GetOwner() && !GetOwner()->HasAuthority() && bHasClientLoadout)
-    {
-        OutTags = ClientLoadout.AvailabilityTags;
-        return ClientLoadout.bAvailabilityReady;
-    }
     const APlayerController* Participant = GetParticipantController();
     return TrainingAugmentRules::GetAvailabilityTags(
         Participant ? Participant->GetPlayerState<AShooterPlayerState>() : nullptr, OutTags);
@@ -49,7 +44,6 @@ FTrainingLoadoutSnapshot UTrainingPlayerComponent::BuildLoadoutSnapshot() const
     const UAugmentInventoryComponent* Inventory = GetAugmentInventory();
     Snapshot.CombatClass = State ? State->GetCombatClass() : EDominationCombatClass::Unselected;
     if (Inventory) { Snapshot.Augments = Inventory->GetEntries(); }
-    Snapshot.bAvailabilityReady = TrainingAugmentRules::GetAvailabilityTags(State, Snapshot.AvailabilityTags);
     return Snapshot;
 }
 
@@ -63,7 +57,7 @@ bool UTrainingPlayerComponent::ValidateLoadoutRequest(const int32 RequestId, FTe
     const UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
     const ATrainingArena* Arena = PendingInteractable.IsValid() ? PendingInteractable->Arena.Get() : nullptr;
     if (!Mode || !Mode->UsesManualAugmentSelection() || PendingKind != ETrainingDialogKind::SelectMode
-        || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle
+        || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle || IsCQBTrainingActive()
         || !Participant || !Participant->GetPawn() || !Arena || !Arena->IsInMovementArea(*Participant->GetPawn())
         || !GetAugmentInventory() || !ASC || ASC->GetAvatarActor() != Participant->GetPawn()
         || !State->IsAlive() || ASC->HasMatchingGameplayTag(RogueTags::State_Combat_IsDead))
@@ -74,18 +68,13 @@ bool UTrainingPlayerComponent::ValidateLoadoutRequest(const int32 RequestId, FTe
     return true;
 }
 
-void UTrainingPlayerComponent::SubmitAugments(const int32 RequestId, const TArray<FPrimaryAssetId>& Selection)
-{
-    ServerApplyAugments(RequestId, Selection);
-}
-
-void UTrainingPlayerComponent::ServerApplyAugments_Implementation(
+void UTrainingPlayerComponent::SubmitAugments(
     const int32 RequestId, const TArray<FPrimaryAssetId>& Selection)
 {
     FText Failure;
     const auto Reply = [this, RequestId](const bool bSuccess, const FText& Message)
     {
-        ClientAugmentResult(RequestId, bSuccess, BuildLoadoutSnapshot(), Message);
+        ResolveAugmentRequest(RequestId, bSuccess, BuildLoadoutSnapshot(), Message);
     };
     if (!ValidateLoadoutRequest(RequestId, Failure) || !TrainingAugmentRules::ValidateIds(Selection, Failure))
     {
@@ -115,7 +104,7 @@ void UTrainingPlayerComponent::ServerApplyAugments_Implementation(
         const UAugmentDefinition* Definition = Registry->FindDefinition(Id);
         if (!Definition || Definition->AugmentCategory == EAugmentCategory::None)
         {
-            Reply(false, LOCTEXT("NotCatalogued", "A selected augment is not in the server's augment catalog."));
+            Reply(false, LOCTEXT("NotCatalogued", "A selected augment is not in the augment catalog."));
             return;
         }
         if (!TrainingAugmentRules::IsCatalogEligible(*Definition, UnlockTags))
@@ -140,24 +129,18 @@ void UTrainingPlayerComponent::ServerApplyAugments_Implementation(
     Reply(bApplied, Failure);
 }
 
-void UTrainingPlayerComponent::ClientAugmentResult_Implementation(const int32 RequestId, const bool bSuccess,
+void UTrainingPlayerComponent::ResolveAugmentRequest(const int32 RequestId, const bool bSuccess,
     const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure)
 {
     if (UTrainingDialogWidget* Dialog = ActiveDialog.Get(); Dialog && Dialog->GetRequestId() == RequestId)
     {
-        ClientLoadout = LoadoutSnapshot;
-        bHasClientLoadout = true;
+
+
         Dialog->ReceiveAugmentResult(bSuccess, LoadoutSnapshot, Failure);
     }
 }
 
 void UTrainingPlayerComponent::SubmitCombatClass(const int32 RequestId,
-    const EDominationCombatClass RequestedClass)
-{
-    ServerChangeCombatClass(RequestId, RequestedClass);
-}
-
-void UTrainingPlayerComponent::ServerChangeCombatClass_Implementation(const int32 RequestId,
     const EDominationCombatClass RequestedClass)
 {
     FText Failure;
@@ -168,16 +151,16 @@ void UTrainingPlayerComponent::ServerChangeCombatClass_Implementation(const int3
         bSuccess = Mode->RequestTrainingCombatClass(
             Cast<ATrainingPlayerController>(GetParticipantController()), RequestedClass, Failure);
     }
-    ClientCombatClassResult(RequestId, bSuccess, BuildLoadoutSnapshot(), Failure);
+    ResolveCombatClassRequest(RequestId, bSuccess, BuildLoadoutSnapshot(), Failure);
 }
 
-void UTrainingPlayerComponent::ClientCombatClassResult_Implementation(const int32 RequestId, const bool bSuccess,
+void UTrainingPlayerComponent::ResolveCombatClassRequest(const int32 RequestId, const bool bSuccess,
     const FTrainingLoadoutSnapshot& LoadoutSnapshot, const FText& Failure)
 {
     if (UTrainingDialogWidget* Dialog = ActiveDialog.Get(); Dialog && Dialog->GetRequestId() == RequestId)
     {
-        ClientLoadout = LoadoutSnapshot;
-        bHasClientLoadout = true;
+
+
         Dialog->ReceiveCombatClassResult(bSuccess, LoadoutSnapshot, Failure);
     }
 }

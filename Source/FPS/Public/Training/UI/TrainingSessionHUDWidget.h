@@ -16,7 +16,7 @@ class FPS_API UTrainingSessionHUDWidget : public UUserWidget
 
 public:
     UTrainingSessionHUDWidget(const FObjectInitializer& ObjectInitializer);
-    void StartSession(ETrainingMode Mode, double StartServerSeconds, float DurationSeconds);
+    void StartSession(ETrainingMode Mode, double StartSeconds, float DurationSeconds);
     void StartCQBSession(int32 TotalTroopers);
     void PresentHit(int32 TotalKills, bool bKilled);
     void PresentCQBKill(int32 CurrentKills, int32 TotalTroopers);
@@ -54,7 +54,7 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_ProgressLabel;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
 
-    double StartServerSeconds = 0.0;
+    double StartSeconds = 0.0;
     float ActiveDurationSeconds = 0.0f;
     float KillFeedbackAge = 0.0f;
     float KillFeedbackOpacity = 0.0f;

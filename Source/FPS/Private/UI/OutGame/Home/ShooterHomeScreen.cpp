@@ -2,8 +2,8 @@
 #include "UI/OutGame/Home/ShooterHomeScreen.h"
 
 #include "Engine/GameInstance.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Session/SessionSubSystem.h"
 #include "Tags/UITags.h"
 #include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
@@ -53,7 +53,13 @@ void UShooterHomeScreen::HandleTrainingClicked()
 		return;
 	}
 
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TrainingDestinationMap);
+	UGameInstance* GameInstance = GetGameInstance();
+	USessionSubSystem* Sessions = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
+	if (!Sessions || !Sessions->LeaveRoomAndOpenLocalMap(TrainingDestinationMap))
+	{
+		UE_LOG(LogShooterHomeScreen, Warning,
+			TEXT("Training entry requires one local player and no pending room transition."));
+	}
 }
 
 void UShooterHomeScreen::HandleSettingsClicked()
