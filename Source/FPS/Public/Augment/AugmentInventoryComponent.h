@@ -154,7 +154,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
-	// 보유 목록. 서버에서만 변경하고 소유자에게만 복제
+	// 보유 목록. 서버에서만 변경하고 모든 클라이언트에 복제
 	// 수명은 매치 내내. 비어 있다 = 증강 없음
 	UPROPERTY(ReplicatedUsing = OnRep_Entries)
 	TArray<FAugmentInventoryEntry> Entries;

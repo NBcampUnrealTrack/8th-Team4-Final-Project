@@ -368,15 +368,9 @@ FText UShooterScoreboard::ResolveWeaponText(APlayerState* PlayerState) const
 	return FText::GetEmpty();
 }
 
-// TODO:다른 플레이어 증강 조회가능시 함수 변경
 TArray<FShooterAugmentDisplay> UShooterScoreboard::ResolveAugments(APlayerState* PlayerState)
 {
 	TArray<FShooterAugmentDisplay> Result;
-
-	if (PlayerState != GetOwningPlayerState())
-	{
-		return Result;
-	}
 
 	const AShooterPlayerState* PS = Cast<AShooterPlayerState>(PlayerState);
 	const UAugmentInventoryComponent* Inventory = PS ? PS->GetAugmentInventory() : nullptr;
