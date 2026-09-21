@@ -48,6 +48,5 @@ private:
 
 	FShooterLoadingProgressTracker Tracker;
 
-	float DebugLogElapsed = 0.0f;
 	float LoadingProgress = 0.0f;
 };

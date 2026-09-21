@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "LoadingScreenSubsystem.generated.h"
 
@@ -28,11 +29,35 @@ public:
 
 	bool IsLoadingScreenVisible() const;
 
+	// 도미네이션 전용. travel 시작에 켜고 세션 종료에 끈다
+	void BeginTravelProgress();
+	void NotifyPreloadComplete();
+
+	// 취소·해제·타임아웃. 게이트만 풀고 90% 는 열지 않는다
+	void AbandonPreloadWait();
+
+	void NotifyWorldLoaded();
+	void NotifyMatchLoadReady();
+
+	bool IsTravelProgressActive() const;
+
+	// 더 기다릴 대상이 있나. 도미네이션이 아니면 항상 참
+	bool CanFinishLoading() const;
+
 private:
 	UFUNCTION()
 	void HandleRoundStateChanged();
 
 	void SyncWithRoundGameState();
+
+	void ApplyProgress(float Progress);
+
+	// 계층 게이트. 앞 단계가 열려야 다음 단계가 화면에 반영된다
+	float ComputeDominationProgress() const;
+	void ApplyDominationProgress();
+
+	bool TickEstimatedTravelProgress(float DeltaTime);
+	void StopEstimatedTravelTicker();
 
 	// 뷰포트 조작 전 위젯 월드 재바인딩
 	void RebindLoadingWidgetToCurrentWorld();
@@ -48,6 +73,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseRoundGameState> BoundRoundGameState;
+
+	bool bTravelProgressActive = false;
+
+	// 실제 완료 이벤트로만 켜진다.
+	bool bPreloadComplete = false;
+	bool bWorldLoaded = false;
+	bool bMatchReady = false;
+
+	// 취소·해제·타임아웃. 
+	bool bPreloadWaitAbandoned = false;
+
+	// UX 용 추정치
+	float EstimatedTravelProgress = 0.0f;
+
+	FTSTicker::FDelegateHandle EstimatedTravelTickerHandle;
 
 	float CurrentProgress = 0.0f;
 };

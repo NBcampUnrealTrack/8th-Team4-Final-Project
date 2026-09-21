@@ -4,6 +4,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "DominationPreloadSubsystem.generated.h"
 
+class ULoadingScreenSubsystem;
 struct FStreamableHandle;
 
 /**
@@ -28,6 +29,8 @@ private:
 	void ReleasePreload();
 
 	bool IsOwnedByThisGameInstance(const UWorld* World) const;
+
+	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	FDelegateHandle SeamlessTravelHandle;
 	FDelegateHandle PostLoadMapHandle;

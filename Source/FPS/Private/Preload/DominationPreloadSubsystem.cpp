@@ -5,6 +5,7 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "GameMode/Settings/DominationClassSettings.h"
+#include "Loading/LoadingScreenSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationPreload, Log, All);
 
@@ -34,6 +35,9 @@ namespace
 void UDominationPreloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// 해제 시 로딩 상태를 닫아야 하므로 로딩 서브시스템이 먼저 생기고 나중에 사라져야 한다
+	Collection.InitializeDependency<ULoadingScreenSubsystem>();
 
 	SeamlessTravelHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(
 		this,
@@ -123,6 +127,12 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 		IsValid(ContextWorld) ? LexNetMode(ContextWorld->GetNetMode()) : TEXT("None"),
 		PawnPaths.Num());
 
+	// 완료 콜백보다 반드시 먼저 열린다
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->BeginTravelProgress();
+	}
+
 	PawnPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		PawnPaths,
 		FStreamableDelegate::CreateWeakLambda(this, [this]()
@@ -130,6 +140,12 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 			UE_LOG(LogDominationPreload, Log,
 				TEXT("[Preload] Complete Elapsed=%.2fs"),
 				FPlatformTime::Seconds() - PreloadStartTime);
+
+			// 실제 완료 90% 를 여는 유일한 경로다
+			if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+			{
+				LoadingScreenSubsystem->NotifyPreloadComplete();
+			}
 		}));
 }
 
@@ -144,10 +160,25 @@ void UDominationPreloadSubsystem::ReleasePreload()
 		TEXT("[Preload] Release Completed=%d"),
 		PawnPreloadHandle->HasLoadCompleted());
 
+	// 핸들을 놓으면 완료 콜백도 사라진다. 완료가 아니므로 게이트만 푼다
+	if (!PawnPreloadHandle->HasLoadCompleted())
+	{
+		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+		{
+			LoadingScreenSubsystem->AbandonPreloadWait();
+		}
+	}
+
 	PawnPreloadHandle.Reset();
 }
 
 bool UDominationPreloadSubsystem::IsOwnedByThisGameInstance(const UWorld* World) const
 {
 	return IsValid(World) && World->GetGameInstance() == GetGameInstance();
+}
+
+ULoadingScreenSubsystem* UDominationPreloadSubsystem::GetLoadingScreenSubsystem() const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetSubsystem<ULoadingScreenSubsystem>() : nullptr;
 }
