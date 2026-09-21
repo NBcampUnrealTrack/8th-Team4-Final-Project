@@ -127,7 +127,10 @@ void UPingIndicatorEntry::UpdateScreenPosition()
 	const FVector2D AbsolutePos = ViewportGeom.LocalToAbsolute(ViewportLocalPos);
 	const FVector2D OurLocalPos = CanvasGeom.AbsoluteToLocal(AbsolutePos);
 
-	CachedCanvasSlot->SetPosition(OurLocalPos);
+	if (!GetRenderTransform().Translation.Equals(OurLocalPos, 0.05f))
+	{
+		SetRenderTranslation(OurLocalPos);
+	}
 
 	if (Panel_IndicatorVisual)
 	{

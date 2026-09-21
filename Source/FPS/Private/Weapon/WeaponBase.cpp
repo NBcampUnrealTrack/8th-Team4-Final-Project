@@ -46,6 +46,7 @@ AWeaponBase::AWeaponBase()
 	Mesh1P->SetCastShadow(false);
 	Mesh1P->bReceivesDecals = false;
 	Mesh1P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh1P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 
 	// 3인칭 전용: 오너 본인에게는 숨기고 다른 플레이어에게만 보인다.
 	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P"));

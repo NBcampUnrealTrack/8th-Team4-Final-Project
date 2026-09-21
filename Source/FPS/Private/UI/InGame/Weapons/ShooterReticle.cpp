@@ -38,6 +38,21 @@ static void SetSlotPosition(UWidget* Widget, const FVector2D& Position)
 	}
 }
 
+static void SetSlotRenderOffset(UWidget* Widget, const FVector2D& Offset)
+{
+	if (!Widget)
+	{
+		return;
+	}
+
+	if (Widget->GetRenderTransform().Translation.Equals(Offset, 0.05f))
+	{
+		return;
+	}
+
+	Widget->SetRenderTranslation(Offset);
+}
+
 void UShooterReticle::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -47,6 +62,11 @@ void UShooterReticle::NativeOnInitialized()
 	ConfigureCenteredCanvasSlot(Image_Left);
 	ConfigureCenteredCanvasSlot(Image_Right);
 	ConfigureCenteredCanvasSlot(Image_Center);
+
+	SetSlotPosition(Image_Top, FVector2D::ZeroVector);
+	SetSlotPosition(Image_Bottom, FVector2D::ZeroVector);
+	SetSlotPosition(Image_Left, FVector2D::ZeroVector);
+	SetSlotPosition(Image_Right, FVector2D::ZeroVector);
 
 	// Top/Bottom도 Left/Right와 같은(가로로 긴) CrossSide 브러시를 그대로 쓰기로 했으므로,
 	// 세로 방향으로 보이도록 자기 중심을 기준으로 90도 돌려준다. Left/Right는 원본 그대로 둔다.
@@ -139,9 +159,15 @@ float UShooterReticle::ComputeSpreadRadius() const
 		return 0.f;
 	}
 	
+	const float SpreadDegrees = GetSpreadDegrees();
+	if (SpreadDegrees <= UE_KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+
 	// 현재 총의 탄퍼짐 각도를 실제 화면상의 크로스헤어 간격으로 변환한다.
 	// 화면 중심에서 그 점깢의 거리가 곧 크로스헤어 반경이 된다.
-	const float SpreadRadiusRads = FMath::DegreesToRadians(GetSpreadDegrees());
+	const float SpreadRadiusRads = FMath::DegreesToRadians(SpreadDegrees);
 	const float SpreadRadiusAtDistance = FMath::Tan(SpreadRadiusRads) * LongShotDistance;
 	
 	FVector CamPos;
@@ -194,10 +220,10 @@ void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	// VerticalGroupOffset으로 둘을 한 축으로 묶어 미세 위치를 맞춘다.
 	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
 	const float VerticalRadius = Radius * VerticalSpreadRadiusScale;
-	SetSlotPosition(Image_Right, HorizontalGroupOffset + FVector2D(Radius, 0.f));
-	SetSlotPosition(Image_Left, HorizontalGroupOffset + FVector2D(-Radius, 0.f));
-	SetSlotPosition(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius - TopBarLift));
-	SetSlotPosition(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
+	SetSlotRenderOffset(Image_Right, HorizontalGroupOffset + FVector2D(Radius, 0.f));
+	SetSlotRenderOffset(Image_Left, HorizontalGroupOffset + FVector2D(-Radius, 0.f));
+	SetSlotRenderOffset(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius - TopBarLift));
+	SetSlotRenderOffset(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
 float UShooterReticle::GetSpreadDegrees() const

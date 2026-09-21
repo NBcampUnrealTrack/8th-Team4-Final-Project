@@ -1,8 +1,11 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameUserSettings.h"
 #include "ShooterGameUserSettings.generated.h"
+
+class USoundClass;
+class USoundMix;
 
 UENUM(BlueprintType)
 enum class EShooterAudioChannel : uint8
@@ -137,6 +140,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Audio")
 	void SetVoiceChatEnabled(bool bEnabled);
 
+	USoundMix* GetUserSettingsSoundMix();
+	USoundClass* GetAudioChannelSoundClass(EShooterAudioChannel Channel);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|General")
 	EShooterOptionsLanguage GetLanguage() const { return Language; }
 
@@ -208,6 +214,12 @@ protected:
 
 	UPROPERTY(Config)
 	bool bVoiceChatEnabled = true;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> CachedUserSettingsSoundMix;
+
+	UPROPERTY(Transient)
+	TMap<EShooterAudioChannel, TObjectPtr<USoundClass>> CachedAudioChannelSoundClasses;
 
 
 	UPROPERTY(Config)
