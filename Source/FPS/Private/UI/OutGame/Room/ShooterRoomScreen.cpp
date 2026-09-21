@@ -566,12 +566,31 @@ void UShooterRoomScreen::RefreshActions(const ALobbyGameState* LobbyGameState, c
 	const bool bIsLocalReady = IsValid(LocalPlayerState) && LocalPlayerState->IsLobbyReady();
 
 	// 호스트는 레디 대상이 아님
-	Btn_Ready->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
-	Btn_Ready->SetButtonText(bIsLocalReady
-		                         ? NSLOCTEXT("ShooterLobby", "CancelReady", "CANCEL")
-		                         : NSLOCTEXT("ShooterLobby", "Ready", "READY"));
+	// 래퍼를 지정했으면 위에 얹은 장식까지 함께 사라지도록 래퍼를 숨긴다.
+	UWidget* ReadyTarget = Btn_Ready;
+	if (IsValid(Wrapper_Ready))
+	{
+		ReadyTarget = Wrapper_Ready;
+	}
+	ReadyTarget->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	const FText ReadyLabel = bIsLocalReady
+		? NSLOCTEXT("ShooterLobby", "CancelReady", "CANCEL")
+		: NSLOCTEXT("ShooterLobby", "Ready", "READY");
+	if (IsValid(Text_Ready))
+	{
+		Text_Ready->SetText(ReadyLabel);
+	}
+	else
+	{
+		Btn_Ready->SetButtonText(ReadyLabel);
+	}
 
-	Btn_Start->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	UWidget* StartTarget = Btn_Start;
+	if (IsValid(Wrapper_Start))
+	{
+		StartTarget = Wrapper_Start;
+	}
+	StartTarget->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
 	Text_Status->SetText(BuildStatusText(LobbyGameState->GetStartState(), bIsHost));
 
