@@ -544,6 +544,15 @@ void UDominationClassSelectScreen::PreloadPreviewPawns()
 
 void UDominationClassSelectScreen::SpawnPreviewStage()
 {
+	if (!bEnableCharacterPreview)
+	{
+		if (IsValid(Image_CharacterPreview))
+		{
+			Image_CharacterPreview->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
 	UWorld* World = GetWorld();
 	if (!IsValid(World) || !ensure(PreviewStageClass))
 	{

@@ -129,6 +129,10 @@ private:
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<UDominationPlayerSlot> PlayerSlotWidgetClass;
+	// 끄면 메타휴먼 프리뷰를 스폰하지 않음
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
+	bool bEnableCharacterPreview = true;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<ADominationClassPreviewStage> PreviewStageClass;
 

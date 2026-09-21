@@ -80,7 +80,6 @@ private:
 
 	void HandleReadyClicked();
 	void HandleStartClicked();
-	void HandleModePrevClicked();
 	void HandleModeNextClicked();
 	void HandleLeaveClicked();
 
@@ -116,17 +115,23 @@ private:
 	TObjectPtr<UShooterButtonBase> Btn_Ready;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Start;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Wrapper_Ready;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Wrapper_Start;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Ready;
+	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Leave;
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterButtonBase> Btn_ModePrev;
+	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_ModeNext;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_ModeName;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_MapName;
-	// "{N}V{N}" 팀 정원. 방 수용 인원과 다름
+	// 팀 정원
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_TeamSize;
 	UPROPERTY(meta = (BindWidget))

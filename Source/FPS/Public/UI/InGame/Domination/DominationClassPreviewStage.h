@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "GameMode/Types/DominationTypes.h"
 #include "DominationClassPreviewStage.generated.h"
 
@@ -36,6 +37,16 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Preview")
 	TObjectPtr<UMaterialInterface> PreviewMaterialTemplate;
+
+	// 프리뷰 렌더 타겟 해상도. 
+	UPROPERTY(EditDefaultsOnly, Category = "Preview")
+	FIntPoint RenderTargetSize = FIntPoint(256, 512);
+	UPROPERTY(EditDefaultsOnly, Category = "Preview")
+	TEnumAsByte<ETextureRenderTargetFormat> RenderTargetFormat = RTF_RGBA16f;
+
+	// 끄면 클래스가 바뀔 때만 한 번 캡처한다. 대기 애니메이션은 멈춘 것처럼 보인다.
+	UPROPERTY(EditDefaultsOnly, Category = "Preview")
+	bool bCaptureEveryFrame = true;
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> RenderTarget;
 	UPROPERTY(Transient)

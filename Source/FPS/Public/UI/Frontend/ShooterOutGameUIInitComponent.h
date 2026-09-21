@@ -8,6 +8,7 @@
 #include "ShooterOutGameUIInitComponent.generated.h"
 
 class UCommonActivatableWidget;
+class ULoadingScreenSubsystem;
 class UShooterOutGameSubsystem;
 class UShooterUIManagerSubsystem;
 
@@ -26,6 +27,7 @@ protected:
 private:
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	UShooterOutGameSubsystem* GetOutGameSubsystem() const;
+	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
