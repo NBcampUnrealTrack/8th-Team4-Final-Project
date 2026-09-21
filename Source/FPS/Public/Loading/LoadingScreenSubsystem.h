@@ -31,6 +31,9 @@ private:
 
 	void SyncWithRoundGameState();
 
+	// 뷰포트 조작 전 위젯 월드 재바인딩
+	void RebindLoadingWidgetToCurrentWorld();
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<ULoadingScreenWidget> ActiveLoadingWidget;

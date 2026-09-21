@@ -1,6 +1,9 @@
 #include "Loading/LoadingScreenSubsystem.h"
 
+#include "Blueprint/GameViewportSubsystem.h"
 #include "Blueprint/UserWidget.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -29,12 +32,30 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 		return;
 	}
 
-	if (!ActiveLoadingWidget && WidgetClass)
+	if (!IsLoadingScreenVisible() && WidgetClass)
 	{
-		ActiveLoadingWidget = CreateWidget<ULoadingScreenWidget>(OwningPlayer, WidgetClass);
-		if (ActiveLoadingWidget)
+		if (!ActiveLoadingWidget)
 		{
-			ActiveLoadingWidget->AddToViewport(10000);
+			ActiveLoadingWidget =
+				CreateWidget<ULoadingScreenWidget>(
+					GetGameInstance(),
+					WidgetClass);
+		}
+		else
+		{
+			RebindLoadingWidgetToCurrentWorld();
+		}
+
+		UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get();
+		if (Viewport && ActiveLoadingWidget)
+		{
+			FGameViewportWidgetSlot Slot;
+			Slot.ZOrder = 10000;
+			Slot.bAutoRemoveOnWorldRemoved = false; 
+
+			Viewport->AddWidget(
+				ActiveLoadingWidget,
+				Slot);
 		}
 	}
 
@@ -56,6 +77,7 @@ void ULoadingScreenSubsystem::HideLoadingScreen()
 {
 	if (ActiveLoadingWidget)
 	{
+		RebindLoadingWidgetToCurrentWorld();
 		ActiveLoadingWidget->RemoveFromParent();
 		ActiveLoadingWidget = nullptr;
 	}
@@ -92,7 +114,8 @@ void ULoadingScreenSubsystem::UnbindFromRoundGameState()
 
 bool ULoadingScreenSubsystem::IsLoadingScreenVisible() const
 {
-	return ActiveLoadingWidget != nullptr;
+	const UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get();
+	return ActiveLoadingWidget && Viewport && Viewport->IsWidgetAdded(ActiveLoadingWidget);
 }
 
 void ULoadingScreenSubsystem::HandleRoundStateChanged()
@@ -122,4 +145,24 @@ void ULoadingScreenSubsystem::SyncWithRoundGameState()
 		SetLoadingProgress(1.0f);
 		HideLoadingScreen();
 	}
+}
+
+void ULoadingScreenSubsystem::RebindLoadingWidgetToCurrentWorld()
+{
+	if (!IsValid(ActiveLoadingWidget))
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	// 캐시된 월드가 떠난 월드면 뷰포트를 못 찾음
+	ActiveLoadingWidget->SetPlayerContext(
+		FLocalPlayerContext(
+			GameInstance->GetFirstGamePlayer(),
+			GameInstance->GetWorld()));
 }

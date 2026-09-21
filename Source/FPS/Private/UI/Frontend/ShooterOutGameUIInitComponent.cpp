@@ -5,6 +5,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Loading/LoadingScreenSubsystem.h"
 #include "Tags/UITags.h"
 #include "UI/OutGame/ShooterOutGameSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
@@ -40,6 +41,12 @@ void UShooterOutGameUIInitComponent::BeginPlay()
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_Game, BackdropWidgetClass);
 	}
 
+	// 아웃게임 화면이 월드를 덮은 뒤 로딩을 걷음
+	if (ULoadingScreenSubsystem* LoadingScreen = GetLoadingScreenSubsystem())
+	{
+		LoadingScreen->HideLoadingScreen();
+	}
+
 	UShooterOutGameSubsystem* OutGame = GetOutGameSubsystem();
 
 	// 인트로는 Startup 클래스가 지정된 PC 에서만
@@ -73,5 +80,14 @@ UShooterOutGameSubsystem* UShooterOutGameUIInitComponent::GetOutGameSubsystem() 
 	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
 	return IsValid(GameInstance)
 		? GameInstance->GetSubsystem<UShooterOutGameSubsystem>()
+		: nullptr;
+}
+
+ULoadingScreenSubsystem* UShooterOutGameUIInitComponent::GetLoadingScreenSubsystem() const
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
+	return IsValid(GameInstance)
+		? GameInstance->GetSubsystem<ULoadingScreenSubsystem>()
 		: nullptr;
 }
