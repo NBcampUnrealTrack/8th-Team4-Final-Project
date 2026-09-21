@@ -179,6 +179,8 @@ void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, 
 
 	const AActor* InstigatorActor = Payload->Instigator;
 	const FVector Direction = ComputeHitDirection(Payload->ContextHandle, InstigatorActor);
+	OnDamageTakenNative.Broadcast(InstigatorActor, Direction);
+
 	if (Direction.IsZero())
 	{
 		return;

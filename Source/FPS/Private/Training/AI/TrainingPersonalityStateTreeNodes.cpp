@@ -1,4 +1,4 @@
-﻿#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
+#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
 
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
@@ -12,8 +12,7 @@ namespace TrainingPersonalityTask
     {
         const ATrainingCombatAI* TrainingBot = TrainingController
             ? Cast<ATrainingCombatAI>(TrainingController->GetPawn()) : nullptr;
-        return TrainingController && TrainingController->HasAuthority()
-            && TrainingController->PersonalityComponent && TrainingBot
+        return TrainingController && TrainingController->PersonalityComponent && TrainingBot
             && TrainingBot->IsAlive() && TrainingBot->GetTrainingArena();
     }
 
@@ -45,11 +44,11 @@ namespace TrainingPersonalityTask
         float RadialStep = 0.0f;
         if (Data.Action == ETrainingBotAction::CowardApproach)
         {
-            RadialStep = -65.0f;
+            RadialStep = -FMath::Max(0.0f, Observations.ApproachStepCentimeters);
         }
         else if (Data.Action == ETrainingBotAction::CowardEscape)
         {
-            RadialStep = 100.0f;
+            RadialStep = FMath::Max(0.0f, Observations.EscapeStepCentimeters);
         }
         if (!TrainingController.RequestPersonalityStep(Data.bClockwise, RadialStep))
         {

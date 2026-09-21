@@ -16,6 +16,7 @@
 #include "Tags/GameplayTags.h"
 #include "Training/TrainingAugmentRules.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingPlayerComponent.h"
 #include "Weapon/RogueWeaponSettings.h"
 #include "Weapon/WeaponBase.h"
 #include "Weapon/WeaponInventoryComponent.h"
@@ -30,13 +31,16 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
     AShooterCharacter* PreviousPawn = IsValid(Requester) ? Requester->GetPawn<AShooterCharacter>() : nullptr;
     UAbilitySystemComponent* ASC = State ? State->GetAbilitySystemComponent() : nullptr;
     const UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
-    if (!HasAuthority() || !bConfigurationReady || !bUseManualAugmentSelection
+    const UTrainingPlayerComponent* TrainingBridge = IsValid(Requester)
+        ? Requester->FindComponentByClass<UTrainingPlayerComponent>() : nullptr;
+    if (!bConfigurationReady || !bUseManualAugmentSelection || bChangingCombatClass || bRespawnPending
         || !State || !PreviousPawn || !ASC || ASC->GetAvatarActor() != PreviousPawn
-        || Requester->GetWorld() != GetWorld() || !InitializedPlayers.Contains(Requester)
+        || !IsTrainingPlayer(Requester)
         || !State->IsLoadedIntoMatch() || !State->HasSelectedCombatClass() || !State->IsAlive()
         || State->GetParticipationState() != EPlayerParticipationState::Active
         || ASC->HasMatchingGameplayTag(RogueTags::State_Combat_IsDead)
-        || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle)
+        || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle
+        || (TrainingBridge && TrainingBridge->IsCQBTrainingActive()))
     {
         OutFailure = LOCTEXT("Unavailable", "Class changes are only available before a training session, while alive.");
         return false;
@@ -63,6 +67,7 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
         return false;
     }
 
+    TGuardValue<bool> ClassChangeGuard(bChangingCombatClass, true);
     const EDominationCombatClass PreviousClass = State->GetCombatClass();
     const FWeaponInventorySnapshot PreviousWeapons = Weapons->CaptureSnapshot();
     const TArray<FAugmentInventoryEntry> PreviousAugments = Augments->GetEntries();
@@ -132,7 +137,6 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
         PreviousPawn->SetActorHiddenInGame(bPreviousHidden);
         PreviousPawn->SetActorEnableCollision(bPreviousCollision);
         Requester->SetControlRotation(AimRotation);
-        Requester->ClientSetRotation(AimRotation, false);
         FText RecoveryFailure;
         if (!Augments->ReplaceLoadout(PreviousAugments, RecoveryFailure))
         {
@@ -142,7 +146,6 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
         {
             OutFailure = LOCTEXT("ApplyFailed", "Class change failed. The previous class and loadout have been restored.");
         }
-        State->ForceNetUpdate();
         return false;
     }
 
@@ -150,10 +153,7 @@ bool ATrainingGameMode::RequestTrainingCombatClass(ATrainingPlayerController* Re
     NewPawn->GetCharacterMovement()->StopMovementImmediately();
     PreviousPawn->Destroy();
     Requester->SetControlRotation(AimRotation);
-    Requester->ClientSetRotation(AimRotation, false);
     NewCombat->RefreshEquippedWeaponPresentation();
-    NewPawn->ForceNetUpdate();
-    State->ForceNetUpdate();
     return true;
 }
 

@@ -1,7 +1,6 @@
 #include "Training/UI/TrainingPlayerPresentation.h"
 
 #include "Engine/World.h"
-#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundAttenuation.h"
@@ -18,7 +17,7 @@ void UTrainingPlayerPresentation::Initialize(UTrainingPlayerComponent& InOwner)
 }
 
 void UTrainingPlayerPresentation::HandlePhase(const int32 SessionId, const ETrainingFeedbackPhase Phase,
-    const double PhaseStartServerSeconds, const ETrainingMode Mode, const float DurationSeconds)
+    const double PhaseStartSeconds, const ETrainingMode Mode, const float DurationSeconds)
 {
     UTrainingPlayerComponent* Bridge = Owner.Get();
     APlayerController* LocalController = Bridge ? Bridge->GetParticipantController() : nullptr;
@@ -58,7 +57,7 @@ void UTrainingPlayerPresentation::HandlePhase(const int32 SessionId, const ETrai
             if (SessionHUDWidget)
             {
                 SessionHUDWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
-                SessionHUDWidget->StartSession(Mode, PhaseStartServerSeconds, DurationSeconds);
+                SessionHUDWidget->StartSession(Mode, PhaseStartSeconds, DurationSeconds);
             }
         }
     }
@@ -82,9 +81,9 @@ void UTrainingPlayerPresentation::HandlePhase(const int32 SessionId, const ETrai
         StartFeedbackWidget->AddToPlayerScreen(GetDefault<UTrainingSettings>()->StartFeedbackZOrder);
     }
 
-    const AGameStateBase* GameState = Bridge->GetWorld() ? Bridge->GetWorld()->GetGameState() : nullptr;
-    const float Elapsed = GameState
-        ? static_cast<float>(FMath::Max(0.0, GameState->GetServerWorldTimeSeconds() - PhaseStartServerSeconds))
+    const UWorld* World = Bridge->GetWorld();
+    const float Elapsed = World
+        ? static_cast<float>(FMath::Max(0.0, World->GetTimeSeconds() - PhaseStartSeconds))
         : 0.0f;
     if (Phase == ETrainingFeedbackPhase::Countdown)
     {
@@ -185,8 +184,9 @@ void UTrainingPlayerPresentation::PlayBotSound(const int32 SessionId, USoundBase
             Settings.bApplyNormalizationToStereoSounds = true;
             Settings.SpatializationAlgorithm = SPATIALIZATION_Default;
             Settings.AttenuationShape = EAttenuationShape::Sphere;
-            Settings.AttenuationShapeExtents = FVector(1000.0, 0.0, 0.0);
-            Settings.FalloffDistance = 6000.0f;
+            const UTrainingSettings* TrainingSettings = GetDefault<UTrainingSettings>();
+            Settings.AttenuationShapeExtents = FVector(FMath::Max(0.0f, TrainingSettings->BotSoundInnerRadiusCentimeters), 0.0, 0.0);
+            Settings.FalloffDistance = FMath::Max(0.0f, TrainingSettings->BotSoundFalloffDistanceCentimeters);
             Settings.NonSpatializedRadiusStart = 0.0f;
             Settings.NonSpatializedRadiusEnd = 0.0f;
             Settings.StereoSpread = 0.0f;

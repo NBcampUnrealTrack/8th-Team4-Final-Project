@@ -5,6 +5,8 @@
 #include "GameMode/Types/TeamTypes.h"
 #include "ShooterRoomTypes.generated.h"
 
+class UTexture2D;
+
 /**
  * 사설 방 화면 한 칸에 그릴 값
  */
@@ -26,6 +28,10 @@ struct FShooterRoomSlotView
 	bool bIsReady = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
 	bool bIsLocal = false;
+
+	// 없으면 nullptr. 칸이 기본 이미지로 그림
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	TObjectPtr<UTexture2D> ProfileImage = nullptr;
 };
 
 // 한 칸을 어떻게 갱신할지
@@ -38,6 +44,14 @@ enum class EShooterRoomSlotPresentation : uint8
 	Snap,
 	// 같은 사람의 레디 변화
 	Animate
+};
+
+// 칸의 지속 상태
+enum class EShooterRoomSlotState : uint8
+{
+	Empty,
+	Waiting,
+	Ready
 };
 
 /**
@@ -53,7 +67,6 @@ struct FShooterRoomRules
 	// PlayerId 오름차순
 	static TArray<FShooterRoomSlotView> GetTeamPlayers(const TArray<FShooterRoomSlotView>& AllViews, EGameTeam Team);
 
-	// 칸 번호가 아니라 PlayerId 로 비교
 	static EShooterRoomSlotPresentation DecideReadyPresentation(
 		int32 CachedPlayerId,
 		bool bCachedReady,

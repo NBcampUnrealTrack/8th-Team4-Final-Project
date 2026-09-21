@@ -10,7 +10,6 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
-#include "Net/UnrealNetwork.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
 #include "Training/TrainingPlayerComponent.h"
@@ -46,7 +45,7 @@ ATrainingPopUpTarget::ATrainingPopUpTarget()
 
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
-    bReplicates = true;
+    bReplicates = false;
     SetReplicateMovement(false);
 
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
@@ -78,8 +77,7 @@ ATrainingPopUpTarget::ATrainingPopUpTarget()
     ConfigureHitBoxCollision();
 
     AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
-    AbilitySystem->SetIsReplicated(true);
-    AbilitySystem->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+    AbilitySystem->SetIsReplicated(false);
     VitalSet = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
     AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
 }
@@ -100,20 +98,17 @@ void ATrainingPopUpTarget::BeginPlay()
     ConfigureHitBoxCollision();
 
     AbilitySystem->InitAbilityActorInfo(this, this);
-    if (HasAuthority())
-    {
-        InitializeHealth();
-        DamageTakenHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
-            FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
-            FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
-                this, &ThisClass::HandleDamageTaken));
-        OutOfHealthHandle = VitalSet->OnOutOfHealth.AddUObject(this, &ThisClass::HandleOutOfHealth);
-    }
+    InitializeHealth();
+    DamageTakenHandle = AbilitySystem->AddGameplayEventTagContainerDelegate(
+        FGameplayTagContainer(RogueTags::Event_Combat_DamageTaken),
+        FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
+            this, &ThisClass::HandleDamageTaken));
+    OutOfHealthHandle = VitalSet->OnOutOfHealth.AddUObject(this, &ThisClass::HandleOutOfHealth);
 
     RaisedRotation = TargetPivot ? TargetPivot->GetRelativeRotation() : FRotator::ZeroRotator;
     MotionAlpha = TargetState == ETrainingPopUpTargetState::Down ? 1.0f : 0.0f;
     UpdateTargetRotation();
-    OnRep_TargetState();
+    ApplyTargetState();
 }
 
 
@@ -136,13 +131,6 @@ void ATrainingPopUpTarget::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void ATrainingPopUpTarget::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
-{
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(ATrainingPopUpTarget, TargetState);
-    DOREPLIFETIME(ATrainingPopUpTarget, FallDirectionSign);
-}
-
 UAbilitySystemComponent* ATrainingPopUpTarget::GetAbilitySystemComponent() const
 {
     return AbilitySystem;
@@ -160,7 +148,7 @@ float ATrainingPopUpTarget::GetMaxHealth() const
 
 void ATrainingPopUpTarget::InitializeHealth()
 {
-    if (!HasAuthority() || !AbilitySystem || !VitalSet)
+    if (!AbilitySystem || !VitalSet)
     {
         return;
     }
@@ -183,7 +171,7 @@ void ATrainingPopUpTarget::ResetHealthForNextCycle()
 void ATrainingPopUpTarget::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
     const FGameplayEffectContextHandle&)
 {
-    if (!HasAuthority() || VictimASC != AbilitySystem)
+    if (VictimASC != AbilitySystem)
     {
         return;
     }
@@ -194,7 +182,7 @@ void ATrainingPopUpTarget::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
 
 void ATrainingPopUpTarget::HandleDamageTaken(FGameplayTag, const FGameplayEventData* Payload)
 {
-    if (!HasAuthority() || !Payload)
+    if (!Payload)
     {
         return;
     }
@@ -219,18 +207,18 @@ void ATrainingPopUpTarget::HandleDamageTaken(FGameplayTag, const FGameplayEventD
 void ATrainingPopUpTarget::HandleHitscanImpact(AActor*, const FVector& ImpactPoint,
     const FVector& ShotDirection)
 {
-    if (!HasAuthority() || TargetState != ETrainingPopUpTargetState::Up)
+    if (TargetState != ETrainingPopUpTargetState::Up)
     {
         return;
     }
 
     CacheFallDirectionFromShot(ShotDirection);
-    MulticastPlayHitSound(ImpactPoint);
+    PlayHitSound(ImpactPoint);
 }
 
-void ATrainingPopUpTarget::MulticastPlayHitSound_Implementation(const FVector_NetQuantize ImpactPoint)
+void ATrainingPopUpTarget::PlayHitSound(const FVector& ImpactPoint)
 {
-    if (!HitSound || GetNetMode() == NM_DedicatedServer)
+    if (!HitSound)
     {
         return;
     }
@@ -238,14 +226,14 @@ void ATrainingPopUpTarget::MulticastPlayHitSound_Implementation(const FVector_Ne
     UGameplayStatics::PlaySoundAtLocation(
         this,
         HitSound,
-        FVector(ImpactPoint),
+        ImpactPoint,
         HitSoundVolume,
         HitSoundPitch);
 }
 
 void ATrainingPopUpTarget::KnockDown()
 {
-    if (!HasAuthority() || TargetState != ETrainingPopUpTargetState::Up)
+    if (TargetState != ETrainingPopUpTargetState::Up)
     {
         return;
     }
@@ -257,11 +245,6 @@ void ATrainingPopUpTarget::KnockDown()
 
 void ATrainingPopUpTarget::ResetTarget()
 {
-    if (!HasAuthority())
-    {
-        return;
-    }
-
     GetWorldTimerManager().ClearTimer(ResetTimer);
     ResetHealthForNextCycle();
 
@@ -278,32 +261,27 @@ void ATrainingPopUpTarget::ResetTarget()
 
 void ATrainingPopUpTarget::BeginRise()
 {
-    if (HasAuthority())
-    {
-        ResetHealthForNextCycle();
-        SetTargetState(ETrainingPopUpTargetState::Rising);
-    }
+    ResetHealthForNextCycle();
+    SetTargetState(ETrainingPopUpTargetState::Rising);
 }
 
 void ATrainingPopUpTarget::SetTargetState(const ETrainingPopUpTargetState NewState)
 {
-    if (!HasAuthority() || TargetState == NewState)
+    if (TargetState == NewState)
     {
         return;
     }
 
     TargetState = NewState;
-    OnRep_TargetState();
+    ApplyTargetState();
 
     if (TargetState == ETrainingPopUpTargetState::Up)
     {
         PendingFallDirectionSign = 1;
     }
-
-    ForceNetUpdate();
 }
 
-void ATrainingPopUpTarget::OnRep_TargetState()
+void ATrainingPopUpTarget::ApplyTargetState()
 {
     switch (TargetState)
     {
@@ -333,11 +311,6 @@ void ATrainingPopUpTarget::OnRep_TargetState()
     }
 }
 
-void ATrainingPopUpTarget::OnRep_FallDirectionSign()
-{
-    UpdateTargetRotation();
-}
-
 void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
@@ -348,7 +321,7 @@ void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
         MotionAlpha = FMath::Min(1.0f, MotionAlpha + DeltaSeconds / Duration);
         UpdateTargetRotation();
 
-        if (HasAuthority() && MotionAlpha >= 1.0f - KINDA_SMALL_NUMBER)
+        if (MotionAlpha >= 1.0f - KINDA_SMALL_NUMBER)
         {
             SetTargetState(ETrainingPopUpTargetState::Down);
             if (DownHoldSeconds <= 0.0f)
@@ -370,7 +343,7 @@ void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
         MotionAlpha = FMath::Max(0.0f, MotionAlpha - DeltaSeconds / Duration);
         UpdateTargetRotation();
 
-        if (HasAuthority() && MotionAlpha <= KINDA_SMALL_NUMBER)
+        if (MotionAlpha <= KINDA_SMALL_NUMBER)
         {
             SetTargetState(ETrainingPopUpTargetState::Up);
         }
@@ -409,7 +382,7 @@ void ATrainingPopUpTarget::CommitPendingFallDirection()
     }
 
     FallDirectionSign = NewSign;
-    OnRep_FallDirectionSign();
+    UpdateTargetRotation();
 }
 
 int8 ATrainingPopUpTarget::ResolveFallDirectionSign(const FVector& ShotDirection) const
@@ -461,8 +434,7 @@ void ATrainingPopUpTarget::ConfigureTargetComponents()
         return;
     }
 
-    // Existing Blueprint children can preserve an older inherited attachment hierarchy.
-    // Reassert the moving stack after Blueprint component templates have been applied.
+    // 기존 BP의 부착 계층을 보정해 메시와 히트박스를 함께 회전시킨다.
     TargetPivot->SetMobility(EComponentMobility::Movable);
     TargetMesh->SetMobility(EComponentMobility::Movable);
     HitBox->SetMobility(EComponentMobility::Movable);

@@ -1,4 +1,4 @@
-﻿#include "Training/AI/TrainingBotPersonalityComponent.h"
+#include "Training/AI/TrainingBotPersonalityComponent.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -19,7 +19,7 @@ void UTrainingBotPersonalityComponent::BeginTraining()
 {
     EndTraining();
     const ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetOwner());
-    if (!TrainingController || !TrainingController->HasAuthority())
+    if (!TrainingController)
     {
         return;
     }
@@ -55,6 +55,12 @@ void UTrainingBotPersonalityComponent::EndTraining()
     ActivePersonality = ETrainingBotPersonality::Random;
 }
 
+void UTrainingBotPersonalityComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    EndTraining();
+    Super::EndPlay(EndPlayReason);
+}
+
 void UTrainingBotPersonalityComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
     FActorComponentTickFunction* ThisTickFunction)
 {
@@ -67,7 +73,7 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
     const ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetOwner());
     const ATrainingCombatAI* TrainingBot = TrainingController
         ? Cast<ATrainingCombatAI>(TrainingController->GetPawn()) : nullptr;
-    if (!TrainingController || !TrainingController->HasAuthority() || !TrainingBot || !TrainingBot->IsAlive())
+    if (!TrainingController || !TrainingBot || !TrainingBot->IsAlive())
     {
         EndTraining();
         return;
@@ -92,12 +98,9 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
     const UCapsuleComponent* Capsule = TrainingBot->GetCapsuleComponent();
     if (Arena && Capsule)
     {
-        FVector Eye = CurrentParticipantPawn->GetPawnViewLocation();
-        FRotator ViewRotation = Player->GetControlRotation();
-        if (Player->IsLocalController())
-        {
-            Player->GetPlayerViewPoint(Eye, ViewRotation);
-        }
+        FVector Eye;
+        FRotator ViewRotation;
+        Player->GetPlayerViewPoint(Eye, ViewRotation);
         const float Padding = AimLatch.IsAimedAt()
             ? FMath::Max(AimEnterPadding, AimExitPadding) : FMath::Max(0.0f, AimEnterPadding);
         FVector ClosestAimPoint;

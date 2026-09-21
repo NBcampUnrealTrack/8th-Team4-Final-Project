@@ -69,8 +69,10 @@ void ADominationClassPreviewStage::BeginPlay()
 
 	// 클라이언트마다 프리뷰 화면이 섞이지 않도록 RenderTarget을 따로 만듦
 	RenderTarget = NewObject<UTextureRenderTarget2D>(this);
-	RenderTarget->RenderTargetFormat = RTF_RGBA16f;
-	RenderTarget->InitAutoFormat(256, 512);
+	RenderTarget->RenderTargetFormat = RenderTargetFormat;
+	RenderTarget->InitAutoFormat(
+		FMath::Max(1, RenderTargetSize.X),
+		FMath::Max(1, RenderTargetSize.Y));
 	SceneCapture->TextureTarget = RenderTarget;
 
 	if (IsValid(PreviewMaterialTemplate))
@@ -83,8 +85,8 @@ void ADominationClassPreviewStage::BeginPlay()
 	SceneCapture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 	// RGB에는 SceneColor, A에는 반전된 Opacity를 캡처한다.
 	SceneCapture->CaptureSource = ESceneCaptureSource::SCS_SceneColorHDR;
-	// 매 프레임 갱신하므로 이동 시 별도 캡처는 사용하지 않음
-	SceneCapture->bCaptureEveryFrame = true;
+	// 끈 경우 RegisterPreviewComponents 에서 한 번씩 직접 캡처한다.
+	SceneCapture->bCaptureEveryFrame = bCaptureEveryFrame;
 	SceneCapture->bCaptureOnMovement = false;
 
 	// 클래스 변경/확정 VFX도 프리뷰 캡처 대상에 포함한다.
@@ -235,6 +237,11 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 	// 두 VFX는 스테이지 소유라 Clear 뒤에 매번 다시 넣어야 한다.
 	SceneCapture->ShowOnlyComponent(ChangeEffect);
 	SceneCapture->ShowOnlyComponent(LockInEffect);
+
+	if (!bCaptureEveryFrame)
+	{
+		SceneCapture->CaptureScene();
+	}
 }
 
 void ADominationClassPreviewStage::DestroyPreviewPawn()

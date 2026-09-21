@@ -3,14 +3,20 @@
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
 #include "GameFramework/GameUserSettings.h"
+#include "Styling/SlateTypes.h"
+#include "Types/SlateEnums.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterOptionsScreen.generated.h"
 
 class UButton;
+class UCommonButtonGroupBase;
+class UEditableText;
+class UEditableTextBox;
 class USlider;
 class UTextBlock;
 class UWidgetSwitcher;
+class UTexture2D;
 class UTextureRenderTarget2D;
 class USceneCaptureComponent2D;
 class UShooterOptionsPerformanceSubsystem;
@@ -250,6 +256,9 @@ private:
 	// Generated WBP support. The editor generator creates widgets with these fixed names,
 	// and this screen owns their UI-only bindings while settings stay in UGameUserSettings.
 	void BindGeneratedControls();
+	void ApplyGeneratedStaticStyles();
+	// 켜짐/선택 상태 버튼의 배경을 스타일 또는 기존 색 방식으로 칠한다.
+	void ApplyGeneratedButtonStateStyle(UButton* Button, bool bActive) const;
 	UFUNCTION() void RefreshGeneratedUI();
 	void ShowGeneratedPage(int32 PageIndex);
 	void RefreshGeneratedTabVisuals();
@@ -359,6 +368,11 @@ private:
 	UFUNCTION() void HandleHorizontalSensitivityChanged(float Value);
 	UFUNCTION() void HandleVerticalSensitivityChanged(float Value);
 	UFUNCTION() void HandleAimSensitivityChanged(float Value);
+
+	// 감도 칸에 직접 입력한 값을 받는다. 범위는 설정 클래스가 자른다.
+	UFUNCTION() void HandleHorizontalSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleVerticalSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleAimSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleMasterVolumeChanged(float Value);
 	UFUNCTION() void HandleMusicVolumeChanged(float Value);
 	UFUNCTION() void HandleSfxVolumeChanged(float Value);
@@ -382,6 +396,84 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Video", meta = (ClampMin = "1.0"))
 	float VideoModeConfirmationTimeoutSeconds = 15.0f;
 
+	// 둘 다 지정해야 행 배경이 텍스처로 바뀐다. 하나라도 비면 기존 색 방식으로 동작한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	TObjectPtr<UTexture2D> RowNormalTexture;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	TObjectPtr<UTexture2D> RowActiveTexture;
+
+	// 값 박스(Border_Control_*) - HIGH 같은 현재 값과 선택 칸이 들어있는 상자.
+	// 체크를 끄면 WBP에 설정한 모양이 그대로 유지된다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	bool bOverrideValueBoxStyle = false;
+
+	// 비워두면 WBP의 브러시를 그대로 쓰고 색만 곱한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideValueBoxStyle"))
+	TObjectPtr<UTexture2D> ValueBoxTexture;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideValueBoxStyle"))
+	FLinearColor ValueBoxColor = FLinearColor::White;
+
+	// 좌우 화살표 30개에 한 번만 적용한다. 체크를 끄면 WBP에 설정한 모양이 그대로 유지된다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	bool bOverrideStepperArrowStyle = false;
+
+	// 왼쪽(Prev) 화살표 15개.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
+	FButtonStyle StepperArrowPrevStyle;
+
+	// 오른쪽(Next) 화살표 15개.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
+	FButtonStyle StepperArrowNextStyle;
+
+	// 위 스타일 브러시에 곱해지는 틴트. 브러시를 그대로 보여주려면 흰색으로 둔다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
+	FLinearColor StepperArrowBackgroundColor = FLinearColor::White;
+
+	// 화살표 글자(TXT_Btn_*Prev/Next) 색 30개.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
+	FLinearColor StepperArrowTextColor = FLinearColor::White;
+
+	// 화살표 여백. 스타일과 따로 켜고 끈다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	bool bOverrideStepperArrowPadding = false;
+
+	// 값 박스와의 바깥 간격(HB_Selector_* 슬롯).
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowPadding"))
+	FMargin StepperArrowOuterPadding;
+
+	// 글자 주변 안쪽 여백. 버튼 크기를 좌우한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowPadding"))
+	FMargin StepperArrowContentPadding;
+
+	// 토글/창 모드/프로필 버튼을 켜짐·꺼짐 상태에 따라 교체한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	bool bOverrideToggleStyle = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideToggleStyle"))
+	FButtonStyle ToggleOnStyle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideToggleStyle"))
+	FButtonStyle ToggleOffStyle;
+
+	// 선택 칸 표시줄과 성능 영향도 막대가 공유하는 색.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor SegmentActiveColor = FLinearColor(0.030f, 0.900f, 0.820f, 1.00f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor SegmentInactiveColor = FLinearColor(0.130f, 0.210f, 0.215f, 0.72f);
+
+	// 슬라이더 9개에 한 번만 적용한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	bool bOverrideSliderColors = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideSliderColors"))
+	FLinearColor SliderBarColor = FLinearColor::White;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideSliderColors"))
+	FLinearColor SliderHandleColor = FLinearColor::White;
+
 	FTSTicker::FDelegateHandle VideoModeConfirmationTickerHandle;
 	bool bVideoModeConfirmationPending = false;
 	bool bVideoModeSelectionDirty = false;
@@ -398,6 +490,10 @@ private:
 	int32 ActiveGeneratedPage = 0;
 	FName ActiveGeneratedSideButton = TEXT("Btn_Side_Graphics");
 	FName ActiveGeneratedOption = TEXT("Overall");
+
+	// 사이드 탭이 모두 CommonButton일 때만 생성되며 선택 상태를 대신 관리한다.
+	UPROPERTY(Transient)
+	TObjectPtr<UCommonButtonGroupBase> SideTabGroup;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> GeneratedPreviewRenderTarget;

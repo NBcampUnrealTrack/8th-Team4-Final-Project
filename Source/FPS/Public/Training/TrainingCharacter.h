@@ -31,7 +31,6 @@ class FPS_API ATrainingCharacter : public ACharacter, public IAbilitySystemInter
 
 public:
     ATrainingCharacter();
-    virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
     virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
     virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
@@ -57,8 +56,6 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
     float BotSoundVolume = 1.0f;
 
-    // Training targets are synthetic by default, so weapon surface particles such as blood are suppressed.
-    // Enable per Blueprint only when a specific training actor intentionally needs its normal impact particle.
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage|Presentation")
     bool bEnableHitscanImpactParticles = false;
 
@@ -93,9 +90,6 @@ private:
     void UpdateDissolvePresentation();
     float GetDissolveDuration() const;
 
-    UFUNCTION()
-    void OnRep_DissolveStartServerSeconds();
-
     UPROPERTY(VisibleAnywhere, Category = "Training|GAS")
     TObjectPtr<UAbilitySystemComponent> AbilitySystem;
 
@@ -111,8 +105,7 @@ private:
     UPROPERTY(EditDefaultsOnly, Category = "Training|Damage")
     TObjectPtr<UCombatHitZoneDefinition> HitZoneDefinition;
 
-    UPROPERTY(ReplicatedUsing = OnRep_DissolveStartServerSeconds)
-    double DissolveStartServerSeconds = -1.0;
+    double DissolveStartSeconds = -1.0;
 
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> DissolveInstance;

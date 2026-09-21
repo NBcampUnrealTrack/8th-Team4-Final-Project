@@ -71,6 +71,12 @@ public:
     UPROPERTY(Config, EditAnywhere, Category = "Presentation", meta = (ClampMin = "0.1", Units = "s"))
     float DissolveDurationSeconds = 3.0f;
 
+    UPROPERTY(Config, EditAnywhere, Category = "Audio", meta = (ClampMin = "0.0", Units = "cm"))
+    float BotSoundInnerRadiusCentimeters = 1000.0f;
+
+    UPROPERTY(Config, EditAnywhere, Category = "Audio", meta = (ClampMin = "0.0", Units = "cm"))
+    float BotSoundFalloffDistanceCentimeters = 6000.0f;
+
     UPROPERTY(Config, EditAnywhere, Category = "UI", meta = (ClampMin = "0"))
     int32 DamageFeedbackZOrder = 18;
 

@@ -16,8 +16,11 @@ class FPS_API UTrainingSessionHUDWidget : public UUserWidget
 
 public:
     UTrainingSessionHUDWidget(const FObjectInitializer& ObjectInitializer);
-    void StartSession(ETrainingMode Mode, double StartServerSeconds, float DurationSeconds);
+    void StartSession(ETrainingMode Mode, double StartSeconds, float DurationSeconds);
+    void StartCQBSession(int32 TotalTroopers);
     void PresentHit(int32 TotalKills, bool bKilled);
+    void PresentCQBKill(int32 CurrentKills, int32 TotalTroopers);
+    void FinishCQBSession();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
     float KillFadeInSeconds = 0.10f;
@@ -46,9 +49,12 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Kills;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_KillLabel;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> KillCounterContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> CQBProgressContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Progress;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_ProgressLabel;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
 
-    double StartServerSeconds = 0.0;
+    double StartSeconds = 0.0;
     float ActiveDurationSeconds = 0.0f;
     float KillFeedbackAge = 0.0f;
     float KillFeedbackOpacity = 0.0f;
@@ -56,5 +62,7 @@ private:
     bool bKillFeedbackActive = false;
     int32 DisplayedSeconds = INDEX_NONE;
     int32 DisplayedKills = 0;
+    int32 CQBTotalTroopers = 0;
+    bool bCQBSession = false;
     bool bSessionActive = false;
 };

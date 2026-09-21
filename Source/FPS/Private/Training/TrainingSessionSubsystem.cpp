@@ -6,6 +6,8 @@
 #include "Sound/SoundBase.h"
 #include "Sound/SoundAttenuation.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "GameMode/TrainingGameMode.h"
 #include "GameFramework/PlayerController.h"
 #include "Training/AI/TrainingCombatAI.h"
 #include "Training/TrainingArena.h"
@@ -23,7 +25,7 @@ bool UTrainingSessionSubsystem::ShouldCreateSubsystem(UObject* Outer) const
     const UWorld* OuterWorld = Cast<UWorld>(Outer);
     return Super::ShouldCreateSubsystem(Outer) && OuterWorld
         && (OuterWorld->WorldType == EWorldType::Game || OuterWorld->WorldType == EWorldType::PIE)
-        && OuterWorld->GetNetMode() != NM_Client;
+        && OuterWorld->GetNetMode() == NM_Standalone;
 }
 
 void UTrainingSessionSubsystem::Deinitialize()
@@ -39,15 +41,25 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     const ETrainingMode Mode, const ETrainingDistancePreset Preset, const float CustomMeters, FText& OutFailure)
 {
     OutFailure = FText::GetEmpty();
-    if (GetWorld()->GetNetMode() == NM_Client || InArena.GetWorld() != GetWorld()
-        || InParticipant.GetWorld() != GetWorld())
+    UWorld* World = GetWorld();
+    const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+    if (!World || World->GetNetMode() != NM_Standalone || !World->GetAuthGameMode<ATrainingGameMode>()
+        || !GameInstance || GameInstance->GetLocalPlayers().Num() != 1
+        || !InParticipant.IsLocalPlayerController() || InArena.GetWorld() != World
+        || InParticipant.GetWorld() != World)
     {
-        OutFailure = LOCTEXT("WrongWorld", "Training must be started by the server in this level.");
+        OutFailure = LOCTEXT("WrongWorld", "Training requires a standalone Training level with one local player.");
         return false;
     }
     if (State != ETrainingSessionState::Idle || bStopping)
     {
-        OutFailure = LOCTEXT("Busy", "Another training session is already active or counting down.");
+        OutFailure = LOCTEXT("Busy", "Training is already active or counting down.");
+        return false;
+    }
+    const UTrainingPlayerComponent* Bridge = InParticipant.FindComponentByClass<UTrainingPlayerComponent>();
+    if (Bridge && Bridge->IsCQBTrainingActive())
+    {
+        OutFailure = LOCTEXT("CQBActive", "End CQB training before starting an arena session.");
         return false;
     }
     const APawn* ParticipantPawn = InParticipant.GetPawn();
@@ -72,7 +84,6 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
 
     if (ModeConfig.bUseArenaDurationOverride && FMath::IsFinite(InArena.CombatDurationSeconds))
     {
-        // Preserve the arena-level combat duration override used by existing levels.
         ModeConfig.DurationSeconds = FMath::Max(0.0f, InArena.CombatDurationSeconds);
     }
 
@@ -149,10 +160,14 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     ActiveScenario->OnBotSpawned.AddUObject(this, &ThisClass::HandleBotSpawned);
     ActiveScenario->OnBotHit.AddUObject(this, &ThisClass::HandleBotHit);
     State = ETrainingSessionState::Countdown;
-    InArena.SetSessionContext(State, ActiveMode);
 
     const float CountdownSeconds = Settings->GetCountdownSeconds();
-    NotifyParticipant(ETrainingFeedbackPhase::Countdown, GetWorld()->GetTimeSeconds());
+    const int32 StartingSessionId = SessionId;
+    NotifyParticipant(ETrainingFeedbackPhase::Countdown, World->GetTimeSeconds());
+    if (bStopping || State != ETrainingSessionState::Countdown || SessionId != StartingSessionId)
+    {
+        return true;
+    }
     if (CountdownSeconds <= KINDA_SMALL_NUMBER)
     {
         BeginActiveSession();
@@ -171,7 +186,7 @@ void UTrainingSessionSubsystem::BeginActiveSession()
     {
         return;
     }
-    if (!Arena.IsValid() || !Participant.IsValid() || !ActiveScenario)
+    if (!Arena.IsValid() || !Participant.IsValid() || !Participant->GetPawn() || !ActiveScenario)
     {
         StopSession(true);
         return;
@@ -183,15 +198,40 @@ void UTrainingSessionSubsystem::BeginActiveSession()
     {
         ShotResolvedHandle = ShotResolver->OnServerShotResolved.AddUObject(this, &ThisClass::HandleShotResolved);
     }
-    Arena->SetSessionContext(State, ActiveMode);
+    const int32 StartingSessionId = SessionId;
     NotifyParticipant(ETrainingFeedbackPhase::Started, SessionStartSeconds);
+    if (bStopping || State != ETrainingSessionState::Active || SessionId != StartingSessionId)
+    {
+        return;
+    }
+
+    if (!ActiveScenario->SpawnNext())
+    {
+        if (State == ETrainingSessionState::Active && SessionId == StartingSessionId)
+        {
+            TWeakObjectPtr<UTrainingPlayerComponent> FailureBridge = Participant.IsValid()
+                ? Participant->FindComponentByClass<UTrainingPlayerComponent>() : nullptr;
+            StopSession(true);
+            if (FailureBridge.IsValid())
+            {
+                FailureBridge->NotifyMessage(LOCTEXT("FirstSpawnFailed",
+                    "Training could not start. Check the bot Blueprint, floor collision and navigation."));
+            }
+        }
+        return;
+    }
+    if (bStopping || State != ETrainingSessionState::Active || SessionId != StartingSessionId)
+    {
+        return;
+    }
 
     FTimerManager& Timers = GetWorld()->GetTimerManager();
     if (SessionDurationSeconds > 0.0f)
     {
         Timers.SetTimer(DurationTimer, this, &ThisClass::EndSession, SessionDurationSeconds, false);
     }
-    HandleSpawnTick();
+    Timers.SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
+        ActiveModeConfig.GetSpawnInterval(0.0f), false);
 }
 
 void UTrainingSessionSubsystem::HandleSpawnTick()
@@ -200,7 +240,7 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
     {
         return;
     }
-    if (!Arena.IsValid() || !Participant.IsValid() || !ActiveScenario)
+    if (!Arena.IsValid() || !Participant.IsValid() || !Participant->GetPawn() || !ActiveScenario)
     {
         StopSession(true);
         return;
@@ -211,7 +251,12 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
         EndSession();
         return;
     }
+    const int32 SpawningSessionId = SessionId;
     ActiveScenario->SpawnNext();
+    if (bStopping || State != ETrainingSessionState::Active || SessionId != SpawningSessionId)
+    {
+        return;
+    }
 
     const float SpawnInterval = ActiveModeConfig.GetSpawnInterval(static_cast<float>(ElapsedSeconds));
     GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ThisClass::HandleSpawnTick,
@@ -219,22 +264,20 @@ void UTrainingSessionSubsystem::HandleSpawnTick()
 }
 
 void UTrainingSessionSubsystem::NotifyParticipant(const ETrainingFeedbackPhase Phase,
-    const double PhaseStartServerSeconds)
+    const double PhaseStartSeconds)
 {
     if (APlayerController* ParticipantPlayer = Participant.Get())
     {
         if (UTrainingPlayerComponent* Bridge = ParticipantPlayer->FindComponentByClass<UTrainingPlayerComponent>())
         {
-            Bridge->NotifySessionPhase(SessionId, Phase, PhaseStartServerSeconds, ActiveMode, SessionDurationSeconds);
+            Bridge->NotifySessionPhase(SessionId, Phase, PhaseStartSeconds, ActiveMode, SessionDurationSeconds);
         }
     }
 }
 
-bool UTrainingSessionSubsystem::RequestEndSession(APlayerController& RequestingPlayer,
-    const int32 ExpectedSessionId)
+bool UTrainingSessionSubsystem::RequestEndSession(const int32 ExpectedSessionId)
 {
-    if (Participant.Get() != &RequestingPlayer || ExpectedSessionId != SessionId
-        || State == ETrainingSessionState::Idle)
+    if (bStopping || ExpectedSessionId != SessionId || State == ETrainingSessionState::Idle)
     {
         return false;
     }
@@ -330,14 +373,15 @@ void UTrainingSessionSubsystem::UnbindShotObserver()
     ShotResolver.Reset();
 }
 
-void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
+void UTrainingSessionSubsystem::StopSession(const bool bSuppressResult)
 {
     if (bStopping)
     {
         return;
     }
-    bStopping = true;
-    const bool bShowResult = !bImmediate && TrainingRules::IsRunningState(State);
+    TGuardValue<bool> StopGuard(bStopping, true);
+    const bool bHadSession = State != ETrainingSessionState::Idle;
+    const bool bShowResult = !bSuppressResult && TrainingRules::IsRunningState(State);
     FTrainingSessionResult Result;
     Result.SessionId = SessionId;
     Result.Mode = ActiveMode;
@@ -357,18 +401,10 @@ void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
         ActiveWorld->GetTimerManager().ClearTimer(SpawnTimer);
         ActiveWorld->GetTimerManager().ClearTimer(DurationTimer);
     }
-    if (State != ETrainingSessionState::Idle)
-    {
-        NotifyParticipant(ETrainingFeedbackPhase::Stopped, 0.0);
-    }
     if (ActiveScenario)
     {
-        ActiveScenario->Stop(bImmediate);
+        ActiveScenario->Stop();
         ActiveScenario = nullptr;
-    }
-    if (ATrainingArena* PreviousArena = Arena.Get())
-    {
-        PreviousArena->SetSessionContext(ETrainingSessionState::Idle, ActiveMode);
     }
     Arena.Reset();
     Participant.Reset();
@@ -378,7 +414,11 @@ void UTrainingSessionSubsystem::StopSession(const bool bImmediate)
     State = ETrainingSessionState::Idle;
     SessionDurationSeconds = 0.0f;
     Stats = FTrainingSessionStats();
-    bStopping = false;
+    if (bHadSession && ResultBridge.IsValid())
+    {
+        ResultBridge->NotifySessionPhase(Result.SessionId, ETrainingFeedbackPhase::Stopped,
+            0.0, Result.Mode, 0.0f);
+    }
     if (bShowResult && ResultBridge.IsValid()) { ResultBridge->NotifySessionFinished(Result); }
 }
 

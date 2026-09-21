@@ -26,12 +26,13 @@ public:
 
     bool StartSession(ATrainingArena& InArena, APlayerController& InParticipant, ETrainingMode Mode,
         ETrainingDistancePreset Preset, float CustomMeters, FText& OutFailure);
-    bool RequestEndSession(APlayerController& RequestingPlayer, int32 ExpectedSessionId);
+    bool RequestEndSession(int32 ExpectedSessionId);
     void EndSessionForParticipant(const APlayerController* LeavingParticipant);
     void EndSessionForArena(const ATrainingArena* EndingArena);
 
     ETrainingSessionState GetState() const { return State; }
     ATrainingArena* GetActiveArena() const;
+    ETrainingMode GetActiveMode() const { return ActiveMode; }
     APlayerController* GetParticipant() const;
     int32 GetSessionId() const { return SessionId; }
 
@@ -44,8 +45,8 @@ private:
     void HandleShotResolved(const FHitscanShotRequest& Shot, const TArray<TWeakObjectPtr<AActor>>& AppliedTargets);
     void UnbindShotObserver();
     void HandleSpawnTick();
-    void StopSession(bool bImmediate);
-    void NotifyParticipant(ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds);
+    void StopSession(bool bSuppressResult);
+    void NotifyParticipant(ETrainingFeedbackPhase Phase, double PhaseStartSeconds);
     void EndSession();
 
     UPROPERTY(Transient)

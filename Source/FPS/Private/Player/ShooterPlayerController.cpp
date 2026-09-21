@@ -14,6 +14,7 @@
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "GameFramework/InputSettings.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -77,6 +78,14 @@ void AShooterPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	// FPS 마우스 입력은 보간/가속 없이 선형 입력으로 사용한다.
+	if (UInputSettings* EngineInputSettings = GetMutableDefault<UInputSettings>())
+	{
+		EngineInputSettings->bEnableMouseSmoothing = false;
+		EngineInputSettings->bEnableFOVScaling = false;
+		EngineInputSettings->bEnableLegacyInputScales = false;
 	}
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
@@ -158,7 +167,12 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			// GameInstanceSubsystem은 World보다 오래 산다. World Actor 참조는
 			// PlayerController가 끝나는 경계에서 명시적으로 끊는다.
 			ClearLoadingScreenGameStateBinding(LoadingScreenSubsystem);
-			LoadingScreenSubsystem->HideLoadingScreen();
+
+			// seamless 교체로 LocalPlayer를 넘긴 PC는 걷지 않음
+			if (GetLocalPlayer())
+			{
+				LoadingScreenSubsystem->HideLoadingScreen();
+			}
 		}
 	}
 

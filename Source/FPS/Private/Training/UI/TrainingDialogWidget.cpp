@@ -90,6 +90,24 @@ void UTrainingDialogWidget::ConfirmDialog()
     }
 }
 
+void UTrainingDialogWidget::EnterArenaDestination()
+{
+    if (!bRequestPending && Bridge.IsValid() && DialogKind == ETrainingDialogKind::EnterArena)
+    {
+        SetRequestPending(true);
+        Bridge->SubmitTrainingDestination(RequestId, ETrainingDestination::Arena);
+    }
+}
+
+void UTrainingDialogWidget::EnterCQBDestination()
+{
+    if (!bRequestPending && Bridge.IsValid() && DialogKind == ETrainingDialogKind::EnterArena)
+    {
+        SetRequestPending(true);
+        Bridge->SubmitTrainingDestination(RequestId, ETrainingDestination::CQB);
+    }
+}
+
 void UTrainingDialogWidget::StartSelectedMode(const ETrainingMode Mode,
     const ETrainingDistancePreset Preset, const float CustomMeters)
 {
@@ -166,6 +184,18 @@ void UTrainingDialogWidget::NativeConstruct()
     if (Btn_ReturnStart)
     {
         Btn_ReturnStart->OnClicked.AddUniqueDynamic(this, &ThisClass::ReturnToStartPosition);
+    }
+    if (Btn_EnterArena)
+    {
+        Btn_EnterArena->OnClicked.AddUniqueDynamic(this, &ThisClass::EnterArenaDestination);
+    }
+    if (Btn_EnterCQB)
+    {
+        Btn_EnterCQB->OnClicked.AddUniqueDynamic(this, &ThisClass::EnterCQBDestination);
+    }
+    if (Btn_Close)
+    {
+        Btn_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::CancelDialog);
     }
 
     if (!bAutoBindGeneratedUI)
@@ -249,6 +279,18 @@ void UTrainingDialogWidget::UnbindControls()
     {
         Btn_ReturnStart->OnClicked.RemoveDynamic(this, &ThisClass::ReturnToStartPosition);
     }
+    if (Btn_EnterArena)
+    {
+        Btn_EnterArena->OnClicked.RemoveDynamic(this, &ThisClass::EnterArenaDestination);
+    }
+    if (Btn_EnterCQB)
+    {
+        Btn_EnterCQB->OnClicked.RemoveDynamic(this, &ThisClass::EnterCQBDestination);
+    }
+    if (Btn_Close)
+    {
+        Btn_Close->OnClicked.RemoveDynamic(this, &ThisClass::CancelDialog);
+    }
 
     if (!bAutoBindGeneratedUI)
     {
@@ -287,7 +329,7 @@ void UTrainingDialogWidget::RefreshControls()
     {
         Txt_Primary->SetText(bRequestPending ? LOCTEXT("Requesting", "Requesting...") : PrimaryActionText);
     }
-    UButton* Buttons[] = { Btn_Primary.Get(), Btn_ReturnStart.Get(), Btn_Cancel.Get(), Btn_Close.Get(),
+    UButton* Buttons[] = { Btn_Primary.Get(), Btn_EnterArena.Get(), Btn_EnterCQB.Get(), Btn_ReturnStart.Get(), Btn_Cancel.Get(), Btn_Close.Get(),
         Btn_ModeTarget.Get(), Btn_ModeCombat.Get(), Btn_Distance10.Get(),
         Btn_Distance20.Get(), Btn_Distance30.Get(), Btn_DistanceCustom.Get(), Btn_Augments.Get() };
     for (UButton* ChoiceButton : Buttons)

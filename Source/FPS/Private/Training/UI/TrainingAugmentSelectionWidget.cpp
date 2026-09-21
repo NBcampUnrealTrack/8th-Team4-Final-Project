@@ -446,7 +446,7 @@ void UTrainingAugmentSelectionWidget::SetPending(const bool bInPending)
 {
     if (bPending == bInPending) { return; }
     bPending = bInPending;
-    if (bPending) { Txt_Status->SetText(LOCTEXT("Waiting", "Applying on the server...")); }
+    if (bPending) { Txt_Status->SetText(LOCTEXT("Waiting", "Applying augments...")); }
     if (!bPending && bOpen && bCatalogDirty)
     {
         BuildCatalog();

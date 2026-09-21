@@ -1,6 +1,9 @@
 #include "GameMode/TrainingGameMode.h"
 
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
+#include "Kismet/GameplayStatics.h"
 #include "Augment/AugmentDraftProfile.h"
 #include "Combat/CombatComponent.h"
 #include "GameFramework/Pawn.h"
@@ -13,6 +16,7 @@
 #include "Player/DominationPlayerState.h"
 #include "Player/TrainingPlayerController.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/TrainingPlayerComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTrainingGameMode, Log, All);
 #define LOCTEXT_NAMESPACE "TrainingGameMode"
@@ -24,14 +28,57 @@ ATrainingGameMode::ATrainingGameMode()
     PlayerStateClass = ADominationPlayerState::StaticClass();
     DefaultPawnClass = nullptr;
     bDelayedStart = true;
+    bUseSeamlessTravel = false;
     LoadoutManager = CreateDefaultSubobject<UDominationLoadoutManager>(TEXT("LoadoutManager"));
     AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
     RespawnProtection = CreateDefaultSubobject<UPlayerRespawnProtection>(TEXT("RespawnProtection"));
 }
 
+void ATrainingGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+    Super::InitGame(MapName, Options, ErrorMessage);
+    if (GetNetMode() != NM_Standalone || UGameplayStatics::HasOption(Options, TEXT("listen")))
+    {
+        ErrorMessage = TEXT("Training requires Standalone mode. Disable Listen Server / Dedicated Server.");
+        UE_LOG(LogTrainingGameMode, Error, TEXT("%s"), *ErrorMessage);
+    }
+}
+
+void ATrainingGameMode::PreLogin(const FString&, const FString&, const FUniqueNetIdRepl&, FString& ErrorMessage)
+{
+    ErrorMessage = TEXT("Training does not accept network connections.");
+}
+
+APlayerController* ATrainingGameMode::Login(UPlayer* NewPlayer, const ENetRole InRemoteRole,
+    const FString& Portal, const FString& Options, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage)
+{
+    const UGameInstance* Instance = GetGameInstance();
+    const ULocalPlayer* LocalPlayer = Cast<ULocalPlayer>(NewPlayer);
+    if (GetNetMode() != NM_Standalone || !Instance || !LocalPlayer
+        || Instance->GetLocalPlayers().Num() != 1 || Instance->GetFirstGamePlayer() != LocalPlayer
+        || TrainingPlayer.IsValid())
+    {
+        ErrorMessage = TEXT("Training requires exactly one local player in Standalone mode.");
+        return nullptr;
+    }
+    return Super::Login(NewPlayer, InRemoteRole, Portal, Options, UniqueId, ErrorMessage);
+}
+
+bool ATrainingGameMode::IsTrainingPlayer(const APlayerController* Player) const
+{
+    return IsValid(Player) && TrainingPlayer.Get() == Player && Player->GetWorld() == GetWorld()
+        && GetNetMode() == NM_Standalone && Player->IsLocalController();
+}
+
 void ATrainingGameMode::BeginPlay()
 {
     Super::BeginPlay();
+    if (GetNetMode() != NM_Standalone || !GetGameInstance()
+        || GetGameInstance()->GetLocalPlayers().Num() != 1)
+    {
+        UE_LOG(LogTrainingGameMode, Error, TEXT("Training startup stopped: use Standalone with one local player."));
+        return;
+    }
     const UDominationClassSettings* Classes = GetDefault<UDominationClassSettings>();
     AugmentDraftManager->Initialize(this, bEnableAugmentDraft && !bUseManualAugmentSelection, AugmentDraftProfile);
     AugmentDraftManager->OnDependenciesReady.AddUObject(this, &ThisClass::HandleAugmentDependenciesReady);
@@ -48,10 +95,7 @@ void ATrainingGameMode::BeginPlay()
             TEXT("Training startup stopped: check Domination Classes (Pawn BPs), Weapon Registry, Training controller, class PlayerState, and Augment Registry."));
         return;
     }
-    for (const TWeakObjectPtr<ATrainingPlayerController>& Entry : InitializedPlayers)
-    {
-        TryOpenClassSelection(Entry.Get());
-    }
+    TryOpenClassSelection(TrainingPlayer.Get());
 }
 
 void ATrainingGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
@@ -59,9 +103,12 @@ void ATrainingGameMode::HandleStartingNewPlayer_Implementation(APlayerController
     ATrainingPlayerController* JoiningPlayer = Cast<ATrainingPlayerController>(NewPlayer);
     ADominationPlayerState* ClassState = IsValid(JoiningPlayer)
         ? JoiningPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (!IsValid(ClassState) || InitializedPlayers.Contains(JoiningPlayer)) { return; }
+    if (GetNetMode() != NM_Standalone || !IsValid(ClassState) || !JoiningPlayer->IsLocalController()
+        || !GetGameInstance() || GetGameInstance()->GetLocalPlayers().Num() != 1
+        || JoiningPlayer->GetLocalPlayer() != GetGameInstance()->GetFirstGamePlayer()) { return; }
+    if (TrainingPlayer.IsValid()) { return; }
 
-    InitializedPlayers.Add(JoiningPlayer);
+    TrainingPlayer = JoiningPlayer;
     ClassState->SetTeam(EGameTeam::TeamA);
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForNextSpawn);
     UTeamPlayerManager::RemovePlayerPawn(JoiningPlayer);
@@ -80,7 +127,7 @@ void ATrainingGameMode::TryOpenClassSelection(ATrainingPlayerController* ReadyPl
     ADominationPlayerState* ClassState = IsValid(ReadyPlayer)
         ? ReadyPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
     if (!bConfigurationReady || !IsValid(ClassState)
-        || !InitializedPlayers.Contains(ReadyPlayer) || !ClassState->IsLoadedIntoMatch()
+        || !IsTrainingPlayer(ReadyPlayer) || !ClassState->IsLoadedIntoMatch()
         || ClassState->HasSelectedCombatClass()) { return; }
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForMatchStart);
 }
@@ -91,8 +138,8 @@ bool ATrainingGameMode::RequestCombatClass(ATrainingPlayerController* Requester,
     OutFailure = FText::GetEmpty();
     ADominationPlayerState* ClassState = IsValid(Requester)
         ? Requester->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (!HasAuthority() || !bConfigurationReady || !IsValid(ClassState)
-        || Requester->GetWorld() != GetWorld() || !InitializedPlayers.Contains(Requester)
+    if (!bConfigurationReady || !IsValid(ClassState)
+        || !IsTrainingPlayer(Requester)
         || !ClassState->IsLoadedIntoMatch()
         || ClassState->GetParticipationState() != EPlayerParticipationState::WaitingForMatchStart
         || !ClassState->TryConfirmCombatClass(RequestedClass))
@@ -119,8 +166,8 @@ void ATrainingGameMode::RequestPreviewCombatClass(ATrainingPlayerController* Req
 {
     ADominationPlayerState* ClassState = IsValid(Requester)
         ? Requester->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (HasAuthority() && bConfigurationReady && IsValid(ClassState)
-        && Requester->GetWorld() == GetWorld() && InitializedPlayers.Contains(Requester)
+    if (bConfigurationReady && IsValid(ClassState)
+        && IsTrainingPlayer(Requester)
         && ClassState->IsLoadedIntoMatch()
         && ClassState->GetParticipationState() == EPlayerParticipationState::WaitingForMatchStart)
     {
@@ -140,7 +187,7 @@ bool ATrainingGameMode::PlayerCanRestart_Implementation(APlayerController* Reque
 {
     const ADominationPlayerState* ClassState = IsValid(Requester)
         ? Requester->GetPlayerState<ADominationPlayerState>() : nullptr;
-    return bConfigurationReady && IsValid(ClassState) && ClassState->HasSelectedCombatClass()
+    return bConfigurationReady && IsTrainingPlayer(Requester) && IsValid(ClassState) && ClassState->HasSelectedCombatClass()
         && ClassState->GetParticipationState() == EPlayerParticipationState::Active
         && Super::PlayerCanRestart_Implementation(Requester);
 }
@@ -149,10 +196,22 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
 {
     ADominationPlayerState* ClassState = IsValid(WaitingPlayer)
         ? WaitingPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (!IsValid(ClassState) || !ClassState->HasSelectedCombatClass()) { return false; }
+    if (!bConfigurationReady || !IsTrainingPlayer(WaitingPlayer)
+        || !IsValid(ClassState) || !ClassState->HasSelectedCombatClass()) { return false; }
 
     UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer);
-    RestartPlayer(WaitingPlayer);
+
+    FTransform CQBRespawnTransform;
+    const UTrainingPlayerComponent* TrainingBridge = WaitingPlayer->FindComponentByClass<UTrainingPlayerComponent>();
+    if (!bInitialSpawn && TrainingBridge && TrainingBridge->TryGetCQBRespawnTransform(CQBRespawnTransform))
+    {
+        RestartPlayerAtTransform(WaitingPlayer, CQBRespawnTransform);
+    }
+    else
+    {
+        RestartPlayer(WaitingPlayer);
+    }
+
     APawn* CombatPawn = WaitingPlayer->GetPawn();
     if (!IsValid(CombatPawn) || CombatPawn->GetController() != WaitingPlayer) { return false; }
     ClassState->ServerRespawnReset();
@@ -166,7 +225,11 @@ bool ATrainingGameMode::RestartTrainingPlayer(ATrainingPlayerController* Waiting
     WaitingPlayer->ClientGotoState(NAME_Playing);
     WaitingPlayer->ClientExitSpectatorMode();
     ClassState->SetParticipationState(EPlayerParticipationState::Active);
-    if (!bInitialSpawn) { RespawnProtection->BeginProtection(ClassState); }
+    if (!bInitialSpawn)
+    {
+        RespawnProtection->BeginProtection(ClassState);
+        WaitingPlayer->FinishRespawnFade(RespawnFadeInSeconds);
+    }
     return true;
 }
 
@@ -177,9 +240,9 @@ void ATrainingGameMode::GrantInitialAugments(ATrainingPlayerController* ReadyPla
     if (bUseManualAugmentSelection || !bEnableAugmentDraft || !AugmentDraftManager->AreDependenciesReady()
         || !IsValid(ClassState) || !ClassState->HasSelectedCombatClass()
         || ClassState->GetParticipationState() != EPlayerParticipationState::Active
-        || InitialAugmentsGranted.Contains(ReadyPlayer)) { return; }
+        || !IsTrainingPlayer(ReadyPlayer) || bInitialAugmentsGranted) { return; }
 
-    InitialAugmentsGranted.Add(ReadyPlayer);
+    bInitialAugmentsGranted = true;
     AugmentDraftManager->GrantToPlayer(ClassState, EAugmentRewardPool::Active, 1,
         FGameplayTag::RequestGameplayTag(FName(TEXT("InputTag.Ability.Slot1"))));
     AugmentDraftManager->GrantToPlayer(ClassState, EAugmentRewardPool::Passive, 1);
@@ -188,10 +251,7 @@ void ATrainingGameMode::GrantInitialAugments(ATrainingPlayerController* ReadyPla
 
 void ATrainingGameMode::HandleAugmentDependenciesReady()
 {
-    for (const TWeakObjectPtr<ATrainingPlayerController>& Entry : InitializedPlayers)
-    {
-        GrantInitialAugments(Entry.Get());
-    }
+    GrantInitialAugments(TrainingPlayer.Get());
 }
 
 void ATrainingGameMode::NotifyPlayerEliminatedBy(AController* EliminatedController, AShooterPlayerState*)
@@ -199,61 +259,103 @@ void ATrainingGameMode::NotifyPlayerEliminatedBy(AController* EliminatedControll
     ATrainingPlayerController* WaitingPlayer = Cast<ATrainingPlayerController>(EliminatedController);
     ADominationPlayerState* ClassState = IsValid(WaitingPlayer)
         ? WaitingPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
-    if (!HasAuthority() || !IsValid(ClassState) || !ClassState->HasSelectedCombatClass()
-        || PendingRespawns.Contains(WaitingPlayer)) { return; }
+    if (!bConfigurationReady || !IsTrainingPlayer(WaitingPlayer) || !IsValid(ClassState)
+        || !ClassState->HasSelectedCombatClass() || bRespawnPending) { return; }
 
+    bRespawnPending = true;
     ClassState->SetParticipationState(EPlayerParticipationState::WaitingForNextSpawn);
     ClassState->SetAlive(false);
     RespawnProtection->EndProtection(ClassState);
-    MovePlayerToSpectator(WaitingPlayer);
-    FTimerHandle& RespawnTimer = PendingRespawns.Add(WaitingPlayer);
-    GetWorldTimerManager().SetTimer(RespawnTimer,
-        FTimerDelegate::CreateUObject(this, &ThisClass::HandleRespawnTimer,
-            TWeakObjectPtr<ATrainingPlayerController>(WaitingPlayer)),
-        FMath::Max(0.1f, RespawnDelay), false);
+    if (UTrainingSessionSubsystem* Session = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>())
+    {
+        Session->EndSessionForParticipant(WaitingPlayer);
+    }
+    if (UTrainingPlayerComponent* TrainingBridge = WaitingPlayer->FindComponentByClass<UTrainingPlayerComponent>())
+    {
+        TrainingBridge->HandleParticipantDeath();
+    }
+    WaitingPlayer->BeginRespawnFade(RespawnFadeOutSeconds);
+
+    const float FadeOutDelay = FMath::Max(0.0f, RespawnFadeOutSeconds);
+    if (FadeOutDelay <= KINDA_SMALL_NUMBER)
+    {
+        HandleRespawnFadeOutComplete();
+        return;
+    }
+    GetWorldTimerManager().SetTimer(RespawnTimer, this, &ThisClass::HandleRespawnFadeOutComplete,
+        FadeOutDelay, false);
 }
 
-void ATrainingGameMode::HandleRespawnTimer(const TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer)
+void ATrainingGameMode::HandleRespawnFadeOutComplete()
 {
-    PendingRespawns.Remove(WaitingPlayer);
-    if (!WaitingPlayer.IsValid()) { return; }
-    if (!RestartTrainingPlayer(WaitingPlayer.Get(), false))
+    ATrainingPlayerController* WaitingPlayer = TrainingPlayer.Get();
+    if (!bConfigurationReady || !bRespawnPending || !IsTrainingPlayer(WaitingPlayer))
     {
-        UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer.Get());
-        MovePlayerToSpectator(WaitingPlayer.Get());
+        bRespawnPending = false;
+        return;
+    }
+    MovePlayerToSpectator(WaitingPlayer);
+    const float RemainingDelay = FMath::Max(0.1f, RespawnDelay - FMath::Max(0.0f, RespawnFadeOutSeconds));
+    GetWorldTimerManager().SetTimer(RespawnTimer, this, &ThisClass::HandleRespawnTimer,
+        RemainingDelay, false);
+}
+
+void ATrainingGameMode::HandleRespawnTimer()
+{
+    ATrainingPlayerController* WaitingPlayer = TrainingPlayer.Get();
+    if (!bRespawnPending) { return; }
+    bRespawnPending = false;
+    if (!bConfigurationReady || !IsTrainingPlayer(WaitingPlayer)) { return; }
+    if (!RestartTrainingPlayer(WaitingPlayer, false))
+    {
+        UTeamPlayerManager::RemovePlayerPawn(WaitingPlayer);
+        MovePlayerToSpectator(WaitingPlayer);
+        WaitingPlayer->FinishRespawnFade(RespawnFadeInSeconds);
+        if (UTrainingPlayerComponent* TrainingBridge = WaitingPlayer->FindComponentByClass<UTrainingPlayerComponent>())
+        {
+            TrainingBridge->ResetTrainingState();
+        }
         if (ADominationPlayerState* ClassState = WaitingPlayer->GetPlayerState<ADominationPlayerState>())
         {
             ClassState->SetAlive(false);
+            AugmentDraftManager->ResetPlayerForNewMatch(ClassState);
+            bInitialAugmentsGranted = false;
+            ClassState->ResetCombatClassSelection();
+            ClassState->SetParticipationState(EPlayerParticipationState::WaitingForMatchStart);
         }
-        UE_LOG(LogTrainingGameMode, Error, TEXT("Training respawn failed for %s. Check PlayerStart/Pawn/weapon configuration."),
-            *GetNameSafe(WaitingPlayer.Get()));
+        UE_LOG(LogTrainingGameMode, Error, TEXT("Training respawn failed. Check PlayerStart/Pawn/weapon configuration, then select a class again."));
         return;
     }
-    GrantInitialAugments(WaitingPlayer.Get());
+    GrantInitialAugments(WaitingPlayer);
     if (bEnableAugmentDraft && !bUseManualAugmentSelection)
     {
         AugmentDraftManager->ServeNextReward(WaitingPlayer->GetPlayerState<ADominationPlayerState>());
     }
 }
 
-void ATrainingGameMode::Logout(AController* Exiting)
+void ATrainingGameMode::ReleaseTrainingPlayer()
 {
-    if (ATrainingPlayerController* LeavingPlayer = Cast<ATrainingPlayerController>(Exiting))
+    GetWorldTimerManager().ClearTimer(RespawnTimer);
+    bRespawnPending = false;
+    if (ATrainingPlayerController* LeavingPlayer = TrainingPlayer.Get())
     {
-        if (FTimerHandle* RespawnTimer = PendingRespawns.Find(LeavingPlayer))
+        if (UTrainingPlayerComponent* TrainingBridge = LeavingPlayer->FindComponentByClass<UTrainingPlayerComponent>())
         {
-            GetWorldTimerManager().ClearTimer(*RespawnTimer);
-            PendingRespawns.Remove(LeavingPlayer);
+            TrainingBridge->ResetTrainingState();
         }
         ADominationPlayerState* ClassState = LeavingPlayer->GetPlayerState<ADominationPlayerState>();
         RespawnProtection->EndProtection(ClassState);
         AugmentDraftManager->ReleasePlayer(ClassState);
-        InitializedPlayers.Remove(LeavingPlayer);
-        InitialAugmentsGranted.Remove(LeavingPlayer);
-        if (UTrainingSessionSubsystem* Session = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>())
-        {
-            Session->EndSessionForParticipant(LeavingPlayer);
-        }
+    }
+    TrainingPlayer.Reset();
+    bInitialAugmentsGranted = false;
+}
+
+void ATrainingGameMode::Logout(AController* Exiting)
+{
+    if (TrainingPlayer.Get() == Exiting)
+    {
+        ReleaseTrainingPlayer();
     }
     Super::Logout(Exiting);
 }
@@ -261,15 +363,9 @@ void ATrainingGameMode::Logout(AController* Exiting)
 void ATrainingGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     bConfigurationReady = false;
-    for (TPair<TWeakObjectPtr<ATrainingPlayerController>, FTimerHandle>& Entry : PendingRespawns)
-    {
-        GetWorldTimerManager().ClearTimer(Entry.Value);
-    }
-    PendingRespawns.Reset();
+    ReleaseTrainingPlayer();
     RespawnProtection->Shutdown();
     AugmentDraftManager->Shutdown();
-    InitializedPlayers.Reset();
-    InitialAugmentsGranted.Reset();
     Super::EndPlay(EndPlayReason);
 }
 

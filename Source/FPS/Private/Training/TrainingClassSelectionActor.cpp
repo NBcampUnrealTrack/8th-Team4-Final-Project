@@ -9,7 +9,6 @@
 ATrainingClassSelectionActor::ATrainingClassSelectionActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
 
     InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
     SetRootComponent(InteractionCollision);
@@ -33,7 +32,8 @@ bool ATrainingClassSelectionActor::CanInteract(const APlayerController& Requesti
     const ADominationPlayerState* PlayerState = TrainingController
         ? TrainingController->GetPlayerState<ADominationPlayerState>()
         : nullptr;
-    return IsValid(TrainingController)
+    return GetNetMode() == NM_Standalone && RequestingPlayer.IsLocalController()
+        && IsValid(TrainingController)
         && IsValid(RequestingPlayer.GetPawn())
         && IsValid(PlayerState)
         && PlayerState->HasSelectedCombatClass()
@@ -43,7 +43,7 @@ bool ATrainingClassSelectionActor::CanInteract(const APlayerController& Requesti
 
 void ATrainingClassSelectionActor::Interact(APlayerController& RequestingPlayer)
 {
-    if (!HasAuthority() || !CanInteract(RequestingPlayer))
+    if (!CanInteract(RequestingPlayer))
     {
         return;
     }

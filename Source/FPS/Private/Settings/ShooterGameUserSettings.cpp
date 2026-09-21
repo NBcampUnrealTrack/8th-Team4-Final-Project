@@ -6,10 +6,10 @@
 
 namespace ShooterGameUserSettings
 {
-	constexpr float MinMouseSensitivity = 0.01f;
-	constexpr float MaxMouseSensitivity = 10.0f;
-	constexpr float MinAimSensitivityMultiplier = 0.01f;
-	constexpr float MaxAimSensitivityMultiplier = 2.0f;
+	constexpr float MinMouseSensitivity = 0.0f;
+	constexpr float MaxMouseSensitivity = 1.0f;
+	constexpr float MinAimSensitivityMultiplier = 0.0f;
+	constexpr float MaxAimSensitivityMultiplier = 1.0f;
 	constexpr float MinAudioVolume = 0.0f;
 	constexpr float MaxAudioVolume = 1.0f;
 	constexpr int32 MaxResolutionWidth = 1920;
@@ -222,9 +222,10 @@ FVector2D UShooterGameUserSettings::ApplyLookSensitivity(
 	const FVector2D RawLookInput,
 	const bool bAiming) const
 {
+	const float VerticalDirection = bInvertVerticalLook ? 1.0f : -1.0f;
 	FVector2D Result(
 		RawLookInput.X * MouseHorizontalSensitivity,
-		RawLookInput.Y * MouseVerticalSensitivity * (bInvertVerticalLook ? -1.0f : 1.0f));
+		RawLookInput.Y * MouseVerticalSensitivity * VerticalDirection);
 
 	if (bAiming)
 	{
