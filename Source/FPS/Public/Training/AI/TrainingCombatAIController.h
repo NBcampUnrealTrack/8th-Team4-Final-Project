@@ -36,6 +36,7 @@ public:
 
 protected:
     virtual void OnUnPossess() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
     bool RequestTrainingDestination(const FVector& Destination);

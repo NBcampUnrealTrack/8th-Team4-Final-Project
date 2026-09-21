@@ -5,7 +5,6 @@
 #include "Components/SphereComponent.h"
 #include "Engine/World.h"
 #include "NavigationSystem.h"
-#include "Net/UnrealNetwork.h"
 #include "Training/TrainingSessionSubsystem.h"
 #include "Training/TrainingSettings.h"
 #include "Training/TrainingTarget.h"
@@ -14,8 +13,6 @@
 ATrainingArena::ATrainingArena()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
-    bAlwaysRelevant = true;
 
     CenterPoint = CreateDefaultSubobject<UArrowComponent>(TEXT("CenterPoint"));
     SetRootComponent(CenterPoint);
@@ -71,11 +68,18 @@ void ATrainingArena::OnConstruction(const FTransform& Transform)
     }
 }
 
-void ATrainingArena::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+ETrainingSessionState ATrainingArena::GetSessionState() const
 {
-    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-    DOREPLIFETIME(ATrainingArena, SessionState);
-    DOREPLIFETIME(ATrainingArena, ActiveMode);
+    const UWorld* World = GetWorld();
+    const UTrainingSessionSubsystem* Session = World ? World->GetSubsystem<UTrainingSessionSubsystem>() : nullptr;
+    return Session && Session->GetActiveArena() == this ? Session->GetState() : ETrainingSessionState::Idle;
+}
+
+ETrainingMode ATrainingArena::GetActiveMode() const
+{
+    const UWorld* World = GetWorld();
+    const UTrainingSessionSubsystem* Session = World ? World->GetSubsystem<UTrainingSessionSubsystem>() : nullptr;
+    return Session && Session->GetActiveArena() == this ? Session->GetActiveMode() : ETrainingMode::TargetAcquisition;
 }
 
 FVector ATrainingArena::GetCenterLocation() const
@@ -173,16 +177,6 @@ bool ATrainingArena::FindNavSpawn(const FTrainingDistanceBand& Band,
     return false;
 }
 
-bool ATrainingArena::FindStrafeDestination(const FVector& CurrentPosition,
-    const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
-    const bool bClockwise, FVector& OutNavPosition) const
-{
-    return FindBotStepDestination(CurrentPosition, Band, AgentProperties,
-        bClockwise ? GetDefault<UTrainingSettings>()->BotArcStepCentimeters
-            : -GetDefault<UTrainingSettings>()->BotArcStepCentimeters,
-        0.0f, OutNavPosition);
-}
-
 bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
     const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
     const float SignedArcCentimeters, const float RadialStepCentimeters, FVector& OutNavPosition) const
@@ -215,21 +209,6 @@ bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
         }
     }
     return false;
-}
-
-void ATrainingArena::SetSessionContext(const ETrainingSessionState NewState, const ETrainingMode NewMode)
-{
-    if (HasAuthority())
-    {
-        SessionState = NewState;
-        ActiveMode = NewMode;
-        ForceNetUpdate();
-    }
-}
-
-void ATrainingArena::SetSessionState(const ETrainingSessionState NewState)
-{
-    SetSessionContext(NewState, ActiveMode);
 }
 
 void ATrainingArena::EndPlay(const EEndPlayReason::Type EndPlayReason)

@@ -6,8 +6,21 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Perception/AISense_Hearing.h"
 
 static constexpr float FootstepTraceDistance = 100.0f;
+
+namespace
+{
+	void ReportFootstepNoise(const AActor& Owner, const FVector& Location)
+	{
+		const ACharacter* Character = Cast<ACharacter>(&Owner);
+		const float Speed = Character ? Character->GetVelocity().Size2D() : 0.0f;
+		const float Loudness = Speed >= 500.0f ? 1.0f : (Speed >= 250.0f ? 0.7f : 0.45f);
+		UAISense_Hearing::ReportNoiseEvent(
+			const_cast<AActor*>(&Owner), Location, Loudness, const_cast<AActor*>(&Owner), 1800.0f, TEXT("Footstep"));
+	}
+}
 
 UFootstepComponent::UFootstepComponent()
 {
@@ -18,8 +31,7 @@ UFootstepComponent::UFootstepComponent()
 void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const FName FootSocketName)
 {
 	if (!IsValid(SourceMesh)
-		|| !IsValid(FootstepSoundDefinition)
-		|| GetNetMode() == NM_DedicatedServer)
+		|| !IsValid(FootstepSoundDefinition))
 	{
 		return;
 	}
@@ -52,6 +64,7 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 
 	if (Owner->HasAuthority())
 	{
+		ReportFootstepNoise(*Owner, FootstepLocation);
 		MulticastPlayFootstep(FootstepLocation, SurfaceType);
 	}
 	else
@@ -78,6 +91,7 @@ void UFootstepComponent::ServerPlayFootstep_Implementation(const FName FootSocke
 	TEnumAsByte<EPhysicalSurface> SurfaceType = SurfaceType_Default;
 	if (BuildFootstepData(SourceMesh, FootSocketName, FootstepLocation, SurfaceType))
 	{
+		ReportFootstepNoise(*Owner, FootstepLocation);
 		MulticastPlayFootstep(FootstepLocation, SurfaceType);
 	}
 }

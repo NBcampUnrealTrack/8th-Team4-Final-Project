@@ -40,6 +40,12 @@ public:
     void ConfirmDialog();
 
     UFUNCTION(BlueprintCallable, Category = "Training")
+    void EnterArenaDestination();
+
+    UFUNCTION(BlueprintCallable, Category = "Training")
+    void EnterCQBDestination();
+
+    UFUNCTION(BlueprintCallable, Category = "Training")
     void StartSelectedMode(ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters = 20.0f);
 
     UFUNCTION(BlueprintCallable, Category = "Training")
@@ -90,6 +96,12 @@ protected:
 private:
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_Primary;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UButton> Btn_EnterArena;
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional))
+    TObjectPtr<UButton> Btn_EnterCQB;
 
     UPROPERTY(Transient, meta = (BindWidgetOptional))
     TObjectPtr<UButton> Btn_ReturnStart;

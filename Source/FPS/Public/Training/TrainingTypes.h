@@ -14,6 +14,7 @@ UENUM(BlueprintType)
 enum class ETrainingSessionState : uint8
 {
     Idle = 0,
+    // 기존 에셋의 열거형 직렬화 값은 유지합니다.
     TargetAcquisitionActive = 1 UMETA(Hidden),
     CombatResponseActive = 2 UMETA(Hidden),
     Countdown = 3,
@@ -50,6 +51,21 @@ enum class ETrainingDialogKind : uint8
     EnterArena,
     SelectMode,
     EndSession
+};
+
+UENUM(BlueprintType)
+enum class ETrainingDestination : uint8
+{
+    Arena,
+    CQB
+};
+
+UENUM(BlueprintType)
+enum class ECQBTrainingDialogKind : uint8
+{
+    Start,
+    End,
+    Cancel
 };
 
 USTRUCT(BlueprintType)

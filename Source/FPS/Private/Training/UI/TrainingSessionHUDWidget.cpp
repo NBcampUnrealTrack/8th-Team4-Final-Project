@@ -3,7 +3,6 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
-#include "GameFramework/GameStateBase.h"
 #include "Training/TrainingSettings.h"
 #include "Training/TrainingModeDefinition.h"
 
@@ -21,11 +20,13 @@ void UTrainingSessionHUDWidget::NativePreConstruct()
 }
 
 void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
-    const double InStartServerSeconds, const float DurationSeconds)
+    const double InStartSeconds, const float DurationSeconds)
 {
-    StartServerSeconds = InStartServerSeconds;
+    StartSeconds = InStartSeconds;
     ActiveDurationSeconds = FMath::Max(0.0f, DurationSeconds);
     bSessionActive = true;
+    bCQBSession = false;
+    CQBTotalTroopers = 0;
     if (SessionInfoContent) { SessionInfoContent->SetVisibility(ESlateVisibility::HitTestInvisible); }
     else
     {
@@ -59,12 +60,57 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
     RefreshClock();
 }
 
+void UTrainingSessionHUDWidget::StartCQBSession(const int32 TotalTroopers)
+{
+    bSessionActive = true;
+    bCQBSession = true;
+    CQBTotalTroopers = FMath::Max(0, TotalTroopers);
+    DisplayedKills = 0;
+    DisplayedSeconds = INDEX_NONE;
+    ResetKillFeedback();
+
+    if (SessionInfoContent) SessionInfoContent->SetVisibility(ESlateVisibility::Collapsed);
+    if (Txt_Mode) Txt_Mode->SetVisibility(ESlateVisibility::Collapsed);
+    if (Txt_Timer) Txt_Timer->SetVisibility(ESlateVisibility::Collapsed);
+    if (Txt_TimerLabel) Txt_TimerLabel->SetVisibility(ESlateVisibility::Collapsed);
+    if (Bar_TimeRemaining) Bar_TimeRemaining->SetVisibility(ESlateVisibility::Collapsed);
+    if (CQBProgressContent) CQBProgressContent->SetVisibility(ESlateVisibility::HitTestInvisible);
+    if (Txt_ProgressLabel)
+    {
+        Txt_ProgressLabel->SetText(NSLOCTEXT("TrainingHUD", "CQBCleared", "TARGETS CLEARED"));
+    }
+    if (Txt_Progress)
+    {
+        Txt_Progress->SetText(FText::FromString(FString::Printf(TEXT("0/%d"), CQBTotalTroopers)));
+    }
+    if (Txt_Kills) Txt_Kills->SetText(FText::GetEmpty());
+}
+
+void UTrainingSessionHUDWidget::PresentCQBKill(const int32 CurrentKills, const int32 TotalTroopers)
+{
+    if (!bSessionActive || !bCQBSession) return;
+
+    CQBTotalTroopers = FMath::Max(0, TotalTroopers);
+    PresentHit(CurrentKills, true);
+    if (Txt_Progress)
+    {
+        Txt_Progress->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"),
+            FMath::Clamp(CurrentKills, 0, CQBTotalTroopers), CQBTotalTroopers)));
+    }
+}
+
+void UTrainingSessionHUDWidget::FinishCQBSession()
+{
+    if (Txt_Progress && CQBTotalTroopers > 0)
+    {
+        Txt_Progress->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"), CQBTotalTroopers, CQBTotalTroopers)));
+    }
+}
+
 void UTrainingSessionHUDWidget::RefreshClock()
 {
     if (!bSessionActive || !GetWorld()) { return; }
-    const AGameStateBase* GameState = GetWorld()->GetGameState();
-    const double ServerNow = GameState ? GameState->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
-    const float Elapsed = static_cast<float>(FMath::Max(0.0, ServerNow - StartServerSeconds));
+    const float Elapsed = static_cast<float>(FMath::Max(0.0, GetWorld()->GetTimeSeconds() - StartSeconds));
     const int32 Seconds = ActiveDurationSeconds > 0.0f
         ? TrainingRules::RemainingWholeSeconds(ActiveDurationSeconds, Elapsed) : FMath::FloorToInt(Elapsed);
     if (Seconds != DisplayedSeconds)
@@ -112,7 +158,7 @@ void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const fl
     Super::NativeTick(MyGeometry, InDeltaTime);
     if (bSessionActive)
     {
-        RefreshClock();
+        if (!bCQBSession) RefreshClock();
         UpdateKillFeedback(InDeltaTime);
     }
 }
@@ -185,6 +231,8 @@ void UTrainingSessionHUDWidget::ResetKillFeedback()
 void UTrainingSessionHUDWidget::NativeDestruct()
 {
     bSessionActive = false;
+    bCQBSession = false;
+    CQBTotalTroopers = 0;
     ResetKillFeedback();
     Super::NativeDestruct();
 }

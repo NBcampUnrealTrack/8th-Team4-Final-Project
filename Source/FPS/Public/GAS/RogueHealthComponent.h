@@ -10,6 +10,7 @@
 
 #include "RogueHealthComponent.generated.h"
 
+class AActor;
 class UAbilitySystemComponent;
 class URogueVitalAttributeSet;
 struct FGameplayEventData;
@@ -17,6 +18,7 @@ struct FGameplayEventData;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRogueDeathStateChanged, bool, bIsDead);
 // 피격 방향 인디케이터 UI 전용. 생사와 무관하게 매 피격마다(로컬 소유 클라이언트에서만) 발신된다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRogueHitReaction, FVector, Direction);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnRogueDamageTakenNative, const AActor*, FVector);
 
 UCLASS(ClassGroup = (Rogue), meta = (BlueprintSpawnableComponent))
 class FPS_API URogueHealthComponent : public UActorComponent
@@ -121,6 +123,8 @@ public:
 	// 모든 머신에서 발신, 킬로그/관전 전환/HUD 가 구독
 	UPROPERTY(BlueprintAssignable, Category = "Rogue|Health")
 	FOnRogueDeathStateChanged OnDeathStateChanged;
+
+	FOnRogueDamageTakenNative OnDamageTakenNative;
 
 	// 로컬 소유 클라이언트(및 리슨서버)에서만 발신 - 피격 방향 인디케이터 UI가 구독한다.
 	UPROPERTY(BlueprintAssignable, Category = "Rogue|Health")

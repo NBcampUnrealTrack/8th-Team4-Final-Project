@@ -63,9 +63,7 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
 
 bool TrainingRules::IsRunningState(const ETrainingSessionState State)
 {
-    return State == ETrainingSessionState::Active
-        || State == ETrainingSessionState::TargetAcquisitionActive
-        || State == ETrainingSessionState::CombatResponseActive;
+    return State == ETrainingSessionState::Active;
 }
 
 float TrainingRules::FeedbackOpacity(const float Elapsed, const float Duration,

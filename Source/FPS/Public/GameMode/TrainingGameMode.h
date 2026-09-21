@@ -19,6 +19,11 @@ class FPS_API ATrainingGameMode : public AShooterGameMode
     GENERATED_BODY()
 public:
     ATrainingGameMode();
+    virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+    virtual void PreLogin(const FString& Options, const FString& Address,
+        const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
+    virtual APlayerController* Login(UPlayer* NewPlayer, ENetRole InRemoteRole, const FString& Portal,
+        const FString& Options, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void Logout(AController* Exiting) override;
@@ -37,9 +42,12 @@ protected:
     virtual void NotifyPlayerEliminatedBy(AController* EliminatedController,
         AShooterPlayerState* KillerPlayerState) override;
 private:
+    bool IsTrainingPlayer(const APlayerController* Player) const;
+    void ReleaseTrainingPlayer();
     void TryOpenClassSelection(ATrainingPlayerController* ReadyPlayer);
     bool RestartTrainingPlayer(ATrainingPlayerController* WaitingPlayer, bool bInitialSpawn);
-    void HandleRespawnTimer(TWeakObjectPtr<ATrainingPlayerController> WaitingPlayer);
+    void HandleRespawnFadeOutComplete();
+    void HandleRespawnTimer();
     void HandleAugmentDependenciesReady();
     void GrantInitialAugments(ATrainingPlayerController* ReadyPlayer);
 
@@ -47,6 +55,10 @@ private:
     float RespawnDelay = 5.0f;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn", meta = (ClampMin = "0.0", Units = "s"))
     float RespawnProtectionDuration = 2.0f;
+    UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn|Fade", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float RespawnFadeOutSeconds = 0.25f;
+    UPROPERTY(EditDefaultsOnly, Category = "Training|Respawn|Fade", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float RespawnFadeInSeconds = 0.35f;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment")
     bool bUseManualAugmentSelection = true;
     UPROPERTY(EditDefaultsOnly, Category = "Training|Augment", meta = (EditCondition = "!bUseManualAugmentSelection"))
@@ -60,8 +72,10 @@ private:
     TObjectPtr<UAugmentDraftManager> AugmentDraftManager;
     UPROPERTY(Transient)
     TObjectPtr<UPlayerRespawnProtection> RespawnProtection;
-    TSet<TWeakObjectPtr<ATrainingPlayerController>> InitializedPlayers;
-    TSet<TWeakObjectPtr<ATrainingPlayerController>> InitialAugmentsGranted;
-    TMap<TWeakObjectPtr<ATrainingPlayerController>, FTimerHandle> PendingRespawns;
+    TWeakObjectPtr<ATrainingPlayerController> TrainingPlayer;
+    FTimerHandle RespawnTimer;
+    bool bInitialAugmentsGranted = false;
+    bool bRespawnPending = false;
+    bool bChangingCombatClass = false;
     bool bConfigurationReady = false;
 };

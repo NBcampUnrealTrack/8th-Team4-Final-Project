@@ -1,7 +1,12 @@
 #include "UI/Settings/ShooterOptionsScreen.h"
 
+#include "CommonButtonBase.h"
+#include "Groups/CommonButtonGroupBase.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "Components/EditableText.h"
+#include "Components/EditableTextBox.h"
+#include "Components/PanelSlot.h"
 #include "Components/Image.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SizeBox.h"
@@ -21,11 +26,32 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "UI/Settings/ShooterOptionsPerformanceSubsystem.h"
+#include "UObject/UnrealType.h"
 #include "UnrealClient.h"
 #include "UnrealEngine.h"
 
 namespace
 {
+	// Padding 프로퍼티를 가진 슬롯이면 타입과 무관하게 적용한다.
+	bool SetSlotPadding(UPanelSlot* Slot, const FMargin& Padding)
+	{
+		if (!Slot)
+		{
+			return false;
+		}
+
+		FStructProperty* PaddingProperty =
+			CastField<FStructProperty>(Slot->GetClass()->FindPropertyByName(TEXT("Padding")));
+		if (!PaddingProperty || PaddingProperty->Struct != TBaseStructure<FMargin>::Get())
+		{
+			return false;
+		}
+
+		*PaddingProperty->ContainerPtrToValuePtr<FMargin>(Slot) = Padding;
+		Slot->SynchronizeProperties();
+		return true;
+	}
+
 	static constexpr int32 MaxResolutionWidth = 1920;
 	static constexpr int32 MaxResolutionHeight = 1080;
 	static constexpr float FrameRateLimitChoices[] =
@@ -1056,10 +1082,18 @@ void UShooterOptionsScreen::BindGeneratedControls()
 		return;
 	}
 
+// CommonUI 버튼과 자동 생성 WBP의 UButton을 둘 다 지원한다.
 #define BIND_CLICK(WidgetName, HandlerName) \
-	if (UButton* Button = Cast<UButton>(GetWidgetFromName(TEXT(WidgetName)))) \
+	if (UWidget* FoundWidget = GetWidgetFromName(TEXT(WidgetName))) \
 	{ \
-		Button->OnClicked.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		if (UCommonButtonBase* CommonButton = Cast<UCommonButtonBase>(FoundWidget)) \
+		{ \
+			CommonButton->OnClicked().AddUObject(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+		else if (UButton* Button = Cast<UButton>(FoundWidget)) \
+		{ \
+			Button->OnClicked.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
 	}
 
 #define BIND_SLIDER(WidgetName, HandlerName) \
@@ -1068,11 +1102,33 @@ void UShooterOptionsScreen::BindGeneratedControls()
 		Slider->OnValueChanged.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
 	}
 
-#define BIND_FOCUS(WidgetName, HandlerName) \
-	if (UButton* Button = Cast<UButton>(GetWidgetFromName(TEXT(WidgetName)))) \
+// Editable Text / Editable Text Box 둘 다 받는다
+#define BIND_TEXT_COMMIT(WidgetName, HandlerName) \
+	if (UWidget* FoundWidget = GetWidgetFromName(TEXT(WidgetName))) \
 	{ \
-		Button->OnClicked.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
-		Button->OnHovered.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		if (UEditableTextBox* TextBox = Cast<UEditableTextBox>(FoundWidget)) \
+		{ \
+			TextBox->OnTextCommitted.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+		else if (UEditableText* EditableText = Cast<UEditableText>(FoundWidget)) \
+		{ \
+			EditableText->OnTextCommitted.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+	}
+
+#define BIND_FOCUS(WidgetName, HandlerName) \
+	if (UWidget* FoundWidget = GetWidgetFromName(TEXT(WidgetName))) \
+	{ \
+		if (UCommonButtonBase* CommonButton = Cast<UCommonButtonBase>(FoundWidget)) \
+		{ \
+			CommonButton->OnClicked().AddUObject(this, &UShooterOptionsScreen::HandlerName); \
+			CommonButton->OnHovered().AddUObject(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+		else if (UButton* Button = Cast<UButton>(FoundWidget)) \
+		{ \
+			Button->OnClicked.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+			Button->OnHovered.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
 	}
 
 	BIND_CLICK("Btn_Side_Graphics", HandleSideGraphics);
@@ -1159,18 +1215,143 @@ void UShooterOptionsScreen::BindGeneratedControls()
 	BIND_SLIDER("SLD_UiVolume", HandleUiVolumeChanged);
 	BIND_SLIDER("SLD_VoiceVolume", HandleVoiceVolumeChanged);
 
+	BIND_TEXT_COMMIT("TXT_HorizontalSensitivityValue", HandleHorizontalSensitivityCommitted);
+	BIND_TEXT_COMMIT("TXT_VerticalSensitivityValue", HandleVerticalSensitivityCommitted);
+	BIND_TEXT_COMMIT("TXT_AimSensitivityValue", HandleAimSensitivityCommitted);
+
+#undef BIND_TEXT_COMMIT
 #undef BIND_FOCUS
 #undef BIND_SLIDER
 #undef BIND_CLICK
 
+	ApplyGeneratedStaticStyles();
 	bGeneratedUIBound = true;
+}
+
+void UShooterOptionsScreen::ApplyGeneratedStaticStyles()
+{
+	// 상태에 따라 바뀌지 않는 위젯이라 최초 1회만 적용한다.
+	static const TCHAR* StepperPrefixes[] =
+	{
+		TEXT("Resolution"), TEXT("WindowMode"), TEXT("FrameRate"), TEXT("TargetFPS"),
+		TEXT("Overall"), TEXT("ViewDistance"), TEXT("AntiAliasing"), TEXT("Shadow"),
+		TEXT("GlobalIllumination"), TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"),
+		TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"), TEXT("Language"),
+	};
+
+	if (bOverrideValueBoxStyle)
+	{
+		for (const TCHAR* Prefix : StepperPrefixes)
+		{
+			const FName ValueBoxName(*FString::Printf(TEXT("Border_Control_%s"), Prefix));
+			if (UBorder* ValueBox = Cast<UBorder>(GetWidgetFromName(ValueBoxName)))
+			{
+				if (ValueBoxTexture)
+				{
+					ValueBox->SetBrushFromTexture(ValueBoxTexture);
+				}
+				// 색은 브러시에 곱해진다. 텍스처 원본 그대로 쓰려면 흰색으로 둔다.
+				ValueBox->SetBrushColor(ValueBoxColor);
+			}
+		}
+	}
+
+	if (bOverrideStepperArrowStyle)
+	{
+		const struct { const TCHAR* Suffix; const FButtonStyle* Style; } ArrowSides[] =
+		{
+			{ TEXT("Prev"), &StepperArrowPrevStyle },
+			{ TEXT("Next"), &StepperArrowNextStyle },
+		};
+		for (const TCHAR* Prefix : StepperPrefixes)
+		{
+			for (const auto& Side : ArrowSides)
+			{
+				const FName ArrowName(*FString::Printf(TEXT("Btn_%s%s"), Prefix, Side.Suffix));
+				if (UButton* Arrow = Cast<UButton>(GetWidgetFromName(ArrowName)))
+				{
+					Arrow->SetStyle(*Side.Style);
+					Arrow->SetBackgroundColor(StepperArrowBackgroundColor);
+				}
+				// 화살표 글자는 버튼 바깥 형제라 따로 칠한다.
+				SetGeneratedButtonTextColor(ArrowName, StepperArrowTextColor);
+			}
+		}
+	}
+
+	if (bOverrideStepperArrowPadding)
+	{
+		static const TCHAR* ArrowSuffixes[] = { TEXT("Prev"), TEXT("Next") };
+		for (const TCHAR* Prefix : StepperPrefixes)
+		{
+			for (const TCHAR* Suffix : ArrowSuffixes)
+			{
+				const FName ArrowName(*FString::Printf(TEXT("Btn_%s%s"), Prefix, Suffix));
+				UButton* Arrow = Cast<UButton>(GetWidgetFromName(ArrowName));
+				if (!Arrow)
+				{
+					continue;
+				}
+
+				// 버튼을 감싼 슬롯(SizeBox 등)과 버튼 안쪽 슬롯을 각각 적용한다.
+				SetSlotPadding(Arrow->Slot, StepperArrowOuterPadding);
+				SetSlotPadding(Arrow->GetContentSlot(), StepperArrowContentPadding);
+			}
+		}
+	}
+
+	if (bOverrideSliderColors)
+	{
+		static const TCHAR* SliderNames[] =
+		{
+			TEXT("SLD_ResolutionScale"), TEXT("SLD_HorizontalSensitivity"), TEXT("SLD_VerticalSensitivity"),
+			TEXT("SLD_AimSensitivity"), TEXT("SLD_MasterVolume"), TEXT("SLD_MusicVolume"),
+			TEXT("SLD_SfxVolume"), TEXT("SLD_UiVolume"), TEXT("SLD_VoiceVolume"),
+		};
+		for (const TCHAR* SliderName : SliderNames)
+		{
+			if (USlider* Slider = Cast<USlider>(GetWidgetFromName(FName(SliderName))))
+			{
+				Slider->SetSliderBarColor(SliderBarColor);
+				Slider->SetSliderHandleColor(SliderHandleColor);
+			}
+		}
+	}
+}
+
+void UShooterOptionsScreen::ApplyGeneratedButtonStateStyle(UButton* Button, const bool bActive) const
+{
+	if (!Button)
+	{
+		return;
+	}
+
+	if (bOverrideToggleStyle)
+	{
+		Button->SetStyle(bActive ? ToggleOnStyle : ToggleOffStyle);
+		return;
+	}
+
+	Button->SetBackgroundColor(bActive
+		? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
+		: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
 }
 
 void UShooterOptionsScreen::SetGeneratedText(const FName WidgetName, const FText& Text) const
 {
-	if (UTextBlock* TextBlock = Cast<UTextBlock>(GetWidgetFromName(WidgetName)))
+	UWidget* Found = GetWidgetFromName(WidgetName);
+	if (UTextBlock* TextBlock = Cast<UTextBlock>(Found))
 	{
 		TextBlock->SetText(Text);
+	}
+	// 값 칸을 Editable Text / Editable Text Box로 바꾼 행도 같은 이름으로 갱신된다.
+	else if (UEditableTextBox* TextBox = Cast<UEditableTextBox>(Found))
+	{
+		TextBox->SetText(Text);
+	}
+	else if (UEditableText* EditableText = Cast<UEditableText>(Found))
+	{
+		EditableText->SetText(Text);
 	}
 }
 
@@ -1189,7 +1370,8 @@ void UShooterOptionsScreen::ApplyGeneratedLanguage()
 	};
 
 	Set(TEXT("TXT_HeaderEyebrow"), TEXT("GAME SETTINGS"), TEXT("GAME SETTINGS"));
-	Set(TEXT("TXT_HeaderTitle"), TEXT("게임 옵션"), TEXT("Game Options"));
+	// 헤더는 영문 전용 폰트라 언어와 무관하게 영어로 둔다.
+	Set(TEXT("TXT_HeaderTitle"), TEXT("GAME OPTIONS"), TEXT("GAME OPTIONS"));
 
 	Set(TEXT("TXT_SideSection_Display"), TEXT("화면"), TEXT("DISPLAY"));
 	Set(TEXT("TXT_SideSection_Gameplay"), TEXT("게임플레이"), TEXT("GAMEPLAY"));
@@ -1317,9 +1499,7 @@ void UShooterOptionsScreen::SetGeneratedChoiceSegments(
 		const FName SegmentName(*FString::Printf(TEXT("Border_Choice_%s_%d"), *PrefixString, Index));
 		if (UBorder* Segment = Cast<UBorder>(GetWidgetFromName(SegmentName)))
 		{
-			Segment->SetBrushColor(Index == ActiveIndex
-				? FLinearColor(0.030f, 0.900f, 0.820f, 1.0f)
-				: FLinearColor(0.130f, 0.210f, 0.215f, 0.72f));
+			Segment->SetBrushColor(Index == ActiveIndex ? SegmentActiveColor : SegmentInactiveColor);
 		}
 	}
 }
@@ -1327,18 +1507,10 @@ void UShooterOptionsScreen::SetGeneratedChoiceSegments(
 void UShooterOptionsScreen::SetGeneratedWindowModeVisual() const
 {
 	const bool bFullscreen = GetWindowMode() != EShooterWindowMode::Windowed;
-	if (UButton* Button = Cast<UButton>(GetWidgetFromName(TEXT("Btn_WindowModeFullscreen"))))
-	{
-		Button->SetBackgroundColor(bFullscreen
-			? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
-			: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
-	}
-	if (UButton* Button = Cast<UButton>(GetWidgetFromName(TEXT("Btn_WindowModeWindowed"))))
-	{
-		Button->SetBackgroundColor(!bFullscreen
-			? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
-			: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
-	}
+	ApplyGeneratedButtonStateStyle(
+		Cast<UButton>(GetWidgetFromName(TEXT("Btn_WindowModeFullscreen"))), bFullscreen);
+	ApplyGeneratedButtonStateStyle(
+		Cast<UButton>(GetWidgetFromName(TEXT("Btn_WindowModeWindowed"))), !bFullscreen);
 	SetGeneratedButtonTextColor(TEXT("Btn_WindowModeFullscreen"), FLinearColor::White);
 	SetGeneratedButtonTextColor(TEXT("Btn_WindowModeWindowed"), FLinearColor::White);
 }
@@ -1348,12 +1520,7 @@ void UShooterOptionsScreen::SetGeneratedToggleVisual(
 	const FName TextName,
 	const bool bEnabled) const
 {
-	if (UButton* Button = Cast<UButton>(GetWidgetFromName(ButtonName)))
-	{
-		Button->SetBackgroundColor(bEnabled
-			? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
-			: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
-	}
+	ApplyGeneratedButtonStateStyle(Cast<UButton>(GetWidgetFromName(ButtonName)), bEnabled);
 
 	SetGeneratedText(TextName, bEnabled
 		? Localize(TEXT("켜짐"), TEXT("ON"))
@@ -1475,15 +1642,26 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 			Slider->SetValue(Value);
 		}
 
-		const FString ValueText = FractionDigits > 1
-			? FString::Printf(TEXT("%.2f"), Value)
-			: FString::Printf(TEXT("%.1f"), Value);
+		const FString ValueText = FString::Printf(TEXT("%.*f"), FractionDigits, Value);
 		SetGeneratedText(TextName, FText::FromString(ValueText));
 	};
 
-	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 2);
-	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 2);
-	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 2);
+	auto ConfigureSensitivitySlider = [this](const FName SliderName)
+	{
+		if (USlider* Slider = Cast<USlider>(GetWidgetFromName(SliderName)))
+		{
+			Slider->SetMinValue(0.0f);
+			Slider->SetMaxValue(1.0f);
+			Slider->SetStepSize(0.001f);
+		}
+	};
+
+	ConfigureSensitivitySlider(TEXT("SLD_HorizontalSensitivity"));
+	ConfigureSensitivitySlider(TEXT("SLD_VerticalSensitivity"));
+	ConfigureSensitivitySlider(TEXT("SLD_AimSensitivity"));
+	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 3);
+	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 3);
+	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 3);
 
 	auto SetVolume = [this](const FName SliderName, const FName TextName, const EShooterAudioChannel Channel)
 	{
@@ -1544,14 +1722,41 @@ void UShooterOptionsScreen::RefreshGeneratedTabVisuals()
 		{TEXT("Btn_Side_SmartTuning"), TEXT("SB_SideAccent_SmartTuning")},
 	};
 
+	// 6개가 모두 CommonButton일 때만 그룹이 선택을 관리한다. 섞여 있으면 인덱스가 어긋나 기존 색 경로를 쓴다.
+	if (!SideTabGroup)
+	{
+		TArray<UWidget*> CommonTabs;
+		for (const auto& SideItem : SideItems)
+		{
+			if (UCommonButtonBase* Tab = Cast<UCommonButtonBase>(GetWidgetFromName(SideItem.Button)))
+			{
+				CommonTabs.Add(Tab);
+			}
+		}
+		if (CommonTabs.Num() == static_cast<int32>(UE_ARRAY_COUNT(SideItems)))
+		{
+			SideTabGroup = NewObject<UCommonButtonGroupBase>(this);
+			SideTabGroup->SetSelectionRequired(true);
+			SideTabGroup->AddWidgets(CommonTabs);
+		}
+	}
+
+	if (SideTabGroup)
+	{
+		SideTabGroup->SelectButtonAtIndex(ActiveGeneratedPage, false);
+	}
+
 	for (const auto& SideItem : SideItems)
 	{
 		const bool bSelected = SideItem.Button == ActiveGeneratedSideButton;
-		if (UButton* Button = Cast<UButton>(GetWidgetFromName(SideItem.Button)))
+		if (!SideTabGroup)
 		{
-			Button->SetBackgroundColor(bSelected
-				? FLinearColor(0.024f, 0.260f, 0.252f, 0.62f)
-				: FLinearColor(0.008f, 0.028f, 0.030f, 0.34f));
+			if (UButton* Button = Cast<UButton>(GetWidgetFromName(SideItem.Button)))
+			{
+				Button->SetBackgroundColor(bSelected
+					? FLinearColor(0.024f, 0.260f, 0.252f, 0.62f)
+					: FLinearColor(0.008f, 0.028f, 0.030f, 0.34f));
+			}
 		}
 		if (USizeBox* Accent = Cast<USizeBox>(GetWidgetFromName(SideItem.Accent)))
 		{
@@ -1568,21 +1773,38 @@ void UShooterOptionsScreen::RefreshGeneratedOptionRowVisuals()
 	const FName Prefixes[] =
 	{
 		TEXT("Resolution"), TEXT("WindowMode"), TEXT("ResolutionScale"), TEXT("VSync"), TEXT("FrameRate"), TEXT("DynamicResolution"),
+		TEXT("TargetFPS"),
 		TEXT("Overall"), TEXT("ViewDistance"), TEXT("AntiAliasing"), TEXT("Shadow"), TEXT("GlobalIllumination"),
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"), TEXT("VoiceChat"),
 		TEXT("Language"),
+		// 스마트 튜닝 행은 Border_Row_<버튼이름> 형태다.
+		TEXT("Btn_Profile_Visual60"), TEXT("Btn_Profile_Balanced120"), TEXT("Btn_Profile_Competitive144"),
+		TEXT("Btn_Profile_MaxQuality"), TEXT("Btn_ApplyAdvisorRecommendation"),
 	};
+
+	// SetBrushFromTexture는 리소스만 교체해 DrawAs/Margin 등 브러시 설정을 보존한다.
+	const bool bUseRowTextures = RowNormalTexture && RowActiveTexture;
 
 	for (const FName Prefix : Prefixes)
 	{
 		const FName RowName(*FString::Printf(TEXT("Border_Row_%s"), *Prefix.ToString()));
 		if (UBorder* Row = Cast<UBorder>(GetWidgetFromName(RowName)))
 		{
-			Row->SetBrushColor(Prefix == ActiveGeneratedOption
-				? FLinearColor(0.030f, 0.175f, 0.170f, 0.46f)
-				: FLinearColor(0.050f, 0.082f, 0.084f, 0.34f));
+			const bool bActive = Prefix == ActiveGeneratedOption;
+			if (bUseRowTextures)
+			{
+				// 텍스처 원본 색을 그대로 보여주기 위해 틴트를 흰색으로 되돌린다.
+				Row->SetBrushColor(FLinearColor::White);
+				Row->SetBrushFromTexture(bActive ? RowActiveTexture : RowNormalTexture);
+			}
+			else
+			{
+				Row->SetBrushColor(bActive
+					? FLinearColor(0.030f, 0.175f, 0.170f, 0.46f)
+					: FLinearColor(0.050f, 0.082f, 0.084f, 0.34f));
+			}
 		}
 	}
 }
@@ -1592,8 +1814,8 @@ void UShooterOptionsScreen::SetGeneratedPerformanceSegments(
 	const bool bRelevant) const
 {
 	const int32 ClampedSegments = FMath::Clamp(ActiveSegments, 0, 6);
-	const FLinearColor Accent(0.03f, 0.90f, 0.82f, 1.0f);
-	const FLinearColor Inactive(0.13f, 0.21f, 0.215f, 0.72f);
+	const FLinearColor Accent = SegmentActiveColor;
+	const FLinearColor Inactive = SegmentInactiveColor;
 
 	for (int32 Index = 0; Index < 6; ++Index)
 	{
@@ -1959,25 +2181,25 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 		{
 			Title = FText::FromString(TEXT("수평 감도"));
 			Body = FText::FromString(TEXT("마우스 X축 회전 속도를 조절합니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseHorizontalSensitivity()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetMouseHorizontalSensitivity()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("VerticalSensitivity")))
 		{
 			Title = FText::FromString(TEXT("수직 감도"));
 			Body = FText::FromString(TEXT("마우스 Y축 회전 속도를 조절합니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseVerticalSensitivity()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetMouseVerticalSensitivity()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("AimSensitivity")))
 		{
 			Title = FText::FromString(TEXT("ADS 감도 배율"));
 			Body = FText::FromString(TEXT("조준 중 기본 마우스 감도에 곱해지는 배율입니다."));
-			Value = FText::FromString(FString::Printf(TEXT("%.2f"), GetAimSensitivityMultiplier()));
+			Value = FText::FromString(FString::Printf(TEXT("%.3f"), GetAimSensitivityMultiplier()));
 			MetricLabel1 = FText::FromString(TEXT("범위"));
-			MetricValue1 = FText::FromString(TEXT("0.01 ~ 2.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 ~ 1.000"));
 		}
 		else if (Option == FName(TEXT("InvertY")))
 		{
@@ -2193,11 +2415,11 @@ void UShooterOptionsScreen::RefreshGeneratedDetailPanel()
 			else {Title=FText::FromString(TEXT("Dynamic Crosshair")); Body=FText::FromString(TEXT("Enables or disables dynamic behavior on the in-game crosshair."));}
 			Help = FText::FromString(TEXT("Sensitivity, invert-Y and ADS scaling are applied directly to player look input; dynamic crosshair is consumed by the in-game reticle."));
 			MetricLabel1 = FText::FromString(TEXT("Range"));
-			MetricValue1 = FText::FromString(TEXT("0.01 - 10.00"));
+			MetricValue1 = FText::FromString(TEXT("0.000 - 1.000"));
 			MetricValue2 = FText::FromString(TEXT("Immediate"));
 			if (Option == FName(TEXT("AimSensitivity")))
 			{
-				MetricValue1 = FText::FromString(TEXT("0.01 - 2.00"));
+				MetricValue1 = FText::FromString(TEXT("0.000 - 1.000"));
 			}
 			else if (Option == FName(TEXT("InvertY")))
 			{
@@ -2634,12 +2856,9 @@ void UShooterOptionsScreen::RefreshGeneratedAdvisor()
 		};
 		for (const auto& Entry : ProfileButtons)
 		{
-			if (UButton* Button = Cast<UButton>(GetWidgetFromName(Entry.Name)))
-			{
-				Button->SetBackgroundColor(Entry.Profile == LocalSettings->GetExperienceProfile()
-					? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
-					: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
-			}
+			ApplyGeneratedButtonStateStyle(
+				Cast<UButton>(GetWidgetFromName(Entry.Name)),
+				Entry.Profile == LocalSettings->GetExperienceProfile());
 		}
 	}
 }
@@ -2976,7 +3195,7 @@ void UShooterOptionsScreen::HandleHorizontalSensitivityChanged(const float Value
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("HorizontalSensitivity");
 	SetMouseHorizontalSensitivity(Value);
-	SetGeneratedText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }
@@ -2986,7 +3205,7 @@ void UShooterOptionsScreen::HandleVerticalSensitivityChanged(const float Value)
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("VerticalSensitivity");
 	SetMouseVerticalSensitivity(Value);
-	SetGeneratedText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }
@@ -2996,7 +3215,52 @@ void UShooterOptionsScreen::HandleAimSensitivityChanged(const float Value)
 	if (bRefreshingGeneratedUI) return;
 	ActiveGeneratedOption = TEXT("AimSensitivity");
 	SetAimSensitivityMultiplier(Value);
-	SetGeneratedText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+	SetGeneratedText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
+	RefreshGeneratedOptionRowVisuals();
+	RefreshGeneratedDetailPanel();
+}
+
+void UShooterOptionsScreen::HandleHorizontalSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	{
+		return;
+	}
+
+	ActiveGeneratedOption = TEXT("HorizontalSensitivity");
+	SetMouseHorizontalSensitivity(FCString::Atof(*Text.ToString()));
+	// 설정 클래스가 자른 값을 칸에 되쓴다.
+	SetGeneratedText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseHorizontalSensitivity())));
+	RefreshGeneratedOptionRowVisuals();
+	RefreshGeneratedDetailPanel();
+}
+
+void UShooterOptionsScreen::HandleVerticalSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	{
+		return;
+	}
+
+	ActiveGeneratedOption = TEXT("VerticalSensitivity");
+	SetMouseVerticalSensitivity(FCString::Atof(*Text.ToString()));
+	// 설정 클래스가 자른 값을 칸에 되쓴다.
+	SetGeneratedText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseVerticalSensitivity())));
+	RefreshGeneratedOptionRowVisuals();
+	RefreshGeneratedDetailPanel();
+}
+
+void UShooterOptionsScreen::HandleAimSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	{
+		return;
+	}
+
+	ActiveGeneratedOption = TEXT("AimSensitivity");
+	SetAimSensitivityMultiplier(FCString::Atof(*Text.ToString()));
+	// 설정 클래스가 자른 값을 칸에 되쓴다.
+	SetGeneratedText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetAimSensitivityMultiplier())));
 	RefreshGeneratedOptionRowVisuals();
 	RefreshGeneratedDetailPanel();
 }

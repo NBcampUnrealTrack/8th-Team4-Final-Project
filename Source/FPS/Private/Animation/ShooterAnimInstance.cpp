@@ -3,20 +3,32 @@
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
+#include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
 
 void UShooterAnimInstance::NativeInitializeAnimation()
 {
+	RestoreSupportAnchor();
+	UnregisterSupportAnchor();
+	PreviousWeaponMesh.Reset();
+	bThirdPersonSupportAnchor = false;
 	Super::NativeInitializeAnimation();
 
 	CacheReferences();
+	if (!bFirstPersonAnimation && GetSkelMeshComponent())
+	{
+		SupportAnchorBody = GetSkelMeshComponent();
+		SupportAnchorFinalizedHandle = GetSkelMeshComponent()->RegisterOnBoneTransformsFinalizedDelegate(
+			FOnBoneTransformsFinalizedMultiCast::FDelegate::CreateUObject(this, &UShooterAnimInstance::UpdateSupportAnchor));
+	}
 	LastAnimationWeapon.Reset();
 	bWasReloading = false;
 	bWasUtilityHeld = false;
@@ -24,6 +36,84 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 	if (ShooterCharacter)
 	{
 		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetBaseAimRotation().Yaw, 0.f);
+	}
+}
+
+void UShooterAnimInstance::RestoreSupportAnchor()
+{
+	if (bSupportAnchorActive)
+	{
+		if (USkeletalMeshComponent* WeaponMesh = SupportAnchorMesh.Get())
+		{
+			// Do not undo a reattachment performed by equip/drop while the action ended.
+			if (WeaponMesh->GetAttachParent() == GetSkelMeshComponent()
+				&& WeaponMesh->GetAttachSocketName() == OriginalWeaponSocket)
+			{
+				WeaponMesh->SetRelativeTransform(OriginalWeaponRelative);
+			}
+		}
+	}
+	bSupportAnchorActive = false;
+	SupportAnchorMesh.Reset();
+}
+
+void UShooterAnimInstance::NativeUninitializeAnimation()
+{
+	RestoreSupportAnchor();
+	UnregisterSupportAnchor();
+	PreviousWeaponMesh.Reset();
+	Super::NativeUninitializeAnimation();
+}
+
+void UShooterAnimInstance::UnregisterSupportAnchor()
+{
+	if (USkeletalMeshComponent* Body = SupportAnchorBody.Get())
+	{
+		Body->UnregisterOnBoneTransformsFinalizedDelegate(SupportAnchorFinalizedHandle);
+	}
+	SupportAnchorFinalizedHandle.Reset();
+	SupportAnchorBody.Reset();
+}
+
+void UShooterAnimInstance::UpdateSupportAnchor()
+{
+	// Finalized bones (after buffer flip), not PostEvaluate's previous-frame sockets.
+	USkeletalMeshComponent* Body = GetSkelMeshComponent();
+	USkeletalMeshComponent* WeaponMesh = IsValid(CurrentWeapon) ? CurrentWeapon->GetMesh3P() : nullptr;
+	const bool bEligible = !bFirstPersonAnimation && Body && WeaponMesh
+		&& WeaponMesh->GetAttachParent() == Body && Body->DoesSocketExist(TEXT("hand_l"));
+	if (!bEligible || !bThirdPersonSupportAnchor || bIsReloading
+		|| (bSupportAnchorActive && SupportAnchorMesh.Get() != WeaponMesh))
+	{
+		RestoreSupportAnchor();
+	}
+	if (!bEligible)
+	{
+		PreviousWeaponMesh.Reset();
+		return;
+	}
+	const FTransform SupportHand = Body->GetSocketTransform(TEXT("hand_l"));
+	// Socket-attached children are updated after this callback. Reconstruct their
+	// current-frame world transform instead of sampling the stale child transform.
+	const FTransform AttachedWeaponWorld = WeaponMesh->GetRelativeTransform()
+		* Body->GetSocketTransform(WeaponMesh->GetAttachSocketName());
+	if (bThirdPersonSupportAnchor && !bIsReloading)
+	{
+		if (!bSupportAnchorActive)
+		{
+			OriginalWeaponRelative = WeaponMesh->GetRelativeTransform();
+			OriginalWeaponSocket = WeaponMesh->GetAttachSocketName();
+			SupportAnchorLocal = PreviousWeaponMesh.Get() == WeaponMesh
+				? PreviousSupportRelative : AttachedWeaponWorld.GetRelativeTransform(SupportHand);
+			SupportAnchorMesh = WeaponMesh;
+			bSupportAnchorActive = true;
+		}
+		WeaponMesh->SetWorldTransform(SupportAnchorLocal * SupportHand);
+	}
+	else
+	{
+		PreviousSupportRelative = AttachedWeaponWorld.GetRelativeTransform(SupportHand);
+		PreviousWeaponMesh = WeaponMesh;
 	}
 }
 
@@ -37,6 +127,11 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateWeaponValues();
+}
+
+float UShooterAnimInstance::GetIdlePostureSourceWeight() const
+{
+	return 1.f - FMath::Clamp(GetSlotMontageGlobalWeight(TEXT("DefaultSlot")), 0.f, 1.f);
 }
 
 void UShooterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -59,12 +154,14 @@ void UShooterAnimInstance::CacheReferences()
 	{
 		CharacterMovementComponent = nullptr;
 		Combat = nullptr;
+		bCQBTrainingAI = false;
 		return;
 	}
 
 	CharacterMovementComponent = ShooterCharacter->GetCharacterMovement();
 	Combat = ShooterCharacter->FindComponentByClass<UCombatComponent>();
 	bFirstPersonAnimation = GetSkelMeshComponent() == ShooterCharacter->GetMesh1P_Implementation();
+	bCQBTrainingAI = ShooterCharacter->FindComponentByClass<UCQBTrainingAIComponent>() != nullptr;
 }
 
 void UShooterAnimInstance::UpdateMovementValues()
@@ -92,6 +189,15 @@ void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 {
 	AimRotation = ShooterCharacter->CalculateFixedAimRotation();
 	AO_Pitch = AimRotation.Pitch;
+
+	if (bCQBTrainingAI)
+	{
+		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetActorRotation().Yaw, 0.f);
+		AO_Yaw = 0.f;
+		InterpAO_Yaw = 0.f;
+		TurningStatus = ETurningInPlace::NotTurning;
+		return;
+	}
 
 	if (!bIsMoving && !bIsFalling)
 	{

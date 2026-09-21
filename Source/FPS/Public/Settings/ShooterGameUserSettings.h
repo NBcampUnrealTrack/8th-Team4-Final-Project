@@ -182,13 +182,13 @@ protected:
 	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float CrosshairOutlineThickness = 0.f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.01", ClampMax = "10.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MouseHorizontalSensitivity = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.01", ClampMax = "10.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MouseVerticalSensitivity = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.01", ClampMax = "2.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AimSensitivityMultiplier = 1.0f;
 
 	UPROPERTY(Config)

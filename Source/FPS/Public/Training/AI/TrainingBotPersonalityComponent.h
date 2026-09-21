@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -50,10 +50,17 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality", meta = (ClampMin = "0.0", Units = "cm"))
     float AimExitPadding = 45.0f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality|Coward", meta = (ClampMin = "0.0", Units = "cm"))
+    float ApproachStepCentimeters = 65.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality|Coward", meta = (ClampMin = "0.0", Units = "cm"))
+    float EscapeStepCentimeters = 100.0f;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Training|Personality")
     bool bLogPersonalityOnSpawn = false;
 
 protected:
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType,
         FActorComponentTickFunction* ThisTickFunction) override;
 

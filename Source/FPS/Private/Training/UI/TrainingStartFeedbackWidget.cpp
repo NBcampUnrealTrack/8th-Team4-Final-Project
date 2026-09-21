@@ -59,17 +59,17 @@ void UTrainingStartFeedbackWidget::ApplyStyle()
     }
 }
 
-void UTrainingStartFeedbackWidget::ShowCountdown(const float ElapsedServerSeconds)
+void UTrainingStartFeedbackWidget::ShowCountdown(const float ElapsedSeconds)
 {
     bCountdownPulse = true;
     LastCountdownDigit = INDEX_NONE;
-    ShowPulse(CountdownText, GetDefault<UTrainingSettings>()->GetCountdownSeconds(), ElapsedServerSeconds);
+    ShowPulse(CountdownText, GetDefault<UTrainingSettings>()->GetCountdownSeconds(), ElapsedSeconds);
 }
 
-void UTrainingStartFeedbackWidget::ShowStarted(const float ElapsedServerSeconds)
+void UTrainingStartFeedbackWidget::ShowStarted(const float ElapsedSeconds)
 {
     bCountdownPulse = false;
-    ShowPulse(StartText, FMath::Max(0.5f, StartDisplaySeconds), ElapsedServerSeconds);
+    ShowPulse(StartText, FMath::Max(0.5f, StartDisplaySeconds), ElapsedSeconds);
 }
 
 void UTrainingStartFeedbackWidget::ShowPulse(const FText& Message,

@@ -20,6 +20,7 @@
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
+#include "UI/Subsystem/ShooterProfileImageSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterRoomScreen, Log, All);
@@ -54,7 +55,6 @@ void UShooterRoomScreen::NativeOnInitialized()
 	Btn_Ready->OnClicked().AddUObject(this, &ThisClass::HandleReadyClicked);
 	Btn_Start->OnClicked().AddUObject(this, &ThisClass::HandleStartClicked);
 	Btn_Leave->OnClicked().AddUObject(this, &ThisClass::HandleLeaveClicked);
-	Btn_ModePrev->OnClicked().AddUObject(this, &ThisClass::HandleModePrevClicked);
 	Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
 }
 
@@ -311,6 +311,11 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 	const APlayerState* HostState = LobbyGameState->GetHostPlayerState();
 	const APlayerState* LocalState = GetOwningPlayerState();
 
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterProfileImageSubsystem* ProfileImages = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterProfileImageSubsystem>()
+		: nullptr;
+
 	for (APlayerState* PlayerState : LobbyGameState->PlayerArray)
 	{
 		// 서버는 256 부터 줌
@@ -333,6 +338,10 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 		// 호스트 칸은 항상 채워진 상태이므로 서버도 레디 검사에서 호스트를 뺀다
 		View.bIsReady = View.bIsHost || ShooterPlayerState->IsLobbyReady();
 		View.bIsLocal = (PlayerState == LocalState);
+		// 없으면 다음 reconcile 에서 다시 물음
+		View.ProfileImage = IsValid(ProfileImages)
+			? ProfileImages->FindOrRequestProfileImage(PlayerState->GetUniqueId())
+			: nullptr;
 		Views.Add(View);
 	}
 
@@ -349,12 +358,13 @@ FString UShooterRoomScreen::BuildPresentationSignature(
 	{
 		for (const FShooterRoomSlotView& View : FShooterRoomRules::GetTeamPlayers(Views, Team))
 		{
-			Signature += FString::Printf(TEXT("%d:%s:%d:%d:%d|"),
+			Signature += FString::Printf(TEXT("%d:%s:%d:%d:%d:%d|"),
 			                             View.PlayerId,
 			                             *View.PlayerName,
 			                             static_cast<int32>(View.Team),
 			                             View.bIsReady ? 1 : 0,
-			                             View.bIsHost ? 1 : 0);
+			                             View.bIsHost ? 1 : 0,
+			                             View.ProfileImage ? 1 : 0);
 		}
 	}
 
@@ -517,7 +527,6 @@ void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMod
 {
 	// 모드를 고르는 사람은 호스트뿐
 	const ESlateVisibility ArrowVisibility = bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	Btn_ModePrev->SetVisibility(ArrowVisibility);
 	Btn_ModeNext->SetVisibility(ArrowVisibility);
 
 	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
@@ -557,12 +566,31 @@ void UShooterRoomScreen::RefreshActions(const ALobbyGameState* LobbyGameState, c
 	const bool bIsLocalReady = IsValid(LocalPlayerState) && LocalPlayerState->IsLobbyReady();
 
 	// 호스트는 레디 대상이 아님
-	Btn_Ready->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
-	Btn_Ready->SetButtonText(bIsLocalReady
-		                         ? NSLOCTEXT("ShooterLobby", "CancelReady", "CANCEL")
-		                         : NSLOCTEXT("ShooterLobby", "Ready", "READY"));
+	// 래퍼를 지정했으면 위에 얹은 장식까지 함께 사라지도록 래퍼를 숨긴다.
+	UWidget* ReadyTarget = Btn_Ready;
+	if (IsValid(Wrapper_Ready))
+	{
+		ReadyTarget = Wrapper_Ready;
+	}
+	ReadyTarget->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	const FText ReadyLabel = bIsLocalReady
+		? NSLOCTEXT("ShooterLobby", "CancelReady", "CANCEL")
+		: NSLOCTEXT("ShooterLobby", "Ready", "READY");
+	if (IsValid(Text_Ready))
+	{
+		Text_Ready->SetText(ReadyLabel);
+	}
+	else
+	{
+		Btn_Ready->SetButtonText(ReadyLabel);
+	}
 
-	Btn_Start->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	UWidget* StartTarget = Btn_Start;
+	if (IsValid(Wrapper_Start))
+	{
+		StartTarget = Wrapper_Start;
+	}
+	StartTarget->SetVisibility(bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
 	Text_Status->SetText(BuildStatusText(LobbyGameState->GetStartState(), bIsHost));
 
@@ -641,11 +669,6 @@ void UShooterRoomScreen::HandleStartClicked()
 	bLocalStartPending = true;
 	Btn_Start->SetIsEnabled(false);
 	PlayerController->RequestStartRoomGame();
-}
-
-void UShooterRoomScreen::HandleModePrevClicked()
-{
-	StepMatchMode(-1);
 }
 
 void UShooterRoomScreen::HandleModeNextClicked()

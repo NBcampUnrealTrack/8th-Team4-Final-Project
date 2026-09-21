@@ -8,10 +8,12 @@
 
 class APlayerController;
 class ATrainingArena;
+class ACQBTrainingPlayerSpawnPoint;
 class USoundBase;
 class UBoxComponent;
 class UPrimitiveComponent;
 class UStaticMeshComponent;
+class UTrainingDialogWidget;
 
 UCLASS()
 class FPS_API ATrainingInteractionActor : public AActor, public IRogueInteractable
@@ -33,8 +35,14 @@ public:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Training")
     TObjectPtr<ATrainingArena> Arena;
 
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Training|CQB")
+    TObjectPtr<ACQBTrainingPlayerSpawnPoint> CQBEntryPoint;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training")
     ETrainingInteractionRole InteractionRole = ETrainingInteractionRole::Entrance;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|UI")
+    TSubclassOf<UTrainingDialogWidget> DialogWidgetClass;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training")
     TObjectPtr<UBoxComponent> InteractionCollision;

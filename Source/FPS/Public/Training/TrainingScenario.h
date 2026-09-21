@@ -21,8 +21,8 @@ class FPS_API UTrainingScenario : public UObject
 public:
     void Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
         const FTrainingDistanceBand& InBand, const FTrainingModeConfig& InModeConfig);
-    virtual void SpawnNext() PURE_VIRTUAL(UTrainingScenario::SpawnNext, );
-    void Stop(bool bImmediate = false);
+    virtual bool SpawnNext() PURE_VIRTUAL(UTrainingScenario::SpawnNext, return false;);
+    void Stop();
     bool OwnsActor(const AActor* Candidate) const;
     FTrainingBotSpawned OnBotSpawned;
     FTrainingBotHit OnBotHit;
@@ -43,6 +43,7 @@ private:
 
     TWeakObjectPtr<ATrainingArena> Arena;
     TWeakObjectPtr<APlayerController> Participant;
+    bool bStopped = true;
 };
 
 UCLASS()
@@ -50,7 +51,7 @@ class FPS_API UTargetAcquisitionScenario : public UTrainingScenario
 {
     GENERATED_BODY()
 public:
-    virtual void SpawnNext() override;
+    virtual bool SpawnNext() override;
 };
 
 UCLASS()
@@ -58,9 +59,9 @@ class FPS_API UCombatResponseScenario : public UTrainingScenario
 {
     GENERATED_BODY()
 public:
-    virtual void SpawnNext() override;
+    virtual bool SpawnNext() override;
     int32 GetLivingAICount() const;
 
 private:
-    void SpawnCombatBot();
+    bool SpawnCombatBot();
 };

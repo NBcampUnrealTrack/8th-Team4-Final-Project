@@ -12,8 +12,6 @@ class UTrainingPlayerComponent;
 class USoundAttenuation;
 class USoundBase;
 
-// Local-only presentation for an active training session.
-// Networking/request validation stays in UTrainingPlayerComponent.
 UCLASS()
 class FPS_API UTrainingPlayerPresentation : public UObject
 {
@@ -21,7 +19,7 @@ class FPS_API UTrainingPlayerPresentation : public UObject
 
 public:
     void Initialize(UTrainingPlayerComponent& InOwner);
-    void HandlePhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartServerSeconds,
+    void HandlePhase(int32 SessionId, ETrainingFeedbackPhase Phase, double PhaseStartSeconds,
         ETrainingMode Mode, float DurationSeconds);
     void HandleHit(int32 SessionId, int32 Kills, float Damage, bool bKilled, const FVector& WorldPosition);
     void PresentStandaloneDamage(float Damage, bool bKilled, const FVector& WorldPosition);

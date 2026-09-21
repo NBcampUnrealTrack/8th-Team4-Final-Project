@@ -30,25 +30,25 @@ bool FShooterInputSettingsValuesTest::RunTest(const FString& Parameters)
 	Settings->SetToDefaults();
 
 	Settings->SetMouseHorizontalSensitivity(-1.0f);
-	TestEqual(TEXT("Horizontal sensitivity clamps to minimum"), Settings->GetMouseHorizontalSensitivity(), 0.01f);
+	TestEqual(TEXT("Horizontal sensitivity clamps to minimum"), Settings->GetMouseHorizontalSensitivity(), 0.0f);
 	Settings->SetMouseHorizontalSensitivity(20.0f);
-	TestEqual(TEXT("Horizontal sensitivity clamps to maximum"), Settings->GetMouseHorizontalSensitivity(), 10.0f);
-	Settings->SetMouseHorizontalSensitivity(2.5f);
-	TestEqual(TEXT("Horizontal sensitivity retains an in-range value"), Settings->GetMouseHorizontalSensitivity(), 2.5f);
+	TestEqual(TEXT("Horizontal sensitivity clamps to maximum"), Settings->GetMouseHorizontalSensitivity(), 1.0f);
+	Settings->SetMouseHorizontalSensitivity(0.25f);
+	TestEqual(TEXT("Horizontal sensitivity retains an in-range value"), Settings->GetMouseHorizontalSensitivity(), 0.25f);
 	TestEqual(TEXT("Horizontal change does not change vertical sensitivity"), Settings->GetMouseVerticalSensitivity(), 1.0f);
 
 	Settings->SetMouseVerticalSensitivity(-1.0f);
-	TestEqual(TEXT("Vertical sensitivity clamps to minimum"), Settings->GetMouseVerticalSensitivity(), 0.01f);
+	TestEqual(TEXT("Vertical sensitivity clamps to minimum"), Settings->GetMouseVerticalSensitivity(), 0.0f);
 	Settings->SetMouseVerticalSensitivity(20.0f);
-	TestEqual(TEXT("Vertical sensitivity clamps to maximum"), Settings->GetMouseVerticalSensitivity(), 10.0f);
-	Settings->SetMouseVerticalSensitivity(3.5f);
-	TestEqual(TEXT("Vertical sensitivity retains an in-range value"), Settings->GetMouseVerticalSensitivity(), 3.5f);
-	TestEqual(TEXT("Vertical change does not change horizontal sensitivity"), Settings->GetMouseHorizontalSensitivity(), 2.5f);
+	TestEqual(TEXT("Vertical sensitivity clamps to maximum"), Settings->GetMouseVerticalSensitivity(), 1.0f);
+	Settings->SetMouseVerticalSensitivity(0.35f);
+	TestEqual(TEXT("Vertical sensitivity retains an in-range value"), Settings->GetMouseVerticalSensitivity(), 0.35f);
+	TestEqual(TEXT("Vertical change does not change horizontal sensitivity"), Settings->GetMouseHorizontalSensitivity(), 0.25f);
 
 	Settings->SetAimSensitivityMultiplier(-1.0f);
-	TestEqual(TEXT("ADS multiplier clamps to minimum"), Settings->GetAimSensitivityMultiplier(), 0.01f);
+	TestEqual(TEXT("ADS multiplier clamps to minimum"), Settings->GetAimSensitivityMultiplier(), 0.0f);
 	Settings->SetAimSensitivityMultiplier(3.0f);
-	TestEqual(TEXT("ADS multiplier clamps to maximum"), Settings->GetAimSensitivityMultiplier(), 2.0f);
+	TestEqual(TEXT("ADS multiplier clamps to maximum"), Settings->GetAimSensitivityMultiplier(), 1.0f);
 	Settings->SetAimSensitivityMultiplier(0.5f);
 	TestEqual(TEXT("ADS multiplier retains an in-range value"), Settings->GetAimSensitivityMultiplier(), 0.5f);
 
@@ -74,18 +74,22 @@ bool FShooterLookSensitivityApplicationTest::RunTest(const FString& Parameters)
 	TStrongObjectPtr<UShooterGameUserSettings> Settings(
 		NewObject<UShooterGameUserSettings>(GetTransientPackage(), NAME_None, RF_Transient));
 	Settings->SetToDefaults();
-	Settings->SetMouseHorizontalSensitivity(2.0f);
-	Settings->SetMouseVerticalSensitivity(3.0f);
+	Settings->SetMouseHorizontalSensitivity(0.5f);
+	Settings->SetMouseVerticalSensitivity(0.25f);
 	Settings->SetAimSensitivityMultiplier(0.5f);
-	Settings->SetInvertVerticalLookEnabled(true);
+	Settings->SetInvertVerticalLookEnabled(false);
 
 	const FVector2D Hip = Settings->ApplyLookSensitivity(FVector2D(1.0f, 2.0f), false);
-	TestEqual(TEXT("Hip look applies horizontal sensitivity"), Hip.X, 2.0);
-	TestEqual(TEXT("Hip look applies vertical sensitivity and invert-Y"), Hip.Y, -6.0);
+	TestEqual(TEXT("Hip look applies horizontal sensitivity"), Hip.X, 0.5);
+	TestEqual(TEXT("Default mouse Y uses FPS look direction"), Hip.Y, -0.5);
 
 	const FVector2D Ads = Settings->ApplyLookSensitivity(FVector2D(1.0f, 2.0f), true);
-	TestEqual(TEXT("ADS look applies the ADS multiplier to X"), Ads.X, 1.0);
-	TestEqual(TEXT("ADS look applies the ADS multiplier to Y"), Ads.Y, -3.0);
+	TestEqual(TEXT("ADS look applies the ADS multiplier to X"), Ads.X, 0.25);
+	TestEqual(TEXT("ADS look applies the ADS multiplier to Y"), Ads.Y, -0.25);
+
+	Settings->SetInvertVerticalLookEnabled(true);
+	const FVector2D Inverted = Settings->ApplyLookSensitivity(FVector2D(0.0f, 2.0f), false);
+	TestEqual(TEXT("Invert Y reverses the default vertical direction"), Inverted.Y, 0.5);
 	return true;
 }
 
@@ -220,8 +224,8 @@ bool FShooterSettingsDefaultsTest::RunTest(const FString& Parameters)
 		NewObject<UShooterGameUserSettings>(GetTransientPackage(), NAME_None, RF_Transient));
 	Settings->SetToDefaults();
 	Settings->SetDynamicCrosshairEnabled(false);
-	Settings->SetMouseHorizontalSensitivity(2.0f);
-	Settings->SetMouseVerticalSensitivity(3.0f);
+	Settings->SetMouseHorizontalSensitivity(0.2f);
+	Settings->SetMouseVerticalSensitivity(0.3f);
 	Settings->SetAimSensitivityMultiplier(0.5f);
 	Settings->SetInvertVerticalLookEnabled(true);
 	for (const EShooterAudioChannel Channel : AudioChannels)

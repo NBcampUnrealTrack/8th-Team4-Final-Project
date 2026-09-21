@@ -3,13 +3,14 @@
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "TrainingInteractionRegistration.h"
+#include "Player/TrainingPlayerController.h"
 #include "Training/TrainingArena.h"
+#include "Training/CQB/CQBTrainingPlayerSpawnPoint.h"
 #include "Training/TrainingPlayerComponent.h"
 
 ATrainingInteractionActor::ATrainingInteractionActor()
 {
     PrimaryActorTick.bCanEverTick = false;
-    bReplicates = true;
 
     InteractionCollision = CreateDefaultSubobject<UBoxComponent>(TEXT("InteractionCollision"));
     SetRootComponent(InteractionCollision);
@@ -29,13 +30,19 @@ void ATrainingInteractionActor::EndPlay(const EEndPlayReason::Type EndPlayReason
 
 bool ATrainingInteractionActor::CanInteract(const APlayerController& RequestingPlayer) const
 {
-    return IsValid(Arena) && RequestingPlayer.GetPawn()
+    const bool bHasDestination = InteractionRole == ETrainingInteractionRole::Entrance
+        ? (IsValid(Arena) || IsValid(CQBEntryPoint))
+        : IsValid(Arena);
+
+    return GetNetMode() == NM_Standalone && RequestingPlayer.IsLocalController()
+        && RequestingPlayer.IsA<ATrainingPlayerController>()
+        && bHasDestination && RequestingPlayer.GetPawn()
         && RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>() != nullptr;
 }
 
 void ATrainingInteractionActor::Interact(APlayerController& RequestingPlayer)
 {
-    if (HasAuthority() && CanInteract(RequestingPlayer))
+    if (CanInteract(RequestingPlayer))
     {
         RequestingPlayer.FindComponentByClass<UTrainingPlayerComponent>()->OpenDialogFor(*this);
     }
