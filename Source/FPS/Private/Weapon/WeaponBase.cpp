@@ -6,6 +6,10 @@
 #include "Combat/CombatComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/ShooterAnimInstance.h"
+#include "Character/ShooterCharacter.h"
+#include "GameMode/Types/DominationTypes.h"
+#include "Player/DominationPlayerState.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
@@ -597,6 +601,24 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 {
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
+
+	// The predicting owner and authority play rifle recoil through the ability.
+	// Simulated observers receive fire effects, but do not execute that ability.
+	// Shotgun/sniper character actions already have their own presentation relay.
+	if (OwningPawn && OwningPawn->GetLocalRole() == ROLE_SimulatedProxy
+		&& GetWeaponTag() == RogueTags::Weapon_Type_Rifle)
+	{
+		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
+		UShooterAnimInstance* Anim = Character && Character->GetMesh()
+			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
+		const ADominationPlayerState* State = Character ? Character->GetPlayerState<ADominationPlayerState>() : nullptr;
+		if (Anim && State && State->GetCombatClass() == EDominationCombatClass::Trooper
+			&& Character->GetCombatComponent()
+			&& Character->GetCombatComponent()->GetCurrentWeapon() == this)
+		{
+			Anim->PlayFireMontageForCurrentWeapon();
+		}
+	}
 
 	// 표면별 임팩트 파티클(혈흔 등)은 FireEffects BP 그래프와 무관하게 여기서 직접 스폰한다 -
 	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.

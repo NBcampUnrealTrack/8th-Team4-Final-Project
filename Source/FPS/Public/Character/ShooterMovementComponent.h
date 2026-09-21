@@ -60,6 +60,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
 	bool IsSprinting() const { return bWantsToSprint; }
 
+	// Presentation only: preserve sprint input intent for movement/combat while idle.
+	UFUNCTION(BlueprintPure, Category = "FPS|Movement|Animation")
+	bool ShouldPlaySprintAnimation() const
+	{
+		return bWantsToSprint && !IsCrouching() && IsMovingOnGround()
+			&& Velocity.SizeSquared2D() > FMath::Square(3.f);
+	}
+
 protected:
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 
