@@ -1,9 +1,11 @@
 #include "Loading/LoadingScreenSubsystem.h"
 
-#include "Blueprint/GameViewportSubsystem.h"
 #include "Blueprint/UserWidget.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/Engine.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -12,6 +14,19 @@ namespace
 {
 	constexpr float MapEnteredProgress = 0.7f;
 	constexpr float ReadyGateProgressRange = 0.25f;
+	constexpr int32 LoadingScreenZOrder = 10000;
+}
+
+void ULoadingScreenSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	
+	// Unreal 기본 로딩 비활성화
+	if (GEngine)
+	{
+		GEngine->RegisterBeginStreamingPauseRenderingDelegate(nullptr);
+		GEngine->RegisterEndStreamingPauseRenderingDelegate(nullptr);
+	}
 }
 
 void ULoadingScreenSubsystem::Deinitialize()
@@ -46,16 +61,18 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 			RebindLoadingWidgetToCurrentWorld();
 		}
 
-		UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get();
-		if (Viewport && ActiveLoadingWidget)
-		{
-			FGameViewportWidgetSlot Slot;
-			Slot.ZOrder = 10000;
-			Slot.bAutoRemoveOnWorldRemoved = false; 
+		UGameViewportClient* ViewportClient = GetGameViewportClient();
 
-			Viewport->AddWidget(
-				ActiveLoadingWidget,
-				Slot);
+		if (ViewportClient && ActiveLoadingWidget)
+		{
+			// 월드 위젯 트리가 아니라 뷰포트 오버레이에 직접 붙인다
+			LoadingScreenSlateWidget = ActiveLoadingWidget->TakeWidget();
+
+			ViewportClient->AddViewportWidgetContent(
+				LoadingScreenSlateWidget.ToSharedRef(),
+				LoadingScreenZOrder);
+
+			ViewportClient->bDisableWorldRendering = true;
 		}
 	}
 
@@ -75,12 +92,20 @@ void ULoadingScreenSubsystem::SetLoadingProgress(const float Progress)
 
 void ULoadingScreenSubsystem::HideLoadingScreen()
 {
-	if (ActiveLoadingWidget)
+	if (LoadingScreenSlateWidget.IsValid())
 	{
-		RebindLoadingWidgetToCurrentWorld();
-		ActiveLoadingWidget->RemoveFromParent();
-		ActiveLoadingWidget = nullptr;
+		if (UGameViewportClient* ViewportClient = GetGameViewportClient())
+		{
+			ViewportClient->RemoveViewportWidgetContent(
+				LoadingScreenSlateWidget.ToSharedRef());
+
+			ViewportClient->bDisableWorldRendering = false;
+		}
+
+		LoadingScreenSlateWidget.Reset();
 	}
+
+	ActiveLoadingWidget = nullptr;
 }
 
 void ULoadingScreenSubsystem::BindToRoundGameState(ABaseRoundGameState* RoundGameState)
@@ -114,8 +139,7 @@ void ULoadingScreenSubsystem::UnbindFromRoundGameState()
 
 bool ULoadingScreenSubsystem::IsLoadingScreenVisible() const
 {
-	const UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get();
-	return ActiveLoadingWidget && Viewport && Viewport->IsWidgetAdded(ActiveLoadingWidget);
+	return LoadingScreenSlateWidget.IsValid();
 }
 
 void ULoadingScreenSubsystem::HandleRoundStateChanged()
@@ -165,4 +189,10 @@ void ULoadingScreenSubsystem::RebindLoadingWidgetToCurrentWorld()
 		FLocalPlayerContext(
 			GameInstance->GetFirstGamePlayer(),
 			GameInstance->GetWorld()));
+}
+
+UGameViewportClient* ULoadingScreenSubsystem::GetGameViewportClient() const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetGameViewportClient() : nullptr;
 }
