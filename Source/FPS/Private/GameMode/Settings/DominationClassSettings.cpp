@@ -72,7 +72,7 @@ bool UDominationClassSettings::HasValidDefinitions() const
 		if (Definition.CombatClass == EDominationCombatClass::Unselected
 			|| RegisteredClasses.Contains(Definition.CombatClass)
 			|| !Definition.PrimaryWeaponTag.IsValid()
-			|| !ResolvePawnClass(Definition.CombatClass))
+			|| Definition.PawnClass.IsNull())
 		{
 			return false;
 		}

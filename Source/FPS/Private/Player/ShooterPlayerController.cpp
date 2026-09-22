@@ -1,4 +1,4 @@
-#include "Player/ShooterPlayerController.h"
+﻿#include "Player/ShooterPlayerController.h"
 
 #include "AudioDevice.h"
 #include "Camera/PlayerCameraManager.h"
@@ -189,10 +189,8 @@ void AShooterPlayerController::InitializeAudioSettings()
 
 	Settings->OnAudioSettingsChanged.AddUObject(this, &ThisClass::HandleAudioSettingsChanged);
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	ActiveUserSettingsSoundMix = AudioSettings->UserSettingsSoundMix.LoadSynchronous();
-	if (ensureMsgf(ActiveUserSettingsSoundMix,
-		TEXT("Assign UserSettingsSoundMix in Project Settings > Shooter Audio Settings.")))
+	ActiveUserSettingsSoundMix = Settings->GetUserSettingsSoundMix();
+	if (ActiveUserSettingsSoundMix)
 	{
 		UGameplayStatics::PushSoundMixModifier(this, ActiveUserSettingsSoundMix);
 	}
@@ -224,7 +222,7 @@ void AShooterPlayerController::ShutdownAudioSettings()
 
 void AShooterPlayerController::HandleAudioSettingsChanged()
 {
-	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 	if (!Settings)
 	{
 		return;
@@ -258,16 +256,13 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 		return;
 	}
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	const auto SetClassVolume = [this](
-		const TSoftObjectPtr<USoundClass>& SoundClassReference,
+	const auto SetClassVolume = [this, Settings](
+		const EShooterAudioChannel Channel,
 		const float Volume,
 		const bool bApplyToChildren)
 	{
-		USoundClass* SoundClass = SoundClassReference.LoadSynchronous();
-		if (!ensureMsgf(SoundClass,
-			TEXT("Assign every channel Sound Class in Project Settings > Shooter Audio Settings. Missing: %s"),
-			*SoundClassReference.ToString()))
+		USoundClass* SoundClass = Settings->GetAudioChannelSoundClass(Channel);
+		if (!SoundClass)
 		{
 			return;
 		}
@@ -283,14 +278,14 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 	};
 
 	// Channel overrides are multiplied by the already-applied master value.
-	SetClassVolume(AudioSettings->MasterSoundClass, 1.0f, false);
-	SetClassVolume(AudioSettings->MusicSoundClass,
+	SetClassVolume(EShooterAudioChannel::Master, 1.0f, false);
+	SetClassVolume(EShooterAudioChannel::Music,
 		Settings->GetAudioVolume(EShooterAudioChannel::Music), true);
-	SetClassVolume(AudioSettings->SoundEffectsSoundClass,
+	SetClassVolume(EShooterAudioChannel::SoundEffects,
 		Settings->GetAudioVolume(EShooterAudioChannel::SoundEffects), true);
-	SetClassVolume(AudioSettings->UserInterfaceSoundClass,
+	SetClassVolume(EShooterAudioChannel::UserInterface,
 		Settings->GetAudioVolume(EShooterAudioChannel::UserInterface), true);
-	SetClassVolume(AudioSettings->VoiceSoundClass,
+	SetClassVolume(EShooterAudioChannel::Voice,
 		Settings->IsVoiceChatEnabled()
 			? Settings->GetAudioVolume(EShooterAudioChannel::Voice)
 			: 0.0f,
@@ -314,6 +309,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, 0.5f);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
@@ -723,6 +719,19 @@ void AShooterPlayerController::HideLoadingScreen()
 	}
 }
 
+void AShooterPlayerController::FinishLoadingScreen()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->FinishLoadingScreen();
+	}
+}
+
 void AShooterPlayerController::RequestReturnToLobby()
 {
 	if (!IsLocalController())
@@ -866,6 +875,11 @@ void AShooterPlayerController::ClientSetLoadingProgress_Implementation(const flo
 void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 {
 	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ClientFinishLoadingScreen_Implementation()
+{
+	FinishLoadingScreen();
 }
 
 void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill, const bool bPlaySound)
@@ -1450,6 +1464,12 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	}
 
 	SetLoadingProgress(0.9f);
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->NotifyMatchLoadReady();
+	}
+
 	bNotifiedLoadedIntoMatch = true;
 	StopMatchLoadReadyCheck();
 

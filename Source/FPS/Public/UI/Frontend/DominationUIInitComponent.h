@@ -12,6 +12,7 @@ class FPS_API UDominationUIInitComponent : public UCombatUIInitComponent
 {
     GENERATED_BODY()
 protected:
+    virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual bool PrepareModeBindings() override;
     virtual bool CanInitializeCombatHUD(const ADominationPlayerState& ClassState) const override;

@@ -1,4 +1,4 @@
-#include "Killcam/KillcamReplaySubsystem.h"
+﻿#include "Killcam/KillcamReplaySubsystem.h"
 
 #include "Engine/ActorChannel.h"
 #include "Engine/DemoNetConnection.h"
@@ -14,6 +14,15 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "UI/Killcam/KillcamWidget.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogKillcam, Log, All);
+
+namespace
+{
+	constexpr float KillcamSetupRetryInterval = 0.2f;
+	constexpr float KillcamSetupRetryTimeout = 30.0f;
+	constexpr float KillcamBufferSafetyMargin = 2.0f;
+}
 
 bool UKillcamReplaySubsystem::IsLiveWorldActor(const AActor* Actor)
 {
@@ -57,8 +66,77 @@ void UKillcamReplaySubsystem::SetUpForWorld(UWorld* World)
 		SourceWorld = World;
 	}
 
+	RetrySetup();
+}
+
+void UKillcamReplaySubsystem::RetrySetup()
+{
+	UWorld* World = SourceWorld.Get();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
 	BindGameState();
 	StartRecording();
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	if (IsSetUpComplete())
+	{
+		TimerManager.ClearTimer(SetupRetryTimerHandle);
+		SetupRetryElapsed = 0.0f;
+		return;
+	}
+
+	if (!IsValid(BoundGameState) && IsValid(World->GetGameState()))
+	{
+		TimerManager.ClearTimer(SetupRetryTimerHandle);
+		SetupRetryElapsed = 0.0f;
+		return;
+	}
+
+	if (SetupRetryElapsed >= KillcamSetupRetryTimeout)
+	{
+		TimerManager.ClearTimer(SetupRetryTimerHandle);
+		UE_LOG(LogKillcam, Warning,
+			TEXT("Killcam setup gave up after %.0fs. GameState=%s Recording=%d"),
+			KillcamSetupRetryTimeout,
+			*GetNameSafe(BoundGameState),
+			IsValid(World->GetDemoNetDriver()) && World->GetDemoNetDriver()->IsRecording());
+		return;
+	}
+
+	if (!TimerManager.IsTimerActive(SetupRetryTimerHandle))
+	{
+		SetupRetryElapsed = 0.0f;
+		TimerManager.SetTimer(
+			SetupRetryTimerHandle,
+			this,
+			&ThisClass::RetrySetup,
+			KillcamSetupRetryInterval,
+			true);
+		return;
+	}
+
+	SetupRetryElapsed += KillcamSetupRetryInterval;
+}
+
+bool UKillcamReplaySubsystem::IsSetUpComplete() const
+{
+	if (!IsValid(BoundGameState))
+	{
+		return false;
+	}
+
+	const UWorld* World = SourceWorld.Get();
+	const UDemoNetDriver* RecordingDriver = IsValid(World) ? World->GetDemoNetDriver() : nullptr;
+	return IsValid(RecordingDriver) && RecordingDriver->IsRecording();
+}
+
+float UKillcamReplaySubsystem::GetRequiredBufferSeconds() const
+{
+	const float MinimumSeconds = PlaybackDuration + PostDeathRecordDuration + KillcamBufferSafetyMargin;
+	return FMath::Max(ReplayBufferSeconds, MinimumSeconds);
 }
 
 void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
@@ -70,6 +148,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 
 	World->GetTimerManager().ClearTimer(PostDeathTimerHandle);
 	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
+	World->GetTimerManager().ClearTimer(SetupRetryTimerHandle);
 	if (IsValid(PlaybackWidget))
 	{
 		PlaybackWidget->RemoveFromParent();
@@ -99,6 +178,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 	KillerActorGuid = FNetworkGUID();
 	VictimActorGuid = FNetworkGUID();
 	DeathDemoTime = 0.0f;
+	SetupRetryElapsed = 0.0f;
 	bPlaying = false;
 }
 
@@ -213,7 +293,7 @@ void UKillcamReplaySubsystem::StartRecording()
 	TSharedPtr<INetworkReplayStreamer> ReplayStreamer = RecordingDriver->GetReplayStreamer();
 	if (ReplayStreamer.IsValid())
 	{
-		ReplayStreamer->SetTimeBufferHintSeconds(6.0f);
+		ReplayStreamer->SetTimeBufferHintSeconds(GetRequiredBufferSeconds());
 	}
 }
 
@@ -260,14 +340,14 @@ void UKillcamReplaySubsystem::StartPlayback()
 	if (!GameInstance->PlayReplay(TEXT("_Killcam"), nullptr, Options))
 	{
 		DuplicateCollection->SetIsVisible(false);
-		StartRecording();
+		RetrySetup();
 		return;
 	}
 
 	UDemoNetDriver* PlaybackDriver = World->GetDemoNetDriver();
 	if (!IsValid(PlaybackDriver))
 	{
-		StartRecording();
+		RetrySetup();
 		return;
 	}
 
@@ -374,7 +454,7 @@ void UKillcamReplaySubsystem::StopPlayback()
 	RestoreLiveWorld();
 	CleanPlaybackWorld();
 	bPlaying = false;
-	StartRecording();
+	RetrySetup();
 }
 
 

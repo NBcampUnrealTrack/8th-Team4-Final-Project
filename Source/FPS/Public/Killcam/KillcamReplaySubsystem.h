@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Misc/NetworkGuid.h"
@@ -32,6 +32,9 @@ private:
 	void HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent);
 
 	void BindGameState();
+	void RetrySetup();
+	bool IsSetUpComplete() const;
+	float GetRequiredBufferSeconds() const;
 	void StartRecording();
 	void StartPlayback();
 	void HandlePlaybackReady(bool bWasSuccessful);
@@ -58,6 +61,15 @@ private:
 	UPROPERTY(Config)
 	TSoftClassPtr<AKillcamCameraActor> CameraClass;
 
+	UPROPERTY(Config)
+	float PlaybackDuration = 5.0f;
+
+	UPROPERTY(Config)
+	float PostDeathRecordDuration = 0.5f;
+
+	UPROPERTY(Config)
+	float ReplayBufferSeconds = 10.0f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UKillcamWidget> PlaybackWidget;
 
@@ -73,8 +85,8 @@ private:
 	FNetworkGUID VictimActorGuid;
 	FTimerHandle PostDeathTimerHandle;
 	FTimerHandle PlaybackTimerHandle;
+	FTimerHandle SetupRetryTimerHandle;
+	float SetupRetryElapsed = 0.0f;
 	float DeathDemoTime = 0.0f;
-	float PlaybackDuration = 5.0f;
-	float PostDeathRecordDuration = 0.5f;
 	bool bPlaying = false;
 };

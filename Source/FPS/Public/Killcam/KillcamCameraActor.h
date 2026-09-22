@@ -50,9 +50,6 @@ private:
 	void UpdateFirstPersonPresentation();
 	void SetMeshPresentation(USceneComponent* Root, bool bFirstPerson);
 	void RestoreMeshPresentation();
-	void TraceWeaponPresentation() const;
-	void TraceLivePresentation() const;
-	void TraceSkeletalMesh(const TCHAR* Label, USkeletalMeshComponent* Mesh, USceneComponent* ExpectedParent, FName ExpectedSocket) const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Killcam")
 	TObjectPtr<UCameraComponent> CameraComponent;
@@ -73,6 +70,4 @@ private:
 	TArray<FKillcamMeshVisibility> SavedMeshVisibility;
 
 	bool bHasValidView = false;
-	float PresentationTraceElapsed = 1.0f;
-	int32 PresentationTraceCount = 0;
 };

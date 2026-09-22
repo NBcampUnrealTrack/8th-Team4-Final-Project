@@ -3,6 +3,9 @@
 #include "Engine/Engine.h"
 #include "Internationalization/Internationalization.h"
 #include "HAL/IConsoleManager.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
 
 namespace ShooterGameUserSettings
 {
@@ -252,6 +255,66 @@ float UShooterGameUserSettings::GetAudioVolume(const EShooterAudioChannel Channe
 	default:
 		return 1.0f;
 	}
+}
+
+USoundMix* UShooterGameUserSettings::GetUserSettingsSoundMix()
+{
+	if (!CachedUserSettingsSoundMix)
+	{
+		const TSoftObjectPtr<USoundMix>& Reference = GetDefault<UShooterAudioSettings>()->UserSettingsSoundMix;
+		USoundMix* Loaded = Reference.LoadSynchronous();
+		if (!ensureMsgf(Loaded,
+			TEXT("Assign UserSettingsSoundMix in Project Settings > Shooter Audio Settings.")))
+		{
+			return nullptr;
+		}
+
+		CachedUserSettingsSoundMix = Loaded;
+	}
+
+	return CachedUserSettingsSoundMix;
+}
+
+USoundClass* UShooterGameUserSettings::GetAudioChannelSoundClass(const EShooterAudioChannel Channel)
+{
+	if (const TObjectPtr<USoundClass>* Cached = CachedAudioChannelSoundClasses.Find(Channel))
+	{
+		return *Cached;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	const TSoftObjectPtr<USoundClass>* Reference = nullptr;
+	switch (Channel)
+	{
+	case EShooterAudioChannel::Master:
+		Reference = &AudioSettings->MasterSoundClass;
+		break;
+	case EShooterAudioChannel::Music:
+		Reference = &AudioSettings->MusicSoundClass;
+		break;
+	case EShooterAudioChannel::SoundEffects:
+		Reference = &AudioSettings->SoundEffectsSoundClass;
+		break;
+	case EShooterAudioChannel::UserInterface:
+		Reference = &AudioSettings->UserInterfaceSoundClass;
+		break;
+	case EShooterAudioChannel::Voice:
+		Reference = &AudioSettings->VoiceSoundClass;
+		break;
+	default:
+		return nullptr;
+	}
+
+	USoundClass* Loaded = Reference->LoadSynchronous();
+	if (!ensureMsgf(Loaded,
+		TEXT("Assign every channel Sound Class in Project Settings > Shooter Audio Settings. Missing: %s"),
+		*Reference->ToString()))
+	{
+		return nullptr;
+	}
+
+	CachedAudioChannelSoundClasses.Add(Channel, Loaded);
+	return Loaded;
 }
 
 void UShooterGameUserSettings::SetAudioVolume(

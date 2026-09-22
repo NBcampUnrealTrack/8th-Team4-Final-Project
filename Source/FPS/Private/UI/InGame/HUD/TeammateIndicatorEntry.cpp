@@ -125,7 +125,10 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 
 	// 5. 계산된 Canvas 위치로 인디케이터를 옮긴 뒤 보여준다.
 	// 먼저 보여주면 이전 위치나 기본 위치가 한 프레임 보일 수 있다.
-	CachedCanvasSlot->SetPosition(OurLocalPos);
+	if (!GetRenderTransform().Translation.Equals(OurLocalPos, 0.05f))
+	{
+		SetRenderTranslation(OurLocalPos);
+	}
 	
 	if (Panel_IndicatorVisual)
 	{

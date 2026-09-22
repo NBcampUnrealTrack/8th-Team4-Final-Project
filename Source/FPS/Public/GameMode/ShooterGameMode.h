@@ -52,8 +52,15 @@ protected:
 	ASpectatorPawn* SpawnSpectatorPawnFor(APlayerController* PlayerController, const FTransform& SpawnTransform);
 	FTransform ResolveSpectatorSpawnTransform(APlayerController* PlayerController) const;
 	APawn* FindNextSpectatorTarget(APlayerController* SpectatorController) const;
+	void ScheduleSpectatorTargetRetry(APlayerController* SpectatorController);
+	void ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController> WeakController);
+	void RetrySpectatorTarget(TWeakObjectPtr<APlayerController> SpectatorController);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<AShooterSpectatorPawn> ShooterSpectatorPawnClass;
-	
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
+	float SpectatorTargetRetryInterval = 0.5f;
+
+	TMap<TWeakObjectPtr<APlayerController>, FTimerHandle> SpectatorTargetRetryTimers;
 };
