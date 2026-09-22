@@ -273,12 +273,15 @@ void URogueGameplayAbility::FinishDeliver()
 		}
 	}
 
-	EndSelf(false);
+	// 클라 종료가 서버의 발동 대기를 끊지 않게 복제하지 않음
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
+		/*bReplicateEndAbility*/ HasAuthority(&CurrentActivationInfo), false);
 }
 
 void URogueGameplayAbility::HandleRecoveryFinished()
 {
-	EndSelf(false);
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
+		/*bReplicateEndAbility*/ HasAuthority(&CurrentActivationInfo), false);
 }
 
 FGameplayCueParameters URogueGameplayAbility::MakeCueParams() const
