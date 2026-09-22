@@ -9,7 +9,7 @@ bool FCustomizationAppearance::Validate() const
  auto Range=[](float V,float Min,float Max){return FMath::IsFinite(V)&&V>=Min&&V<=Max;};
  auto Color=[&](FLinearColor C){return Range(C.R,0,1)&&Range(C.G,0,1)&&Range(C.B,0,1)&&Range(C.A,0,1);};
  if(BodyType!=TEXT("Seo")&&BodyType!=TEXT("Custom")&&BodyType!=TEXT("Fab"))return false;
- if(HairId.IsNone()||HairId.ToString().Len()>128||!Color(EyeColor)||!Color(SkinColor)||!Range(SkinValue,.15f,1.35f))return false;
+ if(HairId.IsNone()||HairId.ToString().Len()>128||!Color(HairColor)||!Color(EyeColor)||!Color(SkinColor)||!Range(SkinValue,.15f,1.35f))return false;
  if(Colors.Num()!=8||Values.Num()!=8||Originals.Num()!=8)return false;
  for(int32 I=0;I<8;++I)if(!Color(Colors[I])||!Range(Values[I],0,2)||!Range(Originals[I],0,1))return false;
  return true;

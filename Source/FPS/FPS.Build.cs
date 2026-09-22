@@ -27,6 +27,7 @@ public class FPS : ModuleRules
 			"CommonUI",
 			"CustomizableObject",
 			"AnimGraphRuntime",
+			"AnimationCore",
 			"DeveloperSettings",
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",

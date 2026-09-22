@@ -13,6 +13,11 @@
                                                        "CommonUI",
                                                        "GameplayAbilities"
                                                    ]
+                    },
+                    {
+                        "Name": "FPSAnimationEditor",
+                        "Type": "UncookedOnly",
+                        "LoadingPhase": "Default"
                     }
                 ],
     "Plugins":  [

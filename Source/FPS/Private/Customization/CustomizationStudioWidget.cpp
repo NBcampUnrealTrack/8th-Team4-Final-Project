@@ -36,6 +36,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::HairMenu()
 }
 TSharedRef<SWidget> UCustomizationStudioWidget::RebuildWidget()
 {
+ if(bUseMutableLevelLayout)return BuildMutableLevelLayout();
  using namespace StudioUI;
  auto Panel=SNew(SVerticalBox);
  Panel->AddSlot().AutoHeight().Padding(0,0,0,12)[Label(TEXT("RANGER / CUSTOMIZATION"),22)];

@@ -24,8 +24,21 @@ public:
  void SaveAppearance();
  void LoadAppearance();
  void ResetAppearance();
- bool CanSave() const {return !Account.IsEmpty()&&Studio!=nullptr;}
+ bool CanSave() const;
+ // Modal color editing previews Draft but cannot save until confirmed.
+ void BeginColorEdit(int32 Part);
+ void EndColorEdit(bool bAccept);
+ bool IsColorEditOpen() const {return ColorEditPart!=INDEX_NONE;}
+ int32 GetColorEditPart() const {return ColorEditPart;}
+ FLinearColor GetEditingColor() const;
+ FLinearColor GetPreviousColor() const;
+ void SetEditingColor(FLinearColor Color);
+ void RestoreEditingPart();
 private:
+ int32 ColorEditPart=INDEX_NONE;
+ FCustomizationAppearance BeforeColorEdit;
+ bool bDirtyBeforeColorEdit=false;
+ FString StatusBeforeColorEdit;
  UPROPERTY() TObjectPtr<UCustomizationStudioWidget> Screen;
  FString Service,Account;
  float AccountPoll=0;
