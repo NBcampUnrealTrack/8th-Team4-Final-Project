@@ -78,4 +78,8 @@ public:
 	// BGM 을 유지하는 맵. 그 밖의 맵으로 떠나거나 로드되면 끈다
 	UPROPERTY(Config, EditAnywhere, Category = "OutGame Music")
 	TArray<TSoftObjectPtr<UWorld>> OutGameMusicMaps;
+
+	// 로딩 화면 하단 한 줄. 세션당 하나를 뽑고 회전하지 않는다
+	UPROPERTY(Config, EditAnywhere, Category = "Loading")
+	TArray<FText> LoadingTips;
 };

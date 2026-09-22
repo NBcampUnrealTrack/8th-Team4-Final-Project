@@ -232,7 +232,7 @@ void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* Player
 	if (PlayerState->GetParticipationState()
 		== EPlayerParticipationState::WaitingForNextSpawn)
 	{
-		DominationPlayerController->ClientHideLoadingScreen();
+		DominationPlayerController->ClientFinishLoadingScreen();
 		return;
 	}
 
