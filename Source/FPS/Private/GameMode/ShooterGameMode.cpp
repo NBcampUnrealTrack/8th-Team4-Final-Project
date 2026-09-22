@@ -15,6 +15,7 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Player/ShooterPlayerState.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -176,8 +177,6 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 		return;
 	}
 
-	PlayerController->ChangeState(NAME_Spectating);
-	PlayerController->ClientGotoState(NAME_Spectating);
 	PlayerController->Possess(SpectatorPawn);
 
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
@@ -197,17 +196,67 @@ void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorControll
 	APawn* TargetPawn = FindNextSpectatorTarget(SpectatorController);
 	if (!IsValid(TargetPawn))
 	{
+		ScheduleSpectatorTargetRetry(SpectatorController);
 		return;
 	}
 
+	ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController>(SpectatorController));
+
 	FViewTargetTransitionParams TransitionParams;
 	TransitionParams.BlendTime = 0.15f;
+	SpectatorController->SetViewTarget(TargetPawn, TransitionParams);
 	SpectatorController->ClientSetViewTarget(TargetPawn, TransitionParams);
 
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(SpectatorController))
 	{
 		ShooterPlayerController->ClientSetSpectatorTarget(TargetPawn->GetPlayerState());
 	}
+}
+
+void AShooterGameMode::ScheduleSpectatorTargetRetry(APlayerController* SpectatorController)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !IsValid(SpectatorController))
+	{
+		return;
+	}
+
+	const TWeakObjectPtr<APlayerController> WeakController(SpectatorController);
+	FTimerHandle& RetryHandle = SpectatorTargetRetryTimers.FindOrAdd(WeakController);
+	if (World->GetTimerManager().IsTimerActive(RetryHandle))
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		RetryHandle,
+		FTimerDelegate::CreateUObject(this, &AShooterGameMode::RetrySpectatorTarget, WeakController),
+		SpectatorTargetRetryInterval,
+		true);
+}
+
+void AShooterGameMode::ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController> WeakController)
+{
+	if (FTimerHandle* RetryHandle = SpectatorTargetRetryTimers.Find(WeakController))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(*RetryHandle);
+		}
+		SpectatorTargetRetryTimers.Remove(WeakController);
+	}
+}
+
+void AShooterGameMode::RetrySpectatorTarget(TWeakObjectPtr<APlayerController> SpectatorController)
+{
+	APlayerController* Controller = SpectatorController.Get();
+	if (!IsValid(Controller) || !Controller->GetPawn<AShooterSpectatorPawn>())
+	{
+		ClearSpectatorTargetRetry(SpectatorController);
+		return;
+	}
+
+	CycleSpectatorTarget(Controller);
 }
 
 ASpectatorPawn* AShooterGameMode::SpawnSpectatorPawnFor(
