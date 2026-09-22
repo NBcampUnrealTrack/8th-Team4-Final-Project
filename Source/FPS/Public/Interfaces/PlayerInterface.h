@@ -36,4 +36,8 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FPS|Player")
 	AWeaponBase* GetCurrentWeapon() const;
+
+	// 무기가 생성되거나 오너가 확정됐을 때 무기가 호출
+	UFUNCTION(BlueprintNativeEvent, Category = "FPS|Player")
+	void OnWeaponSpawned(AWeaponBase* Weapon);
 };

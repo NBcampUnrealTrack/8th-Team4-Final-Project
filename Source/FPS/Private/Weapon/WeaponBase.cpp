@@ -91,6 +91,7 @@ void AWeaponBase::BeginPlay()
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
 	CurrentReserveAmmo = MaxReserveAmmo;
+	EffectiveMaxReserveAmmo = MaxReserveAmmo;
 	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
@@ -101,6 +102,11 @@ void AWeaponBase::BeginPlay()
 	if (Aim && GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
 	{
 		Aim->SetRecoilYawMultiplier(0.f);
+	}
+
+	if (GetOwner() && GetOwner()->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_OnWeaponSpawned(GetOwner(), this);
 	}
 }
 
@@ -128,6 +134,11 @@ void AWeaponBase::OnRep_Owner()
 	if (!CachedOwnerCamera)
 	{
 		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
+	}
+
+	if (OwnerActor->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_OnWeaponSpawned(OwnerActor, this);
 	}
 
 	// 현재 손에 든 무기(서버가 SetActorHiddenInGame(false)로 복제한 상태)만 다시 부착/표시한다.
@@ -255,6 +266,20 @@ void AWeaponBase::SetIsStationary(bool bNewIsStationary)
 void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
 {
 	EffectiveMagazineSize = NewMagazineSize;
+}
+
+void AWeaponBase::ResizeMagazine(const int32 NewMagazineSize)
+{
+	const int32 Delta = NewMagazineSize - EffectiveMagazineSize;
+	EffectiveMagazineSize = NewMagazineSize;
+	CurrentAmmo = FMath::Clamp(CurrentAmmo + Delta, 0, EffectiveMagazineSize);
+}
+
+void AWeaponBase::ResizeReserve(const int32 NewMaxReserveAmmo)
+{
+	const int32 Delta = NewMaxReserveAmmo - EffectiveMaxReserveAmmo;
+	EffectiveMaxReserveAmmo = NewMaxReserveAmmo;
+	CurrentReserveAmmo = FMath::Max(CurrentReserveAmmo + Delta, 0);
 }
 
 void AWeaponBase::SetEffectiveReloadDuration(const float NewReloadDuration)

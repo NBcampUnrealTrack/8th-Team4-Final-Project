@@ -104,6 +104,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveMagazineSize(int32 NewMagazineSize);
 
+	// 탄창 크기를 바꾸고 늘어난(줄어든) 만큼 현재 탄도 조정
+	void ResizeMagazine(int32 NewMagazineSize);
+
+	// 예비 탄약 최대치를 바꾸고 차이만큼 예비 탄약 조정. 서버 전용
+	void ResizeReserve(int32 NewMaxReserveAmmo);
+
 	// 현재 적용 중인 실제 재장전 시간(초).
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveReloadDuration(float NewReloadDuration);
@@ -444,6 +450,9 @@ protected:
 	// 무기별 실제 값은 기획이 각 무기 BP의 Details 패널에서 조정한다(기본값은 임시 플레이스홀더).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MaxReserveAmmo = 90;
+
+	// 현재 적용 중인 예비 탄약 최대치. ResizeReserve 로만 갱신
+	int32 EffectiveMaxReserveAmmo = 90;
 
 	// 런타임 인스턴스 전용. 기본 게임에서는 false이고 Training에서만 서버가 true로 설정한다.
 	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")

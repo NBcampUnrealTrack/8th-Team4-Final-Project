@@ -13,6 +13,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
+#include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -240,6 +241,11 @@ void AShooterCharacter::UpdateTagSubscriptions()
 
 	UpdateSprintBlocked(AbilitySystem->GetNumericAttribute(URogueVitalAttributeSet::GetStaminaAttribute()));
 
+	MagazineMultiplierChangedHandle = AbilitySystem->GetGameplayAttributeValueChangeDelegate(
+		URogueAugmentAttributeSet::GetMagazineSizeMultiplierAttribute()).AddUObject(this, &ThisClass::HandleMagazineMultiplierChanged);
+
+	HandleMagazineMultiplierChanged(FOnAttributeChangeData());
+
 	AimingTagEventHandle = AbilitySystem->RegisterGameplayTagEvent(
 		RogueTags::State_Combat_IsAiming,
 		EGameplayTagEventType::NewOrRemoved).AddUObject(this, &ThisClass::HandleAimingTagChanged);
@@ -264,6 +270,9 @@ void AShooterCharacter::UnsubscribeTags()
 		AbilitySystem->GetGameplayAttributeValueChangeDelegate(
 			URogueVitalAttributeSet::GetStaminaAttribute()).Remove(StaminaChangedHandle);
 
+		AbilitySystem->GetGameplayAttributeValueChangeDelegate(
+			URogueAugmentAttributeSet::GetMagazineSizeMultiplierAttribute()).Remove(MagazineMultiplierChangedHandle);
+
 		AbilitySystem->RegisterGameplayTagEvent(
 			RogueTags::State_Combat_IsAiming,
 			EGameplayTagEventType::NewOrRemoved).Remove(AimingTagEventHandle);
@@ -275,6 +284,7 @@ void AShooterCharacter::UnsubscribeTags()
 	RevealTagEventHandle.Reset();
 	UtilityHeldEventHandle.Reset();
 	StaminaChangedHandle.Reset();
+	MagazineMultiplierChangedHandle.Reset();
 	AimingTagEventHandle.Reset();
 	WeaponFiredEventHandle.Reset();
 	SubscribedAbilitySystem.Reset();
@@ -306,6 +316,38 @@ void AShooterCharacter::HandleWeaponFired(FGameplayTag, const FGameplayEventData
 void AShooterCharacter::HandleStaminaChanged(const FOnAttributeChangeData& Data)
 {
 	UpdateSprintBlocked(Data.NewValue);
+}
+
+void AShooterCharacter::HandleMagazineMultiplierChanged(const FOnAttributeChangeData&)
+{
+	for (const TWeakObjectPtr<AWeaponBase>& Weapon : AugmentedWeapons)
+	{
+		ApplyAugmentMagazine(Weapon.Get());
+	}
+}
+
+void AShooterCharacter::OnWeaponSpawned_Implementation(AWeaponBase* Weapon)
+{
+	AugmentedWeapons.AddUnique(Weapon);
+	ApplyAugmentMagazine(Weapon);
+}
+
+void AShooterCharacter::ApplyAugmentMagazine(AWeaponBase* Weapon)
+{
+	if (!IsValid(Weapon) || !Weapon->UsesAmmo())
+	{
+		return;
+	}
+
+	Weapon->ResizeMagazine(
+		URogueAugmentStatResolver::GetFinalMagazineSize(this, Weapon->GetMagazineSize()));
+
+	// 예비 탄약은 복제되므로 서버만
+	if (HasAuthority())
+	{
+		Weapon->ResizeReserve(
+			URogueAugmentStatResolver::GetFinalMagazineSize(this, Weapon->GetMaxReserveAmmo()));
+	}
 }
 
 void AShooterCharacter::UpdateSprintBlocked(const float Stamina)

@@ -54,8 +54,8 @@ void UAugmentInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	// 소유자에게만. 남에게 보일 목록은 밖에서 스냅샷으로
-	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, Entries, COND_OwnerOnly);
+	// 현황판 표시를 위해 모든 클라이언트에 복제
+	DOREPLIFETIME(UAugmentInventoryComponent, Entries);
 	DOREPLIFETIME_CONDITION(UAugmentInventoryComponent, Offers, COND_OwnerOnly);
 
 	// UI 표시를 위한 슬롯별 리롤 횟수
