@@ -10,8 +10,10 @@
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
 #include "Engine/Texture2D.h"
+#include "Kismet/GameplayStatics.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Sound/SoundBase.h"
 #include "UI/ShooterUISettings.h"
 
 void ULoadingScreenWidget::NativeOnInitialized()
@@ -130,8 +132,6 @@ void ULoadingScreenWidget::ApplyPreviewTexture(UTexture2D* InTexture)
 	}
 }
 
-
-
 void ULoadingScreenWidget::PickSessionTip()
 {
 	const TArray<FText>& Tips = GetDefault<UShooterUISettings>()->LoadingTips;
@@ -208,6 +208,24 @@ void ULoadingScreenWidget::TickCompletionExit(const float DeltaSeconds)
 	if (!Tracker.IsVisuallyComplete(ProgressSettings))
 	{
 		return;
+	}
+
+	// 100% 에 처음 닿은 프레임. 세션당 한 번이다
+	if (!bCompletionSoundPlayed)
+	{
+		bCompletionSoundPlayed = true;
+
+		// 아이들 사운드가 애니메이션 안에 있다.
+		// StopAnimation 은 pre-animated 복원을 타서 오디오까지 끊는다 — 틱이 끊겨 멈추는 경로는 안 끊는다
+		if (Anim_DecorRailIdle)
+		{
+			StopAnimation(Anim_DecorRailIdle);
+		}
+
+		if (CompletionSound)
+		{
+			UGameplayStatics::PlaySound2D(this, CompletionSound);
+		}
 	}
 
 	CompletionHoldElapsed += DeltaSeconds;
@@ -321,6 +339,8 @@ float ULoadingScreenWidget::GetDisplayProgress() const
 void ULoadingScreenWidget::ResetLoadingSession()
 {
 	PendingThumbnail.Reset();
+
+	bCompletionSoundPlayed = false;
 
 	bCompletionExitPending = false;
 	CompletionExitDelegate.Unbind();

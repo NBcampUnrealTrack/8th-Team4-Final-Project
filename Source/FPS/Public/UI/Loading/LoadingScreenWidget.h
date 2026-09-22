@@ -12,6 +12,7 @@ class UCurveFloat;
 class UImage;
 class UMaterialInstanceDynamic;
 class UProgressBar;
+class USoundBase;
 class UTextBlock;
 class UTexture2D;
 class UWidgetAnimation;
@@ -83,6 +84,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Loading|Preview")
 	TObjectPtr<UCurveFloat> BrightnessCurve;
 
+	// 100% 에 처음 닿는 순간 한 번
+	UPROPERTY(EditDefaultsOnly, Category = "Loading|Sound")
+	TObjectPtr<USoundBase> CompletionSound;
+
 private:
 	void ApplyDisplayProgress();
 	void ApplyPreviewTexture(UTexture2D* InTexture);
@@ -144,10 +149,18 @@ private:
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_Exit;
 
+	// 사운드가 이 안에 들어 있다. 100% 소리 전에 멈춘다
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_DecorRailIdle;
+
 	FWidgetAnimationDynamicEvent ExitAnimationFinishedDelegate;
 
 	// Exit 재생 중. 완료 콜백이 이 플래그로만 델리게이트를 쏜다
 	bool bExitAnimationPlaying = false;
+
+	// 100% 소리는 세션당 한 번이다
+	bool bCompletionSoundPlayed = false;
+
 	FShooterLoadingProgressTracker Tracker;
 
 	float LoadingProgress = 0.0f;
