@@ -4,7 +4,29 @@
 #include "Engine/World.h"
 #include "GameMode/State/DominationGameState.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
+#include "Preload/DominationPreloadSubsystem.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
+
+void UDominationUIInitComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // travel 이벤트를 못 받은 경로 대비. 
+    const AShooterPlayerController* PlayerController =
+        Cast<AShooterPlayerController>(GetOwner());
+    UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    if (IsValid(PlayerController)
+        && PlayerController->IsLocalController()
+        && IsValid(GameInstance))
+    {
+        if (UDominationPreloadSubsystem* PreloadSubsystem =
+            GameInstance->GetSubsystem<UDominationPreloadSubsystem>())
+        {
+            PreloadSubsystem->EnsurePreloadStarted(GetWorld());
+        }
+    }
+}
 
 void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {

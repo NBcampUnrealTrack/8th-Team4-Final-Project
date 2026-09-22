@@ -309,6 +309,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, 0.5f);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
@@ -718,6 +719,19 @@ void AShooterPlayerController::HideLoadingScreen()
 	}
 }
 
+void AShooterPlayerController::FinishLoadingScreen()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->FinishLoadingScreen();
+	}
+}
+
 void AShooterPlayerController::RequestReturnToLobby()
 {
 	if (!IsLocalController())
@@ -861,6 +875,11 @@ void AShooterPlayerController::ClientSetLoadingProgress_Implementation(const flo
 void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 {
 	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ClientFinishLoadingScreen_Implementation()
+{
+	FinishLoadingScreen();
 }
 
 void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill, const bool bPlaySound)
@@ -1445,6 +1464,12 @@ void AShooterPlayerController::CheckMatchLoadReady()
 	}
 
 	SetLoadingProgress(0.9f);
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->NotifyMatchLoadReady();
+	}
+
 	bNotifiedLoadedIntoMatch = true;
 	StopMatchLoadReadyCheck();
 

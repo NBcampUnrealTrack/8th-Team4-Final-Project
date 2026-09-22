@@ -118,6 +118,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void HideLoadingScreen();
 
+	// 정상 완료. 기존 HideLoadingScreen() 은 즉시 경로로 그대로 남는다
+	void FinishLoadingScreen();
+
 	// 호스트는 현재 방을 유지한 채 공유 로비로 돌아간다.
 	// 일반 클라이언트는 서버 맵을 바꿀 수 없으므로 방을 떠난 뒤 Frontend로 돌아간다.
 	UFUNCTION(BlueprintCallable, Category = "Shooter|System")
@@ -145,6 +148,9 @@ public:
 
 	UFUNCTION(Client, Reliable)
 	void ClientHideLoadingScreen();
+
+	UFUNCTION(Client, Reliable)
+	void ClientFinishLoadingScreen();
 
 	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커(시각+효과음)를 재생.
 	UFUNCTION(Client, Reliable)

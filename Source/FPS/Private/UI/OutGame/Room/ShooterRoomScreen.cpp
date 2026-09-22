@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
 #include "GameMode/State/LobbyGameState.h"
+#include "Loading/LoadingScreenSubsystem.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
@@ -539,6 +540,24 @@ void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMod
 	const TArray<FShooterLobbyModeDisplay>& Modes = GetDefault<UShooterUISettings>()->LobbyModes;
 	const FShooterLobbyModeDisplay* Entry = Modes.FindByPredicate(
 		[SelectedMatchMode](const FShooterLobbyModeDisplay& It) { return It.Mode == SelectedMatchMode; });
+
+	// 로딩 컨텍스트 캐시
+	FShooterLoadingContext LoadingContext;
+	if (Entry)
+	{
+		LoadingContext.ModeName = Entry->ModeName;
+		LoadingContext.Thumbnail = Entry->Thumbnail;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	ULoadingScreenSubsystem* LoadingSubsystem = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<ULoadingScreenSubsystem>()
+		: nullptr;
+	if (LoadingSubsystem)
+	{
+		// Entry 를 못 찾으면 빈 컨텍스트가 들어가 직전 모드가 지워짐
+		LoadingSubsystem->SetPendingLoadingContext(LoadingContext);
+	}
 
 	if (!Entry)
 	{

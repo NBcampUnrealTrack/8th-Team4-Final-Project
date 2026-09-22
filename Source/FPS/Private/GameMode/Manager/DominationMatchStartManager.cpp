@@ -241,7 +241,7 @@ void UDominationMatchStartManager::BeginClassSelection()
 	{
 		if (ADominationPlayerController* PlayerController = Participant.Get())
 		{
-			PlayerController->ClientHideLoadingScreen();
+			PlayerController->ClientFinishLoadingScreen();
 		}
 	}
 
