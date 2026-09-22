@@ -1,5 +1,8 @@
 # 클래스 내부 머리카락 공유 바인딩
 
+> 2026-09-23 정리: 생성·검증 스크립트는 제거했으며 아래 내용은 제작 기록이다.
+> 실제 사용 중인 Groom/Binding 에셋은 유지한다. 스크립트는 Git 이력에서 복구할 수 있다.
+
 생성 위치: `/Game/FPS/Customizable/Character/HairBindings/Trooper`, `Vanguard`.
 이름 `GB_원래캐릭터_To_대상캐릭터`는 원래 캐릭터의 Hair Groom을 대상 얼굴에 사용하는 바인딩이다.
 
