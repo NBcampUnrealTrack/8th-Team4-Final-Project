@@ -64,6 +64,7 @@ public:
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
+	virtual void OnWeaponSpawned_Implementation(AWeaponBase* Weapon) override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
 	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
 	virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
@@ -170,6 +171,10 @@ private:
 	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
 	void UpdateSprintBlocked(float Stamina);
 
+	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
+	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);
+	void ApplyAugmentMagazine(AWeaponBase* Weapon);
+
 	// 조준 시작과 발사(근접 포함) 시 달리기 중단
 	void HandleAimingTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
 	void HandleWeaponFired(FGameplayTag EventTag, const FGameplayEventData* Payload);
@@ -178,6 +183,10 @@ private:
 	FDelegateHandle RevealTagEventHandle;
 	FDelegateHandle UtilityHeldEventHandle;
 	FDelegateHandle StaminaChangedHandle;
+	FDelegateHandle MagazineMultiplierChangedHandle;
+
+	// 생성 알림을 보낸 무기. 슬롯 복제 순서와 무관하게 배율 재적용
+	TArray<TWeakObjectPtr<AWeaponBase>> AugmentedWeapons;
 	FDelegateHandle AimingTagEventHandle;
 	FDelegateHandle WeaponFiredEventHandle;
 
