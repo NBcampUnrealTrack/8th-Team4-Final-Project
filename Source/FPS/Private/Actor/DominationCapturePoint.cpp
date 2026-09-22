@@ -46,6 +46,12 @@ void ADominationCapturePoint::OnConstruction(const FTransform& Transform)
 
 	CaptureZone->SetBoxExtent(CaptureBoxExtent);
 	PlaceBorderDecalOnGround();
+	BorderDecal->SetVisibility(true);
+	
+	if (IsValid(BorderDecalMaterial))
+	{
+		BorderDecal->SetDecalMaterial(BorderDecalMaterial);
+	}
 }
 
 void ADominationCapturePoint::BeginPlay()
