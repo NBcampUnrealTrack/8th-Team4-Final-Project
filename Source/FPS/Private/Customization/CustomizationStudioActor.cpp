@@ -26,12 +26,12 @@ ACustomizationStudioActor::ACustomizationStudioActor()
  GroomBindingSurface->VisibilityBasedAnimTickOption=EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
  for(auto* M:{Body.Get(),Face.Get(),Outfit.Get()}){M->SetCollisionEnabled(ECollisionEnabled::NoCollision);M->bCastDynamicShadow=true;}
  Camera=CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));Camera->SetupAttachment(RootComponent);Camera->FieldOfView=38;
- for(const TCHAR* Name:{TEXT("Hair"),TEXT("Eyebrows"),TEXT("Eyelashes"),TEXT("Fuzz")}){auto* G=CreateDefaultSubobject<UGroomComponent>(Name);G->SetupAttachment(Face);GroomComponents.Add(G);}
+ for(const TCHAR* Name:{TEXT("Hair"),TEXT("Eyebrows"),TEXT("Eyelashes"),TEXT("Fuzz"),TEXT("Mustache"),TEXT("Beard")}){auto* G=CreateDefaultSubobject<UGroomComponent>(Name);G->SetupAttachment(Face);GroomComponents.Add(G);}
  UpdateCamera();
 }
 void ACustomizationStudioActor::RequestAppearance(const FCustomizationAppearance& Data)
 {
- if(!Data.Validate()){Status=TEXT("잘못된 외형 설정입니다.");return;}
+ if(!Config||!Data.ValidateForClass(Config->ClassId)||!IsBodyValid(Data.BodyType)){++Revision;bQueued=false;Status=TEXT("잘못된 외형 설정입니다.");return;}
  Desired=Data;++Revision;bQueued=true;Debounce=.12f;
 }
 void ACustomizationStudioActor::BeginPlay()
@@ -42,6 +42,8 @@ void ACustomizationStudioActor::BeginPlay()
 void ACustomizationStudioActor::Tick(float Delta)
 {Super::Tick(Delta);Debounce-=Delta;if(bQueued&&!bBusy&&Debounce<=0)StartUpdate();}
 TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoices(const FString& Type) const
+{return HairChoicesForConfig(Config,Type);}
+TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoicesForConfig(const UCustomizationStudioConfig* Config,const FString& Type)
 {
  TArray<FStudioGroomChoice> Out;if(Config)for(auto& H:Config->Grooms)if(H.BodyType==Type&&H.Component==TEXT("Hair")&&H.Groom&&H.Binding&&UGroomBindingAsset::IsCompatible(H.Groom,H.Binding,false))Out.Add(H);
  const TArray<FString> Order={TEXT("Hair_S_UpdoBuns"),TEXT("Hair_M_BobStraight"),TEXT("Hair_M_SlickPonytail")};
@@ -51,26 +53,65 @@ TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoices(const FString&
  });return Out;
 }
 bool ACustomizationStudioActor::IsHairValid(const FString& Type,FName Id) const
-{if(Id==TEXT("Bald"))return true;for(auto& H:HairChoices(Type))if(H.Id==Id)return true;return false;}
+{if(!IsBodyValid(Type))return false;if(Id==TEXT("Bald"))return true;for(auto& H:HairChoices(Type))if(H.Id==Id)return true;return false;}
+bool ACustomizationStudioActor::IsBodyValid(const FString& Type) const
+{return Config&&Config->BodyTypes.Contains(Type);}
+bool ACustomizationStudioActor::SetClassConfig(UCustomizationStudioConfig* NewConfig)
+{
+ if(!NewConfig||!NewConfig->CustomizableObject||!NewConfig->BodyTypes.Contains(NewConfig->DefaultBodyType))return false;
+ if(Config==NewConfig)return true;
+ Config=NewConfig;++Revision;bQueued=false;
+ for(auto* M:{Body.Get(),Face.Get(),Outfit.Get()})M->SetVisibility(false);
+ for(UGroomComponent* G:GroomComponents)G->SetVisibility(false);
+ Status=TEXT("클래스 미리보기 준비 중…");return true;
+}
 void ACustomizationStudioActor::StartUpdate()
 {
  bQueued=false;if(!Config||!Config->CustomizableObject){Status=TEXT("프리뷰 설정 또는 CO_Ranger가 없습니다.");return;}
  if(!IsHairValid(Desired.BodyType,Desired.HairId)){Status=TEXT("이 외형에 맞는 헤어 바인딩이 없습니다.");return;}
+#if WITH_EDITOR
+ // Standalone editor play does not automatically compile every class CO.
+ // Prepare a newly selected object before creating its parameter descriptor.
+ if(!Config->CustomizableObject->IsCompiled())
+ {FCompileParams Params;Params.bAsync=false;Params.bSkipIfNotOutOfDate=false;Config->CustomizableObject->Compile(Params);}
+#endif
+ if(!Config->CustomizableObject->IsCompiled()){Status=TEXT("클래스 CO가 준비되지 않았습니다. 컴파일 상태를 확인하세요.");return;}
  PendingInstance=Config->CustomizableObject->CreateInstance();if(!PendingInstance){Status=TEXT("Mutable 인스턴스를 만들지 못했습니다.");return;}
  auto* I=PendingInstance.Get();const FCustomizationAppearance Snapshot=Desired;const int32 Request=Revision;
  I->SetIntParameterSelectedOption(TEXT("BodyType"),Snapshot.BodyType);I->SetColorParameterSelectedOption(TEXT("EyeColor"),Snapshot.EyeColor);I->SetColorParameterSelectedOption(TEXT("SkinColor"),Snapshot.SkinColor);I->SetFloatParameterSelectedOption(TEXT("SkinValue"),Snapshot.SkinValue);
- for(int K=0;K<8;++K){const auto& P=FCustomizationAppearance::Parts()[K];I->SetColorParameterSelectedOption(P+TEXT("Color"),Snapshot.Colors[K]);I->SetFloatParameterSelectedOption(P+TEXT("Value"),Snapshot.Values[K]);I->SetFloatParameterSelectedOption(P+TEXT("UseOriginal"),Snapshot.Originals[K]);}
+ for(int K=0;K<8;++K){const auto& P=FCustomizationAppearance::Parts()[K];if(!Config->EnabledClothingParts.Contains(FName(*P)))continue;I->SetColorParameterSelectedOption(P+TEXT("Color"),Snapshot.Colors[K]);I->SetFloatParameterSelectedOption(P+TEXT("Value"),Snapshot.Values[K]);I->SetFloatParameterSelectedOption(P+TEXT("UseOriginal"),Snapshot.Originals[K]);}
  bBusy=true;Status=TEXT("외형 생성 중…");FInstanceUpdateNativeDelegate Callback;TWeakObjectPtr<ACustomizationStudioActor> Weak(this);
- Callback.AddLambda([Weak,Request,Snapshot](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();Self->bBusy=false;
+ TWeakObjectPtr<UCustomizationStudioConfig> RequestConfig(Config);
+ Callback.AddLambda([Weak,Request,Snapshot,I,RequestConfig](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();Self->bBusy=false;
   bool Valid=Context.UpdateResult==EUpdateResult::Success||Context.UpdateResult==EUpdateResult::Warning;
-  TArray<USkeletalMesh*> Meshes;for(const TCHAR* Name:{TEXT("Body"),TEXT("Face"),TEXT("Outfit")}){auto* M=Self->PendingInstance?Self->PendingInstance->GetSkeletalMeshComponentSkeletalMesh(Name):nullptr;Meshes.Add(M);auto* R=M?M->GetResourceForRendering():nullptr;Valid&=R&&R->LODRenderData.Num()>0;if(R)for(auto& L:R->LODRenderData)Valid&=L.GetNumVertices()>0&&L.RenderSections.Num()>0;}
-  if(Request!=Self->Revision){Self->PendingInstance=nullptr;return;}
+  if(Request!=Self->Revision||RequestConfig.Get()!=Self->Config){Self->PendingInstance=nullptr;return;}
+  TArray<USkeletalMesh*> Meshes;for(const TCHAR* Name:{TEXT("Body"),TEXT("Face"),TEXT("Outfit")}){auto* M=I->GetSkeletalMeshComponentSkeletalMesh(Name);Meshes.Add(M);auto* R=M?M->GetResourceForRendering():nullptr;Valid&=R&&R->LODRenderData.Num()>0;if(R)for(auto& L:R->LODRenderData)Valid&=L.GetNumVertices()>0&&L.RenderSections.Num()>0;}
   if(!Valid){Self->Status=TEXT("외형 생성 실패 — 이전 미리보기를 유지합니다.");Self->PendingInstance=nullptr;return;}
   FTransform GroundedTransform=Self->ModelRoot->GetRelativeTransform();
   if(Self->bUseMutableLevelFraming&&!Self->ResolveGroundedPreview(Meshes,GroundedTransform))
   {Self->Status=TEXT("발 위치 확인 실패 — 이전 미리보기를 유지합니다.");Self->PendingInstance=nullptr;return;}
-  Self->Body->SetSkeletalMesh(Meshes[0]);Self->Face->SetSkeletalMesh(Meshes[1]);Self->Face->SetForcedLOD(Self->PreviewFaceLOD);Self->Outfit->SetSkeletalMesh(Meshes[2]);Self->LiveInstance=Self->PendingInstance;Self->PendingInstance=nullptr;Self->ApplyGrooms(Snapshot);Self->AppliedRevision=Request;Self->Status=TEXT("미리보기 준비 완료");
+  const TArray<USkeletalMeshComponent*> Components={Self->Body.Get(),Self->Face.Get(),Self->Outfit.Get()};
+  // This studio displays reference poses. The generated face inherits the CO
+  // reference face's post-process setup, which can deform a different identity.
+  // Disable it only for the static reference-pose preview, never on source assets.
+  Self->Face->SetDisablePostProcessBlueprint(Self->bUseReferencePoseGrooms);
+  const FName ComponentNames[]={TEXT("Body"),TEXT("Face"),TEXT("Outfit")};
+  for(int32 Index=0;Index<Components.Num();++Index)
+  {
+   auto* Component=Components[Index];
+   // MetaHuman post-process animation creates component material overrides.
+   // Their slot order belongs to the previous face, not the next class/body.
+   Component->EmptyOverrideMaterials();
+   Component->SetSkeletalMesh(Meshes[Index]);
+   // Cached Mutable meshes can retain older asset materials: use this instance's
+   // generated materials instead, without modifying the shared mesh asset.
+   const auto Materials=I->GetSkeletalMeshComponentOverrideMaterials(ComponentNames[Index]);
+   for(int32 Slot=0;Slot<Materials.Num();++Slot)Component->SetMaterial(Slot,Materials[Slot]);
+  }
+  Self->Face->SetForcedLOD(Self->PreviewFaceLOD);Self->LiveInstance=Self->PendingInstance;Self->PendingInstance=nullptr;Self->ApplyGrooms(Snapshot);Self->AppliedRevision=Request;Self->Status=TEXT("미리보기 준비 완료");
+  for(auto* M:{Self->Body.Get(),Self->Face.Get(),Self->Outfit.Get()})M->SetVisibility(true);
   if(Self->bUseMutableLevelFraming)Self->ModelRoot->SetRelativeTransform(GroundedTransform);
+  Self->UpdateCamera();
  });I->UpdateSkeletalMeshAsyncResult(Callback,true,true);
 }
 bool ACustomizationStudioActor::ResolveGroundedPreview(const TArray<USkeletalMesh*>& Meshes,FTransform& OutTransform) const
@@ -112,6 +153,11 @@ void ACustomizationStudioActor::ApplyGrooms(const FCustomizationAppearance& Data
    if(H.Groom&&H.Binding&&Surface->GetSkeletalMeshAsset()&&UGroomBindingAsset::IsCompatible(H.Groom,H.Binding,false)&&UGroomBindingAsset::IsCompatible(Surface->GetSkeletalMeshAsset(),H.Binding,false))
    {
     G->AttachToComponent(Surface,FAttachmentTransformRules::KeepRelativeTransform);
+    // MutableLevel was authored with cards forced for Ranger. Do not carry
+    // that override into strand-only styles (for example Frey's Middle_part).
+    // Keep the existing card preview where the selected asset supplies cards.
+    const bool bHasCards=H.Groom->GetHairGroupsCards().ContainsByPredicate([](const FHairGroupsCardsSourceDescription& Cards){return Cards.GetMesh()!=nullptr&&Cards.LODIndex>=0;});
+    G->SetUseCards(bHasCards);
     G->SetGroomAsset(H.Groom,H.Binding,true);G->SetVisibility(true);
     if(H.Component==TEXT("Hair")&&!Data.bUseOriginalHairColor)
     {
@@ -131,7 +177,28 @@ void ACustomizationStudioActor::ApplyGrooms(const FCustomizationAppearance& Data
   }
  }
 }
-void ACustomizationStudioActor::UpdateCamera(){const float Z=bFaceCamera?155.f:92.f;Camera->SetRelativeLocation(FVector(bUseMutableLevelFraming?-Distance*.13f:0.f,-Distance,Z));Camera->SetRelativeRotation(FRotator(0,90,0));}
-void ACustomizationStudioActor::RotatePreview(float Degrees){ModelRoot->AddLocalRotation(FRotator(0,Degrees,0));}
+void ACustomizationStudioActor::UpdateCamera()
+{
+ FVector Focus(0,0,bFaceCamera?155.f:92.f);
+ if(bFaceCamera&&Face&&Face->GetSkeletalMeshAsset())
+ {
+  // Use the displayed identity's eye landmarks, including grounding and rotation.
+  // Face bounds include the neck/chest and are not a reliable facial center.
+  if(Face->DoesSocketExist(TEXT("FACIAL_L_Eye"))&&Face->DoesSocketExist(TEXT("FACIAL_R_Eye")))
+   Focus=GetActorTransform().InverseTransformPosition((Face->GetSocketLocation(TEXT("FACIAL_L_Eye"))+Face->GetSocketLocation(TEXT("FACIAL_R_Eye")))*.5)-FVector(0,0,2);
+  else if(Face->DoesSocketExist(TEXT("head")))
+   Focus=GetActorTransform().InverseTransformPosition(Face->GetSocketLocation(TEXT("head")))+FVector(0,0,10);
+ }
+ Camera->SetRelativeLocation(Focus+FVector((bUseMutableLevelFraming?-Distance*.13f:0.f)+CameraPan.X,-Distance,CameraPan.Y));
+ Camera->SetRelativeRotation(FRotator(0,90,0));
+}
+void ACustomizationStudioActor::RotatePreview(float Degrees){ModelRoot->AddLocalRotation(FRotator(0,Degrees,0));UpdateCamera();}
 void ACustomizationStudioActor::ZoomPreview(float Amount){Distance=FMath::Clamp(Distance+Amount,65.f,bUseMutableLevelFraming?800.f:550.f);UpdateCamera();}
-void ACustomizationStudioActor::SetFaceView(bool bFace){bFaceCamera=bFace;Distance=bFace?(bUseMutableLevelFraming?150.f:100.f):(bUseMutableLevelFraming?560.f:310.f);UpdateCamera();}
+void ACustomizationStudioActor::PanPreview(FVector2D Delta)
+{
+ if(!FMath::IsFinite(Delta.X)||!FMath::IsFinite(Delta.Y))return;
+ CameraPan+=Delta*(Distance*.7f);
+ CameraPan.X=FMath::Clamp(CameraPan.X,-250.,250.);CameraPan.Y=FMath::Clamp(CameraPan.Y,-250.,250.);
+ UpdateCamera();
+}
+void ACustomizationStudioActor::SetFaceView(bool bFace){bFaceCamera=bFace;CameraPan=FVector2D::ZeroVector;Distance=bFace?(bUseMutableLevelFraming?150.f:100.f):(bUseMutableLevelFraming?560.f:310.f);UpdateCamera();}

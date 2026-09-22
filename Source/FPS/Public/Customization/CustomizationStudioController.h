@@ -19,6 +19,11 @@ public:
  FCustomizationAppearance Draft;
  FString Status,AccountLabel;
  bool bDirty=false;
+ FName ActiveClass=TEXT("Ranger");
+ bool SelectClass(FName Class);
+ TArray<FString> BodyChoices() const;
+ bool CanEditPart(int32 Part) const;
+ void SetAccountIdentity(const FString& NewService,const FString& NewAccount);
  void Changed();
  void SelectBody(const FString& Type);
  void SaveAppearance();
@@ -35,6 +40,9 @@ public:
  void SetEditingColor(FLinearColor Color);
  void RestoreEditingPart();
 private:
+ struct FCachedDraft {FCustomizationAppearance Data;bool bDirty=false;FString Status;};
+ TMap<FName,FCachedDraft> ClassDrafts;
+ FCustomizationAppearance DefaultAppearance() const;
  int32 ColorEditPart=INDEX_NONE;
  FCustomizationAppearance BeforeColorEdit;
  bool bDirtyBeforeColorEdit=false;

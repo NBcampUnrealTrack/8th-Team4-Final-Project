@@ -20,6 +20,7 @@ struct FPS_API FCustomizationAppearance
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<float> Values;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<float> Originals;
  bool Validate() const;
+ bool ValidateForClass(const FString& ClassId) const;
  static const TArray<FString>& Parts();
 };
 

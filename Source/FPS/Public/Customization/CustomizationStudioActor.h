@@ -30,6 +30,11 @@ class FPS_API UCustomizationStudioConfig : public UDataAsset
 {
  GENERATED_BODY()
 public:
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) FString ClassId=TEXT("Ranger");
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FString> BodyTypes={TEXT("Seo"),TEXT("Custom"),TEXT("Fab")};
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) FString DefaultBodyType=TEXT("Seo");
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) FName DefaultHairId=TEXT("Default");
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FName> EnabledClothingParts={TEXT("Top"),TEXT("Bottom"),TEXT("Vest"),TEXT("Attachment"),TEXT("Belt"),TEXT("Gloves"),TEXT("Boots"),TEXT("Scarf")};
  UPROPERTY(EditAnywhere,BlueprintReadWrite) TObjectPtr<UCustomizableObject> CustomizableObject;
  UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FStudioGroomChoice> Grooms;
 };
@@ -43,6 +48,7 @@ public:
  virtual void BeginPlay() override;
  virtual void Tick(float Delta) override;
  UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Studio") TObjectPtr<UCustomizationStudioConfig> Config;
+ UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Studio") TMap<FName,TObjectPtr<UCustomizationStudioConfig>> ClassConfigs;
  UPROPERTY(EditAnywhere,Category="Studio") bool bUseMutableLevelFraming=false;
  // Height in actor-root space. MutableLevel's pedestal top is +1 cm.
  // Used only by the static MutableLevel preview, never gameplay characters.
@@ -59,12 +65,17 @@ public:
  UFUNCTION(BlueprintCallable) void RequestAppearance(const FCustomizationAppearance& Data);
  UFUNCTION(BlueprintCallable) void RotatePreview(float Degrees);
  UFUNCTION(BlueprintCallable) void ZoomPreview(float Amount);
+ // Drag delta normalized by viewport height; positive values move the model right/down.
+ UFUNCTION(BlueprintCallable) void PanPreview(FVector2D Delta);
  UFUNCTION(BlueprintCallable) void SetFaceView(bool bFace);
  bool IsUpdating() const {return bBusy||bQueued;}
  bool IsAppearanceReady() const {return IsPreviewRevisionReady(Revision,AppliedRevision,IsUpdating());}
  FString GetStatus() const {return Status;}
  TArray<FStudioGroomChoice> HairChoices(const FString& BodyType) const;
+ static TArray<FStudioGroomChoice> HairChoicesForConfig(const UCustomizationStudioConfig* Source,const FString& BodyType);
  bool IsHairValid(const FString& BodyType,FName Id) const;
+ bool IsBodyValid(const FString& BodyType) const;
+ bool SetClassConfig(UCustomizationStudioConfig* NewConfig);
  int32 GetAppliedRevision() const {return AppliedRevision;}
 private:
  UPROPERTY() TObjectPtr<USceneComponent> ModelRoot;
@@ -76,6 +87,7 @@ private:
  int32 Revision=0,AppliedRevision=0;
  bool bBusy=false,bQueued=false,bFaceCamera=false;
  float Debounce=0,Distance=310;
+ FVector2D CameraPan=FVector2D::ZeroVector;
  FString Status;
  void StartUpdate();
  void ApplyGrooms(const FCustomizationAppearance& Data);

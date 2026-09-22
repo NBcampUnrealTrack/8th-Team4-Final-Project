@@ -63,8 +63,7 @@ preview_actor.set_editor_property('use_reference_pose_grooms',True)
 preview_actor.set_editor_property('preview_face_lod',1)
 preview_actor.set_face_view(False)
 preview_actor.rotate_preview(180)
-for groom in preview_actor.get_components_by_class(unreal.GroomComponent):
-    groom.set_editor_property('use_cards',True)
+# ApplyGrooms selects cards/strands per asset; do not serialize a class-wide override.
 cube=unreal.load_asset('/Engine/BasicShapes/Cube')
 dark=asset(paths[4],unreal.Material,unreal.MaterialFactoryNew())
 color=unreal.MaterialEditingLibrary.create_material_expression(dark,unreal.MaterialExpressionConstant3Vector)

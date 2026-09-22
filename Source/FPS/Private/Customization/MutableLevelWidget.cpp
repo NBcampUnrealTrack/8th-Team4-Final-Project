@@ -26,17 +26,27 @@ class SModelViewport : public SBorder
 {
 public:
  TWeakObjectPtr<ACustomizationStudioActor> Studio;
+ FKey DragButton;
  virtual FReply OnMouseButtonDown(const FGeometry&,const FPointerEvent& E) override
  {
-  return E.GetEffectingButton()==EKeys::LeftMouseButton ? FReply::Handled().CaptureMouse(SharedThis(this)) : FReply::Unhandled();
+  if(E.GetEffectingButton()==EKeys::LeftMouseButton||E.GetEffectingButton()==EKeys::RightMouseButton)
+  {DragButton=E.GetEffectingButton();return FReply::Handled().CaptureMouse(SharedThis(this));}
+  return FReply::Unhandled();
  }
  virtual FReply OnMouseButtonUp(const FGeometry&,const FPointerEvent& E) override
  {
-  return E.GetEffectingButton()==EKeys::LeftMouseButton ? FReply::Handled().ReleaseMouseCapture() : FReply::Unhandled();
+  if(E.GetEffectingButton()==DragButton){DragButton=FKey();return FReply::Handled().ReleaseMouseCapture();}
+  return FReply::Unhandled();
  }
- virtual FReply OnMouseMove(const FGeometry&,const FPointerEvent& E) override
+ virtual FReply OnMouseMove(const FGeometry& Geometry,const FPointerEvent& E) override
  {
-  if(HasMouseCapture() && Studio.IsValid()) {Studio->RotatePreview(-E.GetCursorDelta().X*.4f);return FReply::Handled();}
+  if(HasMouseCapture()&&Studio.IsValid()&&E.IsMouseButtonDown(DragButton))
+  {
+   if(DragButton==EKeys::RightMouseButton)
+   {const FVector2D Delta=Geometry.AbsoluteToLocal(E.GetScreenSpacePosition())-Geometry.AbsoluteToLocal(E.GetLastScreenSpacePosition());Studio->PanPreview(Delta/FMath::Max(1.f,Geometry.GetLocalSize().Y));}
+   else Studio->RotatePreview(-E.GetCursorDelta().X*.4f);
+   return FReply::Handled();
+  }
   return FReply::Unhandled();
  }
  virtual FReply OnMouseWheel(const FGeometry&,const FPointerEvent& E) override
@@ -71,9 +81,28 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
    +SHorizontalBox::Slot().FillWidth(1)[Label(Name,18)];
  };
  auto Edit=SNew(SVerticalBox);
+ auto Classes=SNew(SHorizontalBox);
+ for(const FName Class:{FName(TEXT("Ranger")),FName(TEXT("Trooper")),FName(TEXT("Vanguard"))})
+ {
+  auto Caption=Label(Class.ToString(),12);Caption->SetAutoWrapText(false);
+  auto Button=SNew(SButton).ButtonStyle(&ActionStyle).ContentPadding(FMargin(3,10)).HAlign(HAlign_Center)
+   .OnClicked_Lambda([this,Class](){if(auto* C=Controller())C->SelectClass(Class);return FReply::Handled();})[Caption];
+  Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Class](){auto* C=Controller();return FSlateColor(C&&C->ActiveClass==Class?Accent:FLinearColor::White);}));
+  Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Class](){auto* C=Controller();return C&&C->Studio&&C->Studio->ClassConfigs.Contains(Class)&&!C->IsColorEditOpen();}));
+  Classes->AddSlot().FillWidth(1).Padding(0,0,4,0)[Button];
+ }
+ Edit->AddSlot().AutoHeight().Padding(0,0,0,16)[Classes];
  Edit->AddSlot().AutoHeight().Padding(0,0,0,12)[Section(TEXT("01"),TEXT("캐릭터 외형"))];
+ // Build each class selector once. Visibility is live, so switching/load/reset
+ // cannot leave callbacks referring to a previous class's body or hairstyle.
+ for(const FName Class:{FName(TEXT("Ranger")),FName(TEXT("Trooper")),FName(TEXT("Vanguard"))})
+ {
+ UCustomizationStudioConfig* Config=nullptr;
+ if(auto* C=Controller())if(C->Studio){if(auto* Entry=C->Studio->ClassConfigs.Find(Class))Config=Entry->Get();else if(C->Studio->Config&&C->Studio->Config->ClassId==Class.ToString())Config=C->Studio->Config;}
+ if(!Config)continue;
+ auto Selector=SNew(SVerticalBox).Visibility_Lambda([this,Class](){auto* C=Controller();return C&&C->ActiveClass==Class?EVisibility::Visible:EVisibility::Collapsed;});
  auto Bodies=SNew(SHorizontalBox);
- const TArray<FString> Types={TEXT("Seo"),TEXT("Custom"),TEXT("Fab")};
+ const TArray<FString> Types=Config->BodyTypes;
  for(int32 I=0;I<Types.Num();++I)
  {
   const FString Type=Types[I];
@@ -81,8 +110,8 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Type](){auto* C=Controller();return FSlateColor(C&&C->Draft.BodyType==Type?Accent:FLinearColor::White);}));
   Bodies->AddSlot().FillWidth(1).Padding(0,0,4,0)[Button];
  }
- Edit->AddSlot().AutoHeight()[Bodies];
- Edit->AddSlot().AutoHeight().Padding(0,12,0,6)[Label(TEXT("헤어"),16)];
+ Selector->AddSlot().AutoHeight()[Bodies];
+ Selector->AddSlot().AutoHeight().Padding(0,12,0,6)[Label(TEXT("헤어"),16)];
  // Each body has its own authored options. Visibility follows the draft, so
  // load/reset/body changes update the selector without losing saved hair IDs.
  for(const auto& Type:Types)
@@ -90,7 +119,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
   auto HairRow=SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6,6))
    .Visibility_Lambda([this,Type](){auto* C=Controller();return C&&C->Draft.BodyType==Type?EVisibility::Visible:EVisibility::Collapsed;});
   TArray<FStudioGroomChoice> Choices;
-  if(auto* C=Controller())if(C->Studio)Choices=C->Studio->HairChoices(Type);
+  Choices=ACustomizationStudioActor::HairChoicesForConfig(Config,Type);
   TArray<FName> Ids={FName(TEXT("Bald"))};for(const auto& Choice:Choices)Ids.Add(Choice.Id);
   for(int32 I=0;I<Ids.Num();++I)
   {
@@ -100,7 +129,9 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
    Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Id](){auto* C=Controller();return FSlateColor(C&&C->Draft.HairId==Id?Accent:FLinearColor::White);}));
    HairRow->AddSlot()[SNew(SBox).WidthOverride(76)[Button]];
   }
-  Edit->AddSlot().AutoHeight().Padding(0,0,0,12)[HairRow];
+  Selector->AddSlot().AutoHeight().Padding(0,0,0,12)[HairRow];
+ }
+ Edit->AddSlot().AutoHeight()[Selector];
  }
  Edit->AddSlot().AutoHeight().Padding(0,0,0,12)[Section(TEXT("02"),TEXT("부위 및 색상"))];
  const TArray<FString> Parts={TEXT("상의"),TEXT("하의"),TEXT("조끼"),TEXT("부착물"),TEXT("벨트"),TEXT("장갑"),TEXT("부츠"),TEXT("스카프"),TEXT("피부"),TEXT("눈"),TEXT("헤어 색상")};
@@ -115,7 +146,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
    auto Button=Action(Parts[Index],[this,Index](){if(auto* C=Controller()){
     C->BeginColorEdit(Index);if(C->IsColorEditOpen()){Selected=Index;ColorInputError.Reset();if(auto Popup=ColorPopup.Pin())FSlateApplication::Get().SetKeyboardFocus(Popup);}
    }});
-   Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Index](){auto* C=Controller();return C&&(Index!=10||C->Draft.HairId!=TEXT("Bald"));}));
+   Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Index](){auto* C=Controller();return C&&C->CanEditPart(Index);}));
    Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){return FSlateColor(Selected==Index?Accent:FLinearColor::White);}));
    Pair->AddSlot().FillWidth(1).Padding(0,0,4,4)[Button];
   }
@@ -129,14 +160,16 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  auto HeaderFont=HeadingFont?FSlateFontInfo(HeadingFont,46):FCoreStyle::GetDefaultFontStyle("Bold",46);
  auto Left=SNew(SVerticalBox);
  Left->AddSlot().AutoHeight()[Label(TEXT("OPERATOR  /  APPEARANCE"),14,Accent)];
- Left->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Font(HeaderFont).Text(FText::FromString(TEXT("RANGER")))];
+ Left->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Font(HeaderFont).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->ActiveClass.ToString().ToUpper():TEXT(""));})];
  Left->AddSlot().AutoHeight()[Label(TEXT("외형 커스터마이징"),20)];
  Left->AddSlot().FillHeight(1)[Preview];
  Left->AddSlot().AutoHeight().HAlign(HAlign_Center)
  [SNew(SHorizontalBox)
   +SHorizontalBox::Slot().AutoWidth().Padding(5)[Action(TEXT("전신 보기"),[this](){if(auto* C=Controller())if(C->Studio)C->Studio->SetFaceView(false);})]
   +SHorizontalBox::Slot().AutoWidth().Padding(5)[Action(TEXT("얼굴 보기"),[this](){if(auto* C=Controller())if(C->Studio)C->Studio->SetFaceView(true);})]];
- Left->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0,8)[Label(TEXT("드래그  회전     /     휠  확대·축소"),14,Muted)];
+ Left->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0,8)
+ [SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).Justification(ETextJustify::Center)
+  .Text(FText::FromString(TEXT("좌클릭 회전 · 우클릭 이동\n휠 확대·축소")))];
 
  auto Save=Action(TEXT("외형 저장"),[this](){if(auto* C=Controller())C->SaveAppearance();});
  Save->SetEnabled(TAttribute<bool>::CreateLambda([this](){auto* C=Controller();return C&&C->CanSave();}));
