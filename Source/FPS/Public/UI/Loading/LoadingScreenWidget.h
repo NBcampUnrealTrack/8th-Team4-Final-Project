@@ -103,8 +103,6 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> LoadingProgressBar;
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> LoadingPercentText;
-	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Percent;
 
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -160,6 +158,9 @@ private:
 
 	// 100% 소리는 세션당 한 번이다
 	bool bCompletionSoundPlayed = false;
+
+	// 마지막으로 그린 정수 퍼센트. 바뀔 때만 문자열을 만든다
+	int32 LastDisplayedPercent = -1;
 
 	FShooterLoadingProgressTracker Tracker;
 

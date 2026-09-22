@@ -162,6 +162,11 @@ void ULoadingScreenWidget::ApplyTipVisibility(const ESlateVisibility InVisibilit
 
 void ULoadingScreenWidget::BeginEnterAnimation()
 {
+	if (Anim_DecorRailIdle)
+	{
+		PlayAnimation(Anim_DecorRailIdle, 0.0f, 0);
+	}
+
 	if (Anim_Enter)
 	{
 		PlayAnimation(Anim_Enter);
@@ -276,8 +281,11 @@ void ULoadingScreenWidget::NativeTick(const FGeometry& MyGeometry, const float I
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	Tracker.Tick(InDeltaTime, ProgressSettings);
-	ApplyDisplayProgress();
+	// 값이 바뀐 프레임에만 그린다. Tick 은 시간 신호일 뿐이다
+	if (Tracker.Tick(InDeltaTime, ProgressSettings))
+	{
+		ApplyDisplayProgress();
+	}
 
 	TickCompletionExit(InDeltaTime);
 }
@@ -291,17 +299,19 @@ void ULoadingScreenWidget::ApplyDisplayProgress()
 		LoadingProgressBar->SetPercent(Display);
 	}
 
-	const FText PercentText = FText::FromString(
-		FString::Printf(TEXT("%.0f%%"), Display * 100.0f));
+	// 정수 퍼센트가 바뀔 때만 문자열을 만듦
+	int32 PercentInt = FMath::RoundToInt(Display * 100.0f);
 
-	if (LoadingPercentText)
+	// 100% 는 완료 판정이 난 뒤에만 보여줌
+	if (PercentInt >= 100 && !Tracker.IsVisuallyComplete(ProgressSettings))
 	{
-		LoadingPercentText->SetText(PercentText);
+		PercentInt = 99;
 	}
 
-	if (Text_Percent)
+	if (Text_Percent && PercentInt != LastDisplayedPercent)
 	{
-		Text_Percent->SetText(PercentText);
+		LastDisplayedPercent = PercentInt;
+		Text_Percent->SetText(FText::FromString(FString::Printf(TEXT("%d%%"), PercentInt)));
 	}
 
 	if (SizeBox_FocusRotationRoot)
@@ -341,20 +351,20 @@ void ULoadingScreenWidget::ResetLoadingSession()
 	PendingThumbnail.Reset();
 
 	bCompletionSoundPlayed = false;
+	LastDisplayedPercent = -1;
 
 	bCompletionExitPending = false;
 	CompletionExitDelegate.Unbind();
 
-	if (bExitAnimationPlaying)
+	// 애니메이션과 사운드를 전부 끊는다.
+	if (Anim_Exit)
 	{
-		bExitAnimationPlaying = false;
-
-		if (Anim_Exit)
-		{
-			UnbindAllFromAnimationFinished(Anim_Exit);
-			StopAnimation(Anim_Exit);
-		}
+		UnbindAllFromAnimationFinished(Anim_Exit);
 	}
+
+	bExitAnimationPlaying = false;
+
+	StopAllAnimations();
 
 	if (PreviewHandle.IsValid())
 	{
