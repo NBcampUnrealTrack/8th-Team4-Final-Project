@@ -27,6 +27,7 @@ protected:
 private:
 	void HandlePlayClicked();
 	void HandleTrainingClicked();
+	void HandleCustomizeClicked();
 	void HandleSettingsClicked();
 	void HandleQuitClicked();
 	void HandleOptionsCloseRequested();
@@ -47,11 +48,15 @@ private:
 	TObjectPtr<UShooterButtonBase> Btn_Settings;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Quit;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UShooterButtonBase> Btn_Customize;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UCommonActivatableWidget> SessionBrowserClass;
 	UPROPERTY(EditDefaultsOnly, Category = "Travel")
 	TSoftObjectPtr<UWorld> TrainingDestinationMap;
+	UPROPERTY(EditDefaultsOnly, Category = "Travel")
+	TSoftObjectPtr<UWorld> CustomizationDestinationMap;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSoftClassPtr<UShooterOptionsScreen> OptionsScreenClass;
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
