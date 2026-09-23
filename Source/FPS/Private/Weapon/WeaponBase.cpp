@@ -266,6 +266,7 @@ void AWeaponBase::SetIsStationary(bool bNewIsStationary)
 void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
 {
 	EffectiveMagazineSize = NewMagazineSize;
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::ResizeMagazine(const int32 NewMagazineSize)
@@ -273,6 +274,7 @@ void AWeaponBase::ResizeMagazine(const int32 NewMagazineSize)
 	const int32 Delta = NewMagazineSize - EffectiveMagazineSize;
 	EffectiveMagazineSize = NewMagazineSize;
 	CurrentAmmo = FMath::Clamp(CurrentAmmo + Delta, 0, EffectiveMagazineSize);
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::ResizeReserve(const int32 NewMaxReserveAmmo)
@@ -280,6 +282,7 @@ void AWeaponBase::ResizeReserve(const int32 NewMaxReserveAmmo)
 	const int32 Delta = NewMaxReserveAmmo - EffectiveMaxReserveAmmo;
 	EffectiveMaxReserveAmmo = NewMaxReserveAmmo;
 	CurrentReserveAmmo = FMath::Max(CurrentReserveAmmo + Delta, 0);
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::SetEffectiveReloadDuration(const float NewReloadDuration)
@@ -353,6 +356,11 @@ float AWeaponBase::GetADSFieldOfView() const
 float AWeaponBase::GetADSCameraInterpSpeedOverride() const
 {
 	return Aim ? Aim->GetADSCameraInterpSpeedOverride() : 0.f;
+}
+
+float AWeaponBase::GetADSMoveSpeedMultiplier() const
+{
+	return Aim ? Aim->GetADSMoveSpeedMultiplier() : 1.f;
 }
 
 bool AWeaponBase::SupportsVariableADSZoom() const
@@ -551,6 +559,7 @@ int32 AWeaponBase::ConsumeAmmoForShot()
 	if (!bInfiniteAmmo)
 	{
 		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+		OnAmmoChanged.Broadcast();
 	}
 
 	ShotIndexInMagazine = (CurrentShotIndex + 1) % SafeMagazineSize;
@@ -701,6 +710,7 @@ void AWeaponBase::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
 	}
 
 	bInfiniteAmmo = bNewInfiniteAmmo;
+	OnAmmoChanged.Broadcast();
 	ForceNetUpdate();
 }
 
@@ -751,10 +761,21 @@ void AWeaponBase::FinishReload()
 	bEmptyReloadArmed = false;
 
 	bIsReloading = false;
+	OnAmmoChanged.Broadcast();
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
 	}
+}
+
+void AWeaponBase::OnRep_CurrentReserveAmmo()
+{
+	OnAmmoChanged.Broadcast();
+}
+
+void AWeaponBase::OnRep_InfiniteAmmo()
+{
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::CancelReload()

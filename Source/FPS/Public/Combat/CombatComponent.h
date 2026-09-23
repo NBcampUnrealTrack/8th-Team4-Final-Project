@@ -15,6 +15,9 @@ class UWeaponData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCyclingStateChanged, bool, bIsCycling);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainHUDSuppressionChanged, bool, bSuppressed);
+// 현재 손에 든 무기(CurrentWeapon)가 바뀔 때마다 브로드캐스트된다. UI(ShooterWeaponStatus)가 매 프레임
+// GetCurrentWeapon()을 폴링하는 대신 이 델리게이트를 구독하도록 하기 위함이다. NewWeapon은 nullptr일 수 있다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentWeaponChanged, AWeaponBase*, NewWeapon);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UCombatComponent : public UActorComponent
@@ -104,6 +107,11 @@ public:
 	// UI는 무기 태그를 직접 해석하지 않고 이 상태만 구독한다.
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat|ADS")
 	FOnMainHUDSuppressionChanged OnMainHUDSuppressionChanged;
+
+	// 손에 든 무기가 바뀔 때(장착/스왑/해제) 알린다. UI는 이 델리게이트만 구독하면 되고 CombatComponent를
+	// 매 프레임 폴링할 필요가 없다.
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
+	FOnCurrentWeaponChanged OnCurrentWeaponChanged;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
