@@ -5,6 +5,7 @@
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterStartupScreen.generated.h"
 
+class UButton;
 class UCommonActivatableWidget;
 class UShooterButtonBase;
 class UTextBlock;
@@ -30,6 +31,7 @@ private:
 	void HandleIntroFinished();
 	UFUNCTION()
 	void HandleOpenFinished();
+	UFUNCTION()
 	void HandleLoginClicked();
 	void HandleRetryClicked();
 	void HandleQuitClicked();
@@ -37,7 +39,7 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_Status;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterButtonBase> Btn_Login;
+	TObjectPtr<UButton> Btn_Login;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Retry;
 	UPROPERTY(meta = (BindWidget))
