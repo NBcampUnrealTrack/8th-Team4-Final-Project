@@ -3,10 +3,14 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameMode/State/DominationGameState.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Preload/DominationPreloadSubsystem.h"
+#include "Tags/UITags.h"
+#include "UI/InGame/ShooterMatchOutcomeScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 void UDominationUIInitComponent::BeginPlay()
 {
@@ -71,6 +75,7 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 {
 	RefreshCombatUI();
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
 
 	if (IsTeamMatchUIReady())
 	{
@@ -81,6 +86,7 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 void UDominationUIInitComponent::HandleMatchStateChanged()
 {
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
 	
 	// 새 매치가 InProgress 로 진입하는 순간, 이전 매치에서 남은
 	// 증강 선택 보류 상태와 진입 연출 이력을 초기화한다.
@@ -138,6 +144,60 @@ void UDominationUIInitComponent::TryCaptureMatchResult()
 			MatchResultSubsystem->CaptureSnapshot(BoundGameState.Get());
 		}
 	}
+}
+
+void UDominationUIInitComponent::TryPresentMatchEnd()
+{
+	if (!BoundGameState.IsValid()
+		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
+		|| BoundGameState->GetMatchWinner() == EGameTeam::None)
+	{
+		return;
+	}
+
+	SuspendScreenPresentation();
+	TryPresentMatchOutcome();
+}
+
+void UDominationUIInitComponent::TryPresentMatchOutcome()
+{
+	if (IsValid(MatchOutcomeScreen) || !MatchOutcomeScreenClass)
+	{
+		return;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+	const ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const EGameTeam LocalTeam = IsValid(PlayerState) ? PlayerState->GetTeam() : EGameTeam::None;
+	if (LocalTeam == EGameTeam::None)
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!IsValid(UIManager))
+	{
+		return;
+	}
+
+	MatchOutcomeScreen = Cast<UShooterMatchOutcomeScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, MatchOutcomeScreenClass));
+	if (!IsValid(MatchOutcomeScreen))
+	{
+		return;
+	}
+
+	// 내 팀 점수가 먼저
+	const bool bLocalIsTeamA = (LocalTeam == EGameTeam::TeamA);
+	const int32 TeamAScore = BoundGameState->GetTeamAScore();
+	const int32 TeamBScore = BoundGameState->GetTeamBScore();
+
+	MatchOutcomeScreen->ShowOutcome(
+		LocalTeam == BoundGameState->GetMatchWinner(),
+		bLocalIsTeamA ? TeamAScore : TeamBScore,
+		bLocalIsTeamA ? TeamBScore : TeamAScore);
 }
 
 void UDominationUIInitComponent::BindToGameState(

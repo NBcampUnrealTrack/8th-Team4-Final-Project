@@ -6,6 +6,7 @@
 #include "DominationUIInitComponent.generated.h"
 
 class ADominationGameState;
+class UShooterMatchOutcomeScreen;
 
 UCLASS(ClassGroup = (UI))
 class FPS_API UDominationUIInitComponent : public UCombatUIInitComponent
@@ -27,8 +28,18 @@ private:
     UFUNCTION()
     void HandleRewardRoundChanged(EGameTeam Team, int32 NewScore);
     void TryCaptureMatchResult();
+    // 매치 종료 처리. 
+    void TryPresentMatchEnd();
+    void TryPresentMatchOutcome();
     void BindToGameState(ADominationGameState* DominationGameState);
     void UnbindFromGameState();
+
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Match End")
+    TSubclassOf<UShooterMatchOutcomeScreen> MatchOutcomeScreenClass;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UShooterMatchOutcomeScreen> MatchOutcomeScreen;
+
     TWeakObjectPtr<ADominationGameState> BoundGameState;
     int32 LastObservedRewardRound = 0;
     EDominationMatchPhase LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
