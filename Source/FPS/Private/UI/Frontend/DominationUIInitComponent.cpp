@@ -8,9 +8,13 @@
 #include "Player/ShooterPlayerController.h"
 #include "Preload/DominationPreloadSubsystem.h"
 #include "Tags/UITags.h"
+#include "TimerManager.h"
 #include "UI/InGame/ShooterMatchOutcomeScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
 
 void UDominationUIInitComponent::BeginPlay()
 {
@@ -34,6 +38,11 @@ void UDominationUIInitComponent::BeginPlay()
 
 void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
+    }
+
     UnbindFromGameState();
     Super::EndPlay(EndPlayReason);
 }
@@ -157,6 +166,9 @@ void UDominationUIInitComponent::TryPresentMatchEnd()
 
 	SuspendScreenPresentation();
 	TryPresentMatchOutcome();
+
+	// 연출 성공과 무관하게 예약
+	TryScheduleMatchExitTransition();
 }
 
 void UDominationUIInitComponent::TryPresentMatchOutcome()
@@ -198,6 +210,46 @@ void UDominationUIInitComponent::TryPresentMatchOutcome()
 		LocalTeam == BoundGameState->GetMatchWinner(),
 		bLocalIsTeamA ? TeamAScore : TeamBScore,
 		bLocalIsTeamA ? TeamBScore : TeamAScore);
+}
+
+void UDominationUIInitComponent::TryScheduleMatchExitTransition()
+{
+	UWorld* World = GetWorld();
+	if (bMatchExitTransitionAttempted
+		|| !IsValid(World)
+		|| World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+	{
+		return;
+	}
+
+	// 서버가 복제한 종료 시각 기준
+	const float Remaining = BoundGameState->GetPhaseTimeRemaining();
+	if (Remaining <= MatchExitCoverLeadSeconds)
+	{
+		BeginMatchExitTransition(true);
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		MatchExitTransitionTimer,
+		FTimerDelegate::CreateUObject(this, &ThisClass::BeginMatchExitTransition, false),
+		Remaining - MatchExitCoverLeadSeconds,
+		false);
+}
+
+void UDominationUIInitComponent::BeginMatchExitTransition(const bool bInstant)
+{
+	bMatchExitTransitionAttempted = true;
+
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr;
+
+	if (!Transition || !Transition->BeginTransition(FSimpleDelegate(), bInstant))
+	{
+		UE_LOG(LogDominationUIInit, Warning, TEXT("Match exit transition could not start."));
+	}
 }
 
 void UDominationUIInitComponent::BindToGameState(

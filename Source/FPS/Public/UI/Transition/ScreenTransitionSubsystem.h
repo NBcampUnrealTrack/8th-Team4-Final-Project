@@ -48,7 +48,6 @@ private:
 
 	UPROPERTY(Transient)
 	TSubclassOf<UScreenTransitionWidget> ResolvedWidgetClass;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UScreenTransitionWidget> ActiveWidget;
 
