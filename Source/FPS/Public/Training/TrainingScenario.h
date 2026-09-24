@@ -10,6 +10,7 @@ class AActor;
 class APlayerController;
 class ATrainingArena;
 struct FTrainingModeConfig;
+enum class ETrainingBotSource : uint8;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FTrainingBotSpawned, ATrainingCharacter&);
 
@@ -21,6 +22,9 @@ class FPS_API UTrainingScenario : public UObject
 public:
     void Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
         const FTrainingDistanceBand& InBand, const FTrainingModeConfig& InModeConfig);
+    virtual ETrainingBotSource GetBotSource() const PURE_VIRTUAL(UTrainingScenario::GetBotSource, return ETrainingBotSource(););
+    virtual bool ValidateConfiguration(const ATrainingArena& InArena,
+        const FTrainingDistanceBand& InBand, FText& OutFailure) const PURE_VIRTUAL(UTrainingScenario::ValidateConfiguration, return false;);
     virtual bool SpawnNext() PURE_VIRTUAL(UTrainingScenario::SpawnNext, return false;);
     void Stop();
     bool OwnsActor(const AActor* Candidate) const;
@@ -29,6 +33,7 @@ public:
 
 protected:
     void TrackActor(ATrainingCharacter& SpawnedActor);
+    bool HasSpawnCapacity() const;
     ATrainingArena* GetArena() const;
     APlayerController* GetParticipant() const;
     FTrainingDistanceBand DistanceBand;
@@ -51,6 +56,9 @@ class FPS_API UTargetAcquisitionScenario : public UTrainingScenario
 {
     GENERATED_BODY()
 public:
+    virtual ETrainingBotSource GetBotSource() const override;
+    virtual bool ValidateConfiguration(const ATrainingArena& InArena,
+        const FTrainingDistanceBand& InBand, FText& OutFailure) const override;
     virtual bool SpawnNext() override;
 };
 
@@ -59,8 +67,10 @@ class FPS_API UCombatResponseScenario : public UTrainingScenario
 {
     GENERATED_BODY()
 public:
+    virtual ETrainingBotSource GetBotSource() const override;
+    virtual bool ValidateConfiguration(const ATrainingArena& InArena,
+        const FTrainingDistanceBand& InBand, FText& OutFailure) const override;
     virtual bool SpawnNext() override;
-    int32 GetLivingAICount() const;
 
 private:
     bool SpawnCombatBot();

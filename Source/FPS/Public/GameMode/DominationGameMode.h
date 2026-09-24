@@ -18,6 +18,8 @@ class UDominationLoadoutManager;
 class UDominationMatchStartManager;
 class UDominationObjectiveManager;
 class UDominationRespawnManager;
+class UDominationSandstormManager;
+class UDominationSandstormSettings;
 
 DECLARE_MULTICAST_DELEGATE(FOnDominationMatchStarted);
 
@@ -68,6 +70,14 @@ public:
 		APlayerController* PlayerController,
 		EDominationPointId ObjectivePointId);
 	void RespawnPlayer(AController* Controller);
+	bool PrepareCombatPawn(APlayerController* PlayerController);
+	void ActivateCombatPlayer(APlayerController* PlayerController);
+
+	UFUNCTION(Exec, BlueprintCallable, BlueprintAuthorityOnly, Category = "Domination|Match Start")
+	void RetryDominationMatchStart();
+
+	UFUNCTION(Exec, BlueprintCallable, BlueprintAuthorityOnly, Category = "Domination|Sandstorm")
+	void ForceStorm();
 
 	// 초기 참가자 스폰이 끝나고 중앙 거점 활성화 대기가 시작된 뒤 발생한다.
 	// 외부 증강 시스템은 Manager 내부가 아니라 이 GameMode 경계에 연결한다.
@@ -136,6 +146,12 @@ private:
 	// DominationSystemAnnouncer 기반 BP를 지정한다. 맵에 직접 배치할 필요가 없다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Announcer", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<ASystemAnnouncer> AnnouncerClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Sandstorm", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UDominationSandstormSettings> SandstormSettings;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDominationSandstormManager> SandstormManager;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UDominationAnnouncerManager> AnnouncerManager;

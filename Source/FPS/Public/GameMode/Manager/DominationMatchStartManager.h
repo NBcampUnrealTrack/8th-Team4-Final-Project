@@ -6,6 +6,7 @@
 #include "TimerManager.h"
 #include "DominationMatchStartManager.generated.h"
 
+class APlayerController;
 class ADominationGameMode;
 class ADominationPlayerController;
 class ADominationPlayerState;
@@ -30,6 +31,8 @@ public:
 	virtual void Shutdown() override;
 
 	void NotifyPlayerLoaded();
+	void NotifyPlayerLeaving(APlayerController* PlayerController);
+	void RetryMatchStart();
 	void RequestCombatClass(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
@@ -43,17 +46,32 @@ public:
 	FOnDominationInitialPlayersSpawned OnInitialPlayersSpawned;
 
 private:
-	bool CaptureInitialParticipants();
+	enum class EInitialSpawnResult : uint8
+	{
+		Succeeded,
+		TemporarilyBlocked,
+		InvalidConfiguration
+	};
+
+	bool CaptureInitialParticipants(const APlayerController* ExcludedPlayer = nullptr);
+	bool HasRequiredParticipants() const;
+	void ResetStartAttempt();
+	void SuspendMatchStart(const TCHAR* Reason);
+	void CleanupInitialSpawns();
 	bool IsInitialParticipant(const ADominationPlayerController* PlayerController) const;
 	bool AreAllParticipantsClassSelected() const;
 	void BeginClassSelection();
 	void HandleClassSelectionTimeout();
 	void CompleteClassSelection();
-	bool SpawnInitialParticipants();
+	EInitialSpawnResult SpawnInitialParticipants();
 
 	TArray<TWeakObjectPtr<ADominationPlayerController>> InitialParticipants;
 	FTimerHandle ClassSelectionTimerHandle;
 	int32 MinimumPlayersToStart = 2;
 	int32 MinimumPlayersPerTeam = 1;
 	float ClassSelectionDuration = 15.0f;
+	int32 SpawnRetryCount = 0;
+	bool bStartSuspended = false;
+	static constexpr int32 MaxSpawnRetries = 3;
+	static constexpr float SpawnRetryDelay = 0.5f;
 };

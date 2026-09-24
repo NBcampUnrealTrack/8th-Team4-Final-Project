@@ -1,6 +1,7 @@
 #include "GameMode/State/DominationGameState.h"
 
 #include "Net/UnrealNetwork.h"
+#include "GameMode/Settings/DominationSandstormSettings.h"
 
 namespace
 {
@@ -24,6 +25,8 @@ void ADominationGameState::GetLifetimeReplicatedProps(
 	DOREPLIFETIME(ADominationGameState, MatchFlowState);
 	DOREPLIFETIME(ADominationGameState, ObjectiveFlowState);
 	DOREPLIFETIME(ADominationGameState, CaptureState);
+	DOREPLIFETIME(ADominationGameState, SandstormState);
+	DOREPLIFETIME(ADominationGameState, SandstormSettings);
 }
 
 EDominationMatchPhase ADominationGameState::GetDominationPhase() const
@@ -310,4 +313,41 @@ void ADominationGameState::OnRep_CaptureState()
 void ADominationGameState::BroadcastMatchFlowStateChanged()
 {
 	OnDominationFlowStateChanged.Broadcast();
+}
+
+const FDominationSandstormState& ADominationGameState::GetSandstormState() const
+{
+	return SandstormState;
+}
+
+UDominationSandstormSettings* ADominationGameState::GetSandstormSettings() const
+{
+	return SandstormSettings;
+}
+
+void ADominationGameState::SetSandstormState(const FDominationSandstormState& NewState)
+{
+	if (!HasAuthority()) { return; }
+	SandstormState = NewState;
+	OnRep_SandstormState();
+	ForceNetUpdate();
+}
+
+void ADominationGameState::SetSandstormSettings(UDominationSandstormSettings* NewSettings)
+{
+	if (!HasAuthority()) { return; }
+	SandstormSettings = NewSettings;
+	OnRep_SandstormSettings();
+	ForceNetUpdate();
+}
+
+void ADominationGameState::OnRep_SandstormState()
+{
+	OnSandstormStateChanged.Broadcast(SandstormState);
+}
+
+void ADominationGameState::OnRep_SandstormSettings()
+{
+	// 설정과 단계의 도착 순서에 관계없이 같은 현재 상태를 다시 적용한다.
+	OnRep_SandstormState();
 }

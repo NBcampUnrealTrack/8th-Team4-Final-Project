@@ -1,30 +1,10 @@
 #include "UI/Frontend/TrainingUIInitComponent.h"
 
-#include "Blueprint/UserWidget.h"
-#include "Blueprint/WidgetTree.h"
-#include "Components/Widget.h"
 #include "Engine/World.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
-#include "UI/InGame/HUD/ShooterPlayerHUD.h"
 #include "UI/InGame/Domination/DominationClassSelectScreen.h"
-#include "UI/InGame/HUD/DominationCaptureProgressWidget.h"
-#include "UI/InGame/HUD/DominationObjectiveCompassWidget.h"
-#include "UI/InGame/HUD/DominationObjectiveFeedbackWidget.h"
-#include "UI/InGame/HUD/DominationObjectiveTransitionTimerWidget.h"
-#include "UI/InGame/HUD/DominationSiteTrackerWidget.h"
-
-UTrainingUIInitComponent::UTrainingUIInitComponent()
-{
-    SuppressedHUDWidgetClasses = {
-        UDominationCaptureProgressWidget::StaticClass(),
-        UDominationObjectiveCompassWidget::StaticClass(),
-        UDominationObjectiveFeedbackWidget::StaticClass(),
-        UDominationObjectiveTransitionTimerWidget::StaticClass(),
-        UDominationSiteTrackerWidget::StaticClass()
-    };
-}
 
 bool UTrainingUIInitComponent::OpenClassSelectionForTraining()
 {
@@ -91,9 +71,8 @@ void UTrainingUIInitComponent::OnClassSelectionPresented()
     CompleteLocalLoading();
 }
 
-void UTrainingUIInitComponent::OnCombatHUDCreated(UShooterPlayerHUD* HUD)
+void UTrainingUIInitComponent::OnCombatHUDCreated(UShooterPlayerHUD*)
 {
-    if (IsValid(HUD)) { HideRuleOnlyWidgets(*HUD); }
     CompleteLocalLoading();
 }
 
@@ -110,25 +89,3 @@ void UTrainingUIInitComponent::RequestReturnToOutGame(AShooterPlayerController& 
     PlayerController.RequestReturnToFrontend();
 }
 
-void UTrainingUIInitComponent::HideRuleOnlyWidgets(UUserWidget& RootWidget)
-{
-    if (!RootWidget.WidgetTree) { return; }
-    RootWidget.WidgetTree->ForEachWidget([this](UWidget* Candidate)
-    {
-        if (!IsValid(Candidate)) { return; }
-        const bool bRuleWidget = SuppressedHUDWidgetNames.Contains(Candidate->GetFName())
-            || SuppressedHUDWidgetClasses.ContainsByPredicate([Candidate](const TSubclassOf<UWidget>& WidgetClass)
-            {
-                return WidgetClass && Candidate->IsA(WidgetClass.Get());
-            });
-        if (bRuleWidget)
-        {
-            Candidate->SetVisibility(ESlateVisibility::Collapsed);
-            return;
-        }
-        if (UUserWidget* NestedWidget = Cast<UUserWidget>(Candidate))
-        {
-            HideRuleOnlyWidgets(*NestedWidget);
-        }
-    });
-}

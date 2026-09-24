@@ -343,6 +343,13 @@ void UTrainingPlayerComponent::SubmitConfirmation(const int32 RequestId)
     ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
+bool UTrainingPlayerComponent::ResolveModePreview(const ETrainingMode Mode,
+    FTrainingModeConfig& OutConfig) const
+{
+    const ATrainingInteractionActor* Interactable = PendingInteractable.Get();
+    return TrainingModeDefinitions::Resolve(Mode, OutConfig, Interactable ? Interactable->Arena.Get() : nullptr);
+}
+
 void UTrainingPlayerComponent::SubmitMode(const int32 RequestId, const ETrainingMode Mode,
     const ETrainingDistancePreset Preset, const float CustomMeters)
 {
@@ -551,7 +558,7 @@ void UTrainingPlayerComponent::HandleParticipantDeath()
     CloseResults();
     if (Presentation)
     {
-        Presentation->Clear();
+        Presentation->Clear(true);
     }
 }
 
@@ -572,11 +579,10 @@ void UTrainingPlayerComponent::ResetTrainingState()
         Spawner->CancelTraining();
     }
     HandleParticipantDeath();
-    if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
+    if (Presentation)
     {
-        HUD->RemoveFromParent();
+        Presentation->Clear();
     }
-    CQBHUDWidget.Reset();
     ActiveCQBSpawner.Reset();
     ReturnArena.Reset();
     ReturnCQBEntryPoint.Reset();

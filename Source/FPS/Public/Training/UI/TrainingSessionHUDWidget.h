@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Training/TrainingTypes.h"
+#include "TimerManager.h"
 #include "TrainingSessionHUDWidget.generated.h"
 
 class UProgressBar;
@@ -54,6 +55,7 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_ProgressLabel;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
 
+    FTimerHandle ClockTimer;
     double StartSeconds = 0.0;
     float ActiveDurationSeconds = 0.0f;
     float KillFeedbackAge = 0.0f;

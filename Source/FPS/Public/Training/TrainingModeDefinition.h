@@ -22,7 +22,8 @@ struct FPS_API FTrainingModeConfig
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training")
     TSubclassOf<UTrainingScenario> ScenarioClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training")
+    // 이전 DA의 직렬화 값을 보존한다. 봇 요구사항은 Scenario가 결정한다.
+    UPROPERTY(BlueprintReadOnly, Category = "Training")
     ETrainingBotSource BotSource = ETrainingBotSource::Target;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Presentation")
@@ -65,7 +66,7 @@ public:
 
 namespace TrainingModeDefinitions
 {
-    FPS_API bool Resolve(ETrainingMode Mode, FTrainingModeConfig& OutConfig);
+    FPS_API bool Resolve(ETrainingMode Mode, FTrainingModeConfig& OutConfig, const ATrainingArena* Arena = nullptr);
     FPS_API FText GetDisplayName(ETrainingMode Mode);
     FPS_API FText GetHUDLabel(ETrainingMode Mode);
 }

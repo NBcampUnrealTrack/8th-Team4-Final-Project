@@ -4,15 +4,11 @@
 #include "UI/Frontend/CombatUIInitComponent.h"
 #include "TrainingUIInitComponent.generated.h"
 
-class UUserWidget;
-class UWidget;
-
 UCLASS(ClassGroup = (UI))
 class FPS_API UTrainingUIInitComponent : public UCombatUIInitComponent
 {
     GENERATED_BODY()
 public:
-    UTrainingUIInitComponent();
     virtual bool SupportsScoreboard() const override { return false; }
     bool OpenClassSelectionForTraining();
     void CloseClassSelectionForTraining();
@@ -26,10 +22,5 @@ protected:
     virtual void OnClassSelectionPresented() override;
     virtual void RequestReturnToOutGame(AShooterPlayerController& PlayerController) override;
 private:
-    void HideRuleOnlyWidgets(UUserWidget& RootWidget);
     void CompleteLocalLoading();
-    UPROPERTY(EditDefaultsOnly, Category = "Training|HUD")
-    TArray<TSubclassOf<UWidget>> SuppressedHUDWidgetClasses;
-    UPROPERTY(EditDefaultsOnly, Category = "Training|HUD")
-    TArray<FName> SuppressedHUDWidgetNames;
 };

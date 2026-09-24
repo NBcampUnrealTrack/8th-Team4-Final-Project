@@ -63,6 +63,7 @@ protected:
 private:
     void ShowPulse(const FText& Message, float Duration, float InitialElapsed);
     void UpdatePulse();
+    void RefreshCountdown();
     void ApplyStyle();
     bool bCountdownPulse = false;
     int32 LastCountdownDigit = INDEX_NONE;
@@ -70,4 +71,5 @@ private:
     float InitialElapsedSeconds = 0.0f;
     float PulseDurationSeconds = 0.0f;
     FTimerHandle PulseUpdateTimer;
+    FTimerHandle CountdownTimer;
 };
