@@ -6,6 +6,7 @@
 
 class UTextBlock;
 class UWidget;
+class UWidgetAnimation;
 
 DECLARE_MULTICAST_DELEGATE(FOnInGameMenuAction);
 
@@ -35,9 +36,15 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeOnActivated() override;
 	virtual bool NativeOnHandleBackAction() override;
 
 private:
+	void RequestResume();
+
+	UFUNCTION()
+	void HandleExitFinished();
+
 	UFUNCTION()
 	void HandleResumeClicked();
 
@@ -70,4 +77,14 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_Status;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Enter;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Exit;
+
+	FWidgetAnimationDynamicEvent ExitFinishedDelegate;
+
+	bool bClosing = false;
 };

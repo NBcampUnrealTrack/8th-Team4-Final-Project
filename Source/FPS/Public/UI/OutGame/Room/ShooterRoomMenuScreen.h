@@ -7,6 +7,7 @@
 
 class UShooterButtonBase;
 class UWidget;
+class UWidgetAnimation;
 
 DECLARE_MULTICAST_DELEGATE(FOnRoomMenuAction);
 
@@ -25,10 +26,15 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeOnActivated() override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
 private:
+	void RequestClose();
+
+	UFUNCTION()
+	void HandleExitFinished();
 	void HandleSettingsClicked();
 	void HandleLeaveClicked();
 	void HandleCloseClicked();
@@ -40,4 +46,13 @@ private:
 	// 없으면 ESC 로만 닫는다
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterButtonBase> Btn_Close;
+
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Enter;
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> Anim_Exit;
+
+	FWidgetAnimationDynamicEvent ExitFinishedDelegate;
+
+	bool bClosing = false;
 };
