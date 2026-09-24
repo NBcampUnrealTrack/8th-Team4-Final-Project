@@ -252,6 +252,27 @@ void UDominationUIInitComponent::BeginMatchExitTransition(const bool bInstant)
 	}
 }
 
+void UDominationUIInitComponent::HandleSeamlessTravelStart(UWorld* TravelingWorld, const FString& /*MapName*/)
+{
+	if (TravelingWorld != GetWorld() || bMatchExitTransitionAttempted)
+	{
+		return;
+	}
+
+	// 조건은 TryPresentMatchEnd 와 같다. 매치 종료가 아닌 travel 은 덮지 않는다
+	if (!BoundGameState.IsValid()
+		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
+		|| BoundGameState->GetMatchWinner() == EGameTeam::None)
+	{
+		return;
+	}
+
+	// 느린 프레임으로 월드 시간이 밀려 예약이 travel 보다 늦었다. 월드 교체만은 가린다
+	UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly at travel start."));
+	TravelingWorld->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
+	BeginMatchExitTransition(true);
+}
+
 void UDominationUIInitComponent::BindToGameState(
 	ADominationGameState* DominationGameState)
 {
@@ -271,6 +292,9 @@ void UDominationUIInitComponent::BindToGameState(
 	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(
 		this, 
 		&ThisClass::HandleRewardRoundChanged);
+	SeamlessTravelStartHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(
+		this,
+		&ThisClass::HandleSeamlessTravelStart);
 }
 
 void UDominationUIInitComponent::UnbindFromGameState()
@@ -282,6 +306,9 @@ void UDominationUIInitComponent::UnbindFromGameState()
 		BoundGameState->OnTeamScoreChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
+
+	FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessTravelStartHandle);
+	SeamlessTravelStartHandle.Reset();
 }
 
 bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const

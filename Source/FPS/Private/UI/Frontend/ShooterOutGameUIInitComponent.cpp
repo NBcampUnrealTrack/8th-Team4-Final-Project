@@ -7,8 +7,10 @@
 #include "GameFramework/PlayerController.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Tags/UITags.h"
+#include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/OutGame/ShooterOutGameSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 void UShooterOutGameUIInitComponent::BeginPlay()
 {
@@ -25,12 +27,15 @@ void UShooterOutGameUIInitComponent::BeginPlay()
 		TEXT("OutGame UI init failed: RootLayoutClass or InitialWidgetClass is not set on %s."),
 		*GetNameSafe(GetOwner())))
 	{
+		// UI 가 없어도 덮개에 갇히지는 않는다
+		EndScreenTransitionUnlessResultPending();
 		return;
 	}
 
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
 	if (!IsValid(UIManager))
 	{
+		EndScreenTransitionUnlessResultPending();
 		return;
 	}
 
@@ -54,10 +59,14 @@ void UShooterOutGameUIInitComponent::BeginPlay()
 	{
 		OutGame->MarkStartupIntroShown();
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_Transition, StartupWidgetClass);
+		EndScreenTransitionUnlessResultPending();
 		return;
 	}
 
 	UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, InitialWidgetClass);
+
+	// 첫 화면이 올라간 뒤에 걷는다
+	EndScreenTransitionUnlessResultPending();
 
 	if (IsValid(OutGame))
 	{
@@ -90,4 +99,25 @@ ULoadingScreenSubsystem* UShooterOutGameUIInitComponent::GetLoadingScreenSubsyst
 	return IsValid(GameInstance)
 		? GameInstance->GetSubsystem<ULoadingScreenSubsystem>()
 		: nullptr;
+}
+
+void UShooterOutGameUIInitComponent::EndScreenTransitionUnlessResultPending() const
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = IsValid(World) ? World->GetGameInstance() : nullptr;
+	if (!IsValid(GameInstance))
+	{
+		return;
+	}
+
+	const UShooterMatchResultSubsystem* MatchResult = GameInstance->GetSubsystem<UShooterMatchResultSubsystem>();
+	if (IsValid(MatchResult) && MatchResult->GetSnapshot().bValid)
+	{
+		return;
+	}
+
+	if (UScreenTransitionSubsystem* Transition = GameInstance->GetSubsystem<UScreenTransitionSubsystem>())
+	{
+		Transition->EndTransition();
+	}
 }

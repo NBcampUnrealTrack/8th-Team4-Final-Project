@@ -180,9 +180,10 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 	ALobbyGameState* LobbyGS = Cast<ALobbyGameState>(GameState);
 	if (LobbyGS)
 	{
+		// 결과가 없으면 덮개는 OutGame UI 초기화가 방 화면을 올린 뒤 걷는다
 		if (!Snapshot.bValid)
 		{
-			FinishEvaluation();
+			ClearEvaluateTimer();
 			return;
 		}
 		
