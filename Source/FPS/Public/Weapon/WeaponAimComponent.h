@@ -31,6 +31,7 @@ public:
 	bool CanADS() const { return bCanADS; }
 	float GetADSFieldOfView() const;
 	float GetADSCameraInterpSpeedOverride() const { return ADSCameraInterpSpeedOverride; }
+	float GetADSMoveSpeedMultiplier() const { return ADSMoveSpeedMultiplier; }
 	bool SupportsVariableADSZoom() const { return bEnableVariableADSZoom; }
 	bool AdjustADSZoom(float InputDelta);
 	int32 GetCurrentADSZoomStep() const { return CurrentADSZoomStep; }
@@ -103,6 +104,12 @@ protected:
 	// 값을 갖는다. CombatComponent가 bAiming/CanADS()를 보고 이 값과 평상시 FOV 사이를 보간한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "5.0", ClampMax = "170.0"))
 	float ADSFieldOfView = 60.f;
+
+	// ADS(조준) 중 이동속도 배율. 1이면 영향 없음. MoveSpeedMultiplier(무기를 들고만 있어도 항상 적용)와는
+	// 별개로, ADS 중일 때만 추가로 곱해진다 - ShooterMovementComponent::GetMaxSpeed 참고. 무기마다
+	// 다르게 설정 가능(예: 스나이퍼는 라이플보다 스코프 중 더 많이 느려지게).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|ADS", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ADSMoveSpeedMultiplier = 0.5f;
 
 	// 이 무기만의 FOV 보간 속도 오버라이드. 0이면 CombatComponent의 ADSZoomInterpSpeed를 사용한다.
 	// 스나이퍼처럼 다른 무기보다 ADS 진입/해제와 줌 단계 전환을 느리게 만들고 싶을 때 설정한다.
@@ -184,6 +191,13 @@ protected:
 	// bIsAirborne이 true일 때 CalculateCurrentSpreadDegrees에 더해진다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	float InAirSpreadPenaltyDegrees = 3.f;
+
+	// 정지 상태가 아닐 때(걷기/스프린트, 공중 포함) ADS 여부와 무관하게 추가로 붙는 탄퍼짐(도).
+	// InAirSpreadPenaltyDegrees와 동일한 방식 - MovementSpreadMultiplier(배율)만으로는 기본
+	// 탄퍼짐이 작은 무기에서 체감이 약할 수 있어서, 배율과 별개로 무조건 더해지는 고정값을 둔다.
+	// 기본값 0이면 기존과 동일하게 동작한다(하위 호환).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	float MovingSpreadPenaltyDegrees = 0.f;
 
 	// SetIsAirborne으로만 갱신된다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
