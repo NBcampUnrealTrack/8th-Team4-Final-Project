@@ -22,6 +22,7 @@ public:
     void PresentHit(int32 TotalKills, bool bKilled);
     void PresentCQBKill(int32 CurrentKills, int32 TotalTroopers);
     void FinishCQBSession();
+    void StopSession();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
     float KillFadeInSeconds = 0.10f;

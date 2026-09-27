@@ -48,6 +48,12 @@ void UTrainingPlayerComponent::BeginPlay()
     SeamlessTravelHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(this, &ThisClass::HandleSeamlessTravel);
 }
 
+int32 UTrainingPlayerComponent::AllocateRequestId()
+{
+    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
+    return RequestSequence;
+}
+
 APlayerController* UTrainingPlayerComponent::GetParticipantController() const
 {
     ATrainingPlayerController* Controller = Cast<ATrainingPlayerController>(GetOwner());
@@ -120,8 +126,7 @@ void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interact
 
     CancelCQBDialogRequest(PendingCQBRequestId);
     CloseActiveCQBDialog();
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingRequestId = RequestSequence;
+    PendingRequestId = AllocateRequestId();
     PendingSessionId = Sessions->GetSessionId();
     PendingKind = Kind;
     PendingInteractable = &Interactable;

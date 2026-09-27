@@ -123,6 +123,7 @@ void ACQBTrainingSpawner::StartLoadedTraining(UClass& LoadedTrooperClass)
     }
 
     const uint32 StartGeneration = SessionGeneration;
+    SessionTrooperClass = &LoadedTrooperClass;
     NextSpawnIndex = 0;
     KilledTroopers = 0;
     CountedDeadTroopers.Reset();
@@ -460,7 +461,7 @@ bool ACQBTrainingSpawner::RefillAfterDeath()
         return true;
     }
 
-    UClass* LoadedClass = TrooperClass.Get();
+    UClass* LoadedClass = SessionTrooperClass.Get();
     if (!LoadedClass)
     {
         UE_LOG(LogCQBTrainingSpawnerTroopers, Error,

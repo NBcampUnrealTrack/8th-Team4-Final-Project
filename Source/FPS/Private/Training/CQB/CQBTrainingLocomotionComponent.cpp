@@ -1,6 +1,8 @@
 #include "Training/CQB/CQBTrainingLocomotionComponent.h"
 
 #include "AIController.h"
+#include "Engine/World.h"
+#include "NavigationPath.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -59,11 +61,25 @@ bool UCQBTrainingLocomotionComponent::PrepareMoveGoal(
     const FVector& Destination,
     const float AcceptanceRadius)
 {
+    const UWorld* World = GetWorld();
+    if (!World || (!bHasMoveGoal && Destination.Equals(MoveGoal)
+        && World->GetTimeSeconds() < NextMoveRetryTime))
+    {
+        return false;
+    }
+
     bMoveRequested = false;
+    MoveGoal = Destination;
     bHasMoveGoal = ResolveNavigationGoal(Destination, MoveGoal);
     MoveAcceptanceRadius = FMath::Max(10.0f, AcceptanceRadius);
+    if (!bHasMoveGoal)
+    {
+        ScheduleMoveRetry();
+        return false;
+    }
+
     NextMoveRetryTime = 0.0;
-    return bHasMoveGoal;
+    return true;
 }
 
 bool UCQBTrainingLocomotionComponent::RequestPreparedMove()
@@ -180,9 +196,8 @@ bool UCQBTrainingLocomotionComponent::TurnToward(
     const float TurnSpeedDegreesPerSecond,
     const bool bAimPitch)
 {
-    AAIController* Controller = GetController();
-    APawn* Pawn = GetControlledPawn();
-    if (!Controller || !Pawn)
+    const APawn* Pawn = GetControlledPawn();
+    if (!Pawn)
     {
         return false;
     }
@@ -194,37 +209,31 @@ bool UCQBTrainingLocomotionComponent::TurnToward(
         return true;
     }
 
-    const float TargetYaw = FlatDirection.Rotation().Yaw;
-    FRotator ActorRotation = Pawn->GetActorRotation();
-    const float MaxYawStep = FMath::Max(0.0f, TurnSpeedDegreesPerSecond)
-        * FMath::Max(0.0f, DeltaTime);
-    ActorRotation.Pitch = 0.0f;
-    ActorRotation.Roll = 0.0f;
-    ActorRotation.Yaw = FMath::FixedTurn(ActorRotation.Yaw, TargetYaw, MaxYawStep);
-    Pawn->SetActorRotation(ActorRotation);
-
-    FRotator ControlRotation = ActorRotation;
+    float AimPitch = 0.0f;
     if (bAimPitch)
     {
         const FVector AimDirection = WorldLocation - Pawn->GetPawnViewLocation();
         if (!AimDirection.IsNearlyZero())
         {
-            ControlRotation.Pitch = AimDirection.Rotation().Pitch;
+            AimPitch = AimDirection.Rotation().Pitch;
         }
     }
-    else
-    {
-        ControlRotation.Pitch = 0.0f;
-    }
-    ControlRotation.Yaw = ActorRotation.Yaw;
-    ControlRotation.Roll = 0.0f;
-    Controller->SetControlRotation(ControlRotation);
 
-    return FMath::Abs(FMath::FindDeltaAngleDegrees(ActorRotation.Yaw, TargetYaw)) <= 0.5f;
+    return ApplyFacingRotation(
+        FlatDirection.Rotation().Yaw, AimPitch, DeltaTime, TurnSpeedDegreesPerSecond);
 }
 
 bool UCQBTrainingLocomotionComponent::TurnTowardYaw(
     const float TargetYaw,
+    const float DeltaTime,
+    const float TurnSpeedDegreesPerSecond)
+{
+    return ApplyFacingRotation(TargetYaw, 0.0f, DeltaTime, TurnSpeedDegreesPerSecond);
+}
+
+bool UCQBTrainingLocomotionComponent::ApplyFacingRotation(
+    const float TargetYaw,
+    const float AimPitch,
     const float DeltaTime,
     const float TurnSpeedDegreesPerSecond)
 {
@@ -242,12 +251,7 @@ bool UCQBTrainingLocomotionComponent::TurnTowardYaw(
     ActorRotation.Roll = 0.0f;
     ActorRotation.Yaw = FMath::FixedTurn(ActorRotation.Yaw, TargetYaw, MaxYawStep);
     Pawn->SetActorRotation(ActorRotation);
-
-    FRotator ControlRotation = Controller->GetControlRotation();
-    ControlRotation.Pitch = 0.0f;
-    ControlRotation.Roll = 0.0f;
-    ControlRotation.Yaw = ActorRotation.Yaw;
-    Controller->SetControlRotation(ControlRotation);
+    Controller->SetControlRotation(FRotator(AimPitch, ActorRotation.Yaw, 0.0f));
 
     return FMath::Abs(FMath::FindDeltaAngleDegrees(ActorRotation.Yaw, TargetYaw)) <= 0.5f;
 }
@@ -311,6 +315,45 @@ bool UCQBTrainingLocomotionComponent::ResolveNavigationGoal(
     }
 
     OutResolvedGoal = ProjectedLocation.Location;
+    return true;
+}
+
+bool UCQBTrainingLocomotionComponent::FindReachableLocation(
+    const FVector& Desired,
+    FVector& OutLocation,
+    float& OutPathLength,
+    const float MaxProjectionDistance,
+    const float MaxPathLength) const
+{
+    APawn* Pawn = GetControlledPawn();
+    UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    if (!Pawn || !NavSystem)
+    {
+        return false;
+    }
+
+    const FVector ConfiguredExtent = Settings.NavigationProjectionExtent.GetAbs();
+    const FVector Extent(
+        FMath::Min(static_cast<float>(ConfiguredExtent.X), MaxProjectionDistance),
+        FMath::Min(static_cast<float>(ConfiguredExtent.Y), MaxProjectionDistance),
+        ConfiguredExtent.Z);
+    FNavLocation Projected;
+    if (!NavSystem->ProjectPointToNavigation(
+        Desired, Projected, Extent, &Pawn->GetNavAgentPropertiesRef())
+        || FVector::DistSquared2D(Desired, Projected.Location) > FMath::Square(MaxProjectionDistance))
+    {
+        return false;
+    }
+
+    UNavigationPath* Path = UNavigationSystemV1::FindPathToLocationSynchronously(
+        GetWorld(), Pawn->GetNavAgentLocation(), Projected.Location, Pawn);
+    if (!Path || !Path->IsValid() || Path->IsPartial() || Path->GetPathLength() > MaxPathLength)
+    {
+        return false;
+    }
+
+    OutLocation = Projected.Location;
+    OutPathLength = static_cast<float>(Path->GetPathLength());
     return true;
 }
 

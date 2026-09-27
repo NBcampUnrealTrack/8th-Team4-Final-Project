@@ -28,6 +28,9 @@ public:
     bool HasPreparedGoal() const { return bHasMoveGoal; }
     const FVector& GetPreparedGoal() const { return MoveGoal; }
 
+    bool FindReachableLocation(const FVector& Desired, FVector& OutLocation,
+        float& OutPathLength, float MaxProjectionDistance, float MaxPathLength) const;
+
     void UpdateMoveFacing(float DeltaTime, float TurnSpeedDegreesPerSecond);
     bool TurnToward(const FVector& WorldLocation, float DeltaTime,
         float TurnSpeedDegreesPerSecond, bool bAimPitch = false);
@@ -38,6 +41,8 @@ private:
     AAIController* GetController() const;
     APawn* GetControlledPawn() const;
     bool ResolveNavigationGoal(const FVector& Destination, FVector& OutResolvedGoal) const;
+    bool ApplyFacingRotation(float TargetYaw, float AimPitch, float DeltaTime,
+        float TurnSpeedDegreesPerSecond);
     void ScheduleMoveRetry();
     void LogMoveFailure(const TCHAR* Reason, const FVector& Goal, int32 ResultCode = INDEX_NONE) const;
 

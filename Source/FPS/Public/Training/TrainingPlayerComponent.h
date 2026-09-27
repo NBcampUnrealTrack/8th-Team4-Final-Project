@@ -127,6 +127,7 @@ protected:
 
 private:
     friend class UTrainingPlayerPresentation;
+    int32 AllocateRequestId();
     APlayerController* GetParticipantController() const;
     UAugmentInventoryComponent* GetAugmentInventory() const;
     FTrainingLoadoutSnapshot BuildLoadoutSnapshot() const;

@@ -71,6 +71,9 @@ public:
     UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0", Units = "cm"))
     float GroundProbeDownCentimeters = 2000.0f;
 
+    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1", ClampMax = "64"))
+    int32 SpawnSearchAttempts = 16;
+
     UPROPERTY(EditAnywhere, Category = "Training|Placement")
     FVector NavigationProjectionExtent = FVector(100.0, 100.0, 300.0);
 

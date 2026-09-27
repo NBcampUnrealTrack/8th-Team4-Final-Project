@@ -131,11 +131,14 @@ private:
     void DestroyTrooper(APawn& Trooper);
     void DestroySpawnedTroopersOnly();
     void ResetRuntimeData();
-    void ResetSessionState();
+    void ResetSessionState(const FText* StartFailure = nullptr);
 
     void NotifyParticipantStarted();
     void NotifyParticipantProgress();
     void NotifyParticipantStopped();
+
+    UPROPERTY(Transient)
+    TSubclassOf<APawn> SessionTrooperClass;
 
     uint32 SessionGeneration = 0;
     int32 PendingStartRequestId = 0;

@@ -30,12 +30,9 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
     CQBTotalTroopers = 0;
     if (CQBProgressContent) { CQBProgressContent->SetVisibility(ESlateVisibility::Collapsed); }
     if (SessionInfoContent) { SessionInfoContent->SetVisibility(ESlateVisibility::HitTestInvisible); }
-    else
-    {
-        if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::HitTestInvisible); }
-        if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::HitTestInvisible); }
-        if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::HitTestInvisible); }
-    }
+    if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::HitTestInvisible); }
     DisplayedSeconds = INDEX_NONE;
     DisplayedKills = 0;
     ResetKillFeedback();
@@ -238,12 +235,19 @@ void UTrainingSessionHUDWidget::ResetKillFeedback()
     ApplyKillFeedbackAppearance();
 }
 
-void UTrainingSessionHUDWidget::NativeDestruct()
+void UTrainingSessionHUDWidget::StopSession()
 {
     if (UWorld* World = GetWorld()) { World->GetTimerManager().ClearTimer(ClockTimer); }
     bSessionActive = false;
     bCQBSession = false;
     CQBTotalTroopers = 0;
+    StartSeconds = 0.0;
+    ActiveDurationSeconds = 0.0f;
     ResetKillFeedback();
+}
+
+void UTrainingSessionHUDWidget::NativeDestruct()
+{
+    StopSession();
     Super::NativeDestruct();
 }

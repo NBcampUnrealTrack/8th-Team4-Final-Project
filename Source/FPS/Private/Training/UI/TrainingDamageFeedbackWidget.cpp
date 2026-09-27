@@ -17,7 +17,8 @@ UTrainingDamageFeedbackWidget::UTrainingDamageFeedbackWidget(const FObjectInitia
 void UTrainingDamageFeedbackWidget::NativePreConstruct()
 {
     Super::NativePreConstruct();
-    SetVisibility(ESlateVisibility::HitTestInvisible);
+    SetVisibility(IsDesignTime() || !DamageNumbers.IsEmpty()
+        ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
     if (!IsDesignTime() && !Canvas_Damage)
     {
         UE_LOG(LogTemp, Error, TEXT("[Training] Damage Feedback WBP requires a Canvas Panel named Canvas_Damage."));
@@ -27,11 +28,13 @@ void UTrainingDamageFeedbackWidget::NativePreConstruct()
 void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool bLethal,
     const FVector& WorldPosition)
 {
-    if (!Canvas_Damage || !WidgetTree || !FMath::IsFinite(Damage) || Damage <= 0.0f)
+    if (!Canvas_Damage || !WidgetTree || !FMath::IsFinite(Damage) || Damage <= 0.0f
+        || WorldPosition.ContainsNaN())
     {
         return;
     }
 
+    SetVisibility(ESlateVisibility::HitTestInvisible);
     const int32 Limit = FMath::Clamp(MaxVisibleDamageNumbers, 1, 64);
     while (DamageNumbers.Num() >= Limit)
     {
@@ -76,6 +79,7 @@ void UTrainingDamageFeedbackWidget::NativeTick(const FGeometry& MyGeometry, cons
 
     if (DamageNumbers.IsEmpty())
     {
+        SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
@@ -121,6 +125,10 @@ void UTrainingDamageFeedbackWidget::NativeTick(const FGeometry& MyGeometry, cons
             DamageText->SetVisibility(ESlateVisibility::Hidden);
         }
     }
+    if (DamageNumbers.IsEmpty())
+    {
+        SetVisibility(ESlateVisibility::Collapsed);
+    }
 }
 
 void UTrainingDamageFeedbackWidget::ClearDamageNumbers()
@@ -134,6 +142,7 @@ void UTrainingDamageFeedbackWidget::ClearDamageNumbers()
     }
     DamageNumbers.Reset();
     DamageSequence = 0;
+    SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void UTrainingDamageFeedbackWidget::NativeDestruct()

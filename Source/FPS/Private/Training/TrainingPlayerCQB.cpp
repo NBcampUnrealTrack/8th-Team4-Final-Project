@@ -61,8 +61,7 @@ void UTrainingPlayerComponent::OpenCQBStartDialog(ACQBTrainingSpawner& Spawner)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Start, PendingCQBRequestId, Spawner.StartDialogWidgetClass);
@@ -79,8 +78,7 @@ void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Cancel, PendingCQBRequestId, Spawner.GetCancelDialogWidgetClass());
@@ -95,8 +93,7 @@ void UTrainingPlayerComponent::OpenCQBEndDialog(ACQBTrainingEndActor& EndActor)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBEndActor = &EndActor;
     PendingCQBSpawner = EndActor.Spawner;
     ShowCQBDialog(ECQBTrainingDialogKind::End, PendingCQBRequestId, EndActor.EndDialogWidgetClass);

@@ -1,6 +1,7 @@
 #include "Training/CQB/CQBTrainingInvestigationComponent.h"
 
 #include "AIController.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Training/CQB/CQBTrainingAwarenessComponent.h"
@@ -25,26 +26,35 @@ void UCQBTrainingInvestigationComponent::Configure(
 void UCQBTrainingInvestigationComponent::ResetRuntimeState()
 {
     StateEnterTime = 0.0;
+    ActiveEvidenceRevision = 0;
+    bMoveAttempted = false;
     bMovePrepared = false;
-    bSearchScanStarted = false;
-    SearchScanStep = 0;
-    NextSearchScanTime = 0.0;
-    SearchBaseYaw = 0.0f;
-    SearchLookTargetYaw = 0.0f;
+    PlannedEvidenceRevision = 0;
+    bSearchPlanBuilt = false;
+    SearchPoints.Reset();
+    SearchCenter = FVector::ZeroVector;
+    SearchForward = FVector::ForwardVector;
+    SearchPointIndex = 0;
+    MoveDeadline = 0.0;
+    bInspectingPoint = false;
+    InspectionStartTime = 0.0;
+    InspectionBaseYaw = 0.0f;
 }
 
 void UCQBTrainingInvestigationComponent::EnterInvestigate()
 {
     UCQBTrainingAIComponent* Config = GetConfig();
+    UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    UWorld* World = GetWorld();
-    if (!Config || !Locomotion || !World)
+    if (!Config || !Awareness || !Locomotion)
     {
         return;
     }
 
-    ResetRuntimeState();
-    StateEnterTime = World->GetTimeSeconds();
+    StateEnterTime = GetWorld()->GetTimeSeconds();
+    ActiveEvidenceRevision = Awareness->GetEvidenceRevision();
+    bMoveAttempted = false;
+    bMovePrepared = false;
     Locomotion->Stop();
     Locomotion->SetMoveSpeed(Config->PatrolSettings.InvestigateSpeed);
 }
@@ -54,15 +64,26 @@ void UCQBTrainingInvestigationComponent::TickInvestigate(const float DeltaTime)
     UCQBTrainingAIComponent* Config = GetConfig();
     UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    UWorld* World = GetWorld();
-    if (!Config || !Awareness || !Locomotion || !World || !Awareness->HasPendingNoise())
+    if (!Config || !Awareness || !Locomotion || !Awareness->HasPendingNoise())
     {
         return;
     }
 
+    if (ActiveEvidenceRevision != Awareness->GetEvidenceRevision())
+    {
+        EnterInvestigate();
+    }
+
     const FCQBPatrolSettings& Settings = Config->PatrolSettings;
-    const double Now = World->GetTimeSeconds();
+    const double Now = GetWorld()->GetTimeSeconds();
     const FVector NoiseLocation = Awareness->GetLastHeardLocation();
+
+    if (Now >= Awareness->GetNoiseExpireTime())
+    {
+        Awareness->CompleteInvestigation(Settings.SearchDurationSeconds, Now);
+        Locomotion->Stop();
+        return;
+    }
 
     if (Now < StateEnterTime + FMath::Max(0.0f, Settings.InvestigateLookSeconds))
     {
@@ -71,18 +92,19 @@ void UCQBTrainingInvestigationComponent::TickInvestigate(const float DeltaTime)
         return;
     }
 
-    if (!bMovePrepared)
+    if (!bMoveAttempted)
     {
+        bMoveAttempted = true;
         bMovePrepared = Locomotion->PrepareMoveGoal(NoiseLocation, Settings.AcceptanceRadius);
         if (bMovePrepared)
         {
-            Locomotion->RequestPreparedMove();
+            bMovePrepared = Locomotion->RequestPreparedMove();
         }
     }
 
     const bool bReached = bMovePrepared
         && Locomotion->TickPreparedMove(DeltaTime, Settings.PatrolTurnSpeedDegreesPerSecond);
-    if (bReached || Now >= Awareness->GetNoiseExpireTime())
+    if (!bMovePrepared || bReached)
     {
         Awareness->CompleteInvestigation(Settings.SearchDurationSeconds, Now);
         Locomotion->Stop();
@@ -95,6 +117,7 @@ void UCQBTrainingInvestigationComponent::ExitInvestigate()
     {
         Locomotion->Stop();
     }
+    bMoveAttempted = false;
     bMovePrepared = false;
 }
 
@@ -103,22 +126,21 @@ void UCQBTrainingInvestigationComponent::EnterSearch()
     UCQBTrainingAIComponent* Config = GetConfig();
     UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    UWorld* World = GetWorld();
-    if (!Config || !Awareness || !Locomotion || !World || !Awareness->HasSearchLocation())
+    if (!Config || !Awareness || !Locomotion || !Awareness->HasSearchLocation())
     {
         return;
     }
 
-    ResetRuntimeState();
-    StateEnterTime = World->GetTimeSeconds();
+    ActiveEvidenceRevision = Awareness->GetEvidenceRevision();
     Locomotion->Stop();
     Locomotion->SetMoveSpeed(Config->PatrolSettings.InvestigateSpeed);
-    bMovePrepared = Locomotion->PrepareMoveGoal(
-        Awareness->GetSearchLocation(), Config->PatrolSettings.AcceptanceRadius);
-    if (bMovePrepared)
+    bInspectingPoint = false;
+
+    if (!bSearchPlanBuilt || PlannedEvidenceRevision != ActiveEvidenceRevision)
     {
-        Locomotion->RequestPreparedMove();
+        BuildSearchPlan();
     }
+    MoveToSearchPoint();
 }
 
 void UCQBTrainingInvestigationComponent::TickSearch(const float DeltaTime)
@@ -126,53 +148,54 @@ void UCQBTrainingInvestigationComponent::TickSearch(const float DeltaTime)
     UCQBTrainingAIComponent* Config = GetConfig();
     UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    APawn* Pawn = GetControlledPawn();
-    UWorld* World = GetWorld();
-    if (!Config || !Awareness || !Locomotion || !Pawn || !World || !Awareness->HasSearchLocation())
+    if (!Config || !Awareness || !Locomotion || !Awareness->HasSearchLocation())
     {
+        return;
+    }
+
+    if (ActiveEvidenceRevision != Awareness->GetEvidenceRevision())
+    {
+        EnterSearch();
         return;
     }
 
     const FCQBPatrolSettings& Settings = Config->PatrolSettings;
-    const double Now = World->GetTimeSeconds();
-    if (Now >= Awareness->GetSearchExpireTime())
+    const double Now = GetWorld()->GetTimeSeconds();
+    if (!Awareness->HasThreatKnowledge() || Now >= Awareness->GetSearchExpireTime())
     {
-        Awareness->ClearSearch();
-        Locomotion->Stop();
+        FinishSearch();
         return;
     }
 
-    if (!bSearchScanStarted)
+    if (!bInspectingPoint)
     {
-        if (!bMovePrepared)
+        if (bMovePrepared
+            && Locomotion->TickPreparedMove(DeltaTime, Settings.PatrolTurnSpeedDegreesPerSecond))
         {
-            bMovePrepared = Locomotion->PrepareMoveGoal(
-                Awareness->GetSearchLocation(), Settings.AcceptanceRadius);
+            BeginPointInspection();
         }
-
-        if (!bMovePrepared
-            || !Locomotion->TickPreparedMove(DeltaTime, Settings.PatrolTurnSpeedDegreesPerSecond))
+        else if (Now >= MoveDeadline)
         {
-            return;
+            // A blocked route must not consume the entire evidence lifetime.
+            ++SearchPointIndex;
+            MoveToSearchPoint();
         }
-
-        BeginSearchScan();
+        return;
     }
 
-    if (Now >= NextSearchScanTime)
+    const float InspectionSeconds = FMath::Max(0.1f, Settings.SearchScanIntervalSeconds);
+    const float Elapsed = static_cast<float>(Now - InspectionStartTime);
+    if (Elapsed >= InspectionSeconds)
     {
-        const float YawOffset = SearchScanStep % 3 == 0
-            ? -Settings.SearchScanYawDegrees
-            : SearchScanStep % 3 == 1
-                ? Settings.SearchScanYawDegrees
-                : 0.0f;
-        SearchLookTargetYaw = SearchBaseYaw + YawOffset;
-        ++SearchScanStep;
-        NextSearchScanTime = Now + FMath::Max(0.1f, Settings.SearchScanIntervalSeconds);
+        ++SearchPointIndex;
+        MoveToSearchPoint();
+        return;
     }
 
+    const float YawOffset = Settings.SearchScanYawDegrees * 0.5f
+        * (Elapsed < InspectionSeconds * 0.5f ? -1.0f : 1.0f);
     Locomotion->TurnTowardYaw(
-        SearchLookTargetYaw, DeltaTime, Settings.LookAroundTurnSpeedDegreesPerSecond);
+        InspectionBaseYaw + YawOffset, DeltaTime, Settings.LookAroundTurnSpeedDegreesPerSecond);
 }
 
 void UCQBTrainingInvestigationComponent::ExitSearch()
@@ -182,7 +205,7 @@ void UCQBTrainingInvestigationComponent::ExitSearch()
         Locomotion->Stop();
     }
     bMovePrepared = false;
-    bSearchScanStarted = false;
+    bInspectingPoint = false;
 }
 
 UCQBTrainingAIComponent* UCQBTrainingInvestigationComponent::GetConfig() const
@@ -206,20 +229,121 @@ APawn* UCQBTrainingInvestigationComponent::GetControlledPawn() const
     return Controller ? Controller->GetPawn() : nullptr;
 }
 
-void UCQBTrainingInvestigationComponent::BeginSearchScan()
+void UCQBTrainingInvestigationComponent::BuildSearchPlan()
 {
-    APawn* Pawn = GetControlledPawn();
-    UWorld* World = GetWorld();
-    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    if (!Pawn || !World || !Locomotion)
+    const APawn* Pawn = GetControlledPawn();
+    if (!Pawn)
     {
         return;
     }
 
+    const FCQBPatrolSettings& Settings = GetConfig()->PatrolSettings;
+    UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
+    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
+    PlannedEvidenceRevision = Awareness->GetEvidenceRevision();
+    bSearchPlanBuilt = true;
+    SearchPoints.Reset();
+    SearchPointIndex = 0;
+    SearchCenter = Awareness->GetSearchLocation();
+    SearchForward = (SearchCenter - Pawn->GetActorLocation()).GetSafeNormal2D();
+    if (SearchForward.IsNearlyZero())
+    {
+        SearchForward = Pawn->GetActorForwardVector().GetSafeNormal2D();
+    }
+
+    const int32 PointCount = FMath::Clamp(Settings.SearchPointCount, 2, 4);
+    const float Radius = FMath::Max(100.0f, Settings.SearchRadius);
+    const float MinSpacing = FMath::Max(Settings.AcceptanceRadius * 1.5f, Radius * 0.3f);
+    const float MaxProjectionDistance = FMath::Max(50.0f,
+        static_cast<float>(Settings.NavigationProjectionExtent.Size2D()));
+    const float MaxPathLength = static_cast<float>(FVector::Dist2D(Pawn->GetActorLocation(), SearchCenter)) * 2.0f
+        + Radius * 2.0f;
+
+    auto AddReachablePoint = [&](const FVector& Candidate)
+    {
+        FVector ReachableLocation;
+        float PathLength = 0.0f;
+        if (!Locomotion->FindReachableLocation(Candidate, ReachableLocation, PathLength,
+            MaxProjectionDistance, MaxPathLength))
+        {
+            return;
+        }
+
+        for (const FVector& Existing : SearchPoints)
+        {
+            if (FVector::DistSquared2D(Existing, ReachableLocation) < FMath::Square(MinSpacing))
+            {
+                return;
+            }
+        }
+        SearchPoints.Add(ReachableLocation);
+    };
+
+    // Probe the remembered area and its adjacent approaches once per evidence revision.
+    AddReachablePoint(SearchCenter);
+    const float SideOrder = (PlannedEvidenceRevision & 1u) != 0u ? 1.0f : -1.0f;
+    const float CandidateAngles[] = { 60.0f, -60.0f, 0.0f, 110.0f, -110.0f, 180.0f, 30.0f, -30.0f };
+    for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(CandidateAngles))
+        && SearchPoints.Num() < PointCount; ++Index)
+    {
+        const float CandidateRadius = Index >= 6 ? Radius * 0.5f : Radius;
+        const FVector Direction = SearchForward.RotateAngleAxis(
+            CandidateAngles[Index] * SideOrder, FVector::UpVector);
+        AddReachablePoint(SearchCenter + Direction * CandidateRadius);
+    }
+}
+
+void UCQBTrainingInvestigationComponent::MoveToSearchPoint()
+{
+    const FCQBPatrolSettings& Settings = GetConfig()->PatrolSettings;
+    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
+    UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     Locomotion->Stop();
-    bSearchScanStarted = true;
-    SearchScanStep = 0;
-    SearchBaseYaw = Pawn->GetActorRotation().Yaw;
-    SearchLookTargetYaw = SearchBaseYaw;
-    NextSearchScanTime = World->GetTimeSeconds();
+    bMovePrepared = false;
+    bInspectingPoint = false;
+
+    while (SearchPoints.IsValidIndex(SearchPointIndex))
+    {
+        const FVector& Point = SearchPoints[SearchPointIndex];
+        bMovePrepared = Locomotion->PrepareMoveGoal(Point, Settings.AcceptanceRadius)
+            && Locomotion->RequestPreparedMove();
+        if (bMovePrepared)
+        {
+            const float Distance = static_cast<float>(FVector::Dist2D(GetConfig()->GetActorLocation(), Point));
+            const float TravelBudget = FMath::Clamp(
+                Distance / FMath::Max(50.0f, Settings.InvestigateSpeed) * 2.0f
+                    + Settings.SearchScanIntervalSeconds,
+                1.0f, FMath::Max(1.0f, Settings.InvestigateTimeoutSeconds));
+            MoveDeadline = FMath::Min(Awareness->GetSearchExpireTime(),
+                GetWorld()->GetTimeSeconds() + TravelBudget);
+            return;
+        }
+        ++SearchPointIndex;
+    }
+
+    FinishSearch();
+}
+
+void UCQBTrainingInvestigationComponent::BeginPointInspection()
+{
+    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
+    Locomotion->Stop();
+    bMovePrepared = false;
+    bInspectingPoint = true;
+    InspectionStartTime = GetWorld()->GetTimeSeconds();
+
+    FVector LookDirection = (SearchPoints[SearchPointIndex] - SearchCenter).GetSafeNormal2D();
+    if (LookDirection.IsNearlyZero())
+    {
+        LookDirection = SearchForward;
+    }
+    InspectionBaseYaw = LookDirection.Rotation().Yaw;
+}
+
+void UCQBTrainingInvestigationComponent::FinishSearch()
+{
+    GetLocomotion()->Stop();
+    GetAwareness()->ClearSearch();
+    bMovePrepared = false;
+    bInspectingPoint = false;
 }

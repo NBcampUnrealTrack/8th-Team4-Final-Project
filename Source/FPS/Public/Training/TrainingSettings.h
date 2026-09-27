@@ -21,6 +21,7 @@ public:
     float GetMinDistanceMeters() const { return FMath::Max(1.0f, MinDistanceMeters); }
     float GetMaxDistanceMeters() const { return FMath::Max(GetMinDistanceMeters(), MaxDistanceMeters); }
     float GetCountdownSeconds() const { return FMath::Max(0.0f, CountdownSeconds); }
+    float GetMovementRadiusCentimeters() const { return FMath::Max(50.0f, MovementRadiusCentimeters); }
 
     UPROPERTY(Config, EditAnywhere, Category = "Distance", meta = (ClampMin = "1.0", Units = "m"))
     float MinDistanceMeters = 5.0f;
