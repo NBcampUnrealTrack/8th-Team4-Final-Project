@@ -17,6 +17,8 @@ class UFootstepComponent;
 class UInputAction;
 class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
+class UGameplayAppearanceComponent;
+class UFirstPersonAppearanceComponent;
 class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
@@ -42,6 +44,8 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+    virtual void UnPossessed() override;
+    virtual void OnRep_Controller() override;
 
 public:
 	// 팀 윤곽선 초기화
@@ -150,6 +154,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
+    UPROPERTY(VisibleAnywhere, Category="FPS|Customization")
+    TObjectPtr<UGameplayAppearanceComponent> GameplayAppearance;
+    UPROPERTY(VisibleAnywhere, Category="Customization")
+    TObjectPtr<UFirstPersonAppearanceComponent> FirstPersonAppearance;
 
 private:
 	// 달리기 태그 - 이동 갱신마다 CMC 상태와 비교

@@ -1,4 +1,5 @@
 #include "Customization/CustomizationStudioActor.h"
+#include "Customization/AppearanceParameters.h"
 #include "Customization/CustomizationPreviewGrounding.h"
 #include "MuCO/CustomizableObject.h"
 #include "MuCO/CustomizableObjectInstance.h"
@@ -78,8 +79,7 @@ void ACustomizationStudioActor::StartUpdate()
  if(!Config->CustomizableObject->IsCompiled()){Status=TEXT("클래스 CO가 준비되지 않았습니다. 컴파일 상태를 확인하세요.");return;}
  PendingInstance=Config->CustomizableObject->CreateInstance();if(!PendingInstance){Status=TEXT("Mutable 인스턴스를 만들지 못했습니다.");return;}
  auto* I=PendingInstance.Get();const FCustomizationAppearance Snapshot=Desired;const int32 Request=Revision;
- I->SetIntParameterSelectedOption(TEXT("BodyType"),Snapshot.BodyType);I->SetColorParameterSelectedOption(TEXT("EyeColor"),Snapshot.EyeColor);I->SetColorParameterSelectedOption(TEXT("SkinColor"),Snapshot.SkinColor);I->SetFloatParameterSelectedOption(TEXT("SkinValue"),Snapshot.SkinValue);
- for(int K=0;K<8;++K){const auto& P=FCustomizationAppearance::Parts()[K];if(!Config->EnabledClothingParts.Contains(FName(*P)))continue;I->SetColorParameterSelectedOption(P+TEXT("Color"),Snapshot.Colors[K]);I->SetFloatParameterSelectedOption(P+TEXT("Value"),Snapshot.Values[K]);I->SetFloatParameterSelectedOption(P+TEXT("UseOriginal"),Snapshot.Originals[K]);}
+ if(!ApplyAppearanceParameters(I,Config,Snapshot)){PendingInstance=nullptr;Status=TEXT("잘못된 외형 설정입니다.");return;}
  bBusy=true;Status=TEXT("외형 생성 중…");FInstanceUpdateNativeDelegate Callback;TWeakObjectPtr<ACustomizationStudioActor> Weak(this);
  TWeakObjectPtr<UCustomizationStudioConfig> RequestConfig(Config);
  Callback.AddLambda([Weak,Request,Snapshot,I,RequestConfig](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();Self->bBusy=false;

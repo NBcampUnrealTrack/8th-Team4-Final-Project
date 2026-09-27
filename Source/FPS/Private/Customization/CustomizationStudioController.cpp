@@ -5,6 +5,7 @@
 #include "Engine/LocalPlayer.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Customization/AppearanceLocalPlayerSubsystem.h"
 
 ACustomizationStudioController::ACustomizationStudioController()
 {
@@ -23,17 +24,20 @@ void ACustomizationStudioController::Tick(float Delta){Super::Tick(Delta);if(!Is
 void ACustomizationStudioController::EndPlay(const EEndPlayReason::Type Reason){if(Screen)Screen->RemoveFromParent();Super::EndPlay(Reason);}
 void ACustomizationStudioController::RefreshAccount()
 {
- FString NewService,NewAccount;
- if(auto* LP=GetLocalPlayer()){auto Id=LP->GetPreferredUniqueNetId();auto NetId=Id.GetUniqueNetId();if(NetId.IsValid()&&NetId->IsValid()&&NetId->GetType().ToString().Equals(TEXT("STEAM"),ESearchCase::IgnoreCase)){NewService=TEXT("STEAM");NewAccount=NetId->ToString();}}
-#if WITH_EDITOR
- if(NewAccount.IsEmpty()){NewService=TEXT("LOCAL_TEST");NewAccount=TEXT("EditorPreview");}
-#endif
- SetAccountIdentity(NewService,NewAccount);
+ if(auto* LP=GetLocalPlayer())if(auto* Storage=LP->GetSubsystem<UAppearanceLocalPlayerSubsystem>())
+ {
+  Storage->RefreshIdentity();
+  const bool Changed=Service!=Storage->GetService()||Account!=Storage->GetAccount();
+  SetAccountIdentity(Storage->GetService(),Storage->GetAccount());
+  if(Changed)Storage->RefreshCloud();
+  return;
+ }
+ SetAccountIdentity({},{});
 }
 void ACustomizationStudioController::SetAccountIdentity(const FString& NewService,const FString& NewAccount)
 {
  if(NewService!=Service||NewAccount!=Account||AccountLabel.IsEmpty()){
-  Service=NewService;Account=NewAccount;AccountLabel=Service==TEXT("STEAM")?TEXT("Steam 계정 · PC 로컬 저장"):Service==TEXT("LOCAL_TEST")?TEXT("에디터 테스트 · Steam 저장과 분리됨"):TEXT("Steam 미연결 · 저장 불가");
+  Service=NewService;Account=NewAccount;AccountLabel=Service==TEXT("STEAM")?TEXT("Steam 계정 · PC 저장 + Cloud 동기화"):Service==TEXT("LOCAL_TEST")?TEXT("에디터 테스트 · Steam 저장과 분리됨"):TEXT("Steam 미연결 · 저장 불가");
   ColorEditPart=INDEX_NONE;ClassDrafts.Reset();Draft=DefaultAppearance();bDirty=false;LoadAppearance();
  }
 }
@@ -87,7 +91,8 @@ void ACustomizationStudioController::LoadAppearance()
 {
  ColorEditPart=INDEX_NONE;
  if(Account.IsEmpty()){Status=TEXT("Steam 연결 후 저장할 수 있습니다.");if(Studio)Studio->RequestAppearance(Draft);return;}
- FCustomizationAppearance Loaded;auto Result=FCustomizationStorage::Load(Service,Account,ActiveClass.ToString(),Loaded);
+ auto* Storage=GetLocalPlayer()?GetLocalPlayer()->GetSubsystem<UAppearanceLocalPlayerSubsystem>():nullptr;
+ FCustomizationAppearance Loaded;auto Result=Storage?Storage->LoadSavedAppearance(ActiveClass,Loaded):ECustomizationLoadResult::Invalid;
  if(Result==ECustomizationLoadResult::Invalid){Status=TEXT("저장 파일이 손상되었거나 버전/소유자가 다릅니다. 덮어쓰지 않습니다.");if(Studio)Studio->RequestAppearance(Draft);return;}
  if(Result==ECustomizationLoadResult::Loaded)Draft=Loaded;else Draft=DefaultAppearance();
  if(Studio&&!Studio->IsHairValid(Draft.BodyType,Draft.HairId)){Status=TEXT("저장된 헤어의 바인딩이 없습니다. 유효한 헤어 또는 X를 선택해야 저장할 수 있습니다.");bDirty=false;}
@@ -103,8 +108,30 @@ void ACustomizationStudioController::SaveAppearance()
  if(IsColorEditOpen()){Status=TEXT("색상 선택을 확인하거나 취소한 후 저장하세요.");return;}
  const FString Previous=Service+TEXT(":")+Account;RefreshAccount();if(Previous!=Service+TEXT(":")+Account){Status=TEXT("계정이 변경되어 새 계정 설정을 불러왔습니다. 확인 후 저장하세요.");return;}
  if(!CanSave()){Status=Account.IsEmpty()?TEXT("유효한 계정이 필요합니다."):TEXT("최신 외형 미리보기가 준비된 후 저장할 수 있습니다.");return;}
- if(FCustomizationStorage::Save(Service,Account,ActiveClass.ToString(),Draft)){bDirty=false;Status=TEXT("저장 완료 · 다음 입장 시 자동으로 불러옵니다.");}
+ auto* Storage=GetLocalPlayer()?GetLocalPlayer()->GetSubsystem<UAppearanceLocalPlayerSubsystem>():nullptr;
+ if(Storage&&Storage->SaveAppearance(ActiveClass,Draft)){bDirty=false;Status=TEXT("PC 저장 완료 · 다음 입장/리스폰 시 적용");}
  else Status=TEXT("저장 실패 · 파일/권한/버전을 확인하세요. 기존 파일은 자동 초기화하지 않습니다.");
+}
+
+FString ACustomizationStudioController::CloudStatus() const
+{
+ auto* Storage=GetLocalPlayer()?GetLocalPlayer()->GetSubsystem<UAppearanceLocalPlayerSubsystem>():nullptr;
+ return Storage?Storage->GetStatusText(ActiveClass):FString();
+}
+bool ACustomizationStudioController::HasCloudConflict() const
+{
+ auto* Storage=GetLocalPlayer()?GetLocalPlayer()->GetSubsystem<UAppearanceLocalPlayerSubsystem>():nullptr;
+ return Storage&&Storage->GetSaveStatus(ActiveClass)==EAppearanceSaveStatus::Conflict;
+}
+void ACustomizationStudioController::ResolveCloudConflict(bool UseLocal)
+{
+ if(IsColorEditOpen()||bDirty){Status=TEXT("편집을 먼저 저장하거나 불러오기로 되돌린 뒤 사본을 선택하세요.");return;}
+ RefreshAccount();
+ if(auto* LP=GetLocalPlayer())if(auto* Storage=LP->GetSubsystem<UAppearanceLocalPlayerSubsystem>())
+ {
+  Storage->ResolveConflict(ActiveClass,UseLocal);
+  Status=TEXT("사본 선택 처리 중 · 동기화 완료 후 불러오기를 눌러 확인하세요.");
+ }
 }
 
 namespace

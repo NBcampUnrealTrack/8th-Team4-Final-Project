@@ -184,7 +184,13 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  [SNew(SHorizontalBox)
   +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,4,0)[Action(TEXT("불러오기"),[this](){if(auto* C=Controller())C->LoadAppearance();})]
   +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("초기화"),[this](){bConfirmReset=true;})]];
- Right->AddSlot().AutoHeight().Padding(0,8)[Label(TEXT("PC 로컬 저장 · 실제 매치 적용은 추후 연결"),12,Muted)];
+ auto ConflictChoices=SNew(SHorizontalBox)
+  +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,4,0)[Action(TEXT("PC 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(true);})]
+  +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("클라우드 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(false);})];
+ ConflictChoices->SetVisibility(TAttribute<EVisibility>::CreateLambda([this](){auto* C=Controller();return C&&C->HasCloudConflict()?EVisibility::Visible:EVisibility::Collapsed;}));
+ Right->AddSlot().AutoHeight().Padding(0,6)[ConflictChoices];
+ Right->AddSlot().AutoHeight().Padding(0,8)[SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
+  .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->CloudStatus():TEXT("저장 상태 확인 중"));})];
  Right->AddSlot().AutoHeight()[SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
   .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->AccountLabel:TEXT("계정 확인 중"));})];
  auto Content=SNew(SHorizontalBox)

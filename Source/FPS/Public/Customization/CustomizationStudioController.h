@@ -30,6 +30,9 @@ public:
  void LoadAppearance();
  void ResetAppearance();
  bool CanSave() const;
+ FString CloudStatus() const;
+ bool HasCloudConflict() const;
+ void ResolveCloudConflict(bool UseLocal);
  // Modal color editing previews Draft but cannot save until confirmed.
  void BeginColorEdit(int32 Part);
  void EndColorEdit(bool bAccept);
