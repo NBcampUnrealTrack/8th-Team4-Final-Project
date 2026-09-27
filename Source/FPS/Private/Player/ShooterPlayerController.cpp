@@ -74,6 +74,7 @@ void AShooterPlayerController::GetLifetimeReplicatedProps(
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+    SubmitSavedAppearances();
 
 	if (!IsLocalController())
 	{
@@ -135,6 +136,7 @@ void AShooterPlayerController::BeginPlay()
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearTimer(AppearanceSubmitTimer);
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -318,6 +320,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 void AShooterPlayerController::ReceivedPlayer()
 {
 	Super::ReceivedPlayer();
+    SubmitSavedAppearances();
 
 	if (IsLocalController() && NetworkTimeSyncComponent)
 	{

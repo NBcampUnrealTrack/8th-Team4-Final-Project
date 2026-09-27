@@ -21,7 +21,13 @@ struct FPS_API FCustomizationAppearance
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<float> Originals;
  bool Validate() const;
  bool ValidateForClass(const FString& ClassId) const;
+ bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
  static const TArray<FString>& Parts();
+};
+
+template<> struct TStructOpsTypeTraits<FCustomizationAppearance> : TStructOpsTypeTraitsBase2<FCustomizationAppearance>
+{
+ enum { WithNetSerializer = true };
 };
 
 UCLASS()

@@ -263,7 +263,7 @@ USoundMix* UShooterGameUserSettings::GetUserSettingsSoundMix()
 	{
 		const TSoftObjectPtr<USoundMix>& Reference = GetDefault<UShooterAudioSettings>()->UserSettingsSoundMix;
 		USoundMix* Loaded = Reference.LoadSynchronous();
-		if (!ensureMsgf(Loaded,
+ 		if (!ensureMsgf(Loaded,
 			TEXT("Assign UserSettingsSoundMix in Project Settings > Shooter Audio Settings.")))
 		{
 			return nullptr;

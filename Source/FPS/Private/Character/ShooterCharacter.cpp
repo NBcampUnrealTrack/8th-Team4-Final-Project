@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Character/ShooterCharacter.h"
+#include "Customization/GameplayAppearanceComponent.h"
+#include "Customization/FirstPersonAppearanceComponent.h"
 #include "Combat/RogueDeathPresentation.h"
 
 #include "AbilitySystemComponent.h"
@@ -73,6 +75,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 	LagCompensation = CreateDefaultSubobject<ULagCompensationComponent>(TEXT("LagCompensation"));
 
 	Footstep = CreateDefaultSubobject<UFootstepComponent>(TEXT("Footstep"));
+    GameplayAppearance = CreateDefaultSubobject<UGameplayAppearanceComponent>(TEXT("GameplayAppearance"));
+    FirstPersonAppearance = CreateDefaultSubobject<UFirstPersonAppearanceComponent>(TEXT("FirstPersonAppearance"));
 }
 
 void AShooterCharacter::BeginPlay()
@@ -102,6 +106,8 @@ void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AShooterCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+    GameplayAppearance->RefreshFromPlayerState();
+    FirstPersonAppearance->RefreshFromPlayerState();
 
 	UpdateTagSubscriptions();
 	RefreshTeamOutline();
@@ -114,9 +120,23 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void AShooterCharacter::UnPossessed()
+{
+    Super::UnPossessed();
+    FirstPersonAppearance->RefreshFromPlayerState();
+}
+
+void AShooterCharacter::OnRep_Controller()
+{
+    Super::OnRep_Controller();
+    FirstPersonAppearance->RefreshFromPlayerState();
+}
+
 void AShooterCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+    GameplayAppearance->RefreshFromPlayerState();
+    FirstPersonAppearance->RefreshFromPlayerState();
 
 	UpdateTagSubscriptions();
 	RefreshTeamOutline();
@@ -184,7 +204,7 @@ void AShooterCharacter::RefreshTeamOutline()
 		if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
 		{
 			Primitive->SetCustomDepthStencilValue(StencilValue);
-			Primitive->SetRenderCustomDepth(true);
+			Primitive->SetRenderCustomDepth(!Primitive->ComponentHasTag(TEXT("AppearanceNoOutline")));
 		}
 	}
 }

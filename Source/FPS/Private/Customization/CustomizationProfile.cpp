@@ -15,7 +15,42 @@ bool FCustomizationAppearance::Validate() const
  for(int32 I=0;I<8;++I)if(!Color(Colors[I])||!Range(Values[I],0,2)||!Range(Originals[I],0,1))return false;
  return true;
 }
-bool FCustomizationAppearance::ValidateForClass(const FString& C) const{return Validate()&&IsCustomizationBodyForClass(C,BodyType);}
+bool FCustomizationAppearance::ValidateForClass(const FString& C) const{return Validate()&&IsCustomizationHairForBody(C,BodyType,HairId);}
+bool FCustomizationAppearance::NetSerialize(FArchive& Ar, UPackageMap*, bool& bOutSuccess)
+{
+ // Fixed array lengths and bounded identifiers are enforced before allocation.
+ // SaveGame still uses tagged properties, so existing v1 disk files are unchanged.
+ bOutSuccess = false;
+ if (Ar.IsSaving() && !Validate()) { Ar.SetError(); return true; }
+ auto Identifier = [&Ar](FString& Text)
+ {
+  uint8 Length = Ar.IsSaving() ? uint8(Text.Len()) : 0;
+  Ar << Length;
+  if (Length > 128) { Ar.SetError(); return; }
+  if (Ar.IsLoading()) Text.Reset(Length);
+  for (uint8 Index = 0; Index < Length && !Ar.IsError(); ++Index)
+  {
+   uint16 Character = Ar.IsSaving() ? uint16(Text[Index]) : 0;
+   Ar << Character;
+   if (Ar.IsLoading()) Text.AppendChar(TCHAR(Character));
+  }
+ };
+ FString Hair = HairId.ToString();
+ Identifier(BodyType); Identifier(Hair);
+ if (Ar.IsError()) return true;
+ if (Ar.IsLoading()) HairId = FName(*Hair);
+ Ar << HairColor << EyeColor << SkinColor << SkinValue;
+ uint8 Original = bUseOriginalHairColor ? 1 : 0;
+ Ar.SerializeBits(&Original, 1);
+ if (Ar.IsLoading())
+ {
+  bUseOriginalHairColor = Original != 0;
+  Colors.SetNum(8); Values.SetNum(8); Originals.SetNum(8);
+ }
+ for (int32 I = 0; I < 8 && !Ar.IsError(); ++I) Ar << Colors[I] << Values[I] << Originals[I];
+ bOutSuccess = !Ar.IsError() && Validate();
+ return true;
+}
 FString FCustomizationStorage::SlotFor(const FString& S,const FString& A,const FString& C)
 {
  const FString Key=FString::Printf(TEXT("%d:%s%d:%s%d:%s"),S.Len(),*S,A.Len(),*A,C.Len(),*C);

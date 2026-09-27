@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/PlayerParticipationState.h"
+#include "Customization/ReplicatedAppearance.h"
 
 #include "ShooterPlayerState.generated.h"
 
@@ -35,6 +36,11 @@ class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbility
 
 public:
 	AShooterPlayerState();
+
+    bool StoreValidatedAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
+    const FReplicatedAppearance* FindAppearance(FName ClassId) const;
+    virtual void CopyProperties(APlayerState* PlayerState) override;
+    virtual void OverrideWith(APlayerState* PlayerState) override;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -129,6 +135,11 @@ protected:
 	virtual void OnRep_Team(EGameTeam PreviousTeam) override;
 
 private:
+
+    UPROPERTY(ReplicatedUsing=OnRep_Appearances)
+    TArray<FReplicatedAppearance> SavedAppearances;
+    UFUNCTION() void OnRep_Appearances();
+
 	UFUNCTION()
 	void HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn);
 
