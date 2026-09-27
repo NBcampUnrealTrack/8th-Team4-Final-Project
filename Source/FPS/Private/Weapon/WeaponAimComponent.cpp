@@ -183,6 +183,14 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 		SpreadDegrees = (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
 	}
 
+	// 정지 상태가 아니면(걷기/스프린트, 공중 포함) ADS로 고정한 0도, 이동 배율을 곱해도 0인
+	// 지향사격(기본 탄퍼짐 0인 무기)도 전부 뚫고 강제로 탄퍼짐이 붙는다 - InAirSpreadPenaltyDegrees와
+	// 같은 이유로 배율과 분리된 덧셈 페널티다.
+	if (!bIsStationary)
+	{
+		SpreadDegrees += MovingSpreadPenaltyDegrees;
+	}
+
 	// 공중에서는 ADS로 고정한 0도, 이동 배율을 곱해도 0인 지향사격(기본 탄퍼짐 0인 무기)도 전부
 	// 뚫고 강제로 탄퍼짐이 붙는다 - 곱셈(배율)만으로는 0에 무엇을 곱해도 0이라 표현이 안 돼서
 	// 덧셈 페널티로 분리했다. 점프하면 조준 중이어도 정확도가 떨어져야 한다는 요구사항 대응.
@@ -237,6 +245,9 @@ void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
 	FVector2D Delta = TargetOffset - PrevRecoilOffset;
 	Delta.X += FMath::FRandRange(-RecoilRandomness, RecoilRandomness);
 	Delta *= EffectiveRecoilMultiplier;
+	// 이동 중에는 탄퍼짐과 마찬가지로 반동도 커져야 한다(정지 1.0 / 걷기 1.5 / 공중,뛰기 2.5) -
+	// CombatComponent::UpdateMovementSpreadMultiplier가 매 틱 갱신해서 넘겨주는 값을 그대로 재사용한다.
+	Delta *= MovementSpreadMultiplier;
 	// Yaw(좌우) 반동만 별도로 축소/제거할 수 있게 한다 - 예: 스나이퍼는 X축 반동을 0으로 설정.
 	Delta.X *= RecoilYawMultiplier;
 

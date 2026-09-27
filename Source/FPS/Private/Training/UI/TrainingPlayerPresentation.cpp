@@ -6,6 +6,7 @@
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/CQB/CQBTrainingSpawner.h"
 #include "Training/TrainingSettings.h"
 #include "Training/UI/TrainingDamageFeedbackWidget.h"
 #include "Training/UI/TrainingSessionHUDWidget.h"
@@ -197,12 +198,67 @@ void UTrainingPlayerPresentation::PlayBotSound(const int32 SessionId, USoundBase
         FMath::Clamp(Volume, 0.0f, 4.0f), 1.0f, 0.0f, Attenuation);
 }
 
-void UTrainingPlayerPresentation::Clear()
+void UTrainingPlayerPresentation::StartCQBSession(ACQBTrainingSpawner& Spawner,
+    const int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> WidgetClass)
 {
+    UTrainingPlayerComponent* Bridge = Owner.Get();
+    APlayerController* LocalController = Bridge ? Bridge->GetParticipantController() : nullptr;
+    if (!LocalController) { return; }
+    Clear();
+    if (!WidgetClass)
+    {
+        Bridge->NotifyMessage(NSLOCTEXT("TrainingPlayer", "CQBHUDMissing",
+            "CQB HUD is not configured. Assign HUD Widget Class on BP_CQBTrainingSpawner."));
+        return;
+    }
+
+    UTrainingSessionHUDWidget* HUD = CreateWidget<UTrainingSessionHUDWidget>(LocalController, WidgetClass);
+    if (!HUD) { return; }
+    if (!Bridge->IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
+    {
+        HUD->RemoveFromParent();
+        return;
+    }
+    bCQBHUD = true;
+    SessionHUDWidget = HUD;
+    HUD->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
+    if (!Bridge->IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
+    {
+        HUD->RemoveFromParent();
+        if (SessionHUDWidget == HUD) { SessionHUDWidget = nullptr; bCQBHUD = false; }
+        return;
+    }
+    HUD->StartCQBSession(TotalTroopers);
+}
+
+void UTrainingPlayerPresentation::UpdateCQBProgress(const int32 KilledTroopers,
+    const int32 TotalTroopers, const bool bComplete)
+{
+    if (bCQBHUD && SessionHUDWidget)
+    {
+        SessionHUDWidget->PresentCQBKill(KilledTroopers, TotalTroopers);
+        if (bComplete) { SessionHUDWidget->FinishCQBSession(); }
+    }
+}
+
+void UTrainingPlayerPresentation::StopCQBSession()
+{
+    if (!bCQBHUD) { return; }
     if (SessionHUDWidget)
     {
         SessionHUDWidget->RemoveFromParent();
         SessionHUDWidget = nullptr;
+    }
+    bCQBHUD = false;
+}
+
+void UTrainingPlayerPresentation::Clear(const bool bKeepCQBHUD)
+{
+    if (!bKeepCQBHUD || !bCQBHUD)
+    {
+        if (SessionHUDWidget) { SessionHUDWidget->RemoveFromParent(); }
+        SessionHUDWidget = nullptr;
+        bCQBHUD = false;
     }
     if (StartFeedbackWidget)
     {

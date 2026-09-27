@@ -23,7 +23,6 @@
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "Input/ShooterInteractionComponent.h"
-#include "Training/TrainingPlayerComponent.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
@@ -56,7 +55,6 @@ AShooterPlayerController::AShooterPlayerController()
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
 	InteractionComponent = CreateDefaultSubobject<UShooterInteractionComponent>(TEXT("InteractionComponent"));
-	TrainingPlayerComponent = CreateDefaultSubobject<UTrainingPlayerComponent>(TEXT("TrainingPlayerComponent"));
 }
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(

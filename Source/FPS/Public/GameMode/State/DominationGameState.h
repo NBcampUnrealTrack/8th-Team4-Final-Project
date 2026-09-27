@@ -3,7 +3,14 @@
 #include "CoreMinimal.h"
 #include "GameMode/State/BaseTeamMatchGameState.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "GameMode/Types/DominationSandstormTypes.h"
 #include "DominationGameState.generated.h"
+
+class UDominationSandstormSettings;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnDominationSandstormStateChangedSignature,
+	const FDominationSandstormState&, SandstormState);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDominationFlowStateChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDominationObjectiveFlowStateChangedSignature);
@@ -84,6 +91,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
 	bool IsCaptureContested() const;
 
+	UFUNCTION(BlueprintPure, Category = "Domination|Sandstorm")
+	const FDominationSandstormState& GetSandstormState() const;
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Sandstorm")
+	UDominationSandstormSettings* GetSandstormSettings() const;
+
+	void SetSandstormState(const FDominationSandstormState& NewState);
+	void SetSandstormSettings(UDominationSandstormSettings* NewSettings);
+
+	UPROPERTY(BlueprintAssignable, Category = "Domination|Sandstorm")
+	FOnDominationSandstormStateChangedSignature OnSandstormStateChanged;
+
 	void SetDominationPhase(EDominationMatchPhase NewPhase, float PhaseDuration = 0.0f);
 	// ObjectiveManager가 의미 단위로 상태를 게시하도록 저수준 필드 조합을 외부에 노출하지 않는다.
 	void ResetObjectiveState();
@@ -115,6 +134,18 @@ public:
 	FOnDominationCaptureStateChangedSignature OnCaptureStateChanged;
 
 private:
+	UFUNCTION()
+	void OnRep_SandstormState();
+
+	UFUNCTION()
+	void OnRep_SandstormSettings();
+
+	UPROPERTY(ReplicatedUsing = OnRep_SandstormState)
+	FDominationSandstormState SandstormState;
+
+	UPROPERTY(ReplicatedUsing = OnRep_SandstormSettings)
+	TObjectPtr<UDominationSandstormSettings> SandstormSettings;
+
 	UFUNCTION()
 	void OnRep_MatchFlowState();
 

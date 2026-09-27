@@ -548,6 +548,11 @@ AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
 	return IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 }
 
+UCombatComponent* AShooterCharacter::GetCombatComponent_Implementation() const
+{
+	return Combat;
+}
+
 void AShooterCharacter::HandleDeath_Implementation(const FRogueDeathContext& Context)
 {
 	if (!HasAuthority())

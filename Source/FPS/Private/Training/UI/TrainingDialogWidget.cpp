@@ -2,6 +2,7 @@
 
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingSettings.h"
+#include "Training/TrainingModeDefinition.h"
 #include "Components/Button.h"
 #include "Components/ComboBoxString.h"
 #include "Components/Image.h"
@@ -210,18 +211,6 @@ void UTrainingDialogWidget::NativeConstruct()
     BindControls();
     BuildClassOptions();
     if (Switch_TrainingPages) { Switch_TrainingPages->SetActiveWidgetIndex(bChoosingAugments ? 1 : 0); }
-    if (UTextBlock* TargetDescription = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Description"))))
-    {
-        TargetDescription->SetText(FText::Format(LOCTEXT("LinearTargetDescription",
-            "Stationary targets. Spawn interval: {0}s to {1}s.\nOne hit removes a target. {2}-second session."),
-            FText::AsNumber(Settings->TargetSpawnIntervalSeconds),
-            FText::AsNumber(Settings->TargetMinSpawnIntervalSeconds),
-            FText::AsNumber(Settings->TargetDurationSeconds)));
-    }
-    if (UTextBlock* TargetFooter = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Foot"))))
-    {
-        TargetFooter->SetText(LOCTEXT("StationaryTargetFooter", "ONE HIT   /   STATIONARY   /   AUTO END"));
-    }
     if (Spin_CustomMeters)
     {
         SelectedCustomMeters = FMath::Clamp(Spin_CustomMeters->GetValue(), Settings->GetMinDistanceMeters(), Settings->GetMaxDistanceMeters());
@@ -375,19 +364,52 @@ void UTrainingDialogWidget::RefreshControls()
                 FText::AsNumber(ResolvedBand.MaxCentimeters / TrainingRules::CentimetersPerMeter)));
         }
     }
+    const auto ResolvePreview = [this](const ETrainingMode Mode, FTrainingModeConfig& Config)
+    {
+        return Bridge.IsValid() ? Bridge->ResolveModePreview(Mode, Config)
+            : TrainingModeDefinitions::Resolve(Mode, Config);
+    };
+    FTrainingModeConfig TargetConfig;
+    if (ResolvePreview(ETrainingMode::TargetAcquisition, TargetConfig))
+    {
+        if (UTextBlock* Description = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Description"))))
+        {
+            Description->SetText(FText::Format(LOCTEXT("ResolvedTargetDescription",
+                "Stationary targets. Spawn interval: {0}s to {1}s.\nOne hit removes a target. {2}"),
+                FText::AsNumber(TargetConfig.SpawnIntervalSeconds),
+                FText::AsNumber(TargetConfig.GetSpawnInterval(TargetConfig.DurationSeconds)),
+                TargetConfig.DurationSeconds > 0.0f
+                    ? FText::Format(LOCTEXT("SessionDuration", "{0}-second session."), FText::AsNumber(TargetConfig.DurationSeconds))
+                    : LOCTEXT("ManualSession", "End the session manually.")));
+        }
+        if (UTextBlock* Footer = Cast<UTextBlock>(GetWidgetFromName(TEXT("Btn_ModeTarget_Foot"))))
+        {
+            Footer->SetText(TargetConfig.DurationSeconds > 0.0f
+                ? LOCTEXT("TargetAutoFooter", "ONE HIT   /   STATIONARY   /   AUTO END")
+                : LOCTEXT("TargetManualFooter", "ONE HIT   /   STATIONARY   /   MANUAL END"));
+        }
+    }
     if (Txt_SessionHint)
     {
-        Txt_SessionHint->SetText(SelectedMode == ETrainingMode::TargetAcquisition
-            ? FText::Format(LOCTEXT("TargetHintLinearSpawn",
-                "{0}s countdown  /  {1}s session  /  Spawns: {2}s to {3}s"),
-                FText::AsNumber(Settings->GetCountdownSeconds()),
-                FText::AsNumber(Settings->TargetDurationSeconds),
-                FText::AsNumber(Settings->TargetSpawnIntervalSeconds),
-                FText::AsNumber(Settings->TargetMinSpawnIntervalSeconds))
-            : FText::Format(LOCTEXT("CombatHint", "{0}s countdown  /  One AI every {1}s  /  Max {2} alive"),
-                FText::AsNumber(Settings->GetCountdownSeconds()),
-                FText::AsNumber(Settings->CombatSpawnIntervalSeconds),
-                FText::AsNumber(Settings->MaxLivingCombatAI)));
+        FTrainingModeConfig Config;
+        if (ResolvePreview(SelectedMode, Config))
+        {
+            const FText Duration = Config.DurationSeconds > 0.0f
+                ? FText::Format(LOCTEXT("HintDuration", "{0}s session"), FText::AsNumber(Config.DurationSeconds))
+                : LOCTEXT("HintManualEnd", "Manual end");
+            const FText Population = Config.MaxLivingActors > 0
+                ? FText::Format(LOCTEXT("HintPopulation", "Max {0} alive"), FText::AsNumber(Config.MaxLivingActors))
+                : LOCTEXT("HintUnlimited", "No alive limit");
+            Txt_SessionHint->SetText(FText::Format(LOCTEXT("ResolvedModeHint",
+                "{0}s countdown  /  {1}  /  Spawns: {2}s to {3}s  /  {4}"),
+                FText::AsNumber(Settings->GetCountdownSeconds()), Duration,
+                FText::AsNumber(Config.SpawnIntervalSeconds),
+                FText::AsNumber(Config.GetSpawnInterval(Config.DurationSeconds)), Population));
+        }
+        else
+        {
+            Txt_SessionHint->SetText(LOCTEXT("InvalidModeConfig", "The selected training mode is not configured."));
+        }
     }
 }
 

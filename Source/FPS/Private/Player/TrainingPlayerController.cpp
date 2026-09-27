@@ -18,6 +18,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogTrainingController, Log, All);
 ATrainingPlayerController::ATrainingPlayerController()
 {
     UIInitComponent = CreateDefaultSubobject<UTrainingUIInitComponent>(TEXT("TrainingUIInitComponent"));
+    TrainingPlayerComponent = CreateDefaultSubobject<UTrainingPlayerComponent>(TEXT("TrainingPlayerComponent"));
 }
 
 void ATrainingPlayerController::BeginPlay()

@@ -1,34 +1,102 @@
 ﻿#include "UI/InGame/Weapons/ShooterWeaponStatus.h"
 #include "Weapon/WeaponBase.h"
+#include "Combat/CombatComponent.h"
 #include "UI/InGame/Weapons/ShooterWeaponDisplaySet.h"
 #include "Components/Image.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Interfaces/PlayerInterface.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 
-void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UShooterWeaponStatus::NativeConstruct()
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
-	
-	AWeaponBase* Weapon = FindEquippedWeapon();
-	
-	if (Weapon != CachedWeapon.Get())
+	Super::NativeConstruct();
+
+	if (APlayerController* PC = GetOwningPlayer())
 	{
-		CachedWeapon = Weapon;
-		RebuildFromWeapon(Weapon);
+		PC->OnPossessedPawnChanged.AddDynamic(this, &UShooterWeaponStatus::HandlePossessedPawnChanged);
+		HandlePossessedPawnChanged(nullptr, PC->GetPawn());
 	}
-	
-	if (!Weapon)
+}
+
+void UShooterWeaponStatus::NativeDestruct()
+{
+	if (APlayerController* PC = GetOwningPlayer())
 	{
-		if (!bLoggedNoWeapon)
-		{
-			bLoggedNoWeapon = true;
-		}
+		PC->OnPossessedPawnChanged.RemoveDynamic(this, &UShooterWeaponStatus::HandlePossessedPawnChanged);
+	}
+
+	BindToCombatComponent(nullptr);
+
+	Super::NativeDestruct();
+}
+
+void UShooterWeaponStatus::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
+{
+	UCombatComponent* NewCombat = nullptr;
+	if (NewPawn && NewPawn->Implements<UPlayerInterface>())
+	{
+		NewCombat = IPlayerInterface::Execute_GetCombatComponent(NewPawn);
+	}
+
+	BindToCombatComponent(NewCombat);
+}
+
+void UShooterWeaponStatus::BindToCombatComponent(UCombatComponent* NewCombat)
+{
+	if (CachedCombat.Get() == NewCombat)
+	{
 		return;
 	}
-	
-	bLoggedNoWeapon = false;
+
+	if (UCombatComponent* OldCombat = CachedCombat.Get())
+	{
+		OldCombat->OnCurrentWeaponChanged.RemoveDynamic(this, &UShooterWeaponStatus::HandleCurrentWeaponChanged);
+	}
+
+	CachedCombat = NewCombat;
+
+	if (NewCombat)
+	{
+		NewCombat->OnCurrentWeaponChanged.AddDynamic(this, &UShooterWeaponStatus::HandleCurrentWeaponChanged);
+		HandleCurrentWeaponChanged(NewCombat->GetCurrentWeapon());
+	}
+	else
+	{
+		HandleCurrentWeaponChanged(nullptr);
+	}
+}
+
+void UShooterWeaponStatus::HandleCurrentWeaponChanged(AWeaponBase* NewWeapon)
+{
+	if (CachedWeapon.Get() == NewWeapon)
+	{
+		return;
+	}
+
+	if (AWeaponBase* OldWeapon = CachedWeapon.Get())
+	{
+		OldWeapon->OnAmmoChanged.RemoveDynamic(this, &UShooterWeaponStatus::HandleAmmoChanged);
+	}
+
+	CachedWeapon = NewWeapon;
+	RebuildFromWeapon(NewWeapon);
+
+	if (NewWeapon)
+	{
+		NewWeapon->OnAmmoChanged.AddDynamic(this, &UShooterWeaponStatus::HandleAmmoChanged);
+		HandleAmmoChanged();
+	}
+}
+
+void UShooterWeaponStatus::HandleAmmoChanged()
+{
+	AWeaponBase* Weapon = CachedWeapon.Get();
+	if (!Weapon)
+	{
+		return;
+	}
 
 	const int32 CurrentAmmo = Weapon->GetCurrentAmmo();
 	const int32 MaxAmmo = Weapon->GetEffectiveMagazineSize();
@@ -46,25 +114,6 @@ void UShooterWeaponStatus::NativeTick(const FGeometry& MyGeometry, float InDelta
 	bCachedInfiniteAmmo = bInfiniteAmmo;
 
 	RefreshAmmo(Weapon);
-}
-
-AWeaponBase* UShooterWeaponStatus::FindEquippedWeapon() const
-{
-	APawn* Pawn = GetOwningPlayerPawn();
-	if (!Pawn)
-	{
-		return nullptr;
-	}
-	
-	if (Pawn->Implements<UPlayerInterface>())
-	{
-		if (AWeaponBase* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(Pawn))
-		{
-			return Weapon;
-		}
-	}
-	
-	return nullptr;
 }
 
 void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)

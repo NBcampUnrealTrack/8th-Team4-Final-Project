@@ -126,7 +126,10 @@ bool UCQBTrainingLocomotionComponent::TickPreparedMove(
         return true;
     }
 
-    UpdateMoveFacing(DeltaTime, TurnSpeedDegreesPerSecond);
+    if (TurnSpeedDegreesPerSecond > 0.0f)
+    {
+        UpdateMoveFacing(DeltaTime, TurnSpeedDegreesPerSecond);
+    }
 
     if (bMoveRequested && Controller->GetMoveStatus() == EPathFollowingStatus::Idle)
     {

@@ -1,6 +1,7 @@
 #include "Training/TrainingScenario.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Training/AI/TrainingCombatAI.h"
@@ -8,6 +9,67 @@
 #include "Training/TrainingModeDefinition.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingTarget.h"
+
+#define LOCTEXT_NAMESPACE "TrainingScenario"
+
+namespace
+{
+const ATrainingCharacter* ValidateBotClass(UClass* BotClass, FText& OutFailure)
+{
+    if (!BotClass || BotClass->HasAnyClassFlags(CLASS_Abstract))
+    {
+        OutFailure = LOCTEXT("BotClass", "Assign the bot Blueprint required by this Training Mode to the Training Arena.");
+        return nullptr;
+    }
+    const ATrainingCharacter* Defaults = Cast<ATrainingCharacter>(BotClass->GetDefaultObject());
+    if (!Defaults || !Defaults->GetMesh()->GetSkeletalMeshAsset())
+    {
+        OutFailure = LOCTEXT("BotMesh", "Assign a Skeletal Mesh to the training bot Blueprint.");
+        return nullptr;
+    }
+    if (!Defaults->DissolveMaterial)
+    {
+        OutFailure = LOCTEXT("BotMaterial", "Assign a Dissolve Material to the training bot Blueprint.");
+        return nullptr;
+    }
+    return Defaults;
+}
+}
+
+ETrainingBotSource UTargetAcquisitionScenario::GetBotSource() const { return ETrainingBotSource::Target; }
+ETrainingBotSource UCombatResponseScenario::GetBotSource() const { return ETrainingBotSource::CombatAI; }
+
+bool UTargetAcquisitionScenario::ValidateConfiguration(const ATrainingArena& InArena,
+    const FTrainingDistanceBand& InBand, FText& OutFailure) const
+{
+    if (!ValidateBotClass(InArena.TargetClass.Get(), OutFailure)) { return false; }
+    FVector ProbePosition;
+    if (!InArena.FindGroundSpawn(InBand, ProbePosition))
+    {
+        OutFailure = LOCTEXT("TargetGround", "No valid WorldStatic floor in this distance band. Check the arena center, floor collision and ground probe height.");
+        return false;
+    }
+    return true;
+}
+
+bool UCombatResponseScenario::ValidateConfiguration(const ATrainingArena& InArena,
+    const FTrainingDistanceBand& InBand, FText& OutFailure) const
+{
+    const ATrainingCombatAI* Defaults = Cast<ATrainingCombatAI>(ValidateBotClass(InArena.CombatAIClass.Get(), OutFailure));
+    if (!Defaults) { return false; }
+    if (!Defaults->HasConfiguredBehavior())
+    {
+        OutFailure = LOCTEXT("CombatTree", "Assign a Training Combat AI Controller Blueprint with a compiled Training State Tree to the Combat AI.");
+        return false;
+    }
+    FVector ProbePosition;
+    if (!InArena.FindNavSpawn(InBand, Defaults->GetNavAgentPropertiesRef(), ProbePosition))
+    {
+        OutFailure = LOCTEXT("CombatNavigation", "No valid NavMesh in the selected distance band. Add/build NavMeshBoundsVolume over the combat training floor.");
+        return false;
+    }
+    return true;
+}
 
 void UTrainingScenario::Initialize(ATrainingArena& InArena, APlayerController& InParticipant,
     const FTrainingDistanceBand& InBand, const FTrainingModeConfig& InModeConfig)
@@ -146,6 +208,7 @@ bool UCombatResponseScenario::SpawnCombatBot()
 
 bool UTargetAcquisitionScenario::SpawnNext()
 {
+    if (!HasSpawnCapacity()) { return true; }
     ATrainingArena* ActiveArena = GetArena();
     APlayerController* ActiveParticipant = GetParticipant();
     if (!ActiveArena || !ActiveParticipant || !ActiveParticipant->GetPawn() || !ActiveArena->TargetClass)
@@ -198,7 +261,7 @@ bool UTargetAcquisitionScenario::SpawnNext()
     return OwnsActor(SpawnedTarget);
 }
 
-int32 UCombatResponseScenario::GetLivingAICount() const
+bool UTrainingScenario::HasSpawnCapacity() const
 {
     int32 LivingCount = 0;
     for (const TWeakObjectPtr<ATrainingCharacter>& Entry : OwnedActors)
@@ -209,15 +272,16 @@ int32 UCombatResponseScenario::GetLivingAICount() const
             ++LivingCount;
         }
     }
-    return LivingCount;
+    return MaxLivingActors <= 0 || LivingCount < MaxLivingActors;
 }
 
 bool UCombatResponseScenario::SpawnNext()
 {
-    const int32 LivingCount = GetLivingAICount();
-    if (MaxLivingActors <= 0 || LivingCount < MaxLivingActors)
+    if (HasSpawnCapacity())
     {
         return SpawnCombatBot();
     }
     return true;
 }
+
+#undef LOCTEXT_NAMESPACE

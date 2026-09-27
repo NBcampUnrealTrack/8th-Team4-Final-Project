@@ -9,8 +9,6 @@
 #include "CombatUIInitComponent.generated.h"
 
 class ADominationPlayerState;
-class APlayerState;
-class APawn;
 class UDominationClassSelectScreen;
 class UShooterAugmentSelectScreen;
 class UShooterInGameMenuScreen;
@@ -31,6 +29,8 @@ class FPS_API UCombatUIInitComponent : public UTeamMatchUIInitComponent
     GENERATED_BODY()
 public:
     UCombatUIInitComponent();
+    void InitializeForWorld();
+    virtual void ResetWorldBinding();
     UFUNCTION(BlueprintCallable, Category = "Combat|UI")
     void ToggleAugmentSelect();
     UFUNCTION(BlueprintPure, Category = "Combat|UI")
@@ -82,8 +82,6 @@ private:
     void HandleParticipationStateChanged(EPlayerParticipationState ParticipationState);
     UFUNCTION()
     void HandleCombatClassChanged(EDominationCombatClass SelectedClass);
-    UFUNCTION()
-    void HandleCombatPawnSet(APlayerState* ChangedState, APawn* NewPawn, APawn* OldPawn);
     UFUNCTION()
     void HandleAugmentDismissRequested();
     void HandleModalDisplayedWidgetChanged(UCommonActivatableWidget* DisplayedWidget);

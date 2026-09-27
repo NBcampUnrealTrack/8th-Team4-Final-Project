@@ -2,6 +2,7 @@
 
 #include "Training/TrainingScenario.h"
 #include "Training/TrainingSettings.h"
+#include "Training/TrainingArena.h"
 
 bool FTrainingModeConfig::IsValid() const
 {
@@ -25,7 +26,9 @@ float FTrainingModeConfig::GetSpawnInterval(const float ElapsedSeconds) const
     return FMath::Lerp(StartInterval, MinInterval, Progress);
 }
 
-bool TrainingModeDefinitions::Resolve(const ETrainingMode Mode, FTrainingModeConfig& OutConfig)
+namespace
+{
+bool ResolveModeDefinition(const ETrainingMode Mode, FTrainingModeConfig& OutConfig)
 {
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
     if (!Settings)
@@ -52,7 +55,6 @@ bool TrainingModeDefinitions::Resolve(const ETrainingMode Mode, FTrainingModeCon
     {
     case ETrainingMode::TargetAcquisition:
         OutConfig.ScenarioClass = UTargetAcquisitionScenario::StaticClass();
-        OutConfig.BotSource = ETrainingBotSource::Target;
         OutConfig.DisplayName = NSLOCTEXT("TrainingMode", "TargetDisplay", "360 Target Acquisition");
         OutConfig.HUDLabel = NSLOCTEXT("TrainingMode", "TargetHUD", "360 TARGET ACQUISITION");
         OutConfig.DurationSeconds = FMath::Max(0.0f, Settings->TargetDurationSeconds);
@@ -65,7 +67,6 @@ bool TrainingModeDefinitions::Resolve(const ETrainingMode Mode, FTrainingModeCon
         break;
     case ETrainingMode::CombatResponse:
         OutConfig.ScenarioClass = UCombatResponseScenario::StaticClass();
-        OutConfig.BotSource = ETrainingBotSource::CombatAI;
         OutConfig.DisplayName = NSLOCTEXT("TrainingMode", "CombatDisplay", "360 Combat Response");
         OutConfig.HUDLabel = NSLOCTEXT("TrainingMode", "CombatHUD", "360 COMBAT RESPONSE");
         OutConfig.DurationSeconds = 0.0f;
@@ -77,6 +78,21 @@ bool TrainingModeDefinitions::Resolve(const ETrainingMode Mode, FTrainingModeCon
         break;
     default:
         return false;
+    }
+    return OutConfig.IsValid();
+}
+
+}
+
+bool TrainingModeDefinitions::Resolve(const ETrainingMode Mode, FTrainingModeConfig& OutConfig,
+    const ATrainingArena* Arena)
+{
+    if (!ResolveModeDefinition(Mode, OutConfig)) { return false; }
+    OutConfig.BotSource = OutConfig.ScenarioClass.GetDefaultObject()->GetBotSource();
+    if (Arena && OutConfig.bUseArenaDurationOverride)
+    {
+        if (!FMath::IsFinite(Arena->CombatDurationSeconds)) { return false; }
+        OutConfig.DurationSeconds = FMath::Max(0.0f, Arena->CombatDurationSeconds);
     }
     return OutConfig.IsValid();
 }

@@ -90,7 +90,7 @@ void ASystemAnnouncer::MulticastStopAnnouncements_Implementation()
 	ClearLocalAnnouncements();
 }
 
-void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId)
+void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId, const float QueueLifetimeSeconds)
 {
 	if (!HasAnnouncement(AnnouncementId) || CurrentAnnouncementId == AnnouncementId)
 	{
@@ -103,7 +103,7 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId)
 	{
 		const FSystemAnnouncerCue* QueuedCue = Announcements.Find(Entry.Id);
 		return QueuedCue == nullptr || !IsValid(QueuedCue->Sound)
-			|| Now - Entry.QueuedAt > QueuedCue->MaxQueueDelaySeconds;
+			|| Now > Entry.ExpiresAt;
 	});
 
 	if (PendingAnnouncements.ContainsByPredicate([AnnouncementId](const FQueuedAnnouncement& Entry)
@@ -148,12 +148,28 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId)
 
 	FQueuedAnnouncement Entry;
 	Entry.Id = AnnouncementId;
-	Entry.QueuedAt = Now;
+	Entry.ExpiresAt = Now + (QueueLifetimeSeconds >= 0.0f
+		? FMath::Min(Cue.MaxQueueDelaySeconds, QueueLifetimeSeconds)
+		: Cue.MaxQueueDelaySeconds);
 	PendingAnnouncements.Add(Entry);
 
 	// 생성 초기 RPC는 보관하되 오디오 초기화가 끝난 뒤 재생한다.
 	if (HasActorBegunPlay())
 	{
+		PlayNextAnnouncement();
+	}
+}
+
+void ASystemAnnouncer::CancelAnnouncement(const FName AnnouncementId)
+{
+	PendingAnnouncements.RemoveAll([AnnouncementId](const FQueuedAnnouncement& Entry)
+	{
+		return Entry.Id == AnnouncementId;
+	});
+
+	if (CurrentAnnouncementId == AnnouncementId)
+	{
+		StopCurrentVoice();
 		PlayNextAnnouncement();
 	}
 }
@@ -172,7 +188,7 @@ void ASystemAnnouncer::PlayNextAnnouncement()
 		{
 			const FSystemAnnouncerCue* Cue = Announcements.Find(Entry.Id);
 			return Cue == nullptr || !IsValid(Cue->Sound) || Cue->Sound->IsLooping()
-				|| Now - Entry.QueuedAt > Cue->MaxQueueDelaySeconds;
+				|| Now > Entry.ExpiresAt;
 		});
 		if (PendingAnnouncements.IsEmpty())
 		{

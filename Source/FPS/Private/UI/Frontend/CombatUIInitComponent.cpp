@@ -1,7 +1,6 @@
 #include "UI/Frontend/CombatUIInitComponent.h"
 
 #include "Augment/AugmentInventoryComponent.h"
-#include "Character/ShooterCharacter.h"
 #include "Engine/World.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/DominationPlayerState.h"
@@ -25,7 +24,11 @@ UCombatUIInitComponent::UCombatUIInitComponent()
 void UCombatUIInitComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	InitializeForWorld();
+}
 
+void UCombatUIInitComponent::InitializeForWorld()
+{
 	AShooterPlayerController* PlayerController =
 		Cast<AShooterPlayerController>(GetOwner());
 	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
@@ -259,14 +262,12 @@ void UCombatUIInitComponent::BindToPlayerState(
 	PlayerState->OnCombatClassChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleCombatClassChanged);
-    PlayerState->OnPawnSet.AddUniqueDynamic(this, &ThisClass::HandleCombatPawnSet);
 }
 
 void UCombatUIInitComponent::UnbindFromPlayerState()
 {
 	if (ADominationPlayerState* PlayerState = BoundPlayerState.Get())
 	{
-		PlayerState->OnPawnSet.RemoveDynamic(this, &ThisClass::HandleCombatPawnSet);
 		PlayerState->OnParticipationStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleParticipationStateChanged);
@@ -425,12 +426,21 @@ void UCombatUIInitComponent::SetAugmentSelectInstance(
 
 void UCombatUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    ResetWorldBinding();
+    Super::EndPlay(EndPlayReason);
+}
+
+void UCombatUIInitComponent::ResetWorldBinding()
+{
     ClearInitializationRetry();
     UnbindFromPlayerState();
     UnbindModalContainer();
     RemoveClassSelectionScreen();
     RemoveCombatHUD();
-    Super::EndPlay(EndPlayReason);
+    ShutdownTeamMatchUI();
+    bAugmentSelectDismissed = false;
+    bHasDismissedThisSelection = false;
+    LastPresentedOfferIds.Reset();
 }
 
 void UCombatUIInitComponent::RefreshCombatUI()
@@ -500,7 +510,6 @@ void UCombatUIInitComponent::RefreshCombatUI()
         ScheduleInitializationRetry();
         return;
     }
-    // Pawn changes rebuild only the HUD, not menu/offer delegates.
     if (!IsTeamMatchUIReady())
     {
         InitializeTeamMatchUI(LocalController, Inventory);
@@ -533,17 +542,6 @@ void UCombatUIInitComponent::RemoveCombatHUD()
     {
         RemoveScreenFromLayer(InitialWidgetLayer, InitialWidgetInstance);
         InitialWidgetInstance = nullptr;
-    }
-}
-
-void UCombatUIInitComponent::HandleCombatPawnSet(APlayerState*, APawn* NewPawn, APawn* OldPawn)
-{
-    // The previous HUD held the previous CombatComponent's ADS delegate.
-    // Ignore spectator/null transitions; rebuild when a new combat avatar exists.
-    if (NewPawn != OldPawn && IsValid(Cast<AShooterCharacter>(NewPawn)))
-    {
-        RemoveCombatHUD();
-        RefreshCombatUI();
     }
 }
 

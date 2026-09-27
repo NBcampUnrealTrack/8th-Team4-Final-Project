@@ -37,11 +37,11 @@ private:
     FVector ResolveShotStart() const;
     FVector ResolveTargetAimPoint() const;
     float ComputeAimErrorDegrees() const;
-    bool HasClearShotToTarget() const;
+    bool HasClearShotToTarget(const FVector& Start, const FVector& AimPoint) const;
     bool TickAcquireFiringLane(float DeltaTime, double NowSeconds);
     void ResetFiringLaneMove();
     void UpdateCombatFacing(float DeltaTime);
-    void FireOneShot();
+    void FireOneShot(const FVector& Start, const FVector& AimPoint);
     void ApplyShotDamage(const FHitResult& HitResult);
 
     TWeakObjectPtr<UCQBTrainingAIComponent> ConfigRef;

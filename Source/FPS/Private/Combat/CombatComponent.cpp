@@ -628,6 +628,7 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	RefreshWeaponPresentation();
 	RefreshFirstPersonADSPresentation();
 	RefreshMainHUDSuppressionState();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::ClearWeaponLoadout()
@@ -773,6 +774,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 	RefreshWeaponPresentation();
 	RefreshFirstPersonADSPresentation();
 	RefreshMainHUDSuppressionState();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::OnRep_Aiming()

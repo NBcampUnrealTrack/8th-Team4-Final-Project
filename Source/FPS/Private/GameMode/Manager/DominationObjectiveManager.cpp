@@ -161,10 +161,9 @@ void UDominationObjectiveManager::StartCaptureTracking(
 	CapturePoint->OnPawnExited.AddUObject(
 		this,
 		&ThisClass::HandleCapturePointPawnChanged);
-	CapturePoint->SetObjectiveActive(true);
-
 	LastCaptureUpdateTime = World->GetTimeSeconds();
-	UpdateCaptureState(0.0f);
+	CapturePoint->SetObjectiveActive(true);
+	RefreshCaptureState();
 	TimerManager->SetTimer(
 		CaptureUpdateTimerHandle,
 		this,
@@ -197,24 +196,43 @@ void UDominationObjectiveManager::StopCaptureTracking()
 	ActiveCapturePoint.Reset();
 	bSuddenDeathActive = false;
 	LastCaptureUpdateTime = 0.0;
+	CaptureTeamAPlayerCount = 0;
+	CaptureTeamBPlayerCount = 0;
 }
 
 void UDominationObjectiveManager::HandleCapturePointPawnChanged(APawn*)
 {
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	LastCaptureUpdateTime = World->GetTimeSeconds();
-	UpdateCaptureState(0.0f);
+	RefreshCaptureState();
 }
 
 void UDominationObjectiveManager::HandleCaptureUpdateTimer()
 {
+	RefreshCaptureState();
+}
+
+void UDominationObjectiveManager::RefreshCaptureState()
+{
+	const TWeakObjectPtr<ADominationCapturePoint> PreviousPoint = ActiveCapturePoint;
+	if (!PreviousPoint.IsValid())
+	{
+		return;
+	}
+
+	// 출입 이전 인원으로 경과 시간을 먼저 정산한다.
+	AdvanceCaptureToCurrentTime();
+	if (ActiveCapturePoint != PreviousPoint)
+	{
+		return;
+	}
+
+	CountActivePlayers(CaptureTeamAPlayerCount, CaptureTeamBPlayerCount);
+	UpdateCaptureState(0.0f);
+}
+
+void UDominationObjectiveManager::AdvanceCaptureToCurrentTime()
+{
 	UWorld* World = GetWorld();
-	if (!IsValid(World))
+	if (!IsValid(World) || !ActiveCapturePoint.IsValid())
 	{
 		return;
 	}
@@ -227,6 +245,12 @@ void UDominationObjectiveManager::HandleCaptureUpdateTimer()
 
 void UDominationObjectiveManager::HandleSuddenDeathTimerExpired()
 {
+	const TWeakObjectPtr<ADominationCapturePoint> PreviousPoint = ActiveCapturePoint;
+	AdvanceCaptureToCurrentTime();
+	if (!ActiveCapturePoint.IsValid() || ActiveCapturePoint != PreviousPoint)
+	{
+		return;
+	}
 	bSuddenDeathActive = true;
 	UE_LOG(
 		LogDominationObjective,
@@ -238,9 +262,8 @@ void UDominationObjectiveManager::HandleSuddenDeathTimerExpired()
 
 void UDominationObjectiveManager::UpdateCaptureState(const float DeltaSeconds)
 {
-	int32 TeamAPlayerCount = 0;
-	int32 TeamBPlayerCount = 0;
-	CountActivePlayers(TeamAPlayerCount, TeamBPlayerCount);
+	const int32 TeamAPlayerCount = CaptureTeamAPlayerCount;
+	const int32 TeamBPlayerCount = CaptureTeamBPlayerCount;
 
 	const bool bTeamAPresent = TeamAPlayerCount > 0;
 	const bool bTeamBPresent = TeamBPlayerCount > 0;

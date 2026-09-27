@@ -7,6 +7,7 @@
 #include "DominationPlayerController.generated.h"
 
 class UDominationUIInitComponent;
+class UDominationSandstormComponent;
 
 UCLASS()
 class FPS_API ADominationPlayerController : public AShooterPlayerController, public IRogueCombatClassSelector
@@ -16,6 +17,8 @@ class FPS_API ADominationPlayerController : public AShooterPlayerController, pub
 public:
 	ADominationPlayerController();
 	virtual bool CanProcessGameplayInput() const override;
+	virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
+	virtual void NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Domination|Class")
 	virtual void SelectCombatClass(EDominationCombatClass RequestedClass) override;
@@ -24,6 +27,9 @@ public:
 	virtual void SetPreviewCombatClass(EDominationCombatClass RequestedClass) override;
 
 	virtual float GetCombatClassSelectionTimeRemaining() const override;
+
+	UFUNCTION(Exec)
+	void SandstormPreview(float Intensity = -1.0f);
 
 protected:
 	virtual void SetupInputComponent() override;
@@ -36,6 +42,9 @@ private:
 
 	void Input_ToggleAugmentSelect();
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|Sandstorm", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UDominationSandstormComponent> SandstormComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UDominationUIInitComponent> UIInitComponent;
 };

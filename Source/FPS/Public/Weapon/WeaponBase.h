@@ -18,6 +18,10 @@ class UWeaponAimComponent;
 class UWeaponEffectsComponent;
 struct FHitResult;
 
+// 탄창/예비탄/무한탄약 중 하나라도 바뀔 때마다 브로드캐스트된다. UI(ShooterWeaponStatus)가 매 프레임
+// 폴링하는 대신 이 델리게이트를 구독해서 실제로 값이 바뀐 시점에만 갱신하도록 하기 위함이다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWeaponAmmoChanged);
+
 
 // 무기 발사 상태와 최종 발사 방향 생성까지 담당한다.
 // GAS 내부 구현에는 의존하지 않으며, 서버 Hit 판정은 B의 Hitscan Resolver 공개 계약으로 전달한다.
@@ -192,6 +196,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	float GetADSCameraInterpSpeedOverride() const;
 
+	// ADS 중 이동속도에 곱해지는 배율(1=영향 없음). ShooterMovementComponent::GetMaxSpeed가
+	// IsADS()일 때만 GetMoveSpeedMultiplier()와 별개로 추가로 곱한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	float GetADSMoveSpeedMultiplier() const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	bool SupportsVariableADSZoom() const;
 
@@ -321,6 +330,10 @@ public:
 		bool bHasHit,
 		bool bIsFirstPerson,
 		bool bHeadshot);
+
+	// 탄창/예비탄/무한탄약 변경 시점에 브로드캐스트된다. ShooterWeaponStatus 등 탄약 UI가 구독한다.
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon|Ammo")
+	FOnWeaponAmmoChanged OnAmmoChanged;
 
 protected:
 	virtual void BeginPlay() override;
@@ -455,11 +468,13 @@ protected:
 	int32 EffectiveMaxReserveAmmo = 90;
 
 	// 런타임 인스턴스 전용. 기본 게임에서는 false이고 Training에서만 서버가 true로 설정한다.
-	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
+	// 서버 권한으로만 바뀌므로(SetInfiniteAmmo) OnRep에서 OnAmmoChanged를 브로드캐스트해 클라 UI를 갱신한다.
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, ReplicatedUsing = OnRep_InfiniteAmmo, Category = "FPS|Weapon|Ammo")
 	bool bInfiniteAmmo = false;
 
 	// 일반 게임에서 재장전 부족분을 채울 때 사용하는 예비탄 수량이다.
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
+	// ResizeReserve처럼 서버 전용 경로로만 바뀌는 경우를 대비해 OnRep에서도 OnAmmoChanged를 브로드캐스트한다.
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentReserveAmmo, Category = "FPS|Weapon|Ammo")
 	int32 CurrentReserveAmmo = 90;
 
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
@@ -550,4 +565,10 @@ private:
 	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).
 	float LastFireInterval = 0.f;
+
+	UFUNCTION()
+	void OnRep_CurrentReserveAmmo();
+
+	UFUNCTION()
+	void OnRep_InfiniteAmmo();
 };

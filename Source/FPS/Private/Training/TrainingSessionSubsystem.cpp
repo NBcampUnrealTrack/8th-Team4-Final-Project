@@ -1,6 +1,5 @@
 #include "Training/TrainingSessionSubsystem.h"
 
-#include "Components/SkeletalMeshComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "GameFramework/PlayerState.h"
 #include "Sound/SoundBase.h"
@@ -9,14 +8,12 @@
 #include "Engine/GameInstance.h"
 #include "GameMode/TrainingGameMode.h"
 #include "GameFramework/PlayerController.h"
-#include "Training/AI/TrainingCombatAI.h"
 #include "Training/TrainingArena.h"
 #include "Training/TrainingCharacter.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingScenario.h"
 #include "Training/TrainingSettings.h"
 #include "Training/TrainingModeDefinition.h"
-#include "Training/TrainingTarget.h"
 
 #define LOCTEXT_NAMESPACE "TrainingSession"
 
@@ -76,68 +73,16 @@ bool UTrainingSessionSubsystem::StartSession(ATrainingArena& InArena, APlayerCon
     }
 
     FTrainingModeConfig ModeConfig;
-    if (!TrainingModeDefinitions::Resolve(Mode, ModeConfig))
+    if (!TrainingModeDefinitions::Resolve(Mode, ModeConfig, &InArena))
     {
         OutFailure = LOCTEXT("ModeDefinition", "The selected training mode has no valid mode definition.");
         return false;
     }
 
-    if (ModeConfig.bUseArenaDurationOverride && FMath::IsFinite(InArena.CombatDurationSeconds))
+    const UTrainingScenario* ScenarioDefaults = ModeConfig.ScenarioClass.GetDefaultObject();
+    if (!ScenarioDefaults->ValidateConfiguration(InArena, Band, OutFailure))
     {
-        ModeConfig.DurationSeconds = FMath::Max(0.0f, InArena.CombatDurationSeconds);
-    }
-
-    UClass* BotClass = nullptr;
-    switch (ModeConfig.BotSource)
-    {
-    case ETrainingBotSource::Target:
-        BotClass = InArena.TargetClass.Get();
-        break;
-    case ETrainingBotSource::CombatAI:
-        BotClass = InArena.CombatAIClass.Get();
-        break;
-    default:
-        break;
-    }
-    if (!BotClass || BotClass->HasAnyClassFlags(CLASS_Abstract))
-    {
-        OutFailure = LOCTEXT("BotClass", "Assign the bot Blueprint required by this Training Mode to the Training Arena.");
         return false;
-    }
-    const ATrainingCharacter* BotDefaults = Cast<ATrainingCharacter>(BotClass->GetDefaultObject());
-    if (!BotDefaults || !BotDefaults->GetMesh()->GetSkeletalMeshAsset())
-    {
-        OutFailure = LOCTEXT("BotMesh", "Assign a Skeletal Mesh to the training bot Blueprint.");
-        return false;
-    }
-    if (!BotDefaults->DissolveMaterial)
-    {
-        OutFailure = LOCTEXT("BotMaterial", "Assign a Dissolve Material to the training bot Blueprint.");
-        return false;
-    }
-
-    FVector ProbePosition;
-    if (ModeConfig.BotSource == ETrainingBotSource::Target)
-    {
-        if (!InArena.FindGroundSpawn(Band, ProbePosition))
-        {
-            OutFailure = LOCTEXT("TargetGround", "No valid WorldStatic floor in this distance band. Check the arena center, floor collision and ground probe height.");
-            return false;
-        }
-    }
-    else if (ModeConfig.BotSource == ETrainingBotSource::CombatAI)
-    {
-        const ATrainingCombatAI* CombatDefaults = Cast<ATrainingCombatAI>(BotDefaults);
-        if (!CombatDefaults || !CombatDefaults->HasConfiguredBehavior())
-        {
-            OutFailure = LOCTEXT("CombatTree", "Assign a Training Combat AI Controller Blueprint with a compiled Training State Tree to the Combat AI.");
-            return false;
-        }
-        if (!InArena.FindNavSpawn(Band, CombatDefaults->GetNavAgentPropertiesRef(), ProbePosition))
-        {
-            OutFailure = LOCTEXT("CombatNavigation", "No valid NavMesh in the selected distance band. Add/build NavMeshBoundsVolume over the combat training floor.");
-            return false;
-        }
     }
 
     ActiveScenario = NewObject<UTrainingScenario>(this, ModeConfig.ScenarioClass);

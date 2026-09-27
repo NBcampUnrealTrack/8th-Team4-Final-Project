@@ -107,18 +107,12 @@ void UCQBTrainingCombatComponent::TickEngage(const float DeltaTime)
     if (bVisibleTarget)
     {
         Awareness->RefreshVisibleTargetLocation();
-        UpdateCombatFacing(DeltaTime);
     }
-    else if (bDamageThreat)
-    {
-        Locomotion->TurnToward(
-            Awareness->GetLastKnownTargetLocation(),
-            DeltaTime,
-            Config->ReactionSettings.CombatTurnSpeedDegreesPerSecond,
-            true);
-    }
+    UpdateCombatFacing(DeltaTime);
 
-    if (!HasClearShotToTarget())
+    const FVector ShotStart = ResolveShotStart();
+    const FVector AimPoint = ResolveTargetAimPoint();
+    if (!HasClearShotToTarget(ShotStart, AimPoint))
     {
         BurstShotsRemaining = 0;
         NextBurstTime = FMath::Max(NextBurstTime, Now + 0.03);
@@ -141,9 +135,8 @@ void UCQBTrainingCombatComponent::TickEngage(const float DeltaTime)
         ResetFiringLaneMove();
     }
 
-    UpdateCombatFacing(DeltaTime);
     if (!Locomotion->IsFacing(
-        ResolveTargetAimPoint(), Config->ReactionSettings.FireFacingToleranceDegrees))
+        AimPoint, Config->ReactionSettings.FireFacingToleranceDegrees))
     {
         BurstShotsRemaining = 0;
         NextBurstTime = FMath::Max(NextBurstTime, Now + 0.03);
@@ -170,7 +163,7 @@ void UCQBTrainingCombatComponent::TickEngage(const float DeltaTime)
         return;
     }
 
-    FireOneShot();
+    FireOneShot(ShotStart, AimPoint);
     --BurstShotsRemaining;
     ++BurstShotIndex;
 
@@ -256,8 +249,9 @@ FVector UCQBTrainingCombatComponent::ResolveTargetAimPoint() const
         return FVector::ZeroVector;
     }
 
-    return Target->GetActorLocation()
-        + FVector(0.0f, 0.0f, Config->AccuracySettings.AimPointHeightOffset);
+    const FVector TargetLocation = Awareness->HasVisibleTarget()
+        ? Target->GetActorLocation() : Awareness->GetLastKnownTargetLocation();
+    return TargetLocation + FVector(0.0f, 0.0f, Config->AccuracySettings.AimPointHeightOffset);
 }
 
 float UCQBTrainingCombatComponent::ComputeAimErrorDegrees() const
@@ -301,7 +295,7 @@ float UCQBTrainingCombatComponent::ComputeAimErrorDegrees() const
     return FMath::Max(0.0f, Error);
 }
 
-bool UCQBTrainingCombatComponent::HasClearShotToTarget() const
+bool UCQBTrainingCombatComponent::HasClearShotToTarget(const FVector& Start, const FVector& AimPoint) const
 {
     const ACQBTrainingAIController* Controller = GetController();
     const UCQBTrainingAIComponent* Config = GetConfig();
@@ -313,11 +307,6 @@ bool UCQBTrainingCombatComponent::HasClearShotToTarget() const
         return false;
     }
 
-    const FVector Start = ResolveShotStart();
-    const FVector AimPoint = Awareness->HasVisibleTarget()
-        ? ResolveTargetAimPoint()
-        : Awareness->GetLastKnownTargetLocation()
-            + FVector(0.0f, 0.0f, Config->AccuracySettings.AimPointHeightOffset);
     if (FVector::DistSquared(Start, AimPoint)
         > FMath::Square(FMath::Max(100.0f, Config->CombatSettings.MaxFireRange)))
     {
@@ -364,12 +353,6 @@ bool UCQBTrainingCombatComponent::TickAcquireFiringLane(
 
     const bool bReached = bFiringLaneMovePrepared
         && Locomotion->TickPreparedMove(DeltaTime, 0.0f);
-    Locomotion->TurnToward(
-        KnownLocation,
-        DeltaTime,
-        Config->ReactionSettings.CombatTurnSpeedDegreesPerSecond,
-        true);
-
     if (bReached && !Awareness->HasVisibleTarget() && Awareness->HasDamageThreat(NowSeconds))
     {
         Awareness->CompleteDamagePursuit(
@@ -404,7 +387,7 @@ void UCQBTrainingCombatComponent::UpdateCombatFacing(const float DeltaTime)
         true);
 }
 
-void UCQBTrainingCombatComponent::FireOneShot()
+void UCQBTrainingCombatComponent::FireOneShot(const FVector& Start, const FVector& AimPoint)
 {
     ACQBTrainingAIController* Controller = GetController();
     UCQBTrainingAIComponent* Config = GetConfig();
@@ -419,13 +402,7 @@ void UCQBTrainingCombatComponent::FireOneShot()
         return;
     }
 
-    const FVector Start = ResolveShotStart();
-    const FVector AimPoint = ResolveTargetAimPoint();
-    FVector BaseDirection = Controller->GetControlRotation().Vector().GetSafeNormal();
-    if (BaseDirection.IsNearlyZero())
-    {
-        BaseDirection = (AimPoint - Start).GetSafeNormal();
-    }
+    const FVector BaseDirection = (AimPoint - Start).GetSafeNormal();
     if (BaseDirection.IsNearlyZero())
     {
         return;

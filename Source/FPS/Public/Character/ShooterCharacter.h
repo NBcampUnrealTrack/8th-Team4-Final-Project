@@ -68,6 +68,7 @@ public:
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
+	virtual UCombatComponent* GetCombatComponent_Implementation() const override;
 	virtual void OnWeaponSpawned_Implementation(AWeaponBase* Weapon) override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
 	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
