@@ -12,6 +12,7 @@ class UDecalComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class APawn;
+class ADominationPointGimmick;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnDominationCapturePointPawnChanged, APawn*);
 
@@ -101,6 +102,10 @@ private:
 	// 거점 점령 구역의 절반 크기(X/Y/Z). 박스 컴포넌트의 Box Extent와 동일한 의미다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", Units = "cm"))
 	FVector CaptureBoxExtent = FVector(1000.0f, 1000.0f, 300.0f);
+
+	// 이 거점이 활성화된 동안만 켜지는 기믹. C·B·D에만 지정하고 A/E는 비워 둔다.
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Domination|Gimmick", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<ADominationPointGimmick> Gimmick;
 
 	bool bObjectiveActive = false;
 };

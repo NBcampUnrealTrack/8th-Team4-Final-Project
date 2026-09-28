@@ -1,5 +1,6 @@
 #include "Actor/DominationCapturePoint.h"
 
+#include "Actor/DominationPointGimmick.h"
 #include "Components/BoxComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/SceneComponent.h"
@@ -126,6 +127,12 @@ void ADominationCapturePoint::SetObjectiveActive(const bool bNewActive)
 	CaptureZone->SetGenerateOverlapEvents(bObjectiveActive);
 	CaptureZone->SetCollisionEnabled(
 		bObjectiveActive ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+
+	// 거점 활성 상태에 맞춰 기믹을 켜고 끈다(서버 전용 경로).
+	if (IsValid(Gimmick))
+	{
+		Gimmick->SetGimmickActive(bObjectiveActive, this);
+	}
 }
 
 void ADominationCapturePoint::HandleCaptureZoneBeginOverlap(

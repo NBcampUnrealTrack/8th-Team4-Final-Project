@@ -68,6 +68,8 @@ public:
 		APlayerController* PlayerController,
 		EDominationPointId ObjectivePointId);
 	void RespawnPlayer(AController* Controller);
+	// 거점 기믹(중계 비콘)이 호출하는 팀별 부활 대기 감소. RespawnManager로 전달한다.
+	void SetTeamRespawnDelayReduction(EGameTeam Team, float Seconds);
 
 	// 초기 참가자 스폰이 끝나고 중앙 거점 활성화 대기가 시작된 뒤 발생한다.
 	// 외부 증강 시스템은 Manager 내부가 아니라 이 GameMode 경계에 연결한다.
