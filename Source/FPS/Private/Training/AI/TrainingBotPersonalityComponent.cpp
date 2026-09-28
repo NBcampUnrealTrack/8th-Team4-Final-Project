@@ -6,13 +6,10 @@
 #include "Training/AI/TrainingCombatAI.h"
 #include "Training/AI/TrainingCombatAIController.h"
 #include "Training/TrainingArena.h"
-#include "UObject/Class.h"
 
 UTrainingBotPersonalityComponent::UTrainingBotPersonalityComponent()
 {
-    PrimaryComponentTick.bCanEverTick = true;
-    PrimaryComponentTick.bStartWithTickEnabled = false;
-    PrimaryComponentTick.TickInterval = 0.05f;
+    PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UTrainingBotPersonalityComponent::BeginTraining()
@@ -35,19 +32,27 @@ void UTrainingBotPersonalityComponent::BeginTraining()
     }
     bStrafeClockwise = (FMath::RandHelper(2) != 0);
     StartTrickSequence();
-    SetComponentTickEnabled(true);
-    Observe(0.0f);
-    if (bLogPersonalityOnSpawn)
+
+    if (UWorld* World = GetWorld())
     {
-        UE_LOG(LogTemp, Log, TEXT("[TrainingPersonality] %s -> %s"),
-            *GetNameSafe(TrainingController->GetPawn()),
-            *UEnum::GetValueAsString(ActivePersonality));
+        LastObservationSeconds = World->GetTimeSeconds();
+        Observe();
+        FTimerManagerTimerParameters TimerParameters;
+        TimerParameters.bLoop = true;
+        TimerParameters.bMaxOncePerFrame = true;
+        World->GetTimerManager().SetTimer(
+            ObservationTimer, this, &ThisClass::Observe,
+            FMath::Clamp(ObservationIntervalSeconds, 0.02f, 0.25f), TimerParameters);
     }
 }
 
 void UTrainingBotPersonalityComponent::EndTraining()
 {
-    SetComponentTickEnabled(false);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ObservationTimer);
+    }
+    LastObservationSeconds = 0.0;
     AimLatch.Reset();
     ParticipantPawn.Reset();
     bStrafeClockwise = false;
@@ -61,15 +66,19 @@ void UTrainingBotPersonalityComponent::EndPlay(const EEndPlayReason::Type EndPla
     Super::EndPlay(EndPlayReason);
 }
 
-void UTrainingBotPersonalityComponent::TickComponent(const float DeltaTime, const ELevelTick TickType,
-    FActorComponentTickFunction* ThisTickFunction)
+void UTrainingBotPersonalityComponent::Observe()
 {
-    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-    Observe(DeltaTime);
-}
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        EndTraining();
+        return;
+    }
 
-void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
-{
+    const double Now = World->GetTimeSeconds();
+    const float DeltaSeconds = LastObservationSeconds > 0.0
+        ? static_cast<float>(FMath::Max(0.0, Now - LastObservationSeconds)) : 0.0f;
+    LastObservationSeconds = Now;
     const ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(GetOwner());
     const ATrainingCombatAI* TrainingBot = TrainingController
         ? Cast<ATrainingCombatAI>(TrainingController->GetPawn()) : nullptr;
@@ -117,7 +126,7 @@ void UTrainingBotPersonalityComponent::Observe(const float DeltaSeconds)
             const float AxisHalfHeight = Capsule->GetScaledCapsuleHalfHeight() - Capsule->GetScaledCapsuleRadius();
             SightPoint.Z += FMath::Clamp(ClosestAimPoint.Z - SightPoint.Z,
                 -static_cast<double>(AxisHalfHeight), static_cast<double>(AxisHalfHeight));
-            bAimObserved = !GetWorld()->LineTraceSingleByChannel(Obstruction,
+            bAimObserved = !World->LineTraceSingleByChannel(Obstruction,
                 Eye, SightPoint, ECC_Visibility, Params);
             AimTangentOffset = TrainingPersonality::TangentialProjection(
                 ClosestAimPoint - TrainingBot->GetActorLocation(), Arena->GetCenterLocation(),

@@ -151,29 +151,55 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const bool bK
     {
         DisplayedKills = TotalKills;
         KillFadeStartOpacity = bKillFeedbackActive ? KillFeedbackOpacity : 0.0f;
-        KillFeedbackAge = 0.0f;
+        KillFeedbackStartSeconds = 0.0;
         bKillFeedbackActive = true;
         if (Txt_Kills)
         {
             Txt_Kills->SetText(FText::FromString(FString::Printf(TEXT("+%d"), TotalKills)));
         }
-        UpdateKillFeedback(0.0f);
+        StartKillFeedbackAnimation();
     }
 }
 
-void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+void UTrainingSessionHUDWidget::StartKillFeedbackAnimation()
 {
-    Super::NativeTick(MyGeometry, InDeltaTime);
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        ResetKillFeedback();
+        return;
+    }
+
+    World->GetTimerManager().ClearTimer(KillFeedbackTimer);
+    KillFeedbackStartSeconds = World->GetTimeSeconds();
+    UpdateKillFeedback();
     if (bKillFeedbackActive)
     {
-        UpdateKillFeedback(InDeltaTime);
+        FTimerManagerTimerParameters TimerParameters;
+        TimerParameters.bLoop = true;
+        TimerParameters.bMaxOncePerFrame = true;
+        World->GetTimerManager().SetTimer(
+            KillFeedbackTimer, this, &ThisClass::UpdateKillFeedback,
+            TrainingRules::PresentationUpdateIntervalSeconds, TimerParameters);
     }
 }
 
-void UTrainingSessionHUDWidget::UpdateKillFeedback(const float DeltaSeconds)
+void UTrainingSessionHUDWidget::UpdateKillFeedback()
 {
-    if (!bKillFeedbackActive) { return; }
-    KillFeedbackAge += FMath::Max(0.0f, DeltaSeconds);
+    if (!bKillFeedbackActive)
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        ResetKillFeedback();
+        return;
+    }
+
+    const float KillFeedbackAge = static_cast<float>(
+        FMath::Max(0.0, World->GetTimeSeconds() - KillFeedbackStartSeconds));
     const float FadeIn = FMath::Max(0.0f, KillFadeInSeconds);
     const float Hold = FMath::Max(0.0f, KillHoldSeconds);
     const float FadeOut = FMath::Max(0.0f, KillFadeOutSeconds);
@@ -190,7 +216,8 @@ void UTrainingSessionHUDWidget::UpdateKillFeedback(const float DeltaSeconds)
     };
     if (FadeIn > KINDA_SMALL_NUMBER && KillFeedbackAge < FadeIn)
     {
-        KillFeedbackOpacity = FMath::Lerp(KillFadeStartOpacity, 1.0f, Smooth(KillFeedbackAge / FadeIn));
+        KillFeedbackOpacity = FMath::Lerp(
+            KillFadeStartOpacity, 1.0f, Smooth(KillFeedbackAge / FadeIn));
     }
     else if (KillFeedbackAge < FadeOutStart)
     {
@@ -228,8 +255,12 @@ void UTrainingSessionHUDWidget::ApplyKillFeedbackAppearance()
 
 void UTrainingSessionHUDWidget::ResetKillFeedback()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(KillFeedbackTimer);
+    }
     bKillFeedbackActive = false;
-    KillFeedbackAge = 0.0f;
+    KillFeedbackStartSeconds = 0.0;
     KillFeedbackOpacity = 0.0f;
     KillFadeStartOpacity = 0.0f;
     ApplyKillFeedbackAppearance();
@@ -237,7 +268,11 @@ void UTrainingSessionHUDWidget::ResetKillFeedback()
 
 void UTrainingSessionHUDWidget::StopSession()
 {
-    if (UWorld* World = GetWorld()) { World->GetTimerManager().ClearTimer(ClockTimer); }
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(ClockTimer);
+        World->GetTimerManager().ClearTimer(KillFeedbackTimer);
+    }
     bSessionActive = false;
     bCQBSession = false;
     CQBTotalTroopers = 0;

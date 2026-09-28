@@ -35,9 +35,6 @@ struct FPS_API FCQBTacticalSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Tactics", meta = (ClampMin = "1", ClampMax = "8"))
     int32 MaxBurstsPerPosition = 3;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Tactics")
-    bool bDrawDebugTactics = false;
 };
 
 struct FCQBCoverPosition

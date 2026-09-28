@@ -32,15 +32,6 @@ void UShopComponent::OnRep_ConfirmedPurchaseCounts()
 	OnPurchaseStateChanged.Broadcast();
 }
 
-#if WITH_DEV_AUTOMATION_TESTS
-// 실제 GameState 페이즈를 구성하지 않는 자동화 테스트에서만 구매 가능 상태를 강제로 대체한다.
-void UShopComponent::SetPurchaseAvailabilityOverrideForTesting(const bool bEnabled, const bool bShopOpen)
-{
-	bHasPurchaseAvailabilityOverrideForTesting = bEnabled;
-	bPurchaseAvailabilityOverrideForTesting = bShopOpen;
-}
-#endif
-
 void UShopComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -83,11 +74,6 @@ void UShopComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	ActiveTransactions.Reset();
 	bIsProcessingTransaction = false;
-
-#if WITH_DEV_AUTOMATION_TESTS
-	bHasPurchaseAvailabilityOverrideForTesting = false;
-	bPurchaseAvailabilityOverrideForTesting = false;
-#endif
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -727,14 +713,6 @@ bool UShopComponent::IsPurchaseWindowOpen() const
 
 bool UShopComponent::IsPurchaseWindowOpen(const URogueShopSettings& Settings) const
 {
-#if WITH_DEV_AUTOMATION_TESTS
-	// 테스트에서는 실제 GameState와 페이즈를 만들지 않고 구매 창 상태만 대체한다.
-	if (bHasPurchaseAvailabilityOverrideForTesting)
-	{
-		return bPurchaseAvailabilityOverrideForTesting;
-	}
-#endif
-
 	const UWorld* World = GetWorld();
 	const ABaseRoundGameState* RoundGameState = IsValid(World) ? World->GetGameState<ABaseRoundGameState>() : nullptr;
 	return IsValid(RoundGameState) && Settings.IsPurchasePhaseAllowed(RoundGameState->GetGameFlowPhase());

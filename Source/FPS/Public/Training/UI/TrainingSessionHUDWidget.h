@@ -35,12 +35,12 @@ public:
 
 protected:
     virtual void NativePreConstruct() override;
-    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
     virtual void NativeDestruct() override;
 
 private:
     void RefreshClock();
-    void UpdateKillFeedback(float DeltaSeconds);
+    void StartKillFeedbackAnimation();
+    void UpdateKillFeedback();
     void ApplyKillFeedbackAppearance();
     void ResetKillFeedback();
 
@@ -57,9 +57,10 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
 
     FTimerHandle ClockTimer;
+    FTimerHandle KillFeedbackTimer;
     double StartSeconds = 0.0;
     float ActiveDurationSeconds = 0.0f;
-    float KillFeedbackAge = 0.0f;
+    double KillFeedbackStartSeconds = 0.0;
     float KillFeedbackOpacity = 0.0f;
     float KillFadeStartOpacity = 0.0f;
     bool bKillFeedbackActive = false;

@@ -43,6 +43,10 @@ void ATrainingPlayerController::BeginPlay()
 
 void ATrainingPlayerController::OnUnPossess()
 {
+    if (TrainingPlayerComponent)
+    {
+        TrainingPlayerComponent->CancelAreaTransition();
+    }
     if (UWorld* World = GetWorld())
     {
         if (UTrainingSessionSubsystem* Session = World->GetSubsystem<UTrainingSessionSubsystem>())
@@ -58,6 +62,7 @@ bool ATrainingPlayerController::CanProcessGameplayInput() const
     const ADominationPlayerState* ClassState = GetPlayerState<ADominationPlayerState>();
     return GetWorld() && GetWorld()->GetNetMode() == NM_Standalone
         && IsLocalController() && Super::CanProcessGameplayInput()
+        && (!TrainingPlayerComponent || !TrainingPlayerComponent->IsAreaTransitionBlockingInput())
         && IsValid(ClassState) && ClassState->HasSelectedCombatClass()
         && ClassState->GetParticipationState() == EPlayerParticipationState::Active
         && ClassState->IsAlive() && IsValid(GetPawn<AShooterCharacter>());
@@ -76,7 +81,10 @@ void ATrainingPlayerController::SetupInputComponent()
 
 void ATrainingPlayerController::Input_ToggleAugmentSelect()
 {
-    UIInitComponent->ToggleAugmentSelect();
+    if (!TrainingPlayerComponent || !TrainingPlayerComponent->IsAreaTransitionBlockingInput())
+    {
+        UIInitComponent->ToggleAugmentSelect();
+    }
 }
 
 float ATrainingPlayerController::GetCombatClassSelectionTimeRemaining() const
@@ -86,7 +94,8 @@ float ATrainingPlayerController::GetCombatClassSelectionTimeRemaining() const
 
 void ATrainingPlayerController::RequestTrainingClassSelection()
 {
-    if (!GetWorld() || GetWorld()->GetNetMode() != NM_Standalone || !IsLocalController())
+    if (!GetWorld() || GetWorld()->GetNetMode() != NM_Standalone || !IsLocalController()
+        || (TrainingPlayerComponent && TrainingPlayerComponent->IsAreaTransitionBlockingInput()))
     {
         return;
     }

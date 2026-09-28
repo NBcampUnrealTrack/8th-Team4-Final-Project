@@ -73,7 +73,6 @@ private:
     void BeginPeekReturn(double NowSeconds);
     void FinishPeek(double NowSeconds);
     void AbandonCover(double NowSeconds);
-    void DrawTacticalDebug() const;
 
     TWeakObjectPtr<UCQBTrainingAIComponent> ConfigRef;
     TWeakObjectPtr<UCQBTrainingAwarenessComponent> AwarenessRef;
