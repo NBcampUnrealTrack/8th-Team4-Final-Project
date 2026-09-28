@@ -83,6 +83,8 @@ void UDominationRespawnManager::Shutdown()
 	SpawnObjectivePointId = EDominationPointId::None;
 	NextSpawnCandidateIndices.Reset();
 	SpawnVolumes.Reset();
+	// 부활 대기 감소값 초기화
+	TeamRespawnDelayReduction.Reset();
 	BoundGameState.Reset();
 	ObjectiveManager.Reset();
 	Super::Shutdown();
@@ -111,7 +113,39 @@ void UDominationRespawnManager::ClearAllRespawnProtections()
 
 void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 {
-	ScheduleRespawnInternal(WaitingController, RespawnDelay);
+	// 소속 팀의 부활 대기 감소값(중계 비콘)을 반영한다.
+	// ScheduleRespawnInternal(WaitingController, RespawnDelay); // Removed: 팀별 감소값 적용으로 대체
+	const ABaseTeamPlayerState* PlayerState = IsValid(WaitingController)
+		? WaitingController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const float Reduction = IsValid(PlayerState)
+		? TeamRespawnDelayReduction.FindRef(PlayerState->GetTeam())
+		: 0.0f;
+	const float Delay = DominationRules::GetRespawnDelay(RespawnDelay, Reduction);
+	// 부활 대기 확인용 로그 (중계 비콘 검증)
+	UE_LOG(LogDominationRespawn, Log,
+		TEXT("Respawn scheduled for %s in %.1fs (base %.1fs, reduction %.1fs)."),
+		*GetNameSafe(WaitingController), Delay, RespawnDelay, Reduction);
+	ScheduleRespawnInternal(WaitingController, Delay);
+}
+
+// 중계 비콘 부활 대기 감소값 설정
+void UDominationRespawnManager::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (Team == EGameTeam::None)
+	{
+		return;
+	}
+
+	if (Seconds <= 0.0f)
+	{
+		TeamRespawnDelayReduction.Remove(Team);
+		return;
+	}
+
+	TeamRespawnDelayReduction.Add(Team, Seconds);
 }
 
 void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingController)
