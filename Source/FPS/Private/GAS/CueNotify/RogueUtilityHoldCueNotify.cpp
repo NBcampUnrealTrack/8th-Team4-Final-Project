@@ -127,6 +127,8 @@ void ARogueUtilityHoldCueNotify::AttachHeldMesh(AActor* Target, const FGameplayC
 	}
 
 	const FAugmentHeldVisual& Visual = Definition->HeldVisual;
+	UE_CLOG(Visual.Mesh.IsPending(), LogTemp, Warning,
+		TEXT("[UtilityHoldCue] %s 가 프리로드되지 않아 동기 로드합니다"), *Visual.Mesh.ToString());
 	UStaticMesh* Mesh = Visual.Mesh.LoadSynchronous();
 	if (!Mesh)
 	{

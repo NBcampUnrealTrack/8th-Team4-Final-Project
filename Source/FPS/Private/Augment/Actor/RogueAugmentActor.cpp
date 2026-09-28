@@ -167,6 +167,8 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		return;
 	}
 
+	UE_CLOG(SpawnOnDetonateClass.IsPending(), LogAugmentActor, Warning,
+		TEXT("[AugmentActor] %s 가 프리로드되지 않아 동기 로드합니다"), *SpawnOnDetonateClass.ToString());
 	UClass* FollowUpClass = SpawnOnDetonateClass.LoadSynchronous();
 	UWorld* World = GetWorld();
 	if (!ensureMsgf(FollowUpClass && World,

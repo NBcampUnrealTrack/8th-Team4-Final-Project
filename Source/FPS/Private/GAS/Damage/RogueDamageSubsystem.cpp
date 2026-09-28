@@ -236,7 +236,10 @@ bool URogueDamageSubsystem::ResolveDamageTarget(AActor* TargetActor, FRogueDamag
 
 UClass* URogueDamageSubsystem::ResolveDamageEffectClass()
 {
-	UClass* DamageGEClass = GetDefault<URogueGASSettings>()->DamageEffectClass.LoadSynchronous();
+	const TSoftClassPtr<UGameplayEffect>& DamageEffectClass = GetDefault<URogueGASSettings>()->DamageEffectClass;
+	UE_CLOG(DamageEffectClass.IsPending(), LogTemp, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *DamageEffectClass.ToString());
+	UClass* DamageGEClass = DamageEffectClass.LoadSynchronous();
 	ensureMsgf(DamageGEClass,
 		TEXT("[RogueDamage] DamageEffectClass 가 설정되지 않았습니다. "
 		     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
@@ -410,6 +413,8 @@ void URogueDamageSubsystem::ApplyInstantMagnitude(UAbilitySystemComponent& ASC,
                                                   const TSoftClassPtr<UGameplayEffect>& EffectClass,
                                                   const float Magnitude)
 {
+	UE_CLOG(EffectClass.IsPending(), LogTemp, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *EffectClass.ToString());
 	UClass* LoadedClass = EffectClass.LoadSynchronous();
 	if (!ensureMsgf(LoadedClass,
 		TEXT("[RogueDamage] 회복 캐리어 GE 가 설정되지 않았습니다. "

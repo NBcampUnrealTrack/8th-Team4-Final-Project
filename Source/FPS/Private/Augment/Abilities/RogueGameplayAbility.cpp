@@ -28,6 +28,8 @@ namespace
 	// 설정에 등록된 GE 애셋을 로드 (쿨타임/지속 시간)
 	UClass* LoadConfiguredEffectClass(const TSoftClassPtr<UGameplayEffect>& SoftClass, const TCHAR* FieldName)
 	{
+		UE_CLOG(SoftClass.IsPending(), LogAugmentAbility, Warning,
+			TEXT("[AugmentAbility] %s 가 프리로드되지 않아 동기 로드합니다"), *SoftClass.ToString());
 		UClass* Loaded = SoftClass.LoadSynchronous();
 		ensureMsgf(Loaded,
 			TEXT("[AugmentAbility] %s 를 로드하지 못했습니다. DefaultGame.ini 의 [/Script/FPS.RogueGASSettings] 등록과 ")
@@ -562,6 +564,8 @@ bool URogueGameplayAbility::LoadEffectClasses(const FAugmentGrantedAbility& Entr
 
 	for (int32 Index = 0; Index < Entry.EffectsToApply.Num(); ++Index)
 	{
+		UE_CLOG(Entry.EffectsToApply[Index].IsPending(), LogAugmentAbility, Warning,
+			TEXT("[AugmentAbility] %s 가 프리로드되지 않아 동기 로드합니다"), *Entry.EffectsToApply[Index].ToString());
 		UClass* EffectClass = Entry.EffectsToApply[Index].LoadSynchronous();
 		if (!ensureMsgf(EffectClass,
 			TEXT("[AugmentAbility] %s 의 EffectsToApply[%d] 를 로드하지 못했습니다"), *GetName(), Index))

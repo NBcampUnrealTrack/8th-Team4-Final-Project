@@ -16,6 +16,8 @@ namespace
 	UClass* LoadGrantedClass(const TSoftClassPtr<T>& SoftClass,
 		const UAugmentDefinition& Definition, const TCHAR* FieldName, int32 Index)
 	{
+		UE_CLOG(SoftClass.IsPending(), LogAugmentAssembler, Warning,
+			TEXT("[AugmentAssembler] %s 가 프리로드되지 않아 동기 로드합니다"), *SoftClass.ToString());
 		UClass* Loaded = SoftClass.LoadSynchronous();
 		ensureMsgf(Loaded, TEXT("[AugmentAssembler] %s 의 %s[%d] 를 로드하지 못했습니다"),
 			*Definition.GetName(), FieldName, Index);

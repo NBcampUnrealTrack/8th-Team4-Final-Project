@@ -17,7 +17,10 @@ const FWeaponDamageEntry* UWeaponDamageData::FindEntry(const FGameplayTag Weapon
 		return nullptr;
 	}
 
-	const UWeaponDamageData* DamageData = GetDefault<URogueGASSettings>()->WeaponDamageData.LoadSynchronous();
+	const TSoftObjectPtr<UWeaponDamageData>& DamageDataPtr = GetDefault<URogueGASSettings>()->WeaponDamageData;
+	UE_CLOG(DamageDataPtr.IsPending(), LogWeaponDamageData, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *DamageDataPtr.ToString());
+	const UWeaponDamageData* DamageData = DamageDataPtr.LoadSynchronous();
 	if (!DamageData)
 	{
 		UE_LOG(LogWeaponDamageData, Error,

@@ -28,6 +28,8 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 		return;
 	}
 
+	UE_CLOG(Entry.SpawnActorClass.IsPending(), LogSpawnActor, Warning,
+		TEXT("[SpawnActor] %s 가 프리로드되지 않아 동기 로드합니다"), *Entry.SpawnActorClass.ToString());
 	UClass* ActorClass = Entry.SpawnActorClass.LoadSynchronous();
 	if (!ensureMsgf(ActorClass,
 		TEXT("[SpawnActor] %s 를 부여한 계열의 SpawnActorClass 가 비어 있거나 로드에 실패했습니다"), *GetName()))
