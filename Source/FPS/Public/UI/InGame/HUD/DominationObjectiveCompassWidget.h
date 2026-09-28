@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
@@ -65,7 +65,6 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	UFUNCTION()
@@ -73,6 +72,7 @@ private:
 
 	void RefreshTargetCapturePoint();
 	void RefreshScreenPlacement();
+	void StartScreenPlacementUpdates();
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> TargetCapturePoint;
@@ -83,7 +83,13 @@ private:
 	float ArrowRotationDegrees = 0.0f;
 	float DistanceMeters = -1.0f;
 
+	FTimerHandle ScreenPlacementTimerHandle;
+
 	// 화면 가장자리에서 아이콘을 얼마나 안쪽으로 클램프할지 (px). 아이콘 크기의 절반 정도 권장.
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Compass")
 	float EdgePaddingPixels = 64.0f;
+
+	// UMG NativeTick 대신 필요한 화면 추적만 제한된 주기로 갱신한다.
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Compass", meta = (ClampMin = "0.016", ClampMax = "0.1"))
+	float ScreenPlacementUpdateInterval = 1.0f / 30.0f;
 };

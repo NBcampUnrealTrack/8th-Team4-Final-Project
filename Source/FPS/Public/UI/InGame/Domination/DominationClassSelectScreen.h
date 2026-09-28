@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
@@ -51,7 +51,6 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -65,6 +64,8 @@ private:
 
 	void HandleClassCardClicked(EDominationCombatClass RequestedClass);
 	void HandleClassCardHovered(EDominationCombatClass HoveredClass, bool bHovered);
+	void StartHoverUpdates();
+	void UpdateHoverAnimation();
 	void HandleLockInClicked();
 	void BuildIconCache();
 	void RebuildClassCards();
@@ -78,7 +79,7 @@ private:
 	void RefreshSelectionModePresentation();
 	void HandleAudioSettingsChanged();
 	void ApplyBGMSettings();
-	float ResolveBGMComponentVolume() const;
+	float ResolveBGMComponentVolume();
 	bool IsActiveClassReselectionMode() const;
 
 	// 팀원 슬롯 수명. PlayerArray를 주기적으로 훑어 자리를 맞춘다.
@@ -167,6 +168,10 @@ private:
 
 	FTimerHandle TimerTextHandle;
 	FTimerHandle ReconcileTimerHandle;
+	FTimerHandle HoverUpdateTimerHandle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection", meta = (ClampMin = "0.008", ClampMax = "0.05"))
+	float HoverUpdateInterval = 1.0f / 60.0f;
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;

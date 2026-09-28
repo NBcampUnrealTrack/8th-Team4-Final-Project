@@ -1,4 +1,4 @@
-#include "Training/TrainingPopUpTarget.h"
+﻿#include "Training/TrainingPopUpTarget.h"
 
 #include "AbilitySystemComponent.h"
 #include "Components/BoxComponent.h"
@@ -113,6 +113,7 @@ void ATrainingPopUpTarget::BeginPlay()
 
 void ATrainingPopUpTarget::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
     StopMotionUpdate();
     GetWorldTimerManager().ClearTimer(ResetTimer);
 

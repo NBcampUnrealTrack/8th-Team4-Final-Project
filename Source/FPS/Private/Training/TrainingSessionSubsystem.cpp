@@ -1,4 +1,4 @@
-#include "Training/TrainingSessionSubsystem.h"
+﻿#include "Training/TrainingSessionSubsystem.h"
 
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "GameFramework/PlayerState.h"
@@ -27,6 +27,13 @@ bool UTrainingSessionSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UTrainingSessionSubsystem::Deinitialize()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    CountdownTimer.Invalidate();
+    SpawnTimer.Invalidate();
+    DurationTimer.Invalidate();
     StopSession(true);
     Super::Deinitialize();
 }

@@ -1,4 +1,4 @@
-#include "UI/InGame/HUD/DominationObjectiveTransitionTimerWidget.h"
+﻿#include "UI/InGame/HUD/DominationObjectiveTransitionTimerWidget.h"
 
 #include "Engine/World.h"
 #include "GameMode/State/DominationGameState.h"
@@ -28,6 +28,11 @@ void UDominationObjectiveTransitionTimerWidget::NativeConstruct()
 
 void UDominationObjectiveTransitionTimerWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	if (ADominationGameState* DominationGameState = BoundGameState.Get())
 	{
 		DominationGameState->OnObjectiveFlowStateChanged.RemoveDynamic(

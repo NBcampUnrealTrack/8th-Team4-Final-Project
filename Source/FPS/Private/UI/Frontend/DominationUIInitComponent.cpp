@@ -1,4 +1,4 @@
-#include "UI/Frontend/DominationUIInitComponent.h"
+﻿#include "UI/Frontend/DominationUIInitComponent.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -48,8 +48,11 @@ void UDominationUIInitComponent::ResetWorldBinding()
             UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly before travel."));
             BeginMatchExitTransition(true);
         }
-        World->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
+        World->GetTimerManager().ClearAllTimersForObject(this);
     }
+	
+    MatchExitTransitionTimer.Invalidate();
+    SandstormWarningTimer.Invalidate();
 
     UnbindFromGameState();
     ClearSandstormWarning();

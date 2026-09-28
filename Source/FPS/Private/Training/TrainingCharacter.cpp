@@ -1,4 +1,4 @@
-#include "Training/TrainingCharacter.h"
+﻿#include "Training/TrainingCharacter.h"
 
 #include "AbilitySystemComponent.h"
 #include "Combat/CombatHitZoneDefinition.h"
@@ -209,6 +209,7 @@ void ATrainingCharacter::HandleTrainingDamageTaken(FGameplayTag, const FGameplay
 
 void ATrainingCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
     GetWorld()->GetTimerManager().ClearTimer(DissolveUpdateTimer);
     if (TrainingDamageTakenHandle.IsValid())
     {

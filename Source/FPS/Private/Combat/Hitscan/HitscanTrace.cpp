@@ -1,6 +1,7 @@
-#include "HitscanTrace.h"
+﻿#include "HitscanTrace.h"
 
 #include "AbilitySystemInterface.h"
+#include "Actor/DominationSpawnBarrier.h"
 #include "Combat/CombatHitZoneDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Helpers/HitscanMath.h"
@@ -9,13 +10,16 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
 #include "GAS/RogueTargetFilter.h"
 #include "Interfaces/RogueDamageableTarget.h"
 #include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Tags/GameplayTags.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 bool FHitscanTrace::IsPotentialDamageTargetActor(AActor* TargetActor,
 												 const FHitscanDamageTargetSettings& TargetSettings)
 {
@@ -351,6 +355,23 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 	QueryParams.bReturnPhysicalMaterial = true;
 	QueryParams.AddIgnoredActor(Request.InstigatorActor);
 	QueryParams.AddIgnoredActor(Request.CauserActor);
+	
+	if (const APawn* InstigatorPawn = Cast<APawn>(Request.InstigatorActor))
+	{
+		const ABaseTeamPlayerState* InstigatorPlayerState = InstigatorPawn->GetPlayerState<ABaseTeamPlayerState>();
+		const EGameTeam InstigatorTeam = IsValid(InstigatorPlayerState) ? InstigatorPlayerState->GetTeam() : EGameTeam::None;
+		if (InstigatorTeam != EGameTeam::None)
+		{
+			for (const TWeakObjectPtr<ADominationSpawnBarrier>& BarrierPtr : ADominationSpawnBarrier::GetActiveBarriers())
+			{
+				ADominationSpawnBarrier* Barrier = BarrierPtr.Get();
+				if (IsValid(Barrier) && Barrier->GetOwnerTeam() == InstigatorTeam)
+				{
+					QueryParams.AddIgnoredActor(Barrier);
+				}
+			}
+		}
+	}
 
 	for (int32 TraceIteration = 0; TraceIteration < Request.TraceSettings.MaximumTraceIterations; ++TraceIteration)
 	{
@@ -409,6 +430,7 @@ bool FHitscanTrace::ResolveImpacts(UWorld* World, const FHitscanShotRequest& Req
 								   TArray<FHitscanImpactSample>& OutImpactSamples,
 								   TArray<FHitscanImpactEffectData>& OutImpactEffects)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(Hitscan_ResolveImpacts);
 	OutImpactSamples.Reset();
 	OutImpactEffects.Reset();
 

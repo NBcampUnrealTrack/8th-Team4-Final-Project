@@ -1,4 +1,4 @@
-#include "Training/CQB/CQBTrainingCombatComponent.h"
+﻿#include "Training/CQB/CQBTrainingCombatComponent.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/OverlapResult.h"
@@ -24,6 +24,7 @@ void UCQBTrainingCombatComponent::ResetTactics()
     PeekPhase = EPeekPhase::None;
     SelectedCover = FCQBCoverPosition();
     RecentCoverLocations.Reset();
+    RecentCoverWriteIndex = 0;
     NearbyAllyLocations.Reset();
     NearbyCoverReservations.Reset();
     NextTacticalEvaluationTime = 0.0;
@@ -534,10 +535,15 @@ bool UCQBTrainingCombatComponent::BeginCoverMove(
     if (SelectedCover.bValid
         && FVector::DistSquared2D(SelectedCover.Location, Cover.Location) > FMath::Square(CQBTactics::CoverSeparation))
     {
-        RecentCoverLocations.Add(SelectedCover.Location);
-        if (RecentCoverLocations.Num() > CQBTactics::MaxRecentCovers)
+        const int32 MaxRecent = FMath::Max(1, CQBTactics::MaxRecentCovers);
+        if (RecentCoverLocations.Num() < MaxRecent)
         {
-            RecentCoverLocations.RemoveAt(0);
+            RecentCoverLocations.Add(SelectedCover.Location);
+        }
+        else
+        {
+            RecentCoverLocations[RecentCoverWriteIndex] = SelectedCover.Location;
+            RecentCoverWriteIndex = (RecentCoverWriteIndex + 1) % MaxRecent;
         }
     }
     SelectedCover = Cover;
