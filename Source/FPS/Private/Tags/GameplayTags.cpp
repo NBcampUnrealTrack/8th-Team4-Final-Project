@@ -75,6 +75,7 @@ namespace RogueTags
 
 	// 증강 효과 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_RecentlyDamaged, "State.Augment.RecentlyDamaged", "자가 치유: 최근 피격. 있는 동안 회복 정지");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_ShotHit, "State.Augment.ShotHit", "연속 명중 증강: 이번 사격이 명중. 발사 이벤트에서 제거");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
