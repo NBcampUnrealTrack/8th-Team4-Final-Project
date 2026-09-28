@@ -122,21 +122,17 @@ bool UAugmentInventoryComponent::SetOffers(
 	// 후보를 채우는 동안에는 선택 RPC를 비활성화
 	bOfferSelectionEnabled = false;
 
-	if (SlotCards.IsEmpty())
+	if (!ensureMsgf(!SlotCards.IsEmpty(),
+		TEXT("[AugmentInventory] %s: 빈 후보 목록을 받았습니다"), *GetNameSafe(Owner)))
 	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 빈 후보 목록을 받았습니다"), *GetNameSafe(Owner));
 		return false;
 	}
 
 	// 후보가 남아 있는 경우
-	if (!Offers.IsEmpty())
-	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: 지난 라운드 후보 %d개가 남아 있습니다. ")
-			TEXT("페이즈 종료 시 자동 선택 호출이 빠졌거나, 획득이 계속 실패했습니다"),
-			*GetNameSafe(Owner), Offers.Num());
-	}
+	ensureMsgf(Offers.IsEmpty(),
+		TEXT("[AugmentInventory] %s: 지난 라운드 후보 %d개가 남아 있습니다. ")
+		TEXT("페이즈 종료 시 자동 선택 호출이 빠졌거나, 획득이 계속 실패했습니다"),
+		*GetNameSafe(Owner), Offers.Num());
 
 	ClearRoundDraftState();
 
@@ -180,7 +176,13 @@ void UAugmentInventoryComponent::FillDraftEligibility(FAugmentDraftEligibility& 
 	for (const FAugmentInventoryEntry& Entry : Entries)
 	{
 		const UAugmentDefinition* Definition = ResolveDefinition(Entry.DefinitionId);
-		if (!Definition || Definition->AugmentCategory != EAugmentCategory::Active)
+		if (!ensureMsgf(Definition,
+			TEXT("[AugmentInventory] 보유 증강 %s 의 정의를 찾지 못했습니다"), *Entry.DefinitionId.ToString()))
+		{
+			continue;
+		}
+
+		if (Definition->AugmentCategory != EAugmentCategory::Active)
 		{
 			continue;
 		}
@@ -346,26 +348,39 @@ bool UAugmentInventoryComponent::SelectAndApplyOffer(const int32 OfferIndex, con
 	const FAugmentInventoryEntry Selected = Offers[OfferIndex];
 	UAugmentDefinition* Definition = ResolveDefinition(Selected.DefinitionId);
 
-	const bool bValid = IsValid(AbilitySystemComponent)
-		&& IsValid(Definition)
-		&& Definition->LineTag == Selected.LineTag
-		&& FindEntryIndexInLine(Selected.LineTag) == INDEX_NONE
-		&& CanApply(*Definition);
-
-	if (!bValid)
+	if (!ensureMsgf(IsValid(AbilitySystemComponent),
+		TEXT("[AugmentInventory] %s: ASC 가 없어 %s 를 부여할 수 없습니다"),
+		*GetNameSafe(Owner), *Selected.DefinitionId.ToString()))
 	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: %s 로 고른 %s 를 부여할 수 없어 요청을 거부했습니다"),
-			*GetNameSafe(Owner), Reason, *Selected.DefinitionId.ToString());
 		return false;
 	}
 
-	if (Definition->AugmentCategory == EAugmentCategory::Active
-		&& !Definition->GetActiveInputSlotTag().IsValid())
+	if (!ensureMsgf(IsValid(Definition) && Definition->LineTag == Selected.LineTag,
+		TEXT("[AugmentInventory] %s: %s 의 정의가 없거나 계열이 일치하지 않습니다"),
+		*GetNameSafe(Owner), *Selected.DefinitionId.ToString()))
 	{
-		UE_LOG(LogAugmentInventory, Error,
-			TEXT("[AugmentInventory] %s: %s 에 입력 슬롯 태그가 없어 부여하지 않습니다"),
-			*GetNameSafe(Owner), *Definition->LineTag.ToString());
+		return false;
+	}
+
+	if (!ensureMsgf(FindEntryIndexInLine(Selected.LineTag) == INDEX_NONE,
+		TEXT("[AugmentInventory] %s: 이미 보유한 계열 %s 가 후보로 제시됐습니다"),
+		*GetNameSafe(Owner), *Selected.LineTag.ToString()))
+	{
+		return false;
+	}
+
+	if (!ensureMsgf(CanApply(*Definition),
+		TEXT("[AugmentInventory] %s: %s 의 부여 데이터를 조립하지 못했습니다"),
+		*GetNameSafe(Owner), *Selected.DefinitionId.ToString()))
+	{
+		return false;
+	}
+
+	if (!ensureMsgf(Definition->AugmentCategory != EAugmentCategory::Active
+		|| Definition->GetActiveInputSlotTag().IsValid(),
+		TEXT("[AugmentInventory] %s: %s 에 입력 슬롯 태그가 없어 부여하지 않습니다"),
+		*GetNameSafe(Owner), *Definition->LineTag.ToString()))
+	{
 		return false;
 	}
 
@@ -442,7 +457,13 @@ const FAugmentPendingReward* UAugmentInventoryComponent::PeekPendingReward() con
 
 void UAugmentInventoryComponent::PopPendingReward()
 {
-	if (!HasServerAuthority(TEXT("보상 소진")) || PendingRewards.IsEmpty())
+	if (!HasServerAuthority(TEXT("보상 소진")))
+	{
+		return;
+	}
+
+	if (!ensureMsgf(!PendingRewards.IsEmpty(),
+		TEXT("[AugmentInventory] %s: 빈 보상 대기열에서 꺼내려 했습니다"), *GetNameSafe(GetOwner())))
 	{
 		return;
 	}
@@ -613,12 +634,10 @@ void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 
 bool UAugmentInventoryComponent::ApplyLineAugment(UAugmentDefinition& Definition)
 {
-	if (!IsValid(AbilitySystemComponent) || !Definition.LineTag.IsValid())
+	if (!ensure(IsValid(AbilitySystemComponent) && Definition.LineTag.IsValid()))
 	{
 		return false;
 	}
-
-	RemoveLineAugment(Definition.LineTag);
 
 	FAugmentResolvedGrant Resolved;
 	FAugmentGrantHandles NewHandles;
@@ -646,7 +665,8 @@ void UAugmentInventoryComponent::RebuildConditionalRuleCache()
 	for (const FAugmentInventoryEntry& Entry : Entries)
 	{
 		const UAugmentDefinition* Definition = ResolveDefinition(Entry.DefinitionId);
-		if (!Definition)
+		if (!ensureMsgf(Definition,
+			TEXT("[AugmentInventory] 보유 증강 %s 의 정의를 찾지 못했습니다"), *Entry.DefinitionId.ToString()))
 		{
 			continue;
 		}

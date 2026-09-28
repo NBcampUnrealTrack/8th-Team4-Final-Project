@@ -14,10 +14,9 @@ void UAugmentRegistrySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Super::Initialize(Collection);
 
 	// AssetManager 가 없으면 PrimaryAssetType 스캔이 불가능
-	if (!UAssetManager::IsInitialized())
+	if (!ensureMsgf(UAssetManager::IsInitialized(),
+		TEXT("[AugmentRegistry] AssetManager 가 없습니다. 증강 카탈로그를 로드하지 못했습니다")))
 	{
-		UE_LOG(LogAugmentRegistry, Error,
-			TEXT("[AugmentRegistry] AssetManager 가 없습니다. 증강 카탈로그를 로드하지 못했습니다"));
 		return;
 	}
 
@@ -94,12 +93,11 @@ void UAugmentRegistrySubsystem::BuildIndex()
 	TArray<FPrimaryAssetId> Ids;
 	Manager.GetPrimaryAssetIdList(UAugmentDefinition::AugmentAssetType, Ids);
 
-	if (Ids.IsEmpty())
+	// ini 의 PrimaryAssetTypesToScan 등록이 빠졌거나 스캔 경로가 다른 경우
+	if (!ensureMsgf(!Ids.IsEmpty(),
+		TEXT("[AugmentRegistry] '%s' 타입 애셋이 0건입니다. DefaultGame.ini 의 PrimaryAssetTypesToScan 등록과 스캔 경로를 확인하세요"),
+		*UAugmentDefinition::AugmentAssetType.ToString()))
 	{
-		// ini 의 PrimaryAssetTypesToScan 등록이 빠졌거나 스캔 경로가 다른 경우
-		UE_LOG(LogAugmentRegistry, Error,
-			TEXT("[AugmentRegistry] '%s' 타입 애셋이 0건입니다. DefaultGame.ini 의 PrimaryAssetTypesToScan 등록과 스캔 경로를 확인하세요"),
-			*UAugmentDefinition::AugmentAssetType.ToString());
 		return;
 	}
 
@@ -109,25 +107,23 @@ void UAugmentRegistrySubsystem::BuildIndex()
 	for (const FPrimaryAssetId& Id : Ids)
 	{
 		UAugmentDefinition* Definition = Manager.GetPrimaryAssetObject<UAugmentDefinition>(Id);
-		if (!Definition)
+		if (!ensureMsgf(Definition, TEXT("[AugmentRegistry] %s 를 로드하지 못했습니다"), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Warning, TEXT("[AugmentRegistry] %s 를 로드하지 못했습니다"), *Id.ToString());
 			continue;
 		}
 
 		// 증강 계열이 없는 경우
-		if (!Definition->LineTag.IsValid())
+		if (!ensureMsgf(Definition->LineTag.IsValid(),
+			TEXT("[AugmentRegistry] %s 에 LineTag 가 없어 제외합니다"), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] %s 에 LineTag 가 없어 제외합니다"), *Id.ToString());
 			continue;
 		}
 
-		if (const FPrimaryAssetId* Owner = LineOwners.Find(Definition->LineTag))
+		const FPrimaryAssetId* Owner = LineOwners.Find(Definition->LineTag);
+		if (!ensureMsgf(!Owner,
+			TEXT("[AugmentRegistry] 계열 '%s' 를 %s 와 %s 가 함께 쓰고 있습니다. %s 를 제외합니다"),
+			*Definition->LineTag.ToString(), *Owner->ToString(), *Id.ToString(), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] 계열 '%s' 를 %s 와 %s 가 함께 쓰고 있습니다. %s 를 제외합니다"),
-				*Definition->LineTag.ToString(), *Owner->ToString(), *Id.ToString(), *Id.ToString());
 			continue;
 		}
 
