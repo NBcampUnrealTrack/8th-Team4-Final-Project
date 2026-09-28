@@ -4,6 +4,8 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "GAS/Damage/RogueGameplayEffectContext.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueTargetFilter.h"
@@ -12,6 +14,43 @@
 #include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
+
+// 피격마다 쓰는 설정 애셋을 맵 로딩 중에 미리 로드
+void URogueDamageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+
+	TArray<FSoftObjectPath> Paths;
+	for (const FSoftObjectPath& Path : {
+		Settings->DamageEffectClass.ToSoftObjectPath(),
+		Settings->HealEffectClass.ToSoftObjectPath(),
+		Settings->ShieldHealEffectClass.ToSoftObjectPath(),
+		Settings->WeaponDamageData.ToSoftObjectPath() })
+	{
+		if (!Path.IsNull())
+		{
+			Paths.Add(Path);
+		}
+	}
+
+	if (!Paths.IsEmpty())
+	{
+		PreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths);
+	}
+}
+
+void URogueDamageSubsystem::Deinitialize()
+{
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
+
+	Super::Deinitialize();
+}
 
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
