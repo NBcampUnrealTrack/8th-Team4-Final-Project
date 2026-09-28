@@ -1,4 +1,5 @@
-#include "Audio/DominationSystemAnnouncer.h"
+﻿#include "Audio/DominationSystemAnnouncer.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Components/AudioComponent.h"
 #include "GameMode/State/DominationGameState.h"
@@ -143,6 +144,7 @@ void ADominationSystemAnnouncer::HandleMatchFlowStateChanged()
 
 void ADominationSystemAnnouncer::Tick(const float DeltaSeconds)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(DominationSystemAnnouncer_Tick);
 	Super::Tick(DeltaSeconds);
 	UpdateSandstormAudio();
 }

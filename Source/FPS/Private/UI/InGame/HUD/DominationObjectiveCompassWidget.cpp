@@ -1,4 +1,4 @@
-#include "UI/InGame/HUD/DominationObjectiveCompassWidget.h"
+﻿#include "UI/InGame/HUD/DominationObjectiveCompassWidget.h"
 
 #include "Actor/DominationCapturePoint.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/DominationGameState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "TimerManager.h"
 
 void UDominationObjectiveCompassWidget::NativeConstruct()
 {
@@ -28,10 +29,18 @@ void UDominationObjectiveCompassWidget::NativeConstruct()
 	BoundGameState = DominationGameState;
 	DominationGameState->OnActivePointChanged.AddUniqueDynamic(this, &ThisClass::HandleActivePointChanged);
 	RefreshTargetCapturePoint();
+	RefreshScreenPlacement();
+	StartScreenPlacementUpdates();
 }
 
 void UDominationObjectiveCompassWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+	ScreenPlacementTimerHandle.Invalidate();
+
 	if (ADominationGameState* DominationGameState = BoundGameState.Get())
 	{
 		DominationGameState->OnActivePointChanged.RemoveDynamic(this, &ThisClass::HandleActivePointChanged);
@@ -42,11 +51,20 @@ void UDominationObjectiveCompassWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UDominationObjectiveCompassWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UDominationObjectiveCompassWidget::StartScreenPlacementUpdates()
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
 
-	RefreshScreenPlacement();
+	World->GetTimerManager().SetTimer(
+		ScreenPlacementTimerHandle,
+		this,
+		&ThisClass::RefreshScreenPlacement,
+		FMath::Max(0.016f, ScreenPlacementUpdateInterval),
+		true);
 }
 
 EDominationPointId UDominationObjectiveCompassWidget::GetTargetPointId() const

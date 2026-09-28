@@ -1,4 +1,4 @@
-#include "GameMode/TrainingGameMode.h"
+﻿#include "GameMode/TrainingGameMode.h"
 
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -362,6 +362,7 @@ void ATrainingGameMode::Logout(AController* Exiting)
 
 void ATrainingGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
     bConfigurationReady = false;
     ReleaseTrainingPlayer();
     RespawnProtection->Shutdown();

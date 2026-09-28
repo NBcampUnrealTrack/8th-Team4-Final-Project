@@ -1,4 +1,4 @@
-#include "Components/DominationSandstormComponent.h"
+﻿#include "Components/DominationSandstormComponent.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Components/PostProcessComponent.h"
@@ -15,6 +15,7 @@
 #include "NiagaraSystem.h"
 #include "TimerManager.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 DEFINE_LOG_CATEGORY_STATIC(LogDominationSandstormVisuals, Log, All);
 
 UDominationSandstormComponent::UDominationSandstormComponent()
@@ -53,6 +54,10 @@ void UDominationSandstormComponent::InitializeForWorld()
 
 void UDominationSandstormComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
 	FWorldDelegates::LevelAddedToWorld.RemoveAll(this);
 	FWorldDelegates::LevelRemovedFromWorld.RemoveAll(this);
 	ResetWorldBinding();
@@ -84,6 +89,7 @@ void UDominationSandstormComponent::ResetWorldBinding()
 
 void UDominationSandstormComponent::TickComponent(const float DeltaTime, const ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(DominationSandstorm_Tick);
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	UpdatePresentation();
 }

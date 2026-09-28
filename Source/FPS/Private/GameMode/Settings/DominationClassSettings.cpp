@@ -1,4 +1,4 @@
-#include "GameMode/Settings/DominationClassSettings.h"
+﻿#include "GameMode/Settings/DominationClassSettings.h"
 
 #include "Character/ShooterCharacter.h"
 #include "Tags/GameplayTags.h"
@@ -92,5 +92,7 @@ UClass* UDominationClassSettings::ResolvePawnClass(
 		return nullptr;
 	}
 
+	// Domination에서는 UDominationPreloadSubsystem이 이동 중 미리 읽으므로 즉시 반환된다.
+	// Training은 클래스 선택/초기 스폰 준비 구간에서만 이 경로를 사용하므로 startup load로 허용한다.
 	return Definition->PawnClass.LoadSynchronous();
 }

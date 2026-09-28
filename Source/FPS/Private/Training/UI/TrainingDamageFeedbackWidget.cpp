@@ -1,4 +1,4 @@
-#include "Training/UI/TrainingDamageFeedbackWidget.h"
+﻿#include "Training/UI/TrainingDamageFeedbackWidget.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
@@ -40,11 +40,20 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
     const int32 Limit = FMath::Clamp(MaxVisibleDamageNumbers, 1, 64);
     while (DamageNumbers.Num() >= Limit)
     {
-        if (UTextBlock* OldText = DamageNumbers[0].Text.Get())
+        int32 OldestIndex = 0;
+        for (int32 Index = 1; Index < DamageNumbers.Num(); ++Index)
+        {
+            if (DamageNumbers[Index].SpawnSeconds < DamageNumbers[OldestIndex].SpawnSeconds)
+            {
+                OldestIndex = Index;
+            }
+        }
+
+        if (UTextBlock* OldText = DamageNumbers[OldestIndex].Text.Get())
         {
             OldText->RemoveFromParent();
         }
-        DamageNumbers.RemoveAt(0, 1, EAllowShrinking::No);
+        DamageNumbers.RemoveAtSwap(OldestIndex, 1, EAllowShrinking::No);
     }
 
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
@@ -135,7 +144,7 @@ void UTrainingDamageFeedbackWidget::UpdateDamageNumbers()
             {
                 DamageText->RemoveFromParent();
             }
-            DamageNumbers.RemoveAt(Index, 1, EAllowShrinking::No);
+            DamageNumbers.RemoveAtSwap(Index, 1, EAllowShrinking::No);
             continue;
         }
 
@@ -191,6 +200,11 @@ void UTrainingDamageFeedbackWidget::ClearDamageNumbers()
 
 void UTrainingDamageFeedbackWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    AnimationTimer.Invalidate();
     ClearDamageNumbers();
     Super::NativeDestruct();
 }

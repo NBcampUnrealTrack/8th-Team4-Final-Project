@@ -1,4 +1,4 @@
-#include "GameMode/BombGameMode.h"
+﻿#include "GameMode/BombGameMode.h"
 
 #include "EngineUtils.h"
 #include "GameMode/State/BombGameState.h"
@@ -93,6 +93,7 @@ void ABombGameMode::InitGame(const FString& MapName, const FString& Options, FSt
 
 void ABombGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	GetWorldTimerManager().ClearTimer(EliminationResolutionTimerHandle);
 	if (UBombObjectiveManager* ObjectiveManager = GetBombObjectiveManager())
 	{

@@ -1,4 +1,4 @@
-#include "HitscanTrace.h"
+﻿#include "HitscanTrace.h"
 
 #include "AbilitySystemInterface.h"
 #include "Combat/CombatHitZoneDefinition.h"
@@ -16,6 +16,7 @@
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Tags/GameplayTags.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 bool FHitscanTrace::IsPotentialDamageTargetActor(AActor* TargetActor,
 												 const FHitscanDamageTargetSettings& TargetSettings)
 {
@@ -409,6 +410,7 @@ bool FHitscanTrace::ResolveImpacts(UWorld* World, const FHitscanShotRequest& Req
 								   TArray<FHitscanImpactSample>& OutImpactSamples,
 								   TArray<FHitscanImpactEffectData>& OutImpactEffects)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(Hitscan_ResolveImpacts);
 	OutImpactSamples.Reset();
 	OutImpactEffects.Reset();
 
