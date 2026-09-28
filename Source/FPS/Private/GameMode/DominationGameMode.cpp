@@ -1,4 +1,4 @@
-#include "GameMode/DominationGameMode.h"
+﻿#include "GameMode/DominationGameMode.h"
 
 #include "Augment/AugmentDraftProfile.h"
 #include "Audio/DominationSystemAnnouncer.h"
@@ -137,6 +137,7 @@ void ADominationGameMode::BeginPlay()
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
 	SandstormManager->Shutdown();
 

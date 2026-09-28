@@ -1,4 +1,4 @@
-#include "GameMode/Manager/PlayerRespawnProtection.h"
+﻿#include "GameMode/Manager/PlayerRespawnProtection.h"
 
 #include "Abilities/GameplayAbilityTypes.h"
 #include "AbilitySystemComponent.h"
@@ -15,6 +15,10 @@ void UPlayerRespawnProtection::Initialize(UWorld* InWorld, const float InDuratio
 
 void UPlayerRespawnProtection::Shutdown()
 {
+    if (FTimerManager* TimerManager = GetTimerManager())
+    {
+        TimerManager->ClearAllTimersForObject(this);
+    }
     ClearAll();
     BoundWorld.Reset();
 }

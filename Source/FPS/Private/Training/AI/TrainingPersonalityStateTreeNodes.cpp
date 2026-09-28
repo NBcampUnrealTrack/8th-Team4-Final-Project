@@ -1,4 +1,5 @@
-#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
+﻿#include "Training/AI/TrainingPersonalityStateTreeNodes.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
@@ -146,6 +147,7 @@ EStateTreeRunStatus FTrainingBotActionTask::EnterState(FStateTreeExecutionContex
 
 EStateTreeRunStatus FTrainingBotActionTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TrainingBotActionTask_Tick);
     FInstanceDataType& Data = Context.GetInstanceData(*this);
     ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(Data.AIController);
     if (!TrainingPersonalityTask::IsUsable(TrainingController))

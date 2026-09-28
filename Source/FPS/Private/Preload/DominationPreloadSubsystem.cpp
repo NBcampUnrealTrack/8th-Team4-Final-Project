@@ -1,4 +1,4 @@
-#include "Preload/DominationPreloadSubsystem.h"
+﻿#include "Preload/DominationPreloadSubsystem.h"
 
 #include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
@@ -93,7 +93,7 @@ void UDominationPreloadSubsystem::HandlePostLoadMapWithWorld(UWorld* LoadedWorld
 
 void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorld)
 {
-	if (PawnPreloadHandle.IsValid())
+	if (AssetPreloadHandle.IsValid())
 	{
 		return;
 	}
@@ -105,16 +105,25 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 		return;
 	}
 
-	TArray<FSoftObjectPath> PawnPaths;
+	TArray<FSoftObjectPath> AssetPaths;
+	auto AddAssetPath = [&AssetPaths](const FSoftObjectPath& Path)
+	{
+		if (Path.IsValid())
+		{
+			AssetPaths.AddUnique(Path);
+		}
+	};
+
 	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
 	{
-		if (!Definition.PawnClass.IsNull())
-		{
-			PawnPaths.AddUnique(Definition.PawnClass.ToSoftObjectPath());
-		}
+		AddAssetPath(Definition.PawnClass.ToSoftObjectPath());
+		AddAssetPath(Definition.Icon.ToSoftObjectPath());
+		AddAssetPath(Definition.Portrait.ToSoftObjectPath());
+		AddAssetPath(Definition.WeaponArt.ToSoftObjectPath());
+		AddAssetPath(Definition.SelectionVoice.ToSoftObjectPath());
 	}
 
-	if (PawnPaths.IsEmpty())
+	if (AssetPaths.IsEmpty())
 	{
 		return;
 	}
@@ -125,7 +134,7 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 		TEXT("[Preload] Start World=%s NetMode=%s Assets=%d"),
 		*GetNameSafe(ContextWorld),
 		IsValid(ContextWorld) ? LexNetMode(ContextWorld->GetNetMode()) : TEXT("None"),
-		PawnPaths.Num());
+		AssetPaths.Num());
 
 	// 완료 콜백보다 반드시 먼저 열린다
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
@@ -133,8 +142,8 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 		LoadingScreenSubsystem->BeginTravelProgress();
 	}
 
-	PawnPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-		PawnPaths,
+	AssetPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		AssetPaths,
 		FStreamableDelegate::CreateWeakLambda(this, [this]()
 		{
 			UE_LOG(LogDominationPreload, Log,
@@ -151,17 +160,17 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 
 void UDominationPreloadSubsystem::ReleasePreload()
 {
-	if (!PawnPreloadHandle.IsValid())
+	if (!AssetPreloadHandle.IsValid())
 	{
 		return;
 	}
 
 	UE_LOG(LogDominationPreload, Log,
 		TEXT("[Preload] Release Completed=%d"),
-		PawnPreloadHandle->HasLoadCompleted());
+		AssetPreloadHandle->HasLoadCompleted());
 
 	// 핸들을 놓으면 완료 콜백도 사라진다. 완료가 아니므로 게이트만 푼다
-	if (!PawnPreloadHandle->HasLoadCompleted())
+	if (!AssetPreloadHandle->HasLoadCompleted())
 	{
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 		{
@@ -169,7 +178,7 @@ void UDominationPreloadSubsystem::ReleasePreload()
 		}
 	}
 
-	PawnPreloadHandle.Reset();
+	AssetPreloadHandle.Reset();
 }
 
 bool UDominationPreloadSubsystem::IsOwnedByThisGameInstance(const UWorld* World) const

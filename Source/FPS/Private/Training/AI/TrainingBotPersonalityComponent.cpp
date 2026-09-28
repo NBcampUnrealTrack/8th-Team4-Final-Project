@@ -1,4 +1,4 @@
-#include "Training/AI/TrainingBotPersonalityComponent.h"
+﻿#include "Training/AI/TrainingBotPersonalityComponent.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -62,6 +62,10 @@ void UTrainingBotPersonalityComponent::EndTraining()
 
 void UTrainingBotPersonalityComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
     EndTraining();
     Super::EndPlay(EndPlayReason);
 }

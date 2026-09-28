@@ -1,4 +1,4 @@
-#include "Training/UI/TrainingSessionHUDWidget.h"
+﻿#include "Training/UI/TrainingSessionHUDWidget.h"
 
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
@@ -283,6 +283,12 @@ void UTrainingSessionHUDWidget::StopSession()
 
 void UTrainingSessionHUDWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    ClockTimer.Invalidate();
+    KillFeedbackTimer.Invalidate();
     StopSession();
     Super::NativeDestruct();
 }

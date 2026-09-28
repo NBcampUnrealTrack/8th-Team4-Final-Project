@@ -1,4 +1,4 @@
-#include "Training/CQB/CQBTrainingCombatComponent.h"
+﻿#include "Training/CQB/CQBTrainingCombatComponent.h"
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"

@@ -127,6 +127,7 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId, const float
 		}
 	}
 
+	ensureMsgf(MaxQueuedAnnouncements > 0, TEXT("SystemAnnouncer MaxQueuedAnnouncements must be > 0"));
 	if (PendingAnnouncements.Num() >= FMath::Clamp(MaxQueuedAnnouncements, 1, 32))
 	{
 		int32 LowestPriorityIndex = 0;
@@ -143,7 +144,7 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId, const float
 		{
 			return;
 		}
-		PendingAnnouncements.RemoveAt(LowestPriorityIndex);
+		PendingAnnouncements.RemoveAtSwap(LowestPriorityIndex, 1, EAllowShrinking::No);
 	}
 
 	FQueuedAnnouncement Entry;
@@ -206,7 +207,7 @@ void ASystemAnnouncer::PlayNextAnnouncement()
 		}
 
 		const FName NextId = PendingAnnouncements[NextIndex].Id;
-		PendingAnnouncements.RemoveAt(NextIndex);
+		PendingAnnouncements.RemoveAtSwap(NextIndex, 1, EAllowShrinking::No);
 		if (TryPlayAnnouncement(NextId, Announcements.FindChecked(NextId)))
 		{
 			return;

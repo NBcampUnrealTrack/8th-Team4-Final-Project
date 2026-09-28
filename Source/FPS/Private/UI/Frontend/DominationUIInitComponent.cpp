@@ -1,4 +1,4 @@
-#include "UI/Frontend/DominationUIInitComponent.h"
+﻿#include "UI/Frontend/DominationUIInitComponent.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -43,8 +43,10 @@ void UDominationUIInitComponent::ResetWorldBinding()
 {
     if (UWorld* World = GetWorld())
     {
-        World->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
+        World->GetTimerManager().ClearAllTimersForObject(this);
     }
+    MatchExitTransitionTimer.Invalidate();
+    SandstormWarningTimer.Invalidate();
 
     UnbindFromGameState();
     ClearSandstormWarning();
