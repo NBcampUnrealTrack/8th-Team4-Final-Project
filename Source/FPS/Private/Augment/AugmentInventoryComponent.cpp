@@ -275,7 +275,7 @@ void UAugmentInventoryComponent::ServerRerollOffer_Implementation(const int32 Of
 
 	// 예비에서 다음 장을 꺼내 슬롯을 교체
 	const FAugmentInventoryEntry NewOffer = Reserve[0];
-	Reserve.RemoveAt(0);
+	Reserve.RemoveAtSwap(0, 1, EAllowShrinking::No);
 	SlotRerollsRemaining[OfferIndex] = Reserve.Num();
 
 	UE_LOG(LogAugmentInventory, Log,
@@ -437,7 +437,7 @@ void UAugmentInventoryComponent::PushPendingReward(const FAugmentPendingReward& 
 
 const FAugmentPendingReward* UAugmentInventoryComponent::PeekPendingReward() const
 {
-	return PendingRewards.IsEmpty() ? nullptr : &PendingRewards[0];
+	return PendingRewards.IsEmpty() ? nullptr : &PendingRewards.First();
 }
 
 void UAugmentInventoryComponent::PopPendingReward()
@@ -447,7 +447,7 @@ void UAugmentInventoryComponent::PopPendingReward()
 		return;
 	}
 
-	PendingRewards.RemoveAt(0);
+	PendingRewards.PopFront();
 }
 
 void UAugmentInventoryComponent::StartSelectionTimeout(const float Seconds)
@@ -607,7 +607,7 @@ void UAugmentInventoryComponent::RemoveLineAugment(const FGameplayTag& LineTag)
 	const int32 EntryIndex = FindEntryIndexInLine(LineTag);
 	if (EntryIndex != INDEX_NONE)
 	{
-		Entries.RemoveAt(EntryIndex);
+		Entries.RemoveAtSwap(EntryIndex, 1, EAllowShrinking::No);
 	}
 }
 

@@ -316,7 +316,7 @@ FAugmentOfferResult RogueAugmentDraft::PickOffers(
 			const int32 Picked = Stream.RandRange(0, Bucket.Num() - 1);
 
 			Result.SlotCards[Filled++].Add(Bucket[Picked]);
-			Bucket.RemoveAt(Picked);
+			Bucket.RemoveAtSwap(Picked, 1, EAllowShrinking::No);
 		}
 	}
 
