@@ -60,6 +60,13 @@ void ARogueAugmentActor::BeginPlay()
 	}
 }
 
+void ARogueAugmentActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void ARogueAugmentActor::StartFuse()
 {
 	if (!HasAuthority())

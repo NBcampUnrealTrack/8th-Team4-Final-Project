@@ -31,6 +31,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 페이로드의 적용 반경(cm), 범위는 클라이언트에게도 보여야하므로 복제
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Rogue|Augment|Actor")
