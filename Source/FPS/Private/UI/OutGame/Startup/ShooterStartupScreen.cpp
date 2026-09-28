@@ -2,6 +2,7 @@
 #include "UI/OutGame/Startup/ShooterStartupScreen.h"
 
 #include "Animation/WidgetAnimation.h"
+#include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
@@ -71,7 +72,7 @@ void UShooterStartupScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	Btn_Login->OnClicked().AddUObject(this, &ThisClass::HandleLoginClicked);
+	Btn_Login->OnClicked.AddDynamic(this, &ThisClass::HandleLoginClicked);
 	Btn_Retry->OnClicked().AddUObject(this, &ThisClass::HandleRetryClicked);
 	Btn_Quit->OnClicked().AddUObject(this, &ThisClass::HandleQuitClicked);
 

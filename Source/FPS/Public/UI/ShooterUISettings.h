@@ -8,6 +8,7 @@
 #include "GameMode/Types/TeamTypes.h"
 #include "ShooterUISettings.generated.h"
 
+class UScreenTransitionWidget;
 class UShooterMatchResultScreen;
 class USoundBase;
 class UTexture2D;
@@ -82,4 +83,8 @@ public:
 	// 로딩 화면 하단 한 줄. 세션당 하나를 뽑고 회전하지 않는다
 	UPROPERTY(Config, EditAnywhere, Category = "Loading")
 	TArray<FText> LoadingTips;
+
+	// travel 을 넘어 화면을 덮는 전환 위젯
+	UPROPERTY(Config, EditAnywhere, Category = "Transition")
+	TSoftClassPtr<UScreenTransitionWidget> ScreenTransitionWidgetClass;
 };

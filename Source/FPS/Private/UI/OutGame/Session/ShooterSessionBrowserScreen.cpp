@@ -10,6 +10,7 @@
 #include "UI/Foundation/ShooterButtonBase.h"
 #include "UI/OutGame/Session/ShooterRoomListEntry.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterSessionBrowser, Log, All);
 
@@ -115,7 +116,23 @@ void UShooterSessionBrowserScreen::HandleRoomClicked(const int32 SessionIndex)
 	}
 
 	SetBusy(true, NSLOCTEXT("ShooterLobby", "JoiningRoom", "참가하는 중"));
-	Session->JoinRoomByIndex(SessionIndex);
+
+	// 도착 후 빈 로비 월드가 안 보이도록 다 덮은 뒤에 요청한다
+	const FSimpleDelegate Request = FSimpleDelegate::CreateWeakLambda(
+		Session,
+		[Session, SessionIndex]()
+		{
+			Session->JoinRoomByIndex(SessionIndex);
+		});
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr;
+	if (!Transition || !Transition->BeginTransition(Request))
+	{
+		Request.ExecuteIfBound();
+	}
 }
 
 void UShooterSessionBrowserScreen::HandleFindRoomsComplete(const TArray<FRoomInfo>& Rooms, const bool bWasSuccessful)
@@ -137,6 +154,15 @@ void UShooterSessionBrowserScreen::HandleJoinRoomComplete(const bool bWasSuccess
 	if (bWasSuccessful)
 	{
 		return;
+	}
+
+	// travel 전 실패. travel 뒤 실패는 Frontend 도착이 걷는다
+	UGameInstance* GameInstance = GetGameInstance();
+	if (UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr)
+	{
+		Transition->EndTransition();
 	}
 
 	SetBusy(false, NSLOCTEXT("ShooterLobby", "JoinRoomFailed", "참가하지 못했습니다"));

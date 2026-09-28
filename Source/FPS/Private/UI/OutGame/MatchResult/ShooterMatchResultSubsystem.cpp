@@ -7,9 +7,12 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/UITags.h"
+#include "UI/Layout/ShooterPrimaryGameLayout.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultScreen.h"
 #include "UI/ShooterUISettings.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
+#include "Widgets/CommonActivatableWidgetContainer.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterMatchResult, Log, All);
 
@@ -147,7 +150,7 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 	UWorld* World = PendingWorld.Get();
 	if (!IsValid(World))
 	{
-		ClearEvaluateTimer();
+		FinishEvaluation();
 		return;
 	}
 
@@ -169,14 +172,15 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 		}
 
 		Snapshot.Reset();
-		ClearEvaluateTimer();
+		FinishEvaluation();
 		return;
 	}
-	
+
 	// 로비 입장 시
 	ALobbyGameState* LobbyGS = Cast<ALobbyGameState>(GameState);
 	if (LobbyGS)
 	{
+		// 결과가 없으면 덮개는 OutGame UI 초기화가 방 화면을 올린 뒤 걷는다
 		if (!Snapshot.bValid)
 		{
 			ClearEvaluateTimer();
@@ -204,16 +208,28 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 			}
 
 			Snapshot.Reset();
-			ClearEvaluateTimer();
+			FinishEvaluation();
 			return;
 		}
+
+		const bool bAlreadyShown = IsValid(ActiveWidget);
 
 		if (!PresentResultWidget(LocalPC))
 		{
 			Snapshot.Reset();
+			FinishEvaluation();
+			return;
 		}
 
+		if (bAlreadyShown)
+		{
+			FinishEvaluation();
+			return;
+		}
+
+		// 결과 화면의 스택 인트로가 끝난 뒤에 덮개를 걷는다
 		ClearEvaluateTimer();
+		EndScreenTransitionAfterResultDisplayed();
 		return;
 	}
 
@@ -222,13 +238,13 @@ void UShooterMatchResultSubsystem::EvaluateWorld()
 	if (MatchGS)
 	{
 		Snapshot.Reset();
-		ClearEvaluateTimer();
+		FinishEvaluation();
 		return;
 	}
 
 	// 로비도 매치도 아닌 월드. 스냅샷은 캡처 직후 한 번의 월드 전환에만 유효하다
 	Snapshot.Reset();
-	ClearEvaluateTimer();
+	FinishEvaluation();
 }
 
 void UShooterMatchResultSubsystem::ClearEvaluateTimer()
@@ -241,6 +257,59 @@ void UShooterMatchResultSubsystem::ClearEvaluateTimer()
 	EvaluateTimerHandle.Invalidate();
 	PendingWorld.Reset();
 	EvaluateAttemptsLeft = 0;
+}
+
+void UShooterMatchResultSubsystem::FinishEvaluation()
+{
+	ClearEvaluateTimer();
+	EndScreenTransition();
+}
+
+void UShooterMatchResultSubsystem::EndScreenTransition()
+{
+	if (UScreenTransitionSubsystem* Transition = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr)
+	{
+		Transition->EndTransition();
+	}
+}
+
+void UShooterMatchResultSubsystem::EndScreenTransitionAfterResultDisplayed()
+{
+	const UShooterUIManagerSubsystem* UIManager = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	const UShooterPrimaryGameLayout* Layout = IsValid(UIManager) ? UIManager->GetRootLayout() : nullptr;
+	UCommonActivatableWidgetContainerBase* Modal = IsValid(Layout)
+		? Layout->GetLayerContainer(UITags::UI_Layer_Modal)
+		: nullptr;
+
+	// 전환 시간이 0 이면 완료 이벤트가 아예 안 옴
+	if (!IsValid(Modal) || Modal->GetTransitionDuration() <= 0.0f)
+	{
+		EndScreenTransition();
+		return;
+	}
+
+	Modal->OnTransitioningChanged.AddUObject(this, &ThisClass::HandleResultStackTransitioningChanged);
+}
+
+void UShooterMatchResultSubsystem::HandleResultStackTransitioningChanged(
+	UCommonActivatableWidgetContainerBase* Container,
+	const bool bIsTransitioning)
+{
+	if (bIsTransitioning)
+	{
+		return;
+	}
+
+	if (IsValid(Container))
+	{
+		Container->OnTransitioningChanged.RemoveAll(this);
+	}
+
+	EndScreenTransition();
 }
 
 bool UShooterMatchResultSubsystem::PresentResultWidget(APlayerController* OwningPlayer)

@@ -127,6 +127,24 @@ void UTeamMatchUIInitComponent::HideInGameMenu()
 	ScheduleModalRefresh();
 }
 
+void UTeamMatchUIInitComponent::SuspendScreenPresentation()
+{
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
+
+	bScreenPresentationSuspended = true;
+	bInGameMenuRequested = false;
+
+	// 채팅은 PC 가 따로 든 상태가 있어 건드리지 않음
+	RemoveOptionsScreen();
+	RemoveInGameMenu();
+	RemoveSurrenderVote();
+	HideAugmentSelect();
+	HideScoreboard();
+}
+
 bool UTeamMatchUIInitComponent::IsInGameMenuOpen() const
 {
 	return IsValid(GetInGameMenuInstance());
@@ -367,6 +385,11 @@ void UTeamMatchUIInitComponent::ShowScoreboard()
 		return;
 	}
 
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
+
 	if (IsValid(ScoreboardInstance))
 	{
 		return;
@@ -440,6 +463,11 @@ void UTeamMatchUIInitComponent::ScheduleModalRefresh()
 void UTeamMatchUIInitComponent::RefreshModalPresentation()
 {
 	bModalRefreshPending = false;
+
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
 
 	const AShooterPlayerController* PlayerController = BoundPlayerController.Get();
 	const bool bVoteActive = IsValid(PlayerController)

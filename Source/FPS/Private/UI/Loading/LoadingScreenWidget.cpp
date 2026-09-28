@@ -205,7 +205,6 @@ void ULoadingScreenWidget::TickCompletionExit(const float DeltaSeconds)
 	{
 		Tracker.SnapToTarget();
 
-		// 이 프레임의 Tick 은 이미 지나갔다. 부르지 않으면 100% 가 한 프레임 늦는다
 		ApplyDisplayProgress();
 	}
 

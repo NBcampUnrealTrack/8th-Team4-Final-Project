@@ -20,6 +20,10 @@ void UShooterHomeScreen::NativeOnInitialized()
 	Btn_Training->OnClicked().AddUObject(this, &ThisClass::HandleTrainingClicked);
 	Btn_Settings->OnClicked().AddUObject(this, &ThisClass::HandleSettingsClicked);
 	Btn_Quit->OnClicked().AddUObject(this, &ThisClass::HandleQuitClicked);
+	if (IsValid(Btn_Customize))
+	{
+		Btn_Customize->OnClicked().AddUObject(this, &ThisClass::HandleCustomizeClicked);
+	}
 }
 
 void UShooterHomeScreen::NativeOnDeactivated()
@@ -59,6 +63,24 @@ void UShooterHomeScreen::HandleTrainingClicked()
 	{
 		UE_LOG(LogShooterHomeScreen, Warning,
 			TEXT("Training entry requires one local player and no pending room transition."));
+	}
+}
+
+void UShooterHomeScreen::HandleCustomizeClicked()
+{
+	if (CustomizationDestinationMap.IsNull())
+	{
+		UE_LOG(LogShooterHomeScreen, Error,
+			TEXT("CustomizationDestinationMap is not configured."));
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	USessionSubSystem* Sessions = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
+	if (!Sessions || !Sessions->LeaveRoomAndOpenLocalMap(CustomizationDestinationMap))
+	{
+		UE_LOG(LogShooterHomeScreen, Warning,
+			TEXT("Customization entry requires one local player and no pending room transition."));
 	}
 }
 

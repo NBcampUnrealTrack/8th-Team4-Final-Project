@@ -29,6 +29,9 @@ private:
 	UShooterOutGameSubsystem* GetOutGameSubsystem() const;
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
+	// 결과 화면이 뜰 예정이면 그쪽이 걷는다
+	void EndScreenTransitionUnlessResultPending() const;
+
 	UPROPERTY(EditAnywhere, Category = "UI")
 	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
 	// 비워 두면 배경을 올리지 않는다

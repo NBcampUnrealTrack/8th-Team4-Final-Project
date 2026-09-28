@@ -75,6 +75,8 @@ protected:
 	void ShutdownTeamMatchUI();
 	void NotifyModeUIStateChanged();
 
+	void SuspendScreenPresentation();
+
 	bool IsTeamMatchUIReady() const;
 	bool IsSurrenderVoteOpen() const;
 	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
@@ -175,6 +177,9 @@ private:
 	bool bLastObservedVoteActive = false;
 	bool bModalRefreshPending = false;
 	
+	// 정지 뒤 Modal · 스코어보드를 더 띄우지 않는다. 컴포넌트가 매치 월드와 같이 끝나 재개가 없다
+	bool bScreenPresentationSuspended = false;
+
 	// Offers가 비었다 - 카드가 적용 됐다는 뜻이 아님
 	bool bSelectionRequestPending = false;
 	

@@ -6,6 +6,7 @@
 #include "UI/OutGame/MatchResult/ShooterMatchResultTypes.h"
 #include "ShooterMatchResultSubsystem.generated.h"
 
+class UCommonActivatableWidgetContainerBase;
 class UShooterMatchResultScreen;
 class ABaseTeamMatchGameState;
 
@@ -34,7 +35,13 @@ private:
 	// GameState로 로비/라운드/그 외를 가른다
 	void EvaluateWorld();
 	void ClearEvaluateTimer();
-	
+
+	// 결과 표시 평가를 종료하고 트랜지션 해제 성공 경로는 표시 완료까지 기다린다.
+	void FinishEvaluation();
+	void EndScreenTransition();
+	void EndScreenTransitionAfterResultDisplayed();
+	void HandleResultStackTransitioningChanged(UCommonActivatableWidgetContainerBase* Container, bool bIsTransitioning);
+
 	// 위젯 만들어 띄운다
 	bool PresentResultWidget(APlayerController* OwningPlayer);
 	
