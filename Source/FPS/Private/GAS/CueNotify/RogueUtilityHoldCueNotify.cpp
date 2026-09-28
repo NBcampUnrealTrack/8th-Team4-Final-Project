@@ -110,7 +110,12 @@ bool ARogueUtilityHoldCueNotify::Recycle()
 
 void ARogueUtilityHoldCueNotify::AttachHeldMesh(AActor* Target, const FGameplayCueParameters& Parameters)
 {
-	if (!IsValid(HeldMesh) || !IsValid(Target) || !Target->Implements<UPlayerInterface>())
+	if (!ensure(IsValid(HeldMesh)))
+	{
+		return;
+	}
+
+	if (!IsValid(Target) || !Target->Implements<UPlayerInterface>())
 	{
 		return;
 	}

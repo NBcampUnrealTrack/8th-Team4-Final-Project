@@ -205,7 +205,7 @@ void URogueVitalAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& Old
 void URogueVitalAttributeSet::ServerForceDeath(const FGameplayEffectContextHandle& Context)
 {
 	UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
-	if (!OwnerASC || !OwnerASC->IsOwnerActorAuthoritative() || bDeathDeclared)
+	if (!ensure(OwnerASC && OwnerASC->IsOwnerActorAuthoritative()) || bDeathDeclared)
 	{
 		return;
 	}
@@ -232,13 +232,10 @@ void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle
 
 	// 사망시 HealthComponent 의 OnOutOfHealth 이벤트를 발신
 	// 구독되지 않은 상태면 사망 처리가 정상적으로 진행되지 않음
-	if (!OnOutOfHealth.IsBound())
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
-			     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
-			*GetNameSafe(OwnerASC->GetAvatarActor()));
-	}
+	ensureMsgf(OnOutOfHealth.IsBound(),
+		TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
+		     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
+		*GetNameSafe(OwnerASC->GetAvatarActor()));
 
 	OnOutOfHealth.Broadcast(OwnerASC, Context);
 }

@@ -28,7 +28,12 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 
 void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid() || HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
+	if (!ensure(InputTag.IsValid()))
+	{
+		return;
+	}
+
+	if (HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
 	{
 		return;
 	}
@@ -130,7 +135,7 @@ void URogueAbilitySystemComponent::ReportInputResult(
 
 void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
 {
-	if (!InputTag.IsValid())
+	if (!ensure(InputTag.IsValid()))
 	{
 		return;
 	}
@@ -186,15 +191,14 @@ void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedSt
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)
 {
-	if (!IsOwnerActorAuthoritative())
+	if (!ensureMsgf(IsOwnerActorAuthoritative(),
+		TEXT("[RogueAbility] 권한이 없는 곳에서 어빌리티를 부여하려 했습니다. "
+		     "서버에서 주면 스펙이 소유 클라이언트로 복제됩니다")))
 	{
-		UE_LOG(LogRogueAbility, Error,
-			TEXT("[RogueAbility] 권한이 없는 곳에서 어빌리티를 부여하려 했습니다. "
-			     "서버에서 주면 스펙이 소유 클라이언트로 복제됩니다"));
 		return;
 	}
 
-	if (!AbilitySet)
+	if (!ensure(AbilitySet))
 	{
 		return;
 	}
@@ -203,10 +207,9 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 	{
 		const FRogueGrantedAbility& Granted = AbilitySet->Abilities[Index];
 
-		if (!Granted.AbilityClass)
+		if (!ensureMsgf(Granted.AbilityClass,
+			TEXT("[RogueAbility] %s 의 Abilities[%d] 가 비어 있습니다"), *AbilitySet->GetName(), Index))
 		{
-			UE_LOG(LogRogueAbility, Error,
-				TEXT("[RogueAbility] %s 의 Abilities[%d] 가 비어 있습니다"), *AbilitySet->GetName(), Index);
 			continue;
 		}
 
@@ -223,7 +226,7 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 
 	for (const TSubclassOf<UGameplayEffect>& EffectClass : AbilitySet->Effects)
 	{
-		if (EffectClass)
+		if (ensureMsgf(EffectClass, TEXT("[RogueAbility] %s 의 Effects 에 빈 항목이 있습니다"), *AbilitySet->GetName()))
 		{
 			ApplyGameplayEffectToSelf(EffectClass.GetDefaultObject(), 1.f, MakeEffectContext());
 		}
@@ -235,11 +238,10 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 
 int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
 {
-	if (!IsOwnerActorAuthoritative())
+	if (!ensureMsgf(IsOwnerActorAuthoritative(),
+		TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
+		     "서버에서 제거하면 클라이언트로 복제됩니다")))
 	{
-		UE_LOG(LogRogueAbility, Error,
-			TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
-			     "서버에서 제거하면 클라이언트로 복제됩니다"));
 		return 0;
 	}
 
