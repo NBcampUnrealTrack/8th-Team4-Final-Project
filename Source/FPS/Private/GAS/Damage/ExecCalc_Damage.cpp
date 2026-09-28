@@ -726,13 +726,10 @@ void UExecCalc_Damage::Execute_Implementation(
 
 	// 커스텀 컨텍스트가 설정이 안되어 있으면 증강 데이터가 들어오지 않음
 	const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(Spec.GetContext());
-	if (!Ctx)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[RogueDamage] 커스텀 EffectContext 가 없습니다. "
-			     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요. "
-			     "출처 구분 없이 무기 피해로 처리합니다."));
-	}
+	ensureMsgf(Ctx,
+		TEXT("[RogueDamage] 커스텀 EffectContext 가 없습니다. "
+		     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요. "
+		     "출처 구분 없이 무기 피해로 처리합니다."));
 
 	const FRogueDamageSource Source = ResolveSource(Ctx);
 
