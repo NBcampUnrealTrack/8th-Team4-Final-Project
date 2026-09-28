@@ -230,8 +230,7 @@ private:
 	// 내가 얹은 UtilityHeld 를 아직 안 걷었는지
 	bool bHoldTagApplied = false;
 
-	// 발동 중인 계열 항목과 조립된 페이로드
-	const FAugmentGrantedAbility* ActiveEntry = nullptr;
+	// 조립된 페이로드
 	FRogueEffectPayload ActivePayload;
 
 	mutable FGameplayTagContainer CooldownTagContainer;

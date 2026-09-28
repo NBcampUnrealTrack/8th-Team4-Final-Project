@@ -175,8 +175,6 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		}
 	}
 
-	ActiveEntry = Entry;
-
 	// 손에 드는 증강은 사용 입력을 기다림
 	if (bHoldToUse)
 	{
@@ -192,14 +190,15 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 {
 	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
 
-	if (!ensure(Avatar && ActiveEntry))
+	if (!ensure(Avatar && Entry))
 	{
 		EndSelf(true);
 		return;
 	}
 
-	if (!BuildEffectPayload(*ActiveEntry, Avatar, EventTarget,
+	if (!BuildEffectPayload(*Entry, Avatar, EventTarget,
 			CurrentSpecHandle, CurrentActorInfo, ActivePayload))
 	{
 		EndSelf(true);
@@ -236,7 +235,8 @@ void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 
 void URogueGameplayAbility::FinishDeliver()
 {
-	if (!ensure(ActiveEntry))
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
+	if (!ensure(Entry))
 	{
 		EndSelf(true);
 		return;
@@ -249,7 +249,7 @@ void URogueGameplayAbility::FinishDeliver()
 	{
 		PayHealthCost(CurrentActorInfo, ActivePayload.Level);
 
-		Deliver(*ActiveEntry, ActivePayload);
+		Deliver(*Entry, ActivePayload);
 	}
 
 	// 반복 발동 증강은 지속 시간 동안 종료하지 않고 재발동
@@ -307,16 +307,17 @@ void URogueGameplayAbility::BeginRepeatDeliver()
 void URogueGameplayAbility::RepeatDeliver()
 {
 	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
 
 	// 매번 현재 시선 기준으로 다시 조립
-	if (!ActiveEntry || !URogueTargetFilter::IsAlive(Avatar)
-		|| !BuildEffectPayload(*ActiveEntry, Avatar, nullptr, CurrentSpecHandle, CurrentActorInfo, ActivePayload))
+	if (!Entry || !URogueTargetFilter::IsAlive(Avatar)
+		|| !BuildEffectPayload(*Entry, Avatar, nullptr, CurrentSpecHandle, CurrentActorInfo, ActivePayload))
 	{
 		EndSelf(true);
 		return;
 	}
 
-	Deliver(*ActiveEntry, ActivePayload);
+	Deliver(*Entry, ActivePayload);
 }
 
 void URogueGameplayAbility::HandleRecoveryFinished()
@@ -448,7 +449,6 @@ void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 	}
 
-	ActiveEntry = nullptr;
 	ActivePayload = FRogueEffectPayload();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
