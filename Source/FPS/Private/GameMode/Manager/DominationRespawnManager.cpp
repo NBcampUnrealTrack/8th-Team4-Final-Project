@@ -121,12 +121,9 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 	const float Reduction = IsValid(PlayerState)
 		? TeamRespawnDelayReduction.FindRef(PlayerState->GetTeam())
 		: 0.0f;
-	const float Delay = DominationRules::GetRespawnDelay(RespawnDelay, Reduction);
-	// 부활 대기 확인용 로그 (중계 비콘 검증)
-	UE_LOG(LogDominationRespawn, Log,
-		TEXT("Respawn scheduled for %s in %.1fs (base %.1fs, reduction %.1fs)."),
-		*GetNameSafe(WaitingController), Delay, RespawnDelay, Reduction);
-	ScheduleRespawnInternal(WaitingController, Delay);
+	ScheduleRespawnInternal(
+		WaitingController,
+		DominationRules::GetRespawnDelay(RespawnDelay, Reduction));
 }
 
 // 중계 비콘 부활 대기 감소값 설정
