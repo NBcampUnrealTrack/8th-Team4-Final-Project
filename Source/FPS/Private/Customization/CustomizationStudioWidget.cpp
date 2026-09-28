@@ -39,6 +39,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::RebuildWidget()
  if(bUseMutableLevelLayout)return BuildMutableLevelLayout();
  using namespace StudioUI;
  auto Panel=SNew(SVerticalBox);
+ Panel->AddSlot().AutoHeight().HAlign(HAlign_Left).Padding(0,0,0,12)[Button(TEXT("뒤로가기"),[this](){if(auto* C=Controller())C->RequestReturnToFrontend();})];
  Panel->AddSlot().AutoHeight().Padding(0,0,0,12)[Label(TEXT("RANGER / CUSTOMIZATION"),22)];
  Panel->AddSlot().AutoHeight()[SNew(STextBlock).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->AccountLabel:TEXT(""));}).AutoWrapText(true)];
  Panel->AddSlot().AutoHeight().Padding(0,14,0,4)[Label(TEXT("캐릭터 외형"),16)];
