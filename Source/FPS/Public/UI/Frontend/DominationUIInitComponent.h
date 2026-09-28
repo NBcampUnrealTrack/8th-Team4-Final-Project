@@ -36,8 +36,6 @@ private:
     void TryPresentMatchOutcome();
     void TryScheduleMatchExitTransition();
     void BeginMatchExitTransition(bool bInstant);
-    // 예약 타이머가 느린 프레임으로 travel 보다 늦었을 때의 안전망
-    void HandleSeamlessTravelStart(UWorld* TravelingWorld, const FString& MapName);
     UFUNCTION()
     void HandleSandstormStateChanged(const FDominationSandstormState& SandstormState);
     void UpdateSandstormWarning();
@@ -60,7 +58,6 @@ private:
 
     FTimerHandle MatchExitTransitionTimer;
     bool bMatchExitTransitionAttempted = false;
-    FDelegateHandle SeamlessTravelStartHandle;
 
     TWeakObjectPtr<ADominationGameState> BoundGameState;
     int32 LastObservedRewardRound = 0;
