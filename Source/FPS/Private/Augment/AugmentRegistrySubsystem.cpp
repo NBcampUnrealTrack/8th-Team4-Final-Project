@@ -4,10 +4,23 @@
 #include "Augment/AugmentRegistrySubsystem.h"
 
 #include "Augment/AugmentDefinition.h"
+#include "Augment/Actor/RogueAugmentActor.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
+#include "GAS/RogueGASSettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentRegistry, Log, All);
+
+namespace
+{
+	void AddPreloadPath(TArray<FSoftObjectPath>& OutPaths, const FSoftObjectPath& Path)
+	{
+		if (!Path.IsNull())
+		{
+			OutPaths.AddUnique(Path);
+		}
+	}
+}
 
 void UAugmentRegistrySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -29,6 +42,18 @@ void UAugmentRegistrySubsystem::Deinitialize()
 	{
 		LoadHandle->CancelHandle();
 		LoadHandle.Reset();
+	}
+
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
+
+	if (FollowUpPreloadHandle.IsValid())
+	{
+		FollowUpPreloadHandle->CancelHandle();
+		FollowUpPreloadHandle.Reset();
 	}
 
 	DefinitionsById.Reset();
@@ -79,6 +104,8 @@ void UAugmentRegistrySubsystem::OnCatalogLoaded()
 
 	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 계열 %d개 로드 완료"),
 		DefinitionsById.Num());
+
+	StartAssetPreload();
 }
 
 void UAugmentRegistrySubsystem::BuildIndex()
@@ -137,4 +164,74 @@ void UAugmentRegistrySubsystem::BuildIndex()
 			ActiveDefinitions.Add(Definition);
 		}
 	}
+}
+
+// 증강이 쓰는 애셋을 미리 로드해 게임 중 동기 로드를 없앰
+void UAugmentRegistrySubsystem::StartAssetPreload()
+{
+	TArray<FSoftObjectPath> Paths;
+
+	for (const UAugmentDefinition* Definition : AllDefinitions)
+	{
+		for (const TSoftClassPtr<UGameplayEffect>& Effect : Definition->GrantedEffects)
+		{
+			AddPreloadPath(Paths, Effect.ToSoftObjectPath());
+		}
+
+		for (const FAugmentGrantedAbility& Granted : Definition->GrantedAbilities)
+		{
+			AddPreloadPath(Paths, Granted.AbilityClass.ToSoftObjectPath());
+			AddPreloadPath(Paths, Granted.SpawnActorClass.ToSoftObjectPath());
+
+			for (const TSoftClassPtr<UGameplayEffect>& Effect : Granted.EffectsToApply)
+			{
+				AddPreloadPath(Paths, Effect.ToSoftObjectPath());
+			}
+		}
+
+		// 손에 드는 메시는 화면용이라 데디케이티드 서버에선 생략
+		if (!IsRunningDedicatedServer())
+		{
+			AddPreloadPath(Paths, Definition->HeldVisual.Mesh.ToSoftObjectPath());
+		}
+	}
+
+	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+	AddPreloadPath(Paths, Settings->CooldownEffectClass.ToSoftObjectPath());
+	AddPreloadPath(Paths, Settings->StatusEffectClass.ToSoftObjectPath());
+
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 애셋 %d개 프리로드 시작"), Paths.Num());
+
+	PreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths, FStreamableDelegate::CreateUObject(this, &ThisClass::OnAssetPreloaded));
+}
+
+void UAugmentRegistrySubsystem::OnAssetPreloaded()
+{
+	TArray<FSoftObjectPath> FollowUps;
+
+	for (const UAugmentDefinition* Definition : AllDefinitions)
+	{
+		for (const FAugmentGrantedAbility& Granted : Definition->GrantedAbilities)
+		{
+			if (UClass* ActorClass = Granted.SpawnActorClass.Get())
+			{
+				const ARogueAugmentActor* ActorCDO = GetDefault<ARogueAugmentActor>(ActorClass);
+				AddPreloadPath(FollowUps, ActorCDO->GetSpawnOnDetonateClass().ToSoftObjectPath());
+			}
+		}
+	}
+
+	if (!FollowUps.IsEmpty())
+	{
+		FollowUpPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FollowUps);
+	}
+
+	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 애셋 프리로드 완료 (후속 액터 %d개)"),
+		FollowUps.Num());
 }
