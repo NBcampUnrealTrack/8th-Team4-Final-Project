@@ -100,6 +100,11 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
     bool bDistanceScalesWithRangeBonus = false;
 
+    // 0 보다 크면 DamageBonusRate 를 교전 거리 N m 마다 한 번씩 더함 (거리 10m당 +5% 등)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
+    float DamageBonusDistanceStep = 0.f;
+
     // 피해자 체력 조건 (%)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
     bool bUseTargetHealthRange = false;
@@ -135,6 +140,11 @@ struct FAugmentConditionalDamageRule
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
         meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
+
+    // 0 보다 크면 탄창의 N 번째 발마다 발동 (매 5발마다 등)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
+    int32 ShotIndexInterval = 0;
 
     // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
     // 상시 증강 GE 의 SetByCaller 와 같은 표기

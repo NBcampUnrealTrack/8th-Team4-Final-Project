@@ -275,6 +275,13 @@ namespace
 			return false;
 		}
 
+		// 탄창의 N 번째 발마다가 아닌 경우
+		if (Rule.bUseShotIndexRange && Rule.ShotIndexInterval > 0
+			&& (RC.Ctx->ShotIndexInMagazine + 1) % Rule.ShotIndexInterval != 0)
+		{
+			return false;
+		}
+
 		// 켜져있는 조건을 모두 통과하면
 		return true;
 	}
@@ -305,15 +312,20 @@ namespace
 			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
 			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
 
+			// 거리 단계가 있으면 단계 수만큼, 없으면 1배
+			const float Steps = (Rule.bUseDistanceRange && Rule.DamageBonusDistanceStep > 0.f)
+				? FMath::FloorToFloat(RC.Ctx->HitDistanceMeters / Rule.DamageBonusDistanceStep)
+				: 1.f;
+
 			// 규칙끼리 합산. 하한은 배율로 환산할 때
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Bucket.HeadBonusRateSum += Rule.DamageBonusRate;
+				Bucket.HeadBonusRateSum += Rule.DamageBonusRate * Steps;
 				Bucket.HeadFlat         += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Bucket.BonusRateSum += Rule.DamageBonusRate;
+				Bucket.BonusRateSum += Rule.DamageBonusRate * Steps;
 				Bucket.Flat         += Rule.FlatDamageBonus;
 			}
 
