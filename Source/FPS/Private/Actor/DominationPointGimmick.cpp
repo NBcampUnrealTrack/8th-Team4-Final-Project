@@ -3,14 +3,20 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Actor/DominationCapturePoint.h"
+#include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "GameMode/DominationGameMode.h"
 #include "GameplayEffect.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
 
@@ -35,6 +41,12 @@ ADominationPointGimmick::ADominationPointGimmick()
 	InteractionSphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	InteractionSphere->SetGenerateOverlapEvents(true);
 	InteractionSphere->SetCanEverAffectNavigation(false);
+	InteractionSphere->OnComponentBeginOverlap.AddDynamic(
+		this,
+		&ThisClass::HandleInteractionSphereOverlapChanged);
+	InteractionSphere->OnComponentEndOverlap.AddDynamic(
+		this,
+		&ThisClass::HandleInteractionSphereEndOverlap);
 }
 
 void ADominationPointGimmick::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -54,10 +66,12 @@ void ADominationPointGimmick::GetLifetimeReplicatedProps(TArray<FLifetimePropert
 	DOREPLIFETIME(ADominationPointGimmick, bGimmickActive);
 	DOREPLIFETIME(ADominationPointGimmick, InteractingTeam);
 	DOREPLIFETIME(ADominationPointGimmick, InteractionStartServerTime);
+	DOREPLIFETIME(ADominationPointGimmick, InteractingPlayerState);
 	DOREPLIFETIME(ADominationPointGimmick, OwningTeam);
 	DOREPLIFETIME(ADominationPointGimmick, ReconTeam);
 	DOREPLIFETIME(ADominationPointGimmick, ReconEndServerTime);
 	DOREPLIFETIME(ADominationPointGimmick, CooldownEndServerTime);
+	DOREPLIFETIME(ADominationPointGimmick, ScanCenter);
 }
 
 void ADominationPointGimmick::SetGimmickActive(
@@ -73,9 +87,6 @@ void ADominationPointGimmick::SetGimmickActive(
 	{
 		ScanCenter = IsValid(OwnerPoint) ? OwnerPoint->GetActorLocation() : GetActorLocation();
 		bGimmickActive = true;
-		// 기믹 활성화 확인용 로그
-		UE_LOG(LogDominationGimmick, Log, TEXT("[Gimmick] %s 활성화 (거점 %s)"),
-			*GetNameSafe(this), *GetNameSafe(OwnerPoint));
 		NotifyStateChanged();
 		return;
 	}
@@ -97,8 +108,6 @@ void ADominationPointGimmick::SetGimmickActive(
 	ClearRespawnRelay();
 	CooldownEndServerTime = 0.0f;
 	bGimmickActive = false;
-	// 기믹 비활성화 확인용 로그
-	UE_LOG(LogDominationGimmick, Log, TEXT("[Gimmick] %s 비활성화"), *GetNameSafe(this));
 	NotifyStateChanged();
 }
 
@@ -162,6 +171,7 @@ bool ADominationPointGimmick::BeginInteraction(APlayerController* Controller)
 	const ABaseTeamPlayerState* PlayerState = Pawn->GetPlayerState<ABaseTeamPlayerState>();
 	InteractingController = Controller;
 	InteractingTeam = PlayerState->GetTeam();
+	InteractingPlayerState = Controller->PlayerState;
 	InteractionStartServerTime = GetServerTime();
 	World->GetTimerManager().SetTimer(
 		InteractionTickHandle,
@@ -198,16 +208,136 @@ float ADominationPointGimmick::GetCooldownRemaining() const
 	return FMath::Max(0.0f, CooldownEndServerTime - GetServerTime());
 }
 
+float ADominationPointGimmick::GetReconTimeRemaining() const
+{
+	return ReconTeam != EGameTeam::None
+		? FMath::Max(0.0f, ReconEndServerTime - GetServerTime())
+		: 0.0f;
+}
+
+APlayerState* ADominationPointGimmick::GetInteractingPlayerState() const
+{
+	return InteractingPlayerState;
+}
+
+ADominationPointGimmick* ADominationPointGimmick::GetActiveGimmick(const UObject* WorldContextObject)
+{
+	UWorld* World = IsValid(WorldContextObject) ? WorldContextObject->GetWorld() : nullptr;
+	if (!IsValid(World))
+	{
+		return nullptr;
+	}
+
+	// 활성 거점은 하나뿐이므로 켜진 기믹도 최대 하나다.
+	for (TActorIterator<ADominationPointGimmick> Iterator(World); Iterator; ++Iterator)
+	{
+		if (Iterator->IsGimmickActive())
+		{
+			return *Iterator;
+		}
+	}
+
+	return nullptr;
+}
+
 void ADominationPointGimmick::OnRep_GimmickState()
 {
-	BP_OnGimmickStateChanged();
+	NotifyStateChanged();
+}
+
+void ADominationPointGimmick::HandleInteractionSphereOverlapChanged(
+	UPrimitiveComponent*,
+	AActor* OtherActor,
+	UPrimitiveComponent*,
+	int32,
+	bool,
+	const FHitResult&)
+{
+	if (bGimmickActive && IsValid(Cast<APawn>(OtherActor)))
+	{
+		OnGimmickStateChanged.Broadcast(this);
+	}
+}
+
+void ADominationPointGimmick::HandleInteractionSphereEndOverlap(
+	UPrimitiveComponent*,
+	AActor* OtherActor,
+	UPrimitiveComponent*,
+	int32)
+{
+	if (bGimmickActive && IsValid(Cast<APawn>(OtherActor)))
+	{
+		OnGimmickStateChanged.Broadcast(this);
+	}
 }
 
 void ADominationPointGimmick::MulticastInteractionEnded_Implementation(
 	const bool bCompleted,
 	const EGameTeam Team)
 {
+	PlayInteractionEndedCosmetics(bCompleted);
 	BP_OnInteractionEnded(bCompleted, Team);
+}
+
+bool ADominationPointGimmick::ShouldPlayCosmetics() const
+{
+	return GetNetMode() != NM_DedicatedServer;
+}
+
+void ADominationPointGimmick::PlayInteractionStartedCosmetics()
+{
+	if (!ShouldPlayCosmetics())
+	{
+		return;
+	}
+
+	if (IsValid(InteractionStartSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, InteractionStartSound, GetActorLocation());
+	}
+
+	StopInteractionLoopSound();
+	if (IsValid(InteractionLoopSound))
+	{
+		InteractionLoopAudio = UGameplayStatics::SpawnSoundAttached(InteractionLoopSound, GetRootComponent());
+	}
+}
+
+void ADominationPointGimmick::PlayInteractionEndedCosmetics(const bool bCompleted)
+{
+	if (!ShouldPlayCosmetics())
+	{
+		return;
+	}
+
+	StopInteractionLoopSound();
+	if (bCompleted && IsValid(InteractionCompleteSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, InteractionCompleteSound, GetActorLocation());
+	}
+}
+
+void ADominationPointGimmick::PlayReconStartedCosmetics()
+{
+	if (!ShouldPlayCosmetics() || !IsValid(ReconScanEffect))
+	{
+		return;
+	}
+
+	if (UNiagaraComponent* Effect = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ReconScanEffect, ScanCenter))
+	{
+		Effect->SetVariableFloat(TEXT("User.Radius"), ReconRadius);
+	}
+}
+
+void ADominationPointGimmick::StopInteractionLoopSound()
+{
+	if (IsValid(InteractionLoopAudio))
+	{
+		InteractionLoopAudio->FadeOut(InteractionLoopFadeOutDuration, 0.0f);
+	}
+
+	InteractionLoopAudio = nullptr;
 }
 
 void ADominationPointGimmick::HandleInteractionTick()
@@ -244,6 +374,7 @@ void ADominationPointGimmick::EndInteraction(const bool bCompleted)
 	const EGameTeam Team = InteractingTeam;
 	InteractingController.Reset();
 	InteractingTeam = EGameTeam::None;
+	InteractingPlayerState = nullptr;
 	InteractionStartServerTime = 0.0f;
 
 	if (bCompleted && Team != EGameTeam::None)
@@ -395,8 +526,63 @@ void ADominationPointGimmick::ClearRespawnRelay()
 
 void ADominationPointGimmick::NotifyStateChanged()
 {
-	// 서버는 OnRep이 오지 않으므로 직접 호출한다.
-	BP_OnGimmickStateChanged();
+	// 서버는 OnRep이 오지 않으므로 직접 호출한다. 클라에서는 OnRep에서 호출된다.
+	BroadcastStateTransitions();
+	OnGimmickStateChanged.Broadcast(this);
+}
+
+void ADominationPointGimmick::BroadcastStateTransitions()
+{
+	// 켜짐은 다른 전환보다 먼저, 꺼짐은 나중에 알려 이펙트 순서를 자연스럽게 맞춘다.
+	if (bGimmickActive && !bNotifiedActive)
+	{
+		bNotifiedActive = true;
+		BP_OnActivated();
+	}
+
+	if (InteractingTeam != NotifiedInteractingTeam)
+	{
+		NotifiedInteractingTeam = InteractingTeam;
+		if (InteractingTeam != EGameTeam::None)
+		{
+			PlayInteractionStartedCosmetics();
+			BP_OnInteractionStarted(InteractingTeam);
+		}
+		else
+		{
+			// 종료 사운드는 MulticastInteractionEnded에서 재생한다. 여기서는 루프만 확실히 끈다.
+			StopInteractionLoopSound();
+		}
+	}
+
+	if (ReconTeam != NotifiedReconTeam)
+	{
+		const bool bWasScanning = NotifiedReconTeam != EGameTeam::None;
+		NotifiedReconTeam = ReconTeam;
+		if (bWasScanning)
+		{
+			BP_OnReconEnded();
+		}
+
+		if (ReconTeam != EGameTeam::None)
+		{
+			PlayReconStartedCosmetics();
+			BP_OnReconStarted(ReconTeam);
+		}
+	}
+
+	if (OwningTeam != NotifiedOwningTeam)
+	{
+		NotifiedOwningTeam = OwningTeam;
+		BP_OnOwnerChanged(OwningTeam);
+	}
+
+	if (!bGimmickActive && bNotifiedActive)
+	{
+		bNotifiedActive = false;
+		StopInteractionLoopSound();
+		BP_OnDeactivated();
+	}
 }
 
 float ADominationPointGimmick::GetServerTime() const
