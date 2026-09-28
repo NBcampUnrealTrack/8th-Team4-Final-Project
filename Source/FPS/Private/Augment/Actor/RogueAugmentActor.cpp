@@ -162,10 +162,9 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 
 	UClass* FollowUpClass = SpawnOnDetonateClass.LoadSynchronous();
 	UWorld* World = GetWorld();
-	if (!FollowUpClass || !World)
+	if (!ensureMsgf(FollowUpClass && World,
+		TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName()))
 	{
-		UE_LOG(LogAugmentActor, Error,
-			TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName());
 		return;
 	}
 
@@ -176,7 +175,8 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		FollowUpClass, SpawnTransform, GetOwner(), GetInstigator(),
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
-	if (!FollowUp)
+	if (!ensureMsgf(FollowUp, TEXT("[AugmentActor] %s 의 후속 액터 %s 스폰에 실패했습니다"),
+		*GetName(), *GetNameSafe(FollowUpClass)))
 	{
 		return;
 	}

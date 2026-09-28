@@ -29,11 +29,9 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 	}
 
 	UClass* ActorClass = Entry.SpawnActorClass.LoadSynchronous();
-	if (!ActorClass)
+	if (!ensureMsgf(ActorClass,
+		TEXT("[SpawnActor] %s 를 부여한 계열의 SpawnActorClass 가 비어 있거나 로드에 실패했습니다"), *GetName()))
 	{
-		UE_LOG(LogSpawnActor, Error,
-			TEXT("[SpawnActor] %s 를 부여한 계열의 SpawnActorClass 가 비어 있거나 로드에 실패했습니다"),
-			*GetName());
 		return;
 	}
 
@@ -48,10 +46,8 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 		ActorClass, SpawnTransform, Avatar, Cast<APawn>(Avatar),
 		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 
-	if (!Spawned)
+	if (!ensureMsgf(Spawned, TEXT("[SpawnActor] %s 스폰에 실패했습니다"), *GetNameSafe(ActorClass)))
 	{
-		UE_LOG(LogSpawnActor, Error,
-			TEXT("[SpawnActor] %s 스폰에 실패했습니다"), *GetNameSafe(ActorClass));
 		return;
 	}
 
