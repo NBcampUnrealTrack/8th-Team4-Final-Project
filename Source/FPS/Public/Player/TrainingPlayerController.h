@@ -14,6 +14,7 @@ class FPS_API ATrainingPlayerController : public AShooterPlayerController, publi
     GENERATED_BODY()
 public:
     ATrainingPlayerController();
+    virtual bool SupportsVoiceChat() const override { return false; }
     virtual bool CanProcessGameplayInput() const override;
     UFUNCTION(BlueprintCallable, Category = "Training|Class")
     virtual void SelectCombatClass(EDominationCombatClass RequestedClass) override;

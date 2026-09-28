@@ -24,6 +24,7 @@
 #include "Slate/SceneViewport.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Player/ShooterPlayerController.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "UI/Settings/ShooterOptionsPerformanceSubsystem.h"
 #include "UObject/UnrealType.h"
@@ -1634,6 +1635,17 @@ void UShooterOptionsScreen::RefreshGeneratedUI()
 	SetGeneratedToggleVisual(TEXT("Btn_DynamicCrosshairToggle"), TEXT("TXT_DynamicCrosshairValue"), IsDynamicCrosshairEnabled());
 	SetGeneratedToggleVisual(TEXT("Btn_MasterMuteToggle"), TEXT("TXT_MasterMuteValue"), IsMasterAudioMuted());
 	SetGeneratedToggleVisual(TEXT("Btn_VoiceChatToggle"), TEXT("TXT_VoiceChatValue"), IsVoiceChatEnabled());
+
+	const AShooterPlayerController* OwningShooterController = Cast<AShooterPlayerController>(GetOwningPlayer());
+	const bool bVoiceChatSupported = !OwningShooterController || OwningShooterController->SupportsVoiceChat();
+	if (UWidget* VoiceChatRow = GetWidgetFromName(TEXT("Border_Row_VoiceChat")))
+	{
+		VoiceChatRow->SetVisibility(bVoiceChatSupported ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (!bVoiceChatSupported && ActiveGeneratedOption == FName(TEXT("VoiceChat")))
+	{
+		ActiveGeneratedOption = TEXT("MasterVolume");
+	}
 
 	auto SetSlider = [this](const FName SliderName, const FName TextName, const float Value, const int32 FractionDigits)
 	{

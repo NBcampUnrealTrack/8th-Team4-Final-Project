@@ -79,6 +79,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
 
+	// Game modes can disable voice chat without changing the user's global voice-chat setting.
+	virtual bool SupportsVoiceChat() const { return true; }
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Shooter|Voice")
 	void ReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
 

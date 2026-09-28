@@ -228,7 +228,7 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 		return;
 	}
 
-	if (!Settings->IsVoiceChatEnabled())
+	if ((!Settings->IsVoiceChatEnabled() || !SupportsVoiceChat()) && SteamVoiceComponent)
 	{
 		if (SteamVoiceComponent->IsCapturingVoice())
 		{
@@ -365,7 +365,7 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased);
 		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased);
 	}
-	if (InputConfig->PushToTalkAction)
+	if (SupportsVoiceChat() && InputConfig->PushToTalkAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Completed, this, &ThisClass::Input_PushToTalkReleased);
@@ -505,7 +505,7 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerController::StartVoiceTalking()
 {
-	if (!IsLocalController())
+	if (!IsLocalController() || !SupportsVoiceChat())
 	{
 		return;
 	}
@@ -554,7 +554,7 @@ void AShooterPlayerController::StopVoiceTalking()
 
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
 {
-	if (!IsLocalController() || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || !SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
@@ -1093,7 +1093,7 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
-		ShooterPlayerState->SetVoiceTalking(bNewVoiceTalking);
+		ShooterPlayerState->SetVoiceTalking(SupportsVoiceChat() && bNewVoiceTalking);
 	}
 }
 
@@ -1101,7 +1101,7 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 	const TArray<uint8>& CompressedVoiceData,
 	const EVoiceChatAudience Audience)
 {
-	if (CompressedVoiceData.IsEmpty())
+	if (!SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
@@ -1157,7 +1157,7 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 	const TArray<uint8>& CompressedVoiceData,
 	const EVoiceChatAudience Audience)
 {
-	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || !SupportsVoiceChat() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
