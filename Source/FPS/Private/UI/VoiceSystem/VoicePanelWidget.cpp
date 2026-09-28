@@ -1,4 +1,4 @@
-#include "UI/VoiceSystem/VoicePanelWidget.h"
+﻿#include "UI/VoiceSystem/VoicePanelWidget.h"
 
 #include "Components/PanelWidget.h"
 #include "Engine/GameInstance.h"
@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "UI/VoiceSystem/VoicePlayerEntryWidget.h"
 
 void UVoicePanelWidget::NativeOnInitialized()
@@ -17,6 +18,20 @@ void UVoicePanelWidget::NativeOnInitialized()
 void UVoicePanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	const AShooterPlayerController* ShooterController = Cast<AShooterPlayerController>(GetOwningPlayer());
+	if (ShooterController && !ShooterController->SupportsVoiceChat())
+	{
+		SetVisibility(ESlateVisibility::Collapsed);
+		EntryWidgets.Reset();
+		if (PlayerListPanel)
+		{
+			PlayerListPanel->ClearChildren();
+		}
+		return;
+	}
+
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	if (UVoiceChatSubsystem* VoiceChatSubsystem = GetVoiceChatSubsystem())
 	{
@@ -39,6 +54,18 @@ void UVoicePanelWidget::NativeDestruct()
 
 void UVoicePanelWidget::RefreshVoicePanel()
 {
+	const AShooterPlayerController* ShooterController = Cast<AShooterPlayerController>(GetOwningPlayer());
+	if (ShooterController && !ShooterController->SupportsVoiceChat())
+	{
+		SetVisibility(ESlateVisibility::Collapsed);
+		EntryWidgets.Reset();
+		if (PlayerListPanel)
+		{
+			PlayerListPanel->ClearChildren();
+		}
+		return;
+	}
+
 	EntryWidgets.Reset();
 
 	if (PlayerListPanel)

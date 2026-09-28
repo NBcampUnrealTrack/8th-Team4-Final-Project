@@ -12,6 +12,7 @@
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 #include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
 
@@ -523,9 +524,22 @@ void UCombatComponent::SetAiming(const bool bNewAiming)
 bool UCombatComponent::ShouldSuppressMainHUDForADS() const
 {
 	const AWeaponBase* Weapon = CurrentWeapon.Get();
-	return bAiming
-		&& IsValid(Weapon)
-		&& Weapon->ShouldHideMainHUDWhileADS();
+	if (!bAiming || !IsValid(Weapon))
+	{
+		return false;
+	}
+
+	// 스나이퍼 ADS는 스코프/기본 크로스헤어/1인칭 표현만 별도로 제어하고,
+	// 체력/탄약/게임 진행 HUD 같은 메인 HUD는 계속 보여준다. 무기 에셋에
+	// bHideMainHUDWhileADS가 켜져 있더라도 스나이퍼만큼은 여기서 최종적으로
+	// 제외해 두면, 기존 무기별 표현 정책 구조를 유지하면서도 스코프 중 HUD
+	// 전체가 사라지는 문제를 한 곳에서 막을 수 있다.
+	if (Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
+	{
+		return false;
+	}
+
+	return Weapon->ShouldHideMainHUDWhileADS();
 }
 
 void UCombatComponent::SetPresentationSuppressed(const bool bSuppressed)
