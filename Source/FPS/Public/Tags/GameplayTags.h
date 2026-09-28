@@ -80,6 +80,9 @@ namespace RogueTags
 	// 증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Augment_Ability);
 
+	// 증강 효과 상태
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Augment_RecentlyDamaged);
+
 	// 이동 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_Sprinting);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Movement_InAir);
@@ -145,6 +148,7 @@ namespace RogueTags
 	// 상호 배타 효과 그룹 
 	// 같은 태그를 가진 GE 는 Remove Other Effects 동시에 적용 시 기존의 것을 삭제
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Shop_Shield);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_Augment_EnhancedShot);
 
 	// 어빌리티 입력 슬롯 앵커
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(InputTag_Ability);

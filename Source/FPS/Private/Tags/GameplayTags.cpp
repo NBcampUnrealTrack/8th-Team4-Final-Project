@@ -73,6 +73,9 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Deployable,  "State.Combat.Deployable",  "체력을 가진 설치물/소환물. 파괴돼도 처치로 치지 않는다");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Ability,            "Augment.Ability",            "증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준");
 
+	// 증강 효과 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_RecentlyDamaged, "State.Augment.RecentlyDamaged", "자가 치유: 최근 피격. 있는 동안 회복 정지");
+
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_InAir,     "State.Movement.InAir",     "공중 (점프·낙하)");
@@ -137,6 +140,7 @@ namespace RogueTags
 
 	// 상호 배타 효과 그룹
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Augment_EnhancedShot, "Effect.Augment.EnhancedShot", "저격 강화 사격 버프. 저격 발사 시 제거");
 
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");
