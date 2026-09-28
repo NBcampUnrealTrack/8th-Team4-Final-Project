@@ -370,6 +370,17 @@ bool ADominationGameMode::RestartPlayerAtObjective(
 	return IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
 }
 
+// 거점 기믹(중계 비콘)의 팀별 부활 대기 감소를 RespawnManager로 전달
+void ADominationGameMode::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (IsValid(RespawnManager))
+	{
+		RespawnManager->SetTeamRespawnDelayReduction(Team, Seconds);
+	}
+}
+
 void ADominationGameMode::RespawnPlayer(AController* Controller)
 {
 	APlayerController* PlayerController = Cast<APlayerController>(Controller);
