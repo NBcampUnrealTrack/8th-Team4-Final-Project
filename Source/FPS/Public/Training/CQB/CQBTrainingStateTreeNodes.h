@@ -4,6 +4,7 @@
 #include "StateTreeConditionBase.h"
 #include "StateTreeTaskBase.h"
 #include "Training/CQB/CQBTrainingAIController.h"
+#include "Training/CQB/CQBTrainingTacticalTypes.h"
 #include "CQBTrainingStateTreeNodes.generated.h"
 
 USTRUCT()
@@ -36,6 +37,44 @@ struct FPS_API FCQBBehaviorTaskInstanceData
 
     UPROPERTY(EditAnywhere, Category = "CQB")
     ECQBAIBehaviorState State = ECQBAIBehaviorState::Patrol;
+
+    UPROPERTY(EditAnywhere, Category = "CQB")
+    bool bUseTacticalChildren = false;
+};
+
+USTRUCT()
+struct FPS_API FCQBTacticalIntentInstanceData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, Category = "CQB")
+    ECQBTacticalIntent Intent = ECQBTacticalIntent::DirectFire;
+};
+
+USTRUCT(meta = (DisplayName = "CQB Tactical Intent", Category = "CQB"))
+struct FPS_API FCQBTacticalIntentCondition : public FStateTreeConditionCommonBase
+{
+    GENERATED_BODY()
+
+    using FInstanceDataType = FCQBTacticalIntentInstanceData;
+
+    virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+    virtual bool TestCondition(FStateTreeExecutionContext& Context) const override;
+};
+
+USTRUCT(meta = (DisplayName = "CQB Execute Tactical Intent", Category = "CQB"))
+struct FPS_API FCQBTacticalIntentTask : public FStateTreeTaskCommonBase
+{
+    GENERATED_BODY()
+
+    using FInstanceDataType = FCQBTacticalIntentInstanceData;
+
+    FCQBTacticalIntentTask();
+
+    virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+    virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+        const FStateTreeTransitionResult& Transition) const override;
+    virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, float DeltaTime) const override;
 };
 
 USTRUCT(meta = (DisplayName = "CQB Behavior State", Category = "CQB"))

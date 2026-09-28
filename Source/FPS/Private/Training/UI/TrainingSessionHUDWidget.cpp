@@ -22,18 +22,17 @@ void UTrainingSessionHUDWidget::NativePreConstruct()
 void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
     const double InStartSeconds, const float DurationSeconds)
 {
+    GetWorld()->GetTimerManager().ClearTimer(ClockTimer);
     StartSeconds = InStartSeconds;
     ActiveDurationSeconds = FMath::Max(0.0f, DurationSeconds);
     bSessionActive = true;
     bCQBSession = false;
     CQBTotalTroopers = 0;
+    if (CQBProgressContent) { CQBProgressContent->SetVisibility(ESlateVisibility::Collapsed); }
     if (SessionInfoContent) { SessionInfoContent->SetVisibility(ESlateVisibility::HitTestInvisible); }
-    else
-    {
-        if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::HitTestInvisible); }
-        if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::HitTestInvisible); }
-        if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::HitTestInvisible); }
-    }
+    if (Txt_Mode) { Txt_Mode->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    if (Txt_Timer) { Txt_Timer->SetVisibility(ESlateVisibility::HitTestInvisible); }
+    if (Txt_TimerLabel) { Txt_TimerLabel->SetVisibility(ESlateVisibility::HitTestInvisible); }
     DisplayedSeconds = INDEX_NONE;
     DisplayedKills = 0;
     ResetKillFeedback();
@@ -62,6 +61,7 @@ void UTrainingSessionHUDWidget::StartSession(const ETrainingMode Mode,
 
 void UTrainingSessionHUDWidget::StartCQBSession(const int32 TotalTroopers)
 {
+    GetWorld()->GetTimerManager().ClearTimer(ClockTimer);
     bSessionActive = true;
     bCQBSession = true;
     CQBTotalTroopers = FMath::Max(0, TotalTroopers);
@@ -109,10 +109,10 @@ void UTrainingSessionHUDWidget::FinishCQBSession()
 
 void UTrainingSessionHUDWidget::RefreshClock()
 {
-    if (!bSessionActive || !GetWorld()) { return; }
-    const float Elapsed = static_cast<float>(FMath::Max(0.0, GetWorld()->GetTimeSeconds() - StartSeconds));
+    if (!bSessionActive || bCQBSession || !GetWorld()) { return; }
+    const double Elapsed = FMath::Max(0.0, GetWorld()->GetTimeSeconds() - StartSeconds);
     const int32 Seconds = ActiveDurationSeconds > 0.0f
-        ? TrainingRules::RemainingWholeSeconds(ActiveDurationSeconds, Elapsed) : FMath::FloorToInt(Elapsed);
+        ? FMath::CeilToInt(FMath::Max(0.0, ActiveDurationSeconds - Elapsed)) : FMath::FloorToInt(Elapsed);
     if (Seconds != DisplayedSeconds)
     {
         DisplayedSeconds = Seconds;
@@ -128,7 +128,15 @@ void UTrainingSessionHUDWidget::RefreshClock()
     }
     if (Bar_TimeRemaining && ActiveDurationSeconds > 0.0f)
     {
-        Bar_TimeRemaining->SetPercent(FMath::Clamp(1.0f - Elapsed / ActiveDurationSeconds, 0.0f, 1.0f));
+        Bar_TimeRemaining->SetPercent(static_cast<float>(FMath::Clamp(1.0 - Elapsed / ActiveDurationSeconds, 0.0, 1.0)));
+    }
+    if (ActiveDurationSeconds <= 0.0f || Elapsed < ActiveDurationSeconds)
+    {
+        const double NextBoundary = ActiveDurationSeconds > 0.0f
+            ? ActiveDurationSeconds - Elapsed - (Seconds - 1)
+            : (Seconds + 1) - Elapsed;
+        GetWorld()->GetTimerManager().SetTimer(ClockTimer, this, &ThisClass::RefreshClock,
+            static_cast<float>(FMath::Max(0.01, NextBoundary)), false);
     }
 }
 
@@ -156,9 +164,8 @@ void UTrainingSessionHUDWidget::PresentHit(const int32 TotalKills, const bool bK
 void UTrainingSessionHUDWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
-    if (bSessionActive)
+    if (bKillFeedbackActive)
     {
-        if (!bCQBSession) RefreshClock();
         UpdateKillFeedback(InDeltaTime);
     }
 }
@@ -228,11 +235,19 @@ void UTrainingSessionHUDWidget::ResetKillFeedback()
     ApplyKillFeedbackAppearance();
 }
 
-void UTrainingSessionHUDWidget::NativeDestruct()
+void UTrainingSessionHUDWidget::StopSession()
 {
+    if (UWorld* World = GetWorld()) { World->GetTimerManager().ClearTimer(ClockTimer); }
     bSessionActive = false;
     bCQBSession = false;
     CQBTotalTroopers = 0;
+    StartSeconds = 0.0;
+    ActiveDurationSeconds = 0.0f;
     ResetKillFeedback();
+}
+
+void UTrainingSessionHUDWidget::NativeDestruct()
+{
+    StopSession();
     Super::NativeDestruct();
 }

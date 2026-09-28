@@ -5,6 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingModeDefinition.h"
 #include "Training/TrainingLoadoutSnapshot.h"
 #include "Training/UI/TrainingPlayerPresentation.h"
 #include "Interfaces/RogueCombatFeedbackPolicy.h"
@@ -60,6 +61,8 @@ public:
     void NotifyCQBStopped(ACQBTrainingSpawner& Spawner);
     void SubmitConfirmation(int32 RequestId);
     void SubmitMode(int32 RequestId, ETrainingMode Mode, ETrainingDistancePreset Preset, float CustomMeters);
+    UFUNCTION(BlueprintPure, Category = "Training")
+    bool ResolveModePreview(ETrainingMode Mode, FTrainingModeConfig& OutConfig) const;
     void ReturnToPreTrainingPosition(int32 RequestId);
     void SubmitAugments(int32 RequestId, const TArray<FPrimaryAssetId>& Selection);
     void SubmitCombatClass(int32 RequestId, EDominationCombatClass RequestedClass);
@@ -124,6 +127,7 @@ protected:
 
 private:
     friend class UTrainingPlayerPresentation;
+    int32 AllocateRequestId();
     APlayerController* GetParticipantController() const;
     UAugmentInventoryComponent* GetAugmentInventory() const;
     FTrainingLoadoutSnapshot BuildLoadoutSnapshot() const;
@@ -175,7 +179,6 @@ private:
     TWeakObjectPtr<ACQBTrainingSpawner> ActiveCQBSpawner;
     TWeakObjectPtr<ACQBTrainingEndActor> PendingCQBEndActor;
     TWeakObjectPtr<UCQBTrainingDialogWidget> ActiveCQBDialog;
-    TWeakObjectPtr<UTrainingSessionHUDWidget> CQBHUDWidget;
     ETrainingDialogKind PendingKind = ETrainingDialogKind::EnterArena;
     int32 PendingRequestId = 0;
     int32 RequestSequence = 0;

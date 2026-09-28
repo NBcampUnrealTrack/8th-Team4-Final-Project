@@ -120,7 +120,6 @@ private:
     void HandleDamageTaken(FGameplayTag EventTag, const FGameplayEventData* Payload);
     void HandleOutOfHealth(UAbilitySystemComponent* VictimASC, const FGameplayEffectContextHandle& ContextHandle);
     void InitializeHealth();
-    void ResetHealthForNextCycle();
     void SetTargetState(ETrainingPopUpTargetState NewState);
     void UpdateTargetRotation();
     void ConfigureTargetComponents();

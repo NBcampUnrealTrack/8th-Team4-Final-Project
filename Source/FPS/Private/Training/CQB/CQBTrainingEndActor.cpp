@@ -2,6 +2,7 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Training/CQB/CQBTrainingSpawner.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "../TrainingInteractionRegistration.h"

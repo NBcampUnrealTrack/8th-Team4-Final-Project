@@ -2,8 +2,18 @@
 
 #include "Training/TrainingSettings.h"
 
+bool FTrainingDistanceBand::IsValid() const
+{
+    return FMath::IsFinite(MinCentimeters) && FMath::IsFinite(MaxCentimeters)
+        && MinCentimeters >= 0.0f && MaxCentimeters >= MinCentimeters;
+}
+
 bool FTrainingDistanceBand::Contains(const FVector& Center, const FVector& Position) const
 {
+    if (!IsValid() || Center.ContainsNaN() || Position.ContainsNaN())
+    {
+        return false;
+    }
     const double RadiusSquared = FVector::DistSquared2D(Center, Position);
     const double MinRadius = MinCentimeters - KINDA_SMALL_NUMBER;
     const double MaxRadius = MaxCentimeters + KINDA_SMALL_NUMBER;
@@ -34,7 +44,15 @@ bool FTrainingDistanceBand::ContainsSegment(const FVector& Center,
 bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
     const float CustomMeters, FTrainingDistanceBand& OutBand)
 {
+    OutBand.MinCentimeters = 0.0f;
+    OutBand.MaxCentimeters = -1.0f;
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    if (!FMath::IsFinite(Settings->MinDistanceMeters)
+        || !FMath::IsFinite(Settings->MaxDistanceMeters)
+        || !FMath::IsFinite(Settings->DistanceHalfWidthMeters))
+    {
+        return false;
+    }
     const float MinDistanceMeters = Settings->GetMinDistanceMeters();
     const float MaxDistanceMeters = Settings->GetMaxDistanceMeters();
     const float DistanceHalfWidthMeters = FMath::Max(0.0f, Settings->DistanceHalfWidthMeters);
@@ -56,8 +74,19 @@ bool TrainingRules::ResolveDistanceBand(const ETrainingDistancePreset Preset,
         return false;
     }
 
-    OutBand.MinCentimeters = FMath::Max(MinDistanceMeters, NominalMeters - DistanceHalfWidthMeters) * CentimetersPerMeter;
-    OutBand.MaxCentimeters = FMath::Min(MaxDistanceMeters, NominalMeters + DistanceHalfWidthMeters) * CentimetersPerMeter;
+    // 고정 프리셋의 거리를 다른 값으로 바꾸거나 뒤집힌 범위를 전달하지 않는다.
+    if (NominalMeters < MinDistanceMeters || NominalMeters > MaxDistanceMeters)
+    {
+        return false;
+    }
+    FTrainingDistanceBand ResolvedBand;
+    ResolvedBand.MinCentimeters = FMath::Max(MinDistanceMeters, NominalMeters - DistanceHalfWidthMeters) * CentimetersPerMeter;
+    ResolvedBand.MaxCentimeters = FMath::Min(MaxDistanceMeters, NominalMeters + DistanceHalfWidthMeters) * CentimetersPerMeter;
+    if (!ResolvedBand.IsValid())
+    {
+        return false;
+    }
+    OutBand = ResolvedBand;
     return true;
 }
 

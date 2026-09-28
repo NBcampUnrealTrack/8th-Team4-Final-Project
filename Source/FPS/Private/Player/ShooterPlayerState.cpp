@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/ShooterPlayerState.h"
+#include "Customization/GameplayAppearanceComponent.h"
 
 #include "Augment/AugmentInventoryComponent.h"
 #include "Character/ShooterCharacter.h"
@@ -47,6 +48,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+    DOREPLIFETIME(AShooterPlayerState, SavedAppearances);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 	DOREPLIFETIME(AShooterPlayerState, ParticipationState);
 	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
@@ -97,6 +99,7 @@ void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, AP
 	if (NewPawn)
 	{
 		InitializeForAvatar(NewPawn);
+		OnRep_Appearances();
 	}
 }
 

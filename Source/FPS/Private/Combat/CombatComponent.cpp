@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Combat/CombatComponent.h"
+#include "Customization/FirstPersonAppearanceComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Character/ShooterMovementComponent.h"
@@ -573,6 +574,8 @@ void UCombatComponent::RefreshFirstPersonADSPresentation() const
 	// 비활성화된 다른 무기까지 ADS 해제 시 다시 보이게 만들 수 있다.
 	// 사망 처리의 HiddenInGame 상태도 건드리지 않는다.
 	CharacterMesh1P->SetVisibility(!bHideFirstPerson, false);
+    if (auto* Appearance = OwnerPawn->FindComponentByClass<UFirstPersonAppearanceComponent>())
+        Appearance->SetPresentationVisible(!bHideFirstPerson);
 
 	if (IsValid(Weapon))
 	{
@@ -625,6 +628,7 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	RefreshWeaponPresentation();
 	RefreshFirstPersonADSPresentation();
 	RefreshMainHUDSuppressionState();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::ClearWeaponLoadout()
@@ -770,6 +774,7 @@ void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 	RefreshWeaponPresentation();
 	RefreshFirstPersonADSPresentation();
 	RefreshMainHUDSuppressionState();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::OnRep_Aiming()

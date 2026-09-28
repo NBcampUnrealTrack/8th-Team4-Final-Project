@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Training/TrainingTypes.h"
+#include "TimerManager.h"
 #include "TrainingSessionHUDWidget.generated.h"
 
 class UProgressBar;
@@ -21,6 +22,7 @@ public:
     void PresentHit(int32 TotalKills, bool bKilled);
     void PresentCQBKill(int32 CurrentKills, int32 TotalTroopers);
     void FinishCQBSession();
+    void StopSession();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
     float KillFadeInSeconds = 0.10f;
@@ -54,6 +56,7 @@ private:
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_ProgressLabel;
     UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
 
+    FTimerHandle ClockTimer;
     double StartSeconds = 0.0;
     float ActiveDurationSeconds = 0.0f;
     float KillFeedbackAge = 0.0f;

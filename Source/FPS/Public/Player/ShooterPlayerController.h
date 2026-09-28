@@ -12,6 +12,7 @@
 #include "GAS/Damage/RogueDamageTypes.h"
 #include "Ping/PingTypes.h"
 #include "TimerManager.h"
+#include "Customization/CustomizationProfile.h"
 #include "Voice/VoiceChatSubsystem.h"
 
 #include "ShooterPlayerController.generated.h"
@@ -25,7 +26,6 @@ class UShooterChatInputBox;
 class UShooterSpectatorWidget;
 class UShooterInputConfig;
 class UShooterInteractionComponent;
-class UTrainingPlayerComponent;
 class USteamVoiceComponent;
 class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
@@ -57,6 +57,8 @@ class FPS_API AShooterPlayerController : public APlayerController
 
 public:
 	AShooterPlayerController();
+    void SubmitSavedAppearances();
+    virtual void AcknowledgePossession(APawn* NewPawn) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
@@ -363,9 +365,6 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Interaction", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UShooterInteractionComponent> InteractionComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Training", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UTrainingPlayerComponent> TrainingPlayerComponent;
-
 	FGameplayTag ActiveInteractionFallbackTag;
 
 	UPROPERTY(Transient)
@@ -398,6 +397,13 @@ private:
 	double LastChatMessageServerTime = -1.0;
 	double LastPingServerTime = -1.0;
 	bool bKillcamViewTargetSuppressed = false;
+    UFUNCTION(Server, Reliable)
+    void ServerSubmitAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
+    FTimerHandle AppearanceSubmitTimer;
+    int32 AppearanceSubmitAttempts = 0;
+    double AppearanceRateWindow = -1.0;
+    int32 AppearanceRateCount = 0;
+    bool bAppearanceSubmitted = false;
 	TWeakObjectPtr<AActor> PendingViewTarget;
 	FViewTargetTransitionParams PendingViewTargetTransitionParams;
 };

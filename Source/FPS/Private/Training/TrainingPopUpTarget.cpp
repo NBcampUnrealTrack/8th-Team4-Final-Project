@@ -163,11 +163,6 @@ void ATrainingPopUpTarget::InitializeHealth()
     AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetShieldAttribute(), 0.0f);
 }
 
-void ATrainingPopUpTarget::ResetHealthForNextCycle()
-{
-    InitializeHealth();
-}
-
 void ATrainingPopUpTarget::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
     const FGameplayEffectContextHandle&)
 {
@@ -246,7 +241,7 @@ void ATrainingPopUpTarget::KnockDown()
 void ATrainingPopUpTarget::ResetTarget()
 {
     GetWorldTimerManager().ClearTimer(ResetTimer);
-    ResetHealthForNextCycle();
+    InitializeHealth();
 
     if (TargetState == ETrainingPopUpTargetState::Up)
     {
@@ -261,7 +256,7 @@ void ATrainingPopUpTarget::ResetTarget()
 
 void ATrainingPopUpTarget::BeginRise()
 {
-    ResetHealthForNextCycle();
+    InitializeHealth();
     SetTargetState(ETrainingPopUpTargetState::Rising);
 }
 

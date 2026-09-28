@@ -10,7 +10,7 @@
 #include "Training/CQB/CQBTrainingSpawner.h"
 #include "Training/TrainingSettings.h"
 #include "Training/UI/CQBTrainingDialogWidget.h"
-#include "Training/UI/TrainingSessionHUDWidget.h"
+#include "Training/UI/TrainingPlayerPresentation.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "TrainingPlayer"
@@ -61,8 +61,7 @@ void UTrainingPlayerComponent::OpenCQBStartDialog(ACQBTrainingSpawner& Spawner)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Start, PendingCQBRequestId, Spawner.StartDialogWidgetClass);
@@ -79,8 +78,7 @@ void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Cancel, PendingCQBRequestId, Spawner.GetCancelDialogWidgetClass());
@@ -95,8 +93,7 @@ void UTrainingPlayerComponent::OpenCQBEndDialog(ACQBTrainingEndActor& EndActor)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBEndActor = &EndActor;
     PendingCQBSpawner = EndActor.Spawner;
     ShowCQBDialog(ECQBTrainingDialogKind::End, PendingCQBRequestId, EndActor.EndDialogWidgetClass);
@@ -426,60 +423,29 @@ void UTrainingPlayerComponent::NotifyCQBStopped(ACQBTrainingSpawner& Spawner)
         return;
     }
     ActiveCQBSpawner.Reset();
-    if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
+    if (Presentation)
     {
-        HUD->RemoveFromParent();
+        Presentation->StopCQBSession();
     }
-    CQBHUDWidget.Reset();
 }
 
 void UTrainingPlayerComponent::NotifyCQBStarted(
     ACQBTrainingSpawner& Spawner, const int32 TotalTroopers,
     TSubclassOf<UTrainingSessionHUDWidget> HUDWidgetClass)
 {
-    APlayerController* LocalController = GetParticipantController();
-    if (!LocalController || !LocalController->IsLocalController()) return;
-
     ActiveCQBSpawner = &Spawner;
-
-    if (UTrainingSessionHUDWidget* Existing = CQBHUDWidget.Get())
+    if (Presentation)
     {
-        Existing->RemoveFromParent();
-        CQBHUDWidget.Reset();
+        Presentation->StartCQBSession(Spawner, TotalTroopers, HUDWidgetClass);
     }
-
-    if (!HUDWidgetClass)
-    {
-        NotifyMessage(LOCTEXT("CQBHUDMissing",
-            "CQB HUD is not configured. Assign HUD Widget Class on BP_CQBTrainingSpawner."));
-        return;
-    }
-
-    UTrainingSessionHUDWidget* HUD = CreateWidget<UTrainingSessionHUDWidget>(LocalController, HUDWidgetClass);
-    if (!HUD) return;
-    if (!IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
-    {
-        HUD->RemoveFromParent();
-        return;
-    }
-    CQBHUDWidget = HUD;
-    HUD->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
-    if (!IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
-    {
-        HUD->RemoveFromParent();
-        if (CQBHUDWidget.Get() == HUD) CQBHUDWidget.Reset();
-        return;
-    }
-    HUD->StartCQBSession(TotalTroopers);
 }
 
 void UTrainingPlayerComponent::NotifyCQBProgress(
     const int32 KilledTroopers, const int32 TotalTroopers, const bool bComplete)
 {
-    if (UTrainingSessionHUDWidget* HUD = CQBHUDWidget.Get())
+    if (Presentation)
     {
-        HUD->PresentCQBKill(KilledTroopers, TotalTroopers);
-        if (bComplete) HUD->FinishCQBSession();
+        Presentation->UpdateCQBProgress(KilledTroopers, TotalTroopers, bComplete);
     }
 }
 

@@ -35,18 +35,28 @@ private:
     UCQBTrainingAwarenessComponent* GetAwareness() const;
     UCQBTrainingLocomotionComponent* GetLocomotion() const;
     APawn* GetControlledPawn() const;
-    void BeginSearchScan();
+    void BuildSearchPlan();
+    void MoveToSearchPoint();
+    void BeginPointInspection();
+    void FinishSearch();
 
     TWeakObjectPtr<UCQBTrainingAIComponent> ConfigRef;
     TWeakObjectPtr<UCQBTrainingAwarenessComponent> AwarenessRef;
     TWeakObjectPtr<UCQBTrainingLocomotionComponent> LocomotionRef;
 
     double StateEnterTime = 0.0;
+    uint32 ActiveEvidenceRevision = 0;
+    bool bMoveAttempted = false;
     bool bMovePrepared = false;
 
-    bool bSearchScanStarted = false;
-    int32 SearchScanStep = 0;
-    double NextSearchScanTime = 0.0;
-    float SearchBaseYaw = 0.0f;
-    float SearchLookTargetYaw = 0.0f;
+    uint32 PlannedEvidenceRevision = 0;
+    bool bSearchPlanBuilt = false;
+    TArray<FVector> SearchPoints;
+    FVector SearchCenter = FVector::ZeroVector;
+    FVector SearchForward = FVector::ForwardVector;
+    int32 SearchPointIndex = 0;
+    double MoveDeadline = 0.0;
+    bool bInspectingPoint = false;
+    double InspectionStartTime = 0.0;
+    float InspectionBaseYaw = 0.0f;
 };

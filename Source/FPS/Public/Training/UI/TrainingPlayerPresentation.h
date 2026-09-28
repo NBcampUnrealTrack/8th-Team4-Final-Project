@@ -9,6 +9,7 @@
 #include "TrainingPlayerPresentation.generated.h"
 
 class UTrainingPlayerComponent;
+class ACQBTrainingSpawner;
 class USoundAttenuation;
 class USoundBase;
 
@@ -25,10 +26,15 @@ public:
     void PresentStandaloneDamage(float Damage, bool bKilled, const FVector& WorldPosition);
     void PlayBotSound(int32 SessionId, USoundBase* Sound, USoundAttenuation* Attenuation,
         const FVector& WorldPosition, float Volume);
-    void Clear();
+    void StartCQBSession(ACQBTrainingSpawner& Spawner, int32 TotalTroopers,
+        TSubclassOf<UTrainingSessionHUDWidget> WidgetClass);
+    void UpdateCQBProgress(int32 KilledTroopers, int32 TotalTroopers, bool bComplete);
+    void StopCQBSession();
+    void Clear(bool bKeepCQBHUD = false);
     int32 GetSessionId() const { return FeedbackSessionId; }
 
 private:
+    void ClearSessionHUD();
     UTrainingDamageFeedbackWidget* EnsureDamageFeedbackWidget();
     void PresentDamage(float Damage, bool bKilled, const FVector& WorldPosition);
 
@@ -47,4 +53,6 @@ private:
     TObjectPtr<USoundAttenuation> DefaultBotAttenuation;
 
     int32 FeedbackSessionId = 0;
+    bool bCQBHUD = false;
+    bool bDamageFeedbackSetupErrorReported = false;
 };

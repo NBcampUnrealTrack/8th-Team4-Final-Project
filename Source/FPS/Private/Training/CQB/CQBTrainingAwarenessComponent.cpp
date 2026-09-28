@@ -1,15 +1,63 @@
 #include "Training/CQB/CQBTrainingAwarenessComponent.h"
 
 #include "Training/CQB/CQBTrainingAIComponent.h"
+#include "Training/CQB/CQBCombatIncidentSubsystem.h"
+#include "Training/CQB/CQBTrainingSpawner.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GAS/RogueTargetFilter.h"
+#include "NavigationSystem.h"
 
 UCQBTrainingAwarenessComponent::UCQBTrainingAwarenessComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UCQBTrainingAwarenessComponent::Configure(const UCQBTrainingAIComponent& Config)
+{
+    StopListening();
+    Configuration = &Config;
+    Settings = Config.AwarenessSettings;
+    ResetRuntimeState();
+}
+
+void UCQBTrainingAwarenessComponent::StartListening()
+{
+    const UCQBTrainingAIComponent* Config = Configuration.Get();
+    APawn* Pawn = Config ? Cast<APawn>(Config->GetOwner()) : nullptr;
+    AActor* Encounter = Config ? Config->GetTrainingSpawner() : nullptr;
+    if (Pawn && Encounter)
+    {
+        GetWorld()->GetSubsystem<UCQBCombatIncidentSubsystem>()->RegisterListener(
+            *this, *Pawn, *Encounter, Settings.AllyDeathAwarenessRadius);
+    }
+}
+
+void UCQBTrainingAwarenessComponent::StopListening()
+{
+    if (UWorld* World = GetWorld())
+    {
+        if (UCQBCombatIncidentSubsystem* Incidents = World->GetSubsystem<UCQBCombatIncidentSubsystem>())
+        {
+            Incidents->UnregisterListener(*this);
+        }
+    }
+}
+
+void UCQBTrainingAwarenessComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    StopListening();
+    Super::EndPlay(EndPlayReason);
+}
+
 void UCQBTrainingAwarenessComponent::ResetRuntimeState()
 {
+    ThreatKnowledge = ECQBThreatKnowledge::Unknown;
+    EvidenceRevision = 0;
+    InitialConfidence = 0.0f;
+    EvidenceTime = -1.0;
+    EvidenceExpireTime = -1.0;
     TargetActor.Reset();
     bTargetVisible = false;
     LastSeenLocation = FVector::ZeroVector;
@@ -56,9 +104,11 @@ void UCQBTrainingAwarenessComponent::RecordSightAcquired(
         return;
     }
 
+    RecordEvidence(ECQBThreatKnowledge::Confirmed, SeenLocation, 1.0f, NowSeconds);
+
     if (LastSightLostTime >= 0.0
         && NowSeconds - LastSightLostTime <= FMath::Max(0.0f, ReactionSettings.SameAngleMemorySeconds)
-        && FVector::DistSquared(Actor.GetActorLocation(), LastSightLostLocation)
+        && FVector::DistSquared(SeenLocation, LastSightLostLocation)
             <= FMath::Square(FMath::Max(0.0f, ReactionSettings.SameAngleDistance)))
     {
         ++SameAnglePeekCount;
@@ -101,21 +151,27 @@ void UCQBTrainingAwarenessComponent::RecordSightLost(
     LastSightLostLocation = LostLocation;
     LastSightLostTime = NowSeconds;
     ReactionReadyTime = -1.0;
+    RecordEvidence(ECQBThreatKnowledge::LastKnown, LostLocation, 0.85f, NowSeconds);
     BeginSearch(LostLocation, SearchDurationSeconds, NowSeconds);
 }
 
 void UCQBTrainingAwarenessComponent::RecordNoiseHeard(
-    AActor& Actor,
+    AActor&,
     const FVector& NoiseLocation,
     const float InvestigateTimeoutSeconds,
     const double NowSeconds)
 {
-    if (HasVisibleTarget() || HasDamageThreat(NowSeconds))
+    if (HasVisibleTarget() || HasDamageThreat(NowSeconds) || GetConfidence() > 0.35f)
     {
         return;
     }
 
-    TargetActor = &Actor;
+    // A sound identifies a location, not a continuously trackable actor.
+    TargetActor.Reset();
+    bTargetVisible = false;
+    bDamageThreatActive = false;
+    DamageThreatExpireTime = -1.0;
+    RecordEvidence(ECQBThreatKnowledge::Suspected, NoiseLocation, 0.35f, NowSeconds);
     LastHeardLocation = NoiseLocation;
     bNoisePending = true;
     NoiseExpireTime = NowSeconds + FMath::Max(0.5f, InvestigateTimeoutSeconds);
@@ -136,6 +192,8 @@ void UCQBTrainingAwarenessComponent::RecordDamageThreat(
 
     TargetActor = &Actor;
     LastKnownTargetLocation = KnownLocation;
+    RecordEvidence(HasVisibleTarget() ? ECQBThreatKnowledge::Confirmed : ECQBThreatKnowledge::Suspected,
+        KnownLocation, 0.9f, NowSeconds);
     SightAcquiredTime = NowSeconds;
     ReactionReadyTime = NowSeconds;
     bDamageThreatActive = true;
@@ -157,40 +215,6 @@ void UCQBTrainingAwarenessComponent::RefreshVisibleTargetLocation()
     }
 }
 
-void UCQBTrainingAwarenessComponent::RefreshDamageThreat(
-    const FVector& KnownLocation,
-    const float ThreatMemorySeconds,
-    const float SearchDurationSeconds,
-    const double NowSeconds)
-{
-    if (!TargetActor.IsValid())
-    {
-        return;
-    }
-
-    LastKnownTargetLocation = KnownLocation;
-    bDamageThreatActive = true;
-    DamageThreatExpireTime = NowSeconds + FMath::Max(0.5f, ThreatMemorySeconds);
-    BeginSearch(
-        KnownLocation,
-        FMath::Max(0.5f, ThreatMemorySeconds) + FMath::Max(0.5f, SearchDurationSeconds),
-        NowSeconds);
-}
-
-void UCQBTrainingAwarenessComponent::CompleteDamagePursuit(
-    const float SearchDurationSeconds,
-    const double NowSeconds)
-{
-    if (!bDamageThreatActive)
-    {
-        return;
-    }
-
-    bDamageThreatActive = false;
-    DamageThreatExpireTime = -1.0;
-    BeginSearch(LastKnownTargetLocation, SearchDurationSeconds, NowSeconds);
-}
-
 void UCQBTrainingAwarenessComponent::CompleteInvestigation(
     const float SearchDurationSeconds,
     const double NowSeconds)
@@ -205,6 +229,19 @@ void UCQBTrainingAwarenessComponent::CompleteInvestigation(
     BeginSearch(InvestigatedLocation, SearchDurationSeconds, NowSeconds);
 }
 
+void UCQBTrainingAwarenessComponent::CompleteTacticalObservation(
+    const float SearchDurationSeconds, const double NowSeconds)
+{
+    if (HasVisibleTarget() || !HasThreatKnowledge() || bNoisePending)
+    {
+        return;
+    }
+
+    bDamageThreatActive = false;
+    DamageThreatExpireTime = -1.0;
+    BeginSearch(LastKnownTargetLocation, SearchDurationSeconds, NowSeconds);
+}
+
 void UCQBTrainingAwarenessComponent::ClearNoise()
 {
     bNoisePending = false;
@@ -216,17 +253,18 @@ void UCQBTrainingAwarenessComponent::ClearSearch()
     bHasSearchLocation = false;
     SearchLocation = FVector::ZeroVector;
     SearchExpireTime = -1.0;
+    ReleaseExhaustedEvidence();
 }
 
 bool UCQBTrainingAwarenessComponent::HasVisibleTarget() const
 {
-    return bTargetVisible && TargetActor.IsValid();
+    return bTargetVisible && TargetActor.IsValid() && URogueTargetFilter::IsAlive(TargetActor.Get());
 }
 
 bool UCQBTrainingAwarenessComponent::HasDamageThreat(const double NowSeconds) const
 {
     return bDamageThreatActive
-        && TargetActor.IsValid()
+        && HasThreatKnowledge()
         && DamageThreatExpireTime >= 0.0
         && NowSeconds <= DamageThreatExpireTime;
 }
@@ -243,5 +281,163 @@ void UCQBTrainingAwarenessComponent::BeginSearch(
 {
     SearchLocation = Location;
     bHasSearchLocation = true;
-    SearchExpireTime = NowSeconds + FMath::Max(0.5f, DurationSeconds);
+    SearchExpireTime = FMath::Min(EvidenceExpireTime,
+        NowSeconds + FMath::Max(0.5f, DurationSeconds));
+}
+
+void UCQBTrainingAwarenessComponent::RecordCombatIncident(const FCQBCombatIncident& Incident)
+{
+    const UCQBTrainingAIComponent* Config = Configuration.Get();
+    const double Now = GetWorld()->GetTimeSeconds();
+    if (!Config || !Config->IsAlive() || HasVisibleTarget() || HasDamageThreat(Now)
+        || GetConfidence() > 0.55f)
+    {
+        return;
+    }
+
+    TargetActor.Reset();
+    bTargetVisible = false;
+    bDamageThreatActive = false;
+    DamageThreatExpireTime = -1.0;
+    const FVector Estimate = EstimateThreatLocation(Incident.Origin, Incident.ThreatDirection);
+    RecordEvidence(ECQBThreatKnowledge::Suspected, Estimate, 0.55f, Incident.Timestamp);
+    LastHeardLocation = Estimate;
+    bNoisePending = true;
+    NoiseExpireTime = FMath::Min(EvidenceExpireTime,
+        Now + FMath::Max(0.5f, Config->PatrolSettings.InvestigateTimeoutSeconds));
+    ClearSearch();
+}
+
+void UCQBTrainingAwarenessComponent::RecordDirectionalDamage(
+    const FVector& HitOrigin, const FVector& ThreatDirection,
+    const float ThreatMemorySeconds, const float SearchDurationSeconds,
+    const double NowSeconds)
+{
+    if (HasVisibleTarget())
+    {
+        RecordDamageThreat(*TargetActor.Get(), LastSeenLocation, ThreatMemorySeconds,
+            SearchDurationSeconds, NowSeconds);
+        return;
+    }
+
+    TargetActor.Reset();
+    bTargetVisible = false;
+    const FVector Estimate = EstimateThreatLocation(HitOrigin, ThreatDirection);
+    RecordEvidence(ECQBThreatKnowledge::Suspected, Estimate, 0.9f, NowSeconds);
+    bDamageThreatActive = true;
+    DamageThreatExpireTime = NowSeconds + FMath::Max(0.5f, ThreatMemorySeconds);
+    ReactionReadyTime = NowSeconds;
+    SightAcquiredTime = NowSeconds;
+    ClearNoise();
+    BeginSearch(Estimate, ThreatMemorySeconds + SearchDurationSeconds, NowSeconds);
+}
+
+void UCQBTrainingAwarenessComponent::RecordEvidence(
+    const ECQBThreatKnowledge Knowledge, const FVector& Location,
+    const float Confidence, const double NowSeconds)
+{
+    ThreatKnowledge = Knowledge;
+    LastKnownTargetLocation = Location;
+    InitialConfidence = Confidence;
+    EvidenceTime = NowSeconds;
+    EvidenceExpireTime = NowSeconds + FMath::Max(1.0f, Settings.EvidenceMemorySeconds);
+    ++EvidenceRevision;
+}
+
+bool UCQBTrainingAwarenessComponent::HasThreatKnowledge() const
+{
+    return GetConfidence() > 0.0f;
+}
+
+ECQBThreatKnowledge UCQBTrainingAwarenessComponent::GetThreatKnowledge() const
+{
+    if (HasVisibleTarget())
+    {
+        return ECQBThreatKnowledge::Confirmed;
+    }
+    if (!HasThreatKnowledge())
+    {
+        return ECQBThreatKnowledge::Unknown;
+    }
+    const ECQBThreatKnowledge RememberedKnowledge = ThreatKnowledge == ECQBThreatKnowledge::Confirmed
+        ? ECQBThreatKnowledge::LastKnown : ThreatKnowledge;
+    return RememberedKnowledge == ECQBThreatKnowledge::LastKnown && GetConfidence() < 0.4f
+        ? ECQBThreatKnowledge::Suspected : RememberedKnowledge;
+}
+
+float UCQBTrainingAwarenessComponent::GetConfidence() const
+{
+    if (HasVisibleTarget())
+    {
+        return 1.0f;
+    }
+    const UWorld* World = GetWorld();
+    if (!World || EvidenceExpireTime <= EvidenceTime)
+    {
+        return 0.0f;
+    }
+    const double RemainingFraction = FMath::Clamp(
+        (EvidenceExpireTime - World->GetTimeSeconds()) / (EvidenceExpireTime - EvidenceTime), 0.0, 1.0);
+    return InitialConfidence * static_cast<float>(RemainingFraction);
+}
+
+bool UCQBTrainingAwarenessComponent::HasPendingNoise() const
+{
+    return bNoisePending && HasThreatKnowledge();
+}
+
+bool UCQBTrainingAwarenessComponent::HasSearchLocation() const
+{
+    return bHasSearchLocation && HasThreatKnowledge();
+}
+
+void UCQBTrainingAwarenessComponent::ReleaseExhaustedEvidence()
+{
+    const UWorld* World = GetWorld();
+    if (!HasVisibleTarget() && !HasPendingNoise()
+        && !(bDamageThreatActive && World && World->GetTimeSeconds() <= DamageThreatExpireTime))
+    {
+        ThreatKnowledge = ECQBThreatKnowledge::Unknown;
+        InitialConfidence = 0.0f;
+        EvidenceExpireTime = -1.0;
+        TargetActor.Reset();
+    }
+}
+
+FVector UCQBTrainingAwarenessComponent::EstimateThreatLocation(
+    const FVector& Origin, const FVector& Direction) const
+{
+    const FVector FlatDirection = Direction.GetSafeNormal2D();
+    // No reliable direction means investigate the casualty, not an invented shooter bearing.
+    if (FlatDirection.IsNearlyZero())
+    {
+        return Origin;
+    }
+
+    const float MinimumDistance = FMath::Max(0.0f,
+        static_cast<float>(FMath::Min(Settings.ShooterEstimateDistance.X, Settings.ShooterEstimateDistance.Y)));
+    const float MaximumDistance = FMath::Max(MinimumDistance,
+        static_cast<float>(FMath::Max(Settings.ShooterEstimateDistance.X, Settings.ShooterEstimateDistance.Y)));
+    const float Uncertainty = FMath::Clamp(Settings.DirectionalUncertaintyDegrees, 0.0f, 90.0f);
+    UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    const UCQBTrainingAIComponent* Config = Configuration.Get();
+    const FVector ProjectionExtent = Config
+        ? Config->PatrolSettings.NavigationProjectionExtent.GetAbs() : FVector(120.0f, 120.0f, 250.0f);
+    const APawn* Pawn = Config ? Cast<APawn>(Config->GetOwner()) : nullptr;
+    const double CenterHeight = Pawn
+        ? Pawn->GetActorLocation().Z - Pawn->GetNavAgentLocation().Z : 0.0;
+
+    for (int32 Attempt = 0; Attempt < 3; ++Attempt)
+    {
+        const FVector EstimatedDirection = FlatDirection.RotateAngleAxis(
+            FMath::FRandRange(-Uncertainty, Uncertainty), FVector::UpVector);
+        const FVector Candidate = Origin + EstimatedDirection * FMath::FRandRange(MinimumDistance, MaximumDistance);
+        FNavLocation Projected;
+        if (Navigation && Navigation->ProjectPointToNavigation(Candidate, Projected, ProjectionExtent))
+        {
+            // Aim memory uses actor-center locations; NavMesh supplies ground locations.
+            return Projected.Location + FVector(0.0, 0.0, CenterHeight);
+        }
+    }
+    return Origin;
 }

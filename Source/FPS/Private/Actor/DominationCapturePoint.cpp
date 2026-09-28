@@ -49,10 +49,10 @@ FVector ADominationCapturePoint::GetCaptureBoxExtent() const
 bool ADominationCapturePoint::ContainsWorldLocation(const FVector& WorldLocation) const
 {
 	const FVector LocalLocation = CaptureZone->GetComponentTransform().InverseTransformPosition(WorldLocation);
-	const FVector ScaledExtent = CaptureZone->GetScaledBoxExtent();
-	return FMath::Abs(LocalLocation.X) <= ScaledExtent.X
-		&& FMath::Abs(LocalLocation.Y) <= ScaledExtent.Y
-		&& FMath::Abs(LocalLocation.Z) <= ScaledExtent.Z;
+	const FVector LocalExtent = CaptureZone->GetUnscaledBoxExtent();
+	return FMath::Abs(LocalLocation.X) <= LocalExtent.X
+		&& FMath::Abs(LocalLocation.Y) <= LocalExtent.Y
+		&& FMath::Abs(LocalLocation.Z) <= LocalExtent.Z;
 }
 
 void ADominationCapturePoint::GetOverlappingPawns(TArray<APawn*>& OutPawns) const

@@ -12,6 +12,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Tags/GameplayTags.h"
 #include "Training/TrainingSettings.h"
+#include "Training/TrainingTypes.h"
 
 ATrainingCharacter::ATrainingCharacter()
 {
@@ -166,8 +167,12 @@ void ATrainingCharacter::StartDissolvePresentation()
     }
     if (DissolveInstance)
     {
+        FTimerManagerTimerParameters TimerParameters;
+        TimerParameters.bLoop = true;
+        TimerParameters.bMaxOncePerFrame = true;
         GetWorld()->GetTimerManager().SetTimer(DissolveUpdateTimer, this,
-            &ThisClass::UpdateDissolvePresentation, 1.0f / 60.0f, true);
+            &ThisClass::UpdateDissolvePresentation, TrainingRules::PresentationUpdateIntervalSeconds,
+            TimerParameters);
         UpdateDissolvePresentation();
     }
 }

@@ -2,19 +2,22 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "GameMode/Types/DominationSandstormTypes.h"
 #include "UI/Frontend/CombatUIInitComponent.h"
 #include "DominationUIInitComponent.generated.h"
 
 class ADominationGameState;
 class UShooterMatchOutcomeScreen;
+class UDominationSandstormWarningWidget;
 
 UCLASS(ClassGroup = (UI))
 class FPS_API UDominationUIInitComponent : public UCombatUIInitComponent
 {
     GENERATED_BODY()
+public:
+    virtual void ResetWorldBinding() override;
 protected:
     virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual bool PrepareModeBindings() override;
     virtual bool CanInitializeCombatHUD(const ADominationPlayerState& ClassState) const override;
     virtual bool ShouldPresentClassSelection(const ADominationPlayerState& ClassState) const override;
@@ -35,6 +38,13 @@ private:
     void BeginMatchExitTransition(bool bInstant);
     // 예약 타이머가 느린 프레임으로 travel 보다 늦었을 때의 안전망
     void HandleSeamlessTravelStart(UWorld* TravelingWorld, const FString& MapName);
+    UFUNCTION()
+    void HandleSandstormStateChanged(const FDominationSandstormState& SandstormState);
+    void UpdateSandstormWarning();
+    void ClearSandstormWarning();
+    UPROPERTY(Transient)
+    TObjectPtr<UDominationSandstormWarningWidget> SandstormWarningWidget;
+    FTimerHandle SandstormWarningTimer;
     void BindToGameState(ADominationGameState* DominationGameState);
     void UnbindFromGameState();
 

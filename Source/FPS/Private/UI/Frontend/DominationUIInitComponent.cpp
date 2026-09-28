@@ -2,8 +2,11 @@
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameMode/State/DominationGameState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "GameMode/Settings/DominationSandstormSettings.h"
+#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Preload/DominationPreloadSubsystem.h"
@@ -36,7 +39,7 @@ void UDominationUIInitComponent::BeginPlay()
     }
 }
 
-void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UDominationUIInitComponent::ResetWorldBinding()
 {
     if (UWorld* World = GetWorld())
     {
@@ -44,7 +47,10 @@ void UDominationUIInitComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
     }
 
     UnbindFromGameState();
-    Super::EndPlay(EndPlayReason);
+    ClearSandstormWarning();
+    LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
+    LastObservedRewardRound = 0;
+    Super::ResetWorldBinding();
 }
 
 bool UDominationUIInitComponent::PrepareModeBindings()
@@ -83,6 +89,7 @@ bool UDominationUIInitComponent::IsAugmentModeActive() const
 void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 {
 	RefreshCombatUI();
+	UpdateSandstormWarning();
 	TryCaptureMatchResult();
 	TryPresentMatchEnd();
 
@@ -295,6 +302,9 @@ void UDominationUIInitComponent::BindToGameState(
 	SeamlessTravelStartHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(
 		this,
 		&ThisClass::HandleSeamlessTravelStart);
+	DominationGameState->OnSandstormStateChanged.AddUniqueDynamic(
+		this, &ThisClass::HandleSandstormStateChanged);
+	UpdateSandstormWarning();
 }
 
 void UDominationUIInitComponent::UnbindFromGameState()
@@ -304,6 +314,7 @@ void UDominationUIInitComponent::UnbindFromGameState()
 		BoundGameState->OnDominationFlowStateChanged.RemoveAll(this);
 		BoundGameState->OnMatchStateChanged.RemoveAll(this);
 		BoundGameState->OnTeamScoreChanged.RemoveAll(this);
+		BoundGameState->OnSandstormStateChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
 
@@ -317,3 +328,63 @@ bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const
 		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
 }
 
+
+void UDominationUIInitComponent::HandleSandstormStateChanged(const FDominationSandstormState&)
+{
+    UpdateSandstormWarning();
+}
+
+void UDominationUIInitComponent::UpdateSandstormWarning()
+{
+    const ADominationGameState* GameState = BoundGameState.Get();
+    const UDominationSandstormSettings* Settings = GameState ? GameState->GetSandstormSettings() : nullptr;
+    APlayerController* Controller = Cast<APlayerController>(GetOwner());
+    if (!GameState || !Settings || !Settings->WarningWidgetClass
+        || !Controller || !Controller->IsLocalController()
+        || GameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded
+        || GameState->GetSandstormState().Phase != EDominationSandstormPhase::Warning)
+    {
+        ClearSandstormWarning();
+        return;
+    }
+
+    const FDominationSandstormState& State = GameState->GetSandstormState();
+    const float Remaining = State.GetTimeRemaining(GameState->GetServerWorldTimeSeconds());
+    if (Remaining <= 0.0f)
+    {
+        ClearSandstormWarning();
+        return;
+    }
+    if (SandstormWarningWidget && SandstormWarningWidget->GetClass() != Settings->WarningWidgetClass.Get())
+    {
+        ClearSandstormWarning();
+    }
+    if (!SandstormWarningWidget)
+    {
+        SandstormWarningWidget = CreateWidget<UDominationSandstormWarningWidget>(Controller, Settings->WarningWidgetClass);
+        if (!SandstormWarningWidget)
+        {
+            return;
+        }
+        SandstormWarningWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+        SandstormWarningWidget->AddToPlayerScreen(20);
+    }
+
+    SandstormWarningWidget->SetWarning(Remaining, State.PhaseDuration);
+    const float NextChange = Remaining - (FMath::CeilToInt(Remaining) - 1);
+    GetWorld()->GetTimerManager().SetTimer(SandstormWarningTimer, this,
+        &ThisClass::UpdateSandstormWarning, FMath::Max(0.01f, NextChange), false);
+}
+
+void UDominationUIInitComponent::ClearSandstormWarning()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(SandstormWarningTimer);
+    }
+    if (SandstormWarningWidget)
+    {
+        SandstormWarningWidget->RemoveFromParent();
+        SandstormWarningWidget = nullptr;
+    }
+}

@@ -75,6 +75,7 @@ void UTrainingStartFeedbackWidget::ShowStarted(const float ElapsedSeconds)
 void UTrainingStartFeedbackWidget::ShowPulse(const FText& Message,
     const float Duration, const float InitialElapsed)
 {
+    ClearFeedback();
     ApplyStyle();
     if (!GetWorld() || !FeedbackContent || !Txt_FeedbackMessage)
     {
@@ -86,9 +87,32 @@ void UTrainingStartFeedbackWidget::ShowPulse(const FText& Message,
     PulseDurationSeconds = Duration;
     Txt_FeedbackMessage->SetText(Message);
     SetVisibility(ESlateVisibility::HitTestInvisible);
+    FTimerManagerTimerParameters TimerParameters;
+    TimerParameters.bLoop = true;
+    TimerParameters.bMaxOncePerFrame = true;
     GetWorld()->GetTimerManager().SetTimer(PulseUpdateTimer, this, &ThisClass::UpdatePulse,
-        1.0f / 60.0f, true);
+        TrainingRules::PresentationUpdateIntervalSeconds, TimerParameters);
     UpdatePulse();
+    if (bCountdownPulse) { RefreshCountdown(); }
+}
+
+void UTrainingStartFeedbackWidget::RefreshCountdown()
+{
+    const double Elapsed = InitialElapsedSeconds + GetWorld()->GetTimeSeconds() - LocalPulseStartSeconds;
+    const double Remaining = FMath::Max(0.0, PulseDurationSeconds - Elapsed);
+    if (Remaining <= 0.0) { return; }
+    const int32 Digit = FMath::CeilToInt(Remaining);
+    if (Txt_FeedbackMessage && Digit != LastCountdownDigit)
+    {
+        LastCountdownDigit = Digit;
+        const FText Format = CountdownText.ToString().Contains(TEXT("{Seconds}"))
+            ? CountdownText : LOCTEXT("CountdownLive", "{Seconds}초 뒤에 시작합니다");
+        FFormatNamedArguments Args;
+        Args.Add(TEXT("Seconds"), FText::AsNumber(Digit));
+        Txt_FeedbackMessage->SetText(FText::Format(Format, Args));
+    }
+    GetWorld()->GetTimerManager().SetTimer(CountdownTimer, this, &ThisClass::RefreshCountdown,
+        static_cast<float>(FMath::Max(0.01, Remaining - (Digit - 1))), false);
 }
 
 void UTrainingStartFeedbackWidget::UpdatePulse()
@@ -99,19 +123,6 @@ void UTrainingStartFeedbackWidget::UpdatePulse()
     {
         ClearFeedback();
         return;
-    }
-    if (bCountdownPulse && Txt_FeedbackMessage)
-    {
-        const int32 Digit = TrainingRules::RemainingWholeSeconds(GetDefault<UTrainingSettings>()->GetCountdownSeconds(), Elapsed);
-        if (Digit != LastCountdownDigit)
-        {
-            LastCountdownDigit = Digit;
-            const FText Format = CountdownText.ToString().Contains(TEXT("{Seconds}"))
-                ? CountdownText : LOCTEXT("CountdownLive", "{Seconds}초 뒤에 시작합니다");
-            FFormatNamedArguments Args;
-            Args.Add(TEXT("Seconds"), FText::AsNumber(Digit));
-            Txt_FeedbackMessage->SetText(FText::Format(Format, Args));
-        }
     }
     const float Opacity = TrainingRules::FeedbackOpacity(
         Elapsed, PulseDurationSeconds, FadeInSeconds, FadeOutSeconds);
@@ -126,6 +137,7 @@ void UTrainingStartFeedbackWidget::ClearFeedback()
     if (UWorld* ActiveWorld = GetWorld())
     {
         ActiveWorld->GetTimerManager().ClearTimer(PulseUpdateTimer);
+        ActiveWorld->GetTimerManager().ClearTimer(CountdownTimer);
     }
     if (FeedbackContent)
     {

@@ -1,6 +1,7 @@
 #include "Training/CQB/CQBTrainingStateTreeNodes.h"
 
 #include "Components/ActorComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "StateTreeExecutionContext.h"
 #include "Training/CQB/CQBTrainingAIComponent.h"
@@ -42,16 +43,16 @@ namespace CQBStateTree
 
         const double Now = World->GetTimeSeconds();
         const bool bValidTarget = Controller.IsCombatTargetValid(Awareness->GetTargetActor());
-        if (bValidTarget && Awareness->HasDamageThreat(Now))
-        {
-            return State == ECQBAIBehaviorState::Engage;
-        }
-
         const bool bVisibleTarget = Awareness->HasVisibleTarget() && bValidTarget;
         if (bVisibleTarget)
         {
-            const bool bReady = Awareness->IsReactionReady(Now);
+            const bool bReady = Controller.GetCombatComponent()->IsTacticalEngagementActive()
+                || Awareness->IsReactionReady(Now);
             return State == (bReady ? ECQBAIBehaviorState::Engage : ECQBAIBehaviorState::Reaction);
+        }
+        if (Controller.GetCombatComponent()->HasTacticalOpportunity())
+        {
+            return State == ECQBAIBehaviorState::Engage;
         }
         if (Awareness->HasPendingNoise())
         {
@@ -190,6 +191,7 @@ FCQBBehaviorStateTask::FCQBBehaviorStateTask()
 {
     bShouldCallTick = true;
     bShouldCopyBoundPropertiesOnTick = false;
+    bShouldStateChangeOnReselect = false;
 }
 
 EStateTreeRunStatus FCQBBehaviorStateTask::EnterState(
@@ -222,10 +224,63 @@ EStateTreeRunStatus FCQBBehaviorStateTask::Tick(
         return EStateTreeRunStatus::Succeeded;
     }
 
-    CQBStateTree::TickBehavior(*Controller, Data.State, DeltaTime);
+    if (Data.State == ECQBAIBehaviorState::Engage && Data.bUseTacticalChildren)
+    {
+        Controller->GetCombatComponent()->EvaluateTacticalIntent();
+    }
+    else
+    {
+        CQBStateTree::TickBehavior(*Controller, Data.State, DeltaTime);
+    }
     return CQBStateTree::IsStateSelected(*Controller, Data.State)
         ? EStateTreeRunStatus::Running
         : EStateTreeRunStatus::Succeeded;
+}
+
+bool FCQBTacticalIntentCondition::TestCondition(FStateTreeExecutionContext& Context) const
+{
+    const ACQBTrainingAIController* Controller = CQBStateTree::ResolveController(Context);
+    const FInstanceDataType& Data = Context.GetInstanceData(*this);
+    return Controller && Controller->GetCombatComponent()->GetTacticalIntent() == Data.Intent;
+}
+
+FCQBTacticalIntentTask::FCQBTacticalIntentTask()
+{
+    bShouldCallTick = true;
+    bShouldCopyBoundPropertiesOnTick = false;
+    bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FCQBTacticalIntentTask::EnterState(
+    FStateTreeExecutionContext& Context,
+    const FStateTreeTransitionResult&) const
+{
+    // The Engage parent initializes combat after initial child selection.
+    return CQBStateTree::ResolveController(Context)
+        ? EStateTreeRunStatus::Running : EStateTreeRunStatus::Failed;
+}
+
+EStateTreeRunStatus FCQBTacticalIntentTask::Tick(
+    FStateTreeExecutionContext& Context,
+    const float DeltaTime) const
+{
+    ACQBTrainingAIController* Controller = CQBStateTree::ResolveController(Context);
+    if (!Controller)
+    {
+        return EStateTreeRunStatus::Failed;
+    }
+
+    const FInstanceDataType& Data = Context.GetInstanceData(*this);
+    UCQBTrainingCombatComponent* Combat = Controller->GetCombatComponent();
+    if (!CQBStateTree::IsStateSelected(*Controller, ECQBAIBehaviorState::Engage)
+        || Combat->GetTacticalIntent() != Data.Intent)
+    {
+        return EStateTreeRunStatus::Succeeded;
+    }
+
+    Combat->TickTacticalIntent(DeltaTime, Data.Intent);
+    return Combat->GetTacticalIntent() == Data.Intent
+        ? EStateTreeRunStatus::Running : EStateTreeRunStatus::Succeeded;
 }
 
 void FCQBBehaviorStateTask::ExitState(

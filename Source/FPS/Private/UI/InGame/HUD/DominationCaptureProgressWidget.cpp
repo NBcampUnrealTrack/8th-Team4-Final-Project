@@ -16,6 +16,10 @@ void UDominationCaptureProgressWidget::NativeConstruct()
 		: nullptr;
 	if (!IsValid(DominationGameState))
 	{
+		if (GetWorld() && GetWorld()->GetGameState())
+		{
+			SetVisibility(ESlateVisibility::Collapsed);
+		}
 		return;
 	}
 

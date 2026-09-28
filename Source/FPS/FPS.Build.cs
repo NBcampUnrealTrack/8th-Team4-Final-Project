@@ -19,6 +19,7 @@ public class FPS : ModuleRules
 			"AIModule",
 			"NavigationSystem",
 			"StateTreeModule",
+			"PropertyBindingUtils",
 			"GameplayStateTreeModule",
 			"PhysicsCore",
 			"UMG",

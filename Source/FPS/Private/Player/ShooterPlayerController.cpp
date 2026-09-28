@@ -23,7 +23,6 @@
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "Input/ShooterInteractionComponent.h"
-#include "Training/TrainingPlayerComponent.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
@@ -56,7 +55,6 @@ AShooterPlayerController::AShooterPlayerController()
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
 	InteractionComponent = CreateDefaultSubobject<UShooterInteractionComponent>(TEXT("InteractionComponent"));
-	TrainingPlayerComponent = CreateDefaultSubobject<UTrainingPlayerComponent>(TEXT("TrainingPlayerComponent"));
 }
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(
@@ -74,6 +72,7 @@ void AShooterPlayerController::GetLifetimeReplicatedProps(
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+    SubmitSavedAppearances();
 
 	if (!IsLocalController())
 	{
@@ -135,6 +134,7 @@ void AShooterPlayerController::BeginPlay()
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearTimer(AppearanceSubmitTimer);
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -318,6 +318,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 void AShooterPlayerController::ReceivedPlayer()
 {
 	Super::ReceivedPlayer();
+    SubmitSavedAppearances();
 
 	if (IsLocalController() && NetworkTimeSyncComponent)
 	{

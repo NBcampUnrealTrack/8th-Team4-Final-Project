@@ -6,6 +6,7 @@
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "Training/TrainingPlayerComponent.h"
+#include "Training/CQB/CQBTrainingSpawner.h"
 #include "Training/TrainingSettings.h"
 #include "Training/UI/TrainingDamageFeedbackWidget.h"
 #include "Training/UI/TrainingSessionHUDWidget.h"
@@ -125,25 +126,35 @@ UTrainingDamageFeedbackWidget* UTrainingPlayerPresentation::EnsureDamageFeedback
     }
 
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    if (DamageFeedbackWidget)
+    {
+        if (!DamageFeedbackWidget->IsInViewport())
+        {
+            DamageFeedbackWidget->AddToPlayerScreen(Settings->DamageFeedbackZOrder);
+        }
+        return DamageFeedbackWidget;
+    }
+
     TSubclassOf<UTrainingDamageFeedbackWidget> WidgetClass = Bridge->DamageFeedbackWidgetClass;
-    if (!WidgetClass && Settings)
+    if (!WidgetClass)
     {
         WidgetClass = Settings->DamageFeedbackWidgetClass.LoadSynchronous();
     }
     if (!WidgetClass)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[Training] Damage feedback widget is not configured. Set Training > UI > Damage Feedback Widget Class or a component override."));
+        if (!bDamageFeedbackSetupErrorReported)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[Training] Damage feedback widget is not configured. Set Training > UI > Damage Feedback Widget Class or a component override."));
+            bDamageFeedbackSetupErrorReported = true;
+        }
         return nullptr;
     }
-
-    if (!DamageFeedbackWidget)
-    {
-        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, WidgetClass);
-    }
+    bDamageFeedbackSetupErrorReported = false;
+    DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, WidgetClass);
     if (DamageFeedbackWidget && !DamageFeedbackWidget->IsInViewport())
     {
-        DamageFeedbackWidget->AddToPlayerScreen(Settings ? Settings->DamageFeedbackZOrder : 18);
+        DamageFeedbackWidget->AddToPlayerScreen(Settings->DamageFeedbackZOrder);
     }
     return DamageFeedbackWidget;
 }
@@ -197,23 +208,86 @@ void UTrainingPlayerPresentation::PlayBotSound(const int32 SessionId, USoundBase
         FMath::Clamp(Volume, 0.0f, 4.0f), 1.0f, 0.0f, Attenuation);
 }
 
-void UTrainingPlayerPresentation::Clear()
+void UTrainingPlayerPresentation::StartCQBSession(ACQBTrainingSpawner& Spawner,
+    const int32 TotalTroopers, TSubclassOf<UTrainingSessionHUDWidget> WidgetClass)
 {
-    if (SessionHUDWidget)
+    UTrainingPlayerComponent* Bridge = Owner.Get();
+    APlayerController* LocalController = Bridge ? Bridge->GetParticipantController() : nullptr;
+    if (!LocalController) { return; }
+    Clear();
+    if (!WidgetClass)
     {
-        SessionHUDWidget->RemoveFromParent();
-        SessionHUDWidget = nullptr;
+        Bridge->NotifyMessage(NSLOCTEXT("TrainingPlayer", "CQBHUDMissing",
+            "CQB HUD is not configured. Assign HUD Widget Class on BP_CQBTrainingSpawner."));
+        return;
     }
-    if (StartFeedbackWidget)
+
+    UTrainingSessionHUDWidget* HUD = CreateWidget<UTrainingSessionHUDWidget>(LocalController, WidgetClass);
+    if (!HUD) { return; }
+    if (!Bridge->IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
     {
-        StartFeedbackWidget->ClearFeedback();
-        StartFeedbackWidget->RemoveFromParent();
-        StartFeedbackWidget = nullptr;
+        HUD->RemoveFromParent();
+        return;
     }
-    if (DamageFeedbackWidget)
+    bCQBHUD = true;
+    SessionHUDWidget = HUD;
+    HUD->AddToPlayerScreen(GetDefault<UTrainingSettings>()->SessionHUDZOrder);
+    if (!Bridge->IsCQBTrainingActiveWith(Spawner) || !Spawner.IsTrainingRunning())
     {
-        DamageFeedbackWidget->RemoveFromParent();
-        DamageFeedbackWidget = nullptr;
+        HUD->RemoveFromParent();
+        if (SessionHUDWidget == HUD) { SessionHUDWidget = nullptr; bCQBHUD = false; }
+        return;
+    }
+    HUD->StartCQBSession(TotalTroopers);
+}
+
+void UTrainingPlayerPresentation::UpdateCQBProgress(const int32 KilledTroopers,
+    const int32 TotalTroopers, const bool bComplete)
+{
+    if (bCQBHUD && SessionHUDWidget)
+    {
+        SessionHUDWidget->PresentCQBKill(KilledTroopers, TotalTroopers);
+        if (bComplete) { SessionHUDWidget->FinishCQBSession(); }
+    }
+}
+
+void UTrainingPlayerPresentation::StopCQBSession()
+{
+    if (!bCQBHUD) { return; }
+    ClearSessionHUD();
+}
+
+void UTrainingPlayerPresentation::ClearSessionHUD()
+{
+    UTrainingSessionHUDWidget* HUD = SessionHUDWidget.Get();
+    SessionHUDWidget = nullptr;
+    bCQBHUD = false;
+    if (HUD)
+    {
+        HUD->StopSession();
+        HUD->RemoveFromParent();
+    }
+}
+
+void UTrainingPlayerPresentation::Clear(const bool bKeepCQBHUD)
+{
+    if (!bKeepCQBHUD || !bCQBHUD)
+    {
+        ClearSessionHUD();
+    }
+    UTrainingStartFeedbackWidget* Feedback = StartFeedbackWidget.Get();
+    StartFeedbackWidget = nullptr;
+    if (Feedback)
+    {
+        Feedback->ClearFeedback();
+        Feedback->RemoveFromParent();
+    }
+    UTrainingDamageFeedbackWidget* Damage = DamageFeedbackWidget.Get();
+    DamageFeedbackWidget = nullptr;
+    if (Damage)
+    {
+        Damage->ClearDamageNumbers();
+        Damage->RemoveFromParent();
     }
     FeedbackSessionId = 0;
 }

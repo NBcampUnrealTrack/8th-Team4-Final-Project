@@ -38,6 +38,7 @@ void UCQBTrainingCombatComponent::ResetRuntimeState()
     bFiringLaneMovePrepared = false;
     FiringLaneSourceLocation = FVector::ZeroVector;
     NextFiringLanePrepareTime = 0.0;
+    ResetTactics();
 }
 
 void UCQBTrainingCombatComponent::EnterReaction()
@@ -64,89 +65,52 @@ void UCQBTrainingCombatComponent::TickReaction(const float DeltaTime)
 
 void UCQBTrainingCombatComponent::EnterEngage()
 {
-    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    UWorld* World = GetWorld();
-    if (Locomotion)
-    {
-        Locomotion->Stop();
-    }
-
+    bEngagementActive = true;
+    GetLocomotion()->Stop();
     BurstShotsRemaining = 0;
     BurstShotIndex = 0;
     ResetFiringLaneMove();
-    NextBurstTime = World ? World->GetTimeSeconds() : 0.0;
-    NextShotTime = NextBurstTime;
+    bTacticalMovePrepared = false;
+    PeekPhase = EPeekPhase::None;
+    bCoverChosenWithSight = GetAwareness()->HasVisibleTarget();
+    const double Now = GetWorld()->GetTimeSeconds();
+    NextBurstTime = Now;
+    NextShotTime = Now;
+    NextTacticalEvaluationTime = 0.0;
+    TacticalIntent = ECQBTacticalIntent::DirectFire;
+    if (PositionStartTime <= 0.0)
+    {
+        PositionStartTime = Now;
+    }
+    EvaluateTacticalIntent();
 }
 
 void UCQBTrainingCombatComponent::TickEngage(const float DeltaTime)
 {
-    ACQBTrainingAIController* Controller = GetController();
-    UCQBTrainingAIComponent* Config = GetConfig();
-    UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
-    UCQBTrainingLocomotionComponent* Locomotion = GetLocomotion();
-    UWorld* World = GetWorld();
-    AActor* Target = Awareness ? Awareness->GetTargetActor() : nullptr;
-    if (!Controller || !Config || !Awareness || !Locomotion || !World
-        || !Controller->IsCombatTargetValid(Target))
+    EvaluateTacticalIntent();
+    TickTacticalIntent(DeltaTime, TacticalIntent);
+}
+
+void UCQBTrainingCombatComponent::TickFire(const double Now, const bool bMoving)
+{
+    const UCQBTrainingAIComponent* Config = GetConfig();
+    const UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
+    const ACQBTrainingAIController* Controller = GetController();
+    if (!Awareness->HasVisibleTarget() || !Awareness->IsReactionReady(Now)
+        || !Controller->IsCombatTargetValid(Awareness->GetTargetActor()))
     {
         BurstShotsRemaining = 0;
-        ResetFiringLaneMove();
         return;
     }
 
-    const double Now = World->GetTimeSeconds();
-    const bool bVisibleTarget = Awareness->HasVisibleTarget();
-    const bool bDamageThreat = Awareness->HasDamageThreat(Now);
-    if (!bVisibleTarget && !bDamageThreat)
+    const FVector ShotStart = ResolveShotStart();
+    const FVector AimPoint = ResolveTargetAimPoint();
+    const float Distance = FVector::Dist2D(Config->GetActorLocation(), Awareness->GetThreatLocation());
+    if (!HasClearShotToTarget(ShotStart, AimPoint)
+        || !GetLocomotion()->IsFacing(AimPoint, Config->ReactionSettings.FireFacingToleranceDegrees)
+        || (bMoving && Distance > 700.0f))
     {
         BurstShotsRemaining = 0;
-        ResetFiringLaneMove();
-        return;
-    }
-
-    if (bVisibleTarget)
-    {
-        Awareness->RefreshVisibleTargetLocation();
-        UpdateCombatFacing(DeltaTime);
-    }
-    else if (bDamageThreat)
-    {
-        Locomotion->TurnToward(
-            Awareness->GetLastKnownTargetLocation(),
-            DeltaTime,
-            Config->ReactionSettings.CombatTurnSpeedDegreesPerSecond,
-            true);
-    }
-
-    if (!HasClearShotToTarget())
-    {
-        BurstShotsRemaining = 0;
-        NextBurstTime = FMath::Max(NextBurstTime, Now + 0.03);
-        TickAcquireFiringLane(DeltaTime, Now);
-        return;
-    }
-
-    if (bDamageThreat)
-    {
-        Awareness->RefreshDamageThreat(
-            Target->GetActorLocation(),
-            Config->CombatSettings.DamageThreatMemorySeconds,
-            Config->PatrolSettings.SearchDurationSeconds,
-            Now);
-    }
-
-    if (bFiringLaneMovePrepared)
-    {
-        Locomotion->Stop();
-        ResetFiringLaneMove();
-    }
-
-    UpdateCombatFacing(DeltaTime);
-    if (!Locomotion->IsFacing(
-        ResolveTargetAimPoint(), Config->ReactionSettings.FireFacingToleranceDegrees))
-    {
-        BurstShotsRemaining = 0;
-        NextBurstTime = FMath::Max(NextBurstTime, Now + 0.03);
         return;
     }
 
@@ -157,39 +121,58 @@ void UCQBTrainingCombatComponent::TickEngage(const float DeltaTime)
         {
             return;
         }
-
-        const int32 MinShots = FMath::Max(1, FMath::Min(Combat.BurstMinShots, Combat.BurstMaxShots));
-        const int32 MaxShots = FMath::Max(MinShots, FMath::Max(Combat.BurstMinShots, Combat.BurstMaxShots));
+        int32 MinShots = FMath::Max(1, FMath::Min(Combat.BurstMinShots, Combat.BurstMaxShots));
+        int32 MaxShots = FMath::Max(MinShots, FMath::Max(Combat.BurstMinShots, Combat.BurstMaxShots));
+        if (TacticalIntent == ECQBTacticalIntent::PeekFire)
+        {
+            MinShots = 1;
+            MaxShots = FMath::Min(3, MaxShots);
+        }
+        else if (TacticalIntent == ECQBTacticalIntent::HoldAngle || bMoving)
+        {
+            MinShots = 1;
+            MaxShots = FMath::Min(2, MaxShots);
+        }
         BurstShotsRemaining = FMath::RandRange(MinShots, MaxShots);
         BurstShotIndex = 0;
         NextShotTime = Now;
     }
-
     if (Now < NextShotTime)
     {
         return;
     }
 
-    FireOneShot();
+    FireOneShot(ShotStart, AimPoint);
     --BurstShotsRemaining;
     ++BurstShotIndex;
-
+    const float CloseRangeScale = Distance < 500.0f ? 0.8f : 1.0f;
     if (BurstShotsRemaining > 0)
     {
-        NextShotTime = Now + FMath::FRandRange(
+        NextShotTime = Now + CloseRangeScale * FMath::FRandRange(
             FMath::Min(Combat.ShotIntervalMinSeconds, Combat.ShotIntervalMaxSeconds),
             FMath::Max(Combat.ShotIntervalMinSeconds, Combat.ShotIntervalMaxSeconds));
     }
     else
     {
-        NextBurstTime = Now + FMath::FRandRange(
+        ++BurstsFromPosition;
+        const float IntentScale = TacticalIntent == ECQBTacticalIntent::HoldAngle ? 1.25f : 1.0f;
+        NextBurstTime = Now + CloseRangeScale * IntentScale * FMath::FRandRange(
             FMath::Min(Combat.BurstCooldownMinSeconds, Combat.BurstCooldownMaxSeconds),
             FMath::Max(Combat.BurstCooldownMinSeconds, Combat.BurstCooldownMaxSeconds));
+        if (TacticalIntent == ECQBTacticalIntent::PeekFire && PeekPhase == EPeekPhase::Exposed)
+        {
+            BeginPeekReturn(Now);
+        }
     }
 }
 
 void UCQBTrainingCombatComponent::ExitCombat()
 {
+    FinishDefensiveEpisode();
+    bEngagementActive = false;
+    TacticalIntent = ECQBTacticalIntent::DirectFire;
+    bTacticalMovePrepared = false;
+    PeekPhase = EPeekPhase::None;
     BurstShotsRemaining = 0;
     BurstShotIndex = 0;
     ResetFiringLaneMove();
@@ -208,6 +191,7 @@ void UCQBTrainingCombatComponent::NotifyPawnHit()
         return;
     }
 
+    NextTacticalEvaluationTime = 0.0;
     HitPenaltyUntil = World->GetTimeSeconds()
         + FMath::Max(0.0f, Config->AccuracySettings.HitReactionPenaltySeconds);
 }
@@ -248,16 +232,8 @@ FVector UCQBTrainingCombatComponent::ResolveShotStart() const
 
 FVector UCQBTrainingCombatComponent::ResolveTargetAimPoint() const
 {
-    const UCQBTrainingAIComponent* Config = GetConfig();
-    const UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
-    const AActor* Target = Awareness ? Awareness->GetTargetActor() : nullptr;
-    if (!Config || !Target)
-    {
-        return FVector::ZeroVector;
-    }
-
-    return Target->GetActorLocation()
-        + FVector(0.0f, 0.0f, Config->AccuracySettings.AimPointHeightOffset);
+    return GetAwareness()->GetThreatLocation()
+        + FVector(0.0f, 0.0f, GetConfig()->AccuracySettings.AimPointHeightOffset);
 }
 
 float UCQBTrainingCombatComponent::ComputeAimErrorDegrees() const
@@ -293,15 +269,19 @@ float UCQBTrainingCombatComponent::ComputeAimErrorDegrees() const
     }
 
     const float DistanceMeters = FVector::Distance(
-        Config->GetActorLocation(), Target->GetActorLocation()) / 100.0f;
+        Config->GetActorLocation(), Awareness->GetThreatLocation()) / 100.0f;
     const float ExtraTens = FMath::Max(0.0f, DistanceMeters - 5.0f) / 10.0f;
     Error += ExtraTens * FMath::Max(0.0f, Accuracy.DistancePenaltyPer10Meters);
     Error += static_cast<float>(BurstShotIndex)
         * FMath::Max(0.0f, Accuracy.BurstRecoilDegreesPerShot);
+    if (TacticalIntent == ECQBTacticalIntent::HoldAngle)
+    {
+        Error *= 0.85f;
+    }
     return FMath::Max(0.0f, Error);
 }
 
-bool UCQBTrainingCombatComponent::HasClearShotToTarget() const
+bool UCQBTrainingCombatComponent::HasClearShotToTarget(const FVector& Start, const FVector& AimPoint) const
 {
     const ACQBTrainingAIController* Controller = GetController();
     const UCQBTrainingAIComponent* Config = GetConfig();
@@ -313,11 +293,6 @@ bool UCQBTrainingCombatComponent::HasClearShotToTarget() const
         return false;
     }
 
-    const FVector Start = ResolveShotStart();
-    const FVector AimPoint = Awareness->HasVisibleTarget()
-        ? ResolveTargetAimPoint()
-        : Awareness->GetLastKnownTargetLocation()
-            + FVector(0.0f, 0.0f, Config->AccuracySettings.AimPointHeightOffset);
     if (FVector::DistSquared(Start, AimPoint)
         > FMath::Square(FMath::Max(100.0f, Config->CombatSettings.MaxFireRange)))
     {
@@ -362,20 +337,9 @@ bool UCQBTrainingCombatComponent::TickAcquireFiringLane(
         }
     }
 
-    const bool bReached = bFiringLaneMovePrepared
-        && Locomotion->TickPreparedMove(DeltaTime, 0.0f);
-    Locomotion->TurnToward(
-        KnownLocation,
-        DeltaTime,
-        Config->ReactionSettings.CombatTurnSpeedDegreesPerSecond,
-        true);
-
-    if (bReached && !Awareness->HasVisibleTarget() && Awareness->HasDamageThreat(NowSeconds))
+    if (bFiringLaneMovePrepared)
     {
-        Awareness->CompleteDamagePursuit(
-            Config->PatrolSettings.SearchDurationSeconds, NowSeconds);
-        Locomotion->Stop();
-        ResetFiringLaneMove();
+        Locomotion->TickPreparedMove(DeltaTime, 0.0f);
     }
 
     return bFiringLaneMovePrepared;
@@ -404,28 +368,21 @@ void UCQBTrainingCombatComponent::UpdateCombatFacing(const float DeltaTime)
         true);
 }
 
-void UCQBTrainingCombatComponent::FireOneShot()
+void UCQBTrainingCombatComponent::FireOneShot(const FVector& Start, const FVector& AimPoint)
 {
     ACQBTrainingAIController* Controller = GetController();
     UCQBTrainingAIComponent* Config = GetConfig();
     UCQBTrainingAwarenessComponent* Awareness = GetAwareness();
     UWorld* World = GetWorld();
     AActor* Target = Awareness ? Awareness->GetTargetActor() : nullptr;
-    const double Now = World ? World->GetTimeSeconds() : -1.0;
     if (!Controller || !Config || !Awareness || !World
         || !Controller->IsCombatTargetValid(Target)
-        || (!Awareness->HasVisibleTarget() && !Awareness->HasDamageThreat(Now)))
+        || !Awareness->HasVisibleTarget())
     {
         return;
     }
 
-    const FVector Start = ResolveShotStart();
-    const FVector AimPoint = ResolveTargetAimPoint();
-    FVector BaseDirection = Controller->GetControlRotation().Vector().GetSafeNormal();
-    if (BaseDirection.IsNearlyZero())
-    {
-        BaseDirection = (AimPoint - Start).GetSafeNormal();
-    }
+    const FVector BaseDirection = (AimPoint - Start).GetSafeNormal();
     if (BaseDirection.IsNearlyZero())
     {
         return;

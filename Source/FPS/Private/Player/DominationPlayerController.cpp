@@ -1,5 +1,9 @@
 #include "Player/DominationPlayerController.h"
 
+#include "Audio/DominationSystemAnnouncer.h"
+#include "Components/DominationSandstormComponent.h"
+#include "EngineUtils.h"
+
 #include "EnhancedInputComponent.h"
 #include "Input/ShooterInputConfig.h"
 #include "Engine/World.h"
@@ -13,6 +17,25 @@ ADominationPlayerController::ADominationPlayerController()
 {
 	UIInitComponent = CreateDefaultSubobject<UDominationUIInitComponent>(
 		TEXT("DominationUIInitComponent"));
+	SandstormComponent = CreateDefaultSubobject<UDominationSandstormComponent>(
+		TEXT("DominationSandstormComponent"));
+}
+
+void ADominationPlayerController::PreClientTravel(const FString& PendingURL, const ETravelType TravelType, const bool bIsSeamlessTravel)
+{
+	SandstormComponent->ResetWorldBinding();
+	UIInitComponent->ResetWorldBinding();
+	Super::PreClientTravel(PendingURL, TravelType, bIsSeamlessTravel);
+}
+
+void ADominationPlayerController::NotifyLoadedWorld(const FName WorldPackageName, const bool bFinalDest)
+{
+	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
+	if (bFinalDest && IsLocalController() && SandstormComponent->HasBegunPlay())
+	{
+		SandstormComponent->InitializeForWorld();
+		UIInitComponent->InitializeForWorld();
+	}
 }
 
 bool ADominationPlayerController::CanProcessGameplayInput() const
@@ -113,4 +136,19 @@ float ADominationPlayerController::GetCombatClassSelectionTimeRemaining() const
     const ADominationGameState* ModeState = GetWorld()
         ? GetWorld()->GetGameState<ADominationGameState>() : nullptr;
     return IsValid(ModeState) ? ModeState->GetPhaseTimeRemaining() : -1.0f;
+}
+
+void ADominationPlayerController::SandstormPreview(const float Intensity)
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+	SandstormComponent->SetPreviewIntensity(Intensity);
+	for (TActorIterator<ADominationSystemAnnouncer> It(GetWorld()); It; ++It)
+	{
+		It->SetSandstormPreviewIntensity(Intensity);
+	}
+#endif
 }

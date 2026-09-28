@@ -58,6 +58,10 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	// 복제 상태로 복원하는 안내도 기존 음성 대기열을 사용한다.
+	void QueueAnnouncement(FName AnnouncementId, float QueueLifetimeSeconds = -1.0f);
+	void CancelAnnouncement(FName AnnouncementId);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Announcer")
 	TMap<FName, FSystemAnnouncerCue> Announcements;
 
@@ -78,7 +82,6 @@ private:
 	UFUNCTION()
 	void HandleVoiceFinished();
 
-	void QueueAnnouncement(FName AnnouncementId);
 	void PlayNextAnnouncement();
 	bool TryPlayAnnouncement(FName AnnouncementId, const FSystemAnnouncerCue& Cue);
 	void StopCurrentVoice();
@@ -87,7 +90,7 @@ private:
 	struct FQueuedAnnouncement
 	{
 		FName Id;
-		double QueuedAt = 0.0;
+		double ExpiresAt = 0.0;
 	};
 
 	UPROPERTY(Transient)

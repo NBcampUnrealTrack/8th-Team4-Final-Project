@@ -18,6 +18,10 @@ void UDominationObjectiveCompassWidget::NativeConstruct()
 		: nullptr;
 	if (!IsValid(DominationGameState))
 	{
+		if (GetWorld() && GetWorld()->GetGameState())
+		{
+			SetVisibility(ESlateVisibility::Collapsed);
+		}
 		return;
 	}
 

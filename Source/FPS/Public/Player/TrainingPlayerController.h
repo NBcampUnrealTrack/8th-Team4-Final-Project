@@ -6,6 +6,7 @@
 #include "TrainingPlayerController.generated.h"
 
 class UTrainingUIInitComponent;
+class UTrainingPlayerComponent;
 
 UCLASS()
 class FPS_API ATrainingPlayerController : public AShooterPlayerController, public IRogueCombatClassSelector
@@ -34,4 +35,6 @@ private:
     void Input_ToggleAugmentSelect();
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Training|UI", meta = (AllowPrivateAccess = "true"))
     TObjectPtr<UTrainingUIInitComponent> UIInitComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Shooter|Training", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UTrainingPlayerComponent> TrainingPlayerComponent;
 };
