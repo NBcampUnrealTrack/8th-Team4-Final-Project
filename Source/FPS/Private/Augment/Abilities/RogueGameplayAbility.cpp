@@ -19,6 +19,7 @@
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueTargetFilter.h"
 #include "Tags/GameplayTags.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAbility, Log, All);
 
@@ -256,6 +257,13 @@ void URogueGameplayAbility::FinishDeliver()
 		Deliver(*ActiveEntry, ActivePayload);
 	}
 
+	// 반복 발동 증강은 지속 시간 동안 종료하지 않고 재발동
+	if (RepeatDuration > 0.f)
+	{
+		BeginRepeatDeliver();
+		return;
+	}
+
 	// 손에 든 증강은 사용 후 큐 제거
 	if (bHoldToUse && EquipCueTag.IsValid())
 	{
@@ -276,6 +284,44 @@ void URogueGameplayAbility::FinishDeliver()
 	// 클라 종료가 서버의 발동 대기를 끊지 않게 복제하지 않음
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
 		/*bReplicateEndAbility*/ HasAuthority(&CurrentActivationInfo), false);
+}
+
+void URogueGameplayAbility::BeginRepeatDeliver()
+{
+	if (RepeatCueTag.IsValid())
+	{
+		K2_AddGameplayCueWithParams(RepeatCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
+	}
+
+	if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, RepeatDuration))
+	{
+		Task->OnFinish.AddDynamic(this, &ThisClass::HandleRecoveryFinished);
+		Task->ReadyForActivation();
+	}
+
+	// 판정은 서버에서만
+	if (HasAuthority(&CurrentActivationInfo))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(RepeatTimer, this, &ThisClass::RepeatDeliver, RepeatInterval, true);
+		}
+	}
+}
+
+void URogueGameplayAbility::RepeatDeliver()
+{
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+
+	// 매번 현재 시선 기준으로 다시 조립
+	if (!ActiveEntry || !URogueTargetFilter::IsAlive(Avatar)
+		|| !BuildEffectPayload(*ActiveEntry, Avatar, nullptr, CurrentSpecHandle, CurrentActorInfo, ActivePayload))
+	{
+		EndSelf(true);
+		return;
+	}
+
+	Deliver(*ActiveEntry, ActivePayload);
 }
 
 void URogueGameplayAbility::HandleRecoveryFinished()
@@ -391,6 +437,11 @@ void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
                                        const FGameplayAbilityActivationInfo ActivationInfo,
                                        bool bReplicateEndAbility, bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(RepeatTimer);
+	}
+
 	if (bHoldTagApplied)
 	{
 		bHoldTagApplied = false;

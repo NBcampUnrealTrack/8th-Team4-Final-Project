@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -151,6 +151,19 @@ protected:
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
 	float RecoverySeconds = 0.35f;
 
+	// 0 보다 크면 발동 후 이 시간 동안 RepeatInterval 마다 조준을 다시 잡아 재발동
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation", meta = (ClampMin = "0.0"))
+	float RepeatDuration = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, ClampMin = "0.05"))
+	float RepeatInterval = 0.25f;
+
+	// 반복 발동 동안 유지할 GameplayCue
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, Categories = "GameplayCue"))
+	FGameplayTag RepeatCueTag;
+
 	// 어느 입력으로 사용했는지. 홀드가 아니면 Primary
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (Categories = "Event.Utility.Input"))
@@ -205,6 +218,14 @@ private:
 	// 장착 대기가 끝나면 사용 입력을 받기 시작
 	UFUNCTION()
 	void HandleEquipFinished();
+
+	// 반복 발동 시작. 지속 시간이 끝나면 종료
+	void BeginRepeatDeliver();
+
+	UFUNCTION()
+	void RepeatDeliver();
+
+	FTimerHandle RepeatTimer;
 
 	// 내가 얹은 UtilityHeld 를 아직 안 걷었는지
 	bool bHoldTagApplied = false;
