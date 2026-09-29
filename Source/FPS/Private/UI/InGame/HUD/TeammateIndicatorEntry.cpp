@@ -61,6 +61,9 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 		{
 			Panel_IndicatorVisual->SetVisibility(ESlateVisibility::Collapsed);
 		}
+		
+		// 다시 보일 때 가림 판정을 바로 한다
+		NextLineOfSightCheckTime = 0.0;
 	};
 
 	if (bCachedIsAlive == false)
@@ -140,9 +143,15 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 	
 	if (Text_Nickname)
 	{
-		const bool bHeadVisible = HasLineOfSightToTargetHead(HeadLocation, TargetActor);
+		// 가림 판정은 간격마다만 다시 한다
+		const double Now = PC->GetWorld()->GetTimeSeconds();
+		if (Now >= NextLineOfSightCheckTime)
+		{
+			NextLineOfSightCheckTime = Now + LineOfSightCheckInterval;
+			bCachedHeadVisible = HasLineOfSightToTargetHead(HeadLocation, TargetActor);
+		}
 		
-		Text_Nickname->SetVisibility(bHeadVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_Nickname->SetVisibility(bCachedHeadVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
@@ -164,7 +173,6 @@ bool UTeammateIndicatorEntry::GetTargetHeadLocation(FVector& OutHeadLocation, AA
 	const USkeletalMeshComponent* Mesh = IsValid(TargetCharacter) ? TargetCharacter->GetMesh() : nullptr;
 	if (IsValid(Mesh) == false)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TeammateIndicatorEntry Mesh가 없음"));
 		return false;
 	}
 	
@@ -241,6 +249,9 @@ void UTeammateIndicatorEntry::SetPlayerState(AShooterPlayerState* NewPlayerState
 	UnbindFromPlayerState();
 	
 	BoundPlayerState = NewPlayerState;
+	
+	// 대상이 바뀌면 가림 판정을 바로 한다
+	NextLineOfSightCheckTime = 0.0;
 	
 	if (NewPlayerState == nullptr)
 	{
