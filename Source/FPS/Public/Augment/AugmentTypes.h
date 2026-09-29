@@ -167,6 +167,10 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseRandomMultiplier", EditConditionHides, ClampMin = "0.0"))
     float RandomMultiplierMax = 1.f;
 
+    // 켜면 발동 시 이번 피해를 헤드샷으로 처리 (모든 부위를 머리 배율로, 헤드샷 이벤트 발신)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bForceHeadshot = false;
+
     // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))

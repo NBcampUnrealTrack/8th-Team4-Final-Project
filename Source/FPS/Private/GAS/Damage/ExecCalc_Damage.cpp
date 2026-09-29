@@ -154,6 +154,7 @@ namespace
 		float LifestealRate	   = 0.f; // 공격 측만 적용. 방어 측은 흡혈 없음
 		float RandomScale      = 1.f; // 무작위 배율. 증감률 합산과 별도로 곱함
 		float HeadRandomScale  = 1.f;
+		bool  bForceHeadshot   = false; // 공격 측만 의미 있음
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -344,6 +345,8 @@ namespace
 				const float Roll = URogueAugmentStatResolver::RollRange(Rule.RandomMultiplierMin, Rule.RandomMultiplierMax);
 				(Rule.bAppliesToHeadshotBonusOnly ? Bucket.HeadRandomScale : Bucket.RandomScale) *= Roll;
 			}
+
+			Bucket.bForceHeadshot |= Rule.bForceHeadshot;
 		}
 	}
 
@@ -535,17 +538,29 @@ namespace
 	// 1~3단계 진입
 	FRogueDamageAccumulator ResolveIncomingDamage(const FRogueDamageEval&            E,
 	                                              const FRogueGameplayEffectContext* Ctx,
-	                                              const FGameplayEffectSpec&         Spec)
+	                                              const FGameplayEffectSpec&         Spec,
+	                                              const bool                         bForceHeadshot)
 	{
 		if (Ctx && !Ctx->HitGroups.IsEmpty())
 		{
 			// 미등록 무기는 FindEntry 가 경고를 남긴다. 그 경우 아래 SetByCaller 로 폴백한다.
 			if (const FWeaponDamageEntry* Entry = UWeaponDamageData::FindEntry(Ctx->WeaponTag))
 			{
+				// 헤드샷 강제면 모든 부위를 머리로
+				TArray<FRogueHitGroup> HeadGroups;
+				if (bForceHeadshot)
+				{
+					HeadGroups = Ctx->HitGroups;
+					for (FRogueHitGroup& Group : HeadGroups)
+					{
+						Group.HitZoneTag = RogueTags::Hit_Zone_Head;
+					}
+				}
+
 				return CalculateWeaponDamage(
 					*Entry,
 					Ctx->HitDistanceMeters,
-					Ctx->HitGroups,
+					bForceHeadshot ? TConstArrayView<FRogueHitGroup>(HeadGroups) : TConstArrayView<FRogueHitGroup>(Ctx->HitGroups),
 					E.Read(E.Capture.SourceEffectiveRangeBonusDef,   0.f),
 					E.Read(E.Capture.SourcePenetrationMultiplierDef, 1.f));
 			}
@@ -771,15 +786,17 @@ void UExecCalc_Damage::Execute_Implementation(
 
 	const FRogueDamageSource Source = ResolveSource(Ctx);
 
+	// 조건부 규칙 판정을 먼저. 헤드샷 강제 여부도 여기서 정해짐
+	const FRogueRuleContext      RC     = MakeRuleContext(E, Ctx);
+	const FRogueConditionalTotals Totals = GatherConditionalTotals(E, RC, Source);
+	const bool bForcedHeadshot = Totals.Dealt.bForceHeadshot && Ctx && !Ctx->bHeadshot && !Ctx->HitGroups.IsEmpty();
+
 	// 1~3단계. 거리 감쇠 -> 관통력 증강 -> 부위 대미지
-	FRogueDamageAccumulator Accumulator = ResolveIncomingDamage(E, Ctx, Spec);
+	FRogueDamageAccumulator Accumulator = ResolveIncomingDamage(E, Ctx, Spec, bForcedHeadshot);
 	if (Accumulator.Total() <= 0.f)
 	{
 		return;
 	}
-
-	const FRogueRuleContext      RC     = MakeRuleContext(E, Ctx);
-	const FRogueConditionalTotals Totals = GatherConditionalTotals(E, RC, Source);
 
 	// 4~5단계. 공격 측 상시 -> 조건부
 	ApplyOffenseStats(E, Source, Accumulator);
@@ -813,5 +830,11 @@ void UExecCalc_Damage::Execute_Implementation(
 			FRogueGameplayEffectContext::ExtractMutableFrom(MutableHandle))
 	{
 		MutableCtx->LifestealRate = ResolveLifestealRate(E, Source, Totals);
+
+		// 강제 헤드샷을 헤드샷 이벤트, 사망 처리에 알림
+		if (bForcedHeadshot)
+		{
+			MutableCtx->bHeadshot = true;
+		}
 	}
 }
