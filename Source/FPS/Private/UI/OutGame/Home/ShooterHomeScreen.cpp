@@ -8,6 +8,7 @@
 #include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
+#include "UI/ShooterUISettings.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/Transition/ScreenTransitionSubsystem.h"
 
@@ -118,9 +119,7 @@ void UShooterHomeScreen::HandleSettingsClicked()
 	TSubclassOf<UShooterOptionsScreen> LoadedClass = OptionsScreenClass.LoadSynchronous();
 	if (!IsValid(LoadedClass))
 	{
-		LoadedClass = LoadClass<UShooterOptionsScreen>(
-			nullptr,
-			TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen.WBP_OptionsScreen_C"));
+		LoadedClass = UShooterUISettings::LoadDefaultOptionsScreenClass();
 	}
 	const UGameInstance* GameInstance = GetGameInstance();
 	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
@@ -128,7 +127,7 @@ void UShooterHomeScreen::HandleSettingsClicked()
 		: nullptr;
 	if (!IsValid(UIManager) || !IsValid(LoadedClass))
 	{
-		UE_LOG(LogShooterHomeScreen, Error, TEXT("Options screen class is unavailable. Assign OptionsScreenClass or verify /Game/FPS/UI/InGame/Option/WBP_OptionsScreen."));
+		UE_LOG(LogShooterHomeScreen, Error, TEXT("Options screen class is unavailable. Assign OptionsScreenClass or configure the default options screen."));
 		return;
 	}
 

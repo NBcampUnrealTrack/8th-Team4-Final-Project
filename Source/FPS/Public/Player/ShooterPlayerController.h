@@ -9,6 +9,7 @@
 #include "GameMode/Types/LobbyTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "InputCoreTypes.h"
 #include "GAS/Damage/RogueDamageTypes.h"
 #include "Ping/PingTypes.h"
 #include "TimerManager.h"
@@ -33,6 +34,7 @@ class UInputMappingContext;
 class APlayerState;
 class USoundMix;
 struct FInputActionValue;
+struct FEnhancedActionKeyMapping;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
@@ -49,6 +51,27 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/,
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteStartResult, ESurrenderVoteStartResult);
+
+USTRUCT(BlueprintType)
+struct FShooterInputBindingEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	FName BindingId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName ContextId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName ActionName;
+
+	UPROPERTY(BlueprintReadOnly)
+	FKey DefaultKey;
+
+	UPROPERTY(BlueprintReadOnly)
+	FKey CurrentKey;
+};
 
 UCLASS()
 class FPS_API AShooterPlayerController : public APlayerController
@@ -78,6 +101,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	void GetRebindableInputBindings(TArray<FShooterInputBindingEntry>& OutBindings) const;
+	bool RebindInput(FName BindingId, FKey NewKey);
+	void ResetInputBindings();
 
 	// Game modes can disable voice chat without changing the user's global voice-chat setting.
 	virtual bool SupportsVoiceChat() const { return true; }
@@ -253,13 +280,17 @@ protected:
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);
 
 	UFUNCTION(Server, Unreliable)
-	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData, EVoiceChatAudience Audience);
+	void ServerSubmitCompressedVoicePacket(
+		const TArray<uint8>& CompressedVoiceData,
+		EVoiceChatAudience Audience,
+		float MicrophoneVolume);
 
 	UFUNCTION(Client, Unreliable)
 	void ClientReceiveCompressedVoicePacket(
 		APlayerState* SpeakerPlayerState,
 		const TArray<uint8>& CompressedVoiceData,
-		EVoiceChatAudience Audience);
+		EVoiceChatAudience Audience,
+		float MicrophoneVolume);
 
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();
@@ -308,6 +339,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> RuntimeDefaultMappingContext;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> RuntimeSystemMappingContext;
+
+	bool bSystemMappingContextEnabled = false;
+
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 	void SetMappingContextEnabled(
 		UInputMappingContext* MappingContext,
@@ -324,6 +363,25 @@ private:
 	void InitializeAudioSettings();
 	void ShutdownAudioSettings();
 	void HandleAudioSettingsChanged();
+
+	void InitializeRuntimeInputMappings();
+	void ShutdownRuntimeInputMappings();
+	void RebuildRuntimeInputMappings();
+	void ApplySavedBindingsToContext(
+		UInputMappingContext* RuntimeContext,
+		const UInputMappingContext* SourceContext,
+		FName ContextId) const;
+	void AppendRebindableBindings(
+		const UInputMappingContext* SourceContext,
+		FName ContextId,
+		TArray<FShooterInputBindingEntry>& OutBindings) const;
+	void HandleInputBindingsChanged();
+	static FName MakeInputBindingId(
+		FName ContextId,
+		const FEnhancedActionKeyMapping& Mapping,
+		int32 MappingIndex);
+	static bool IsRebindableKey(const FKey& Key);
+
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();

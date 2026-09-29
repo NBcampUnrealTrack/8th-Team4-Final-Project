@@ -200,9 +200,7 @@ void UShooterRoomScreen::PresentOptionsScreen()
 	TSubclassOf<UShooterOptionsScreen> LoadedClass = OptionsScreenClass.LoadSynchronous();
 	if (!IsValid(LoadedClass))
 	{
-		LoadedClass = LoadClass<UShooterOptionsScreen>(
-			nullptr,
-			TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen.WBP_OptionsScreen_C"));
+		LoadedClass = UShooterUISettings::LoadDefaultOptionsScreenClass();
 	}
 	const UGameInstance* GameInstance = GetGameInstance();
 	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
@@ -210,7 +208,7 @@ void UShooterRoomScreen::PresentOptionsScreen()
 		: nullptr;
 	if (!IsValid(UIManager) || !IsValid(LoadedClass))
 	{
-		UE_LOG(LogShooterRoomScreen, Error, TEXT("Options screen class is unavailable. Assign OptionsScreenClass or verify /Game/FPS/UI/InGame/Option/WBP_OptionsScreen."));
+		UE_LOG(LogShooterRoomScreen, Error, TEXT("Options screen class is unavailable. Assign OptionsScreenClass or configure the default options screen."));
 		return;
 	}
 

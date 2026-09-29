@@ -153,7 +153,7 @@ float UDominationClassSelectScreen::ResolveBGMComponentVolume()
 	const bool bHasUserMix = IsValid(Settings->GetUserSettingsSoundMix());
 	return bHasMusicClass && bHasUserMix
 		? 1.0f
-		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 2.0f);
 }
 
 void UDominationClassSelectScreen::HandleCombatClassChanged(
