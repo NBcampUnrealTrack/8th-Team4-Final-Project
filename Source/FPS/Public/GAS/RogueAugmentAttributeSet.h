@@ -218,11 +218,6 @@ public:
 	FGameplayAttributeData CooldownRefundRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownRefundRate)
 
-	// 메타: 장착 무기 탄창에 이만큼 탄 추가 (예비탄 소모 없음)
-	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Weapon")
-	FGameplayAttributeData AmmoRefund;
-	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,AmmoRefund)
-
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CreditGainMultiplier, Category = "Rogue|Augment|Meta")
