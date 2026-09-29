@@ -100,6 +100,11 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseDistanceRange", EditConditionHides))
     bool bDistanceScalesWithRangeBonus = false;
 
+    // 0 보다 크면 DamageBonusRate 를 교전 거리 N m 마다 한 번씩 더함 (거리 10m당 +5% 등)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseDistanceRange", EditConditionHides, ClampMin = "0.0"))
+    float DamageBonusDistanceStep = 0.f;
+
     // 피해자 체력 조건 (%)
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
     bool bUseTargetHealthRange = false;
@@ -136,6 +141,19 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 MaxShotIndexInMagazine = 0;
 
+    // 0 보다 크면 탄창의 N 번째 발마다 발동 (매 5발마다 등)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
+    int32 ShotIndexInterval = 0;
+
+    // 발동 확률 조건. 켜면 다른 조건을 통과해도 이 확률로만 발동
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
+    bool bUseActivationChance = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseActivationChance", EditConditionHides, ClampMin = "0.0", ClampMax = "1.0"))
+    float ActivationChance = 1.f;
+
     // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
     // 상시 증강 GE 의 SetByCaller 와 같은 표기
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
@@ -145,10 +163,30 @@ struct FAugmentConditionalDamageRule
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
 
+    // 무작위 배율. 켜면 발동 시 Min ~ Max 사이 배율을 피해에 곱함 (증감률 합산과 별도)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bUseRandomMultiplier = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "bUseRandomMultiplier", EditConditionHides, ClampMin = "0.0"))
+    float RandomMultiplierMin = 1.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "bUseRandomMultiplier", EditConditionHides, ClampMin = "0.0"))
+    float RandomMultiplierMax = 1.f;
+
+    // 켜면 발동 시 이번 피해를 헤드샷으로 처리 (모든 부위를 머리 배율로, 헤드샷 이벤트 발신)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bForceHeadshot = false;
+
     // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float LifestealRate = 0.f;
+
+    // 발동 시 준 피해 대비 자해 비율. 최소 체력 1 은 남김 (0.05 면 준 피해의 5%)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect", meta = (ClampMin = "0.0"))
+    float SelfDamageRate = 0.f;
 
     // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")

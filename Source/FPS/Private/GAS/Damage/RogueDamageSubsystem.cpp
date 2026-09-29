@@ -4,14 +4,54 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "GAS/Damage/RogueGameplayEffectContext.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/WeaponBase.h"
 #include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
+
+// 피격마다 쓰는 설정 애셋을 맵 로딩 중에 미리 로드
+void URogueDamageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+
+	TArray<FSoftObjectPath> Paths;
+	for (const FSoftObjectPath& Path : {
+		Settings->DamageEffectClass.ToSoftObjectPath(),
+		Settings->HealEffectClass.ToSoftObjectPath(),
+		Settings->ShieldHealEffectClass.ToSoftObjectPath(),
+		Settings->WeaponDamageData.ToSoftObjectPath() })
+	{
+		if (!Path.IsNull())
+		{
+			Paths.Add(Path);
+		}
+	}
+
+	if (!Paths.IsEmpty())
+	{
+		PreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths);
+	}
+}
+
+void URogueDamageSubsystem::Deinitialize()
+{
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
+
+	Super::Deinitialize();
+}
 
 UAbilitySystemComponent* URogueDamageSubsystem::ResolveASC(AActor* Actor)
 {
@@ -128,7 +168,7 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 
 	// 스펙 생성
 	const FGameplayEffectSpecHandle SpecHandle = ContextASC->MakeOutgoingSpec(DamageGEClass, 1.f, ContextHandle);
-	if (!SpecHandle.IsValid())
+	if (!ensure(SpecHandle.IsValid()))
 	{
 		return FRogueDamageResult();
 	}
@@ -148,10 +188,14 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
 	{
 		Result.LifestealRate = Ctx->LifestealRate;
+		Result.SelfDamageRate = Ctx->SelfDamageRate;
 	}
 
 	// 흡혈 적용
 	ApplyLifesteal(SourceASC, DamageTarget, Result);
+
+	// 자해 적용
+	ApplySelfDamage(Params.Instigator, Result);
 
 	// 이벤트 발신
 	BroadcastCombatEvents(Params, TargetActor, Result, ContextHandle);
@@ -179,7 +223,7 @@ bool URogueDamageSubsystem::ResolveDamageTarget(AActor* TargetActor, FRogueDamag
 	}
 
 	const URogueVitalAttributeSet* Vital = TargetASC->GetSet<URogueVitalAttributeSet>();
-	if (!Vital)
+	if (!ensureMsgf(Vital, TEXT("[RogueDamage] %s 의 ASC 에 VitalSet 이 없습니다"), *GetNameSafe(TargetActor)))
 	{
 		return false;
 	}
@@ -197,13 +241,13 @@ bool URogueDamageSubsystem::ResolveDamageTarget(AActor* TargetActor, FRogueDamag
 
 UClass* URogueDamageSubsystem::ResolveDamageEffectClass()
 {
-	UClass* DamageGEClass = GetDefault<URogueGASSettings>()->DamageEffectClass.LoadSynchronous();
-	if (!DamageGEClass)
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueDamage] DamageEffectClass 가 설정되지 않았습니다. "
-			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
-	}
+	const TSoftClassPtr<UGameplayEffect>& DamageEffectClass = GetDefault<URogueGASSettings>()->DamageEffectClass;
+	UE_CLOG(DamageEffectClass.IsPending(), LogTemp, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *DamageEffectClass.ToString());
+	UClass* DamageGEClass = DamageEffectClass.LoadSynchronous();
+	ensureMsgf(DamageGEClass,
+		TEXT("[RogueDamage] DamageEffectClass 가 설정되지 않았습니다. "
+		     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
 
 	return DamageGEClass;
 }
@@ -217,12 +261,11 @@ FGameplayEffectContextHandle URogueDamageSubsystem::MakeDamageContext(const FRog
 	ContextHandle.AddInstigator(Params.Instigator, Params.Causer);
 
 	FGameplayEffectContext* RawContext = ContextHandle.Get();
-	if (!RawContext || RawContext->GetScriptStruct() != FRogueGameplayEffectContext::StaticStruct())
+	// 대미지 자체는 들어가지만 증강이 무시됨
+	if (!ensureMsgf(RawContext && RawContext->GetScriptStruct() == FRogueGameplayEffectContext::StaticStruct(),
+		TEXT("[RogueDamage] 커스텀 EffectContext 가 생성되지 않았습니다. "
+		     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요.")))
 	{
-		// 대미지 자체는 들어가지만 증강이 무시됨
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueDamage] 커스텀 EffectContext 가 생성되지 않았습니다. "
-			     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요."));
 		return ContextHandle;
 	}
 
@@ -310,12 +353,35 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageParams& Params,
 		OutTags.AddTag(RogueTags::Hit_Angle_Back);
 	}
 
+	// 탄약 소모 직후 적용되므로 남은 탄약 0 이면 마지막 탄
+	const AWeaponBase* Weapon = Cast<AWeaponBase>(Params.Causer);
+	if (Weapon && Params.SourceTag == RogueTags::Damage_Source_Weapon
+		&& Weapon->UsesAmmo() && !Weapon->HasInfiniteAmmo() && Weapon->GetCurrentAmmo() <= 0)
+	{
+		OutTags.AddTag(RogueTags::Hit_Shot_LastRound);
+	}
+
 	// 쉴드 파괴 여부
 	if (TargetVital)
 	{
 		OutTags.AddTag(TargetVital->GetShield() > 0.f
 			? RogueTags::Target_State_HasShield
 			: RogueTags::Target_State_NoShield);
+	}
+}
+
+void URogueDamageSubsystem::ApplySelfDamage(AActor* Instigator, const FRogueDamageResult& Result)
+{
+	if (!IsValid(Instigator) || Result.SelfDamageRate <= 0.f)
+	{
+		return;
+	}
+
+	// 자해량 = (실제 체력 감소 + 실제 보호막 감소) * 자해 비율. 흡혈과 같은 정수 규약
+	const float Amount = FMath::FloorToFloat((Result.HealthDamage + Result.ShieldDamage) * Result.SelfDamageRate);
+	if (Amount > 0.f)
+	{
+		ApplyHealthCost(Instigator, Amount);
 	}
 }
 
@@ -346,7 +412,8 @@ void URogueDamageSubsystem::ApplyLifesteal(UAbilitySystemComponent* SourceASC,
 	}
 
 	const URogueVitalAttributeSet* SourceVital = SourceASC->GetSet<URogueVitalAttributeSet>();
-	if (!SourceVital)
+	if (!ensureMsgf(SourceVital, TEXT("[RogueDamage] 흡혈 가해자 %s 의 ASC 에 VitalSet 이 없습니다"),
+		*GetNameSafe(SourceASC->GetAvatarActor())))
 	{
 		return;
 	}
@@ -374,17 +441,18 @@ void URogueDamageSubsystem::ApplyInstantMagnitude(UAbilitySystemComponent& ASC,
                                                   const TSoftClassPtr<UGameplayEffect>& EffectClass,
                                                   const float Magnitude)
 {
+	UE_CLOG(EffectClass.IsPending(), LogTemp, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *EffectClass.ToString());
 	UClass* LoadedClass = EffectClass.LoadSynchronous();
-	if (!LoadedClass)
+	if (!ensureMsgf(LoadedClass,
+		TEXT("[RogueDamage] 회복 캐리어 GE 가 설정되지 않았습니다. "
+		     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요.")))
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueDamage] 회복 캐리어 GE 가 설정되지 않았습니다. "
-			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
 		return;
 	}
 
 	const FGameplayEffectSpecHandle SpecHandle = ASC.MakeOutgoingSpec(LoadedClass, 1.f, ASC.MakeEffectContext());
-	if (!SpecHandle.IsValid())
+	if (!ensure(SpecHandle.IsValid()))
 	{
 		return;
 	}
@@ -398,7 +466,7 @@ void URogueDamageSubsystem::BroadcastCombatEvents(const FRogueDamageParams& Para
                                                   const FRogueDamageResult& Result,
                                                   const FGameplayEffectContextHandle& ContextHandle) const
 {
-	if (!Result.bApplied)
+	if (!ensure(Result.bApplied))
 	{
 		return;
 	}

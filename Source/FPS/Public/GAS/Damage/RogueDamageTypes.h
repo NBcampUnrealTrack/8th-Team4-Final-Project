@@ -117,6 +117,9 @@ struct FRogueDamageResult
 
     UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
     float LifestealRate = 0.f;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Rogue|Damage")
+    float SelfDamageRate = 0.f;
 };
 
 // 사망 연출 최소 정보

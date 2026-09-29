@@ -28,7 +28,7 @@ public:
 	void ServerForceDeath(const FGameplayEffectContextHandle& Context);
 
 	// 라운드 시작 / 부활 시 반드시 호출
-	void ClearDeathDeclared() { bDeathDeclared = false; }
+	void ClearDeathDeclared() { bDeathDeclared = false; bLethalSurviveUsed = false; }
 
 protected:
 	UFUNCTION() void OnRep_Health(const FGameplayAttributeData& OldValue);
@@ -46,6 +46,9 @@ private:
 	
 	// 체력이 0 이 되었으면 사망을 1회 확정하고 발신
 	void TryDeclareDeath(const FGameplayEffectContextHandle& Context);
+
+	// 치명 피해를 목숨당 1번 버틸 수 있는지 (기합의 띠)
+	bool CanSurviveLethal() const;
 
 public:
 	// 0 이 되면 즉시 사망
@@ -102,6 +105,9 @@ public:
 private:
 	// 중복 호출 방지를 위한 사망 여부 플래그
 	bool bDeathDeclared = false;
+
+	// 이번 목숨에서 치명 피해를 버텼는지. 부활 시 초기화
+	bool bLethalSurviveUsed = false;
 
 public:
 	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유

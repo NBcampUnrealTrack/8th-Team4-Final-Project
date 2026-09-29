@@ -1,13 +1,15 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/CueNotify/RogueFxLoopingCueNotify.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Particles/ParticleSystemComponent.h"
+#include "Weapon/WeaponBase.h"
 
 bool ARogueFxLoopingCueNotify::WhileActive_Implementation(AActor* Target, const FGameplayCueParameters& Parameters)
 {
@@ -20,6 +22,13 @@ bool ARogueFxLoopingCueNotify::WhileActive_Implementation(AActor* Target, const 
 	}
 
 	StopSpawnedParticles();
+
+	if (bAttachToWeapon)
+	{
+		SpawnOnWeapon(Target);
+		ApplyOverlay(Target);
+		return bResult;
+	}
 
 	const FRotator Rotation = Parameters.Normal.IsNearlyZero() ? FRotator::ZeroRotator : Parameters.Normal.Rotation();
 	USceneComponent* AttachTo = bAttachToTarget && IsValid(Target) ? Target->GetRootComponent() : nullptr;
@@ -129,6 +138,69 @@ void ARogueFxLoopingCueNotify::StopSpawnedParticles()
 	}
 
 	SpawnedNiagara.Reset();
+}
+
+void ARogueFxLoopingCueNotify::SpawnOnWeapon(AActor* Target)
+{
+	AWeaponBase* Weapon = IsValid(Target) && Target->Implements<UPlayerInterface>()
+		? IPlayerInterface::Execute_GetCurrentWeapon(Target)
+		: nullptr;
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	const APawn* Pawn = Cast<APawn>(Target);
+	const FRotator AimRotation = Pawn ? Pawn->GetBaseAimRotation() : Target->GetActorRotation();
+
+	USkeletalMeshComponent* Meshes[] = { Weapon->GetMesh1P(), Weapon->GetMesh3P() };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Meshes); ++Index)
+	{
+		USkeletalMeshComponent* Mesh = Meshes[Index];
+		if (!IsValid(Mesh))
+		{
+			continue;
+		}
+
+		// 1인칭은 본인만, 3인칭은 본인 제외
+		const bool bFirstPerson = (Index == 0);
+
+		for (const FRogueFxCueEntry& Entry : Particles)
+		{
+			const FVector ScaleVector(Entry.Scale);
+
+			if (Entry.Particle)
+			{
+				if (UParticleSystemComponent* Spawned = UGameplayStatics::SpawnEmitterAttached(Entry.Particle, Mesh,
+						WeaponSocket, Entry.Offset, FRotator::ZeroRotator, ScaleVector,
+						EAttachLocation::KeepRelativeOffset, false))
+				{
+					Spawned->SetWorldRotation(AimRotation);
+					Spawned->SetOnlyOwnerSee(bFirstPerson);
+					Spawned->SetOwnerNoSee(!bFirstPerson);
+					SpawnedParticles.Add(Spawned);
+				}
+			}
+
+			if (Entry.Niagara)
+			{
+				if (UNiagaraComponent* Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(Entry.Niagara, Mesh,
+						WeaponSocket, Entry.Offset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
+						false, true))
+				{
+					Spawned->SetRelativeScale3D(ScaleVector);
+					Spawned->SetWorldRotation(AimRotation);
+					Spawned->SetOnlyOwnerSee(bFirstPerson);
+					Spawned->SetOwnerNoSee(!bFirstPerson);
+					if (Entry.bOverrideColor)
+					{
+						Spawned->SetVariableLinearColor(TEXT("User.Color"), Entry.Color);
+					}
+					SpawnedNiagara.Add(Spawned);
+				}
+			}
+		}
+	}
 }
 
 void ARogueFxLoopingCueNotify::ApplyOverlay(AActor* Target)

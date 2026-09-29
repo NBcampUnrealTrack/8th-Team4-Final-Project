@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -59,6 +59,9 @@ protected:
 	                        const FGameplayAbilityActorInfo* ActorInfo,
 	                        const FGameplayAbilityActivationInfo ActivationInfo,
 	                        bool bReplicateEndAbility, bool bWasCancelled) override;
+
+	// bActivateOnAvatarSet 이면 부여, 부활 시 자동 발동
+	virtual void OnAvatarSet(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
 
 	// 페이로드 조립 -> 커밋 -> 큐 -> 시전 대기 -> Deliver.
 	// bHoldToUse 면 사용 입력이 온 시점에 불린다
@@ -151,6 +154,23 @@ protected:
 		meta = (EditCondition = "bHoldToUse", EditConditionHides, ClampMin = "0.0"))
 	float RecoverySeconds = 0.35f;
 
+	// 0 보다 크면 발동 후 이 시간 동안 RepeatInterval 마다 조준을 다시 잡아 재발동
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation", meta = (ClampMin = "0.0"))
+	float RepeatDuration = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, ClampMin = "0.05"))
+	float RepeatInterval = 0.25f;
+
+	// 반복 발동 동안 유지할 GameplayCue
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, Categories = "GameplayCue"))
+	FGameplayTag RepeatCueTag;
+
+	// 부여되거나 부활해 아바타가 연결되면 자동 발동 (주기 발동 증강용)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
+	bool bActivateOnAvatarSet = false;
+
 	// 어느 입력으로 사용했는지. 홀드가 아니면 Primary
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (Categories = "Event.Utility.Input"))
@@ -206,11 +226,18 @@ private:
 	UFUNCTION()
 	void HandleEquipFinished();
 
+	// 반복 발동 시작. 지속 시간이 끝나면 종료
+	void BeginRepeatDeliver();
+
+	UFUNCTION()
+	void RepeatDeliver();
+
+	FTimerHandle RepeatTimer;
+
 	// 내가 얹은 UtilityHeld 를 아직 안 걷었는지
 	bool bHoldTagApplied = false;
 
-	// 발동 중인 계열 항목과 조립된 페이로드
-	const FAugmentGrantedAbility* ActiveEntry = nullptr;
+	// 조립된 페이로드
 	FRogueEffectPayload ActivePayload;
 
 	mutable FGameplayTagContainer CooldownTagContainer;
