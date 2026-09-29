@@ -29,6 +29,7 @@ namespace RogueTags
 
 	// 히트 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Angle_Back,          "Hit.Angle.Back",          "배후 공격");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_LastRound,      "Hit.Shot.LastRound",      "탄창의 마지막 탄");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Instigator_Airborne, "Hit.Instigator.Airborne", "가해자가 공중에 있었음");
 
 	// 가해자, 대상 상태

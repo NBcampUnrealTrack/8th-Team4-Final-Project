@@ -11,6 +11,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/WeaponBase.h"
 #include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "GameFramework/Pawn.h"
 #include "Player/ShooterPlayerController.h"
@@ -346,6 +347,14 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageParams& Params,
 	if (Hit && Hit->bBackstab)
 	{
 		OutTags.AddTag(RogueTags::Hit_Angle_Back);
+	}
+
+	// 탄약 소모 직후 적용되므로 남은 탄약 0 이면 마지막 탄
+	const AWeaponBase* Weapon = Cast<AWeaponBase>(Params.Causer);
+	if (Weapon && Params.SourceTag == RogueTags::Damage_Source_Weapon
+		&& Weapon->UsesAmmo() && !Weapon->HasInfiniteAmmo() && Weapon->GetCurrentAmmo() <= 0)
+	{
+		OutTags.AddTag(RogueTags::Hit_Shot_LastRound);
 	}
 
 	// 쉴드 파괴 여부

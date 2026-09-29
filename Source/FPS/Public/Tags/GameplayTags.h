@@ -34,6 +34,7 @@ namespace RogueTags
 
 	// 히트 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Angle_Back);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Shot_LastRound);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hit_Instigator_Airborne);
 
 	// 가해자, 대상 상태
