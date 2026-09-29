@@ -188,10 +188,14 @@ FRogueDamageResult URogueDamageSubsystem::ApplyDamageInternal(const FRogueDamage
 	if (const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(ContextHandle))
 	{
 		Result.LifestealRate = Ctx->LifestealRate;
+		Result.SelfDamageRate = Ctx->SelfDamageRate;
 	}
 
 	// 흡혈 적용
 	ApplyLifesteal(SourceASC, DamageTarget, Result);
+
+	// 자해 적용
+	ApplySelfDamage(Params.Instigator, Result);
 
 	// 이벤트 발신
 	BroadcastCombatEvents(Params, TargetActor, Result, ContextHandle);
@@ -363,6 +367,21 @@ void URogueDamageSubsystem::BuildContextTags(const FRogueDamageParams& Params,
 		OutTags.AddTag(TargetVital->GetShield() > 0.f
 			? RogueTags::Target_State_HasShield
 			: RogueTags::Target_State_NoShield);
+	}
+}
+
+void URogueDamageSubsystem::ApplySelfDamage(AActor* Instigator, const FRogueDamageResult& Result)
+{
+	if (!IsValid(Instigator) || Result.SelfDamageRate <= 0.f)
+	{
+		return;
+	}
+
+	// 자해량 = (실제 체력 감소 + 실제 보호막 감소) * 자해 비율. 흡혈과 같은 정수 규약
+	const float Amount = FMath::FloorToFloat((Result.HealthDamage + Result.ShieldDamage) * Result.SelfDamageRate);
+	if (Amount > 0.f)
+	{
+		ApplyHealthCost(Instigator, Amount);
 	}
 }
 

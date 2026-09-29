@@ -155,6 +155,7 @@ namespace
 		float RandomScale      = 1.f; // 무작위 배율. 증감률 합산과 별도로 곱함
 		float HeadRandomScale  = 1.f;
 		bool  bForceHeadshot   = false; // 공격 측만 의미 있음
+		float SelfDamageRate   = 0.f;   // 공격 측만 적용
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -353,6 +354,7 @@ namespace
 			}
 
 			Bucket.bForceHeadshot |= Rule.bForceHeadshot;
+			Bucket.SelfDamageRate += FMath::Max(0.f, Rule.SelfDamageRate);
 		}
 	}
 
@@ -836,6 +838,9 @@ void UExecCalc_Damage::Execute_Implementation(
 			FRogueGameplayEffectContext::ExtractMutableFrom(MutableHandle))
 	{
 		MutableCtx->LifestealRate = ResolveLifestealRate(E, Source, Totals);
+
+		// 자해 비율. 서브시스템이 준 피해에 곱해 가해자에게 적용
+		MutableCtx->SelfDamageRate = Source.bIsOffensive ? Totals.Dealt.SelfDamageRate : 0.f;
 
 		// 강제 헤드샷을 헤드샷 이벤트, 사망 처리에 알림
 		if (bForcedHeadshot)

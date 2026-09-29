@@ -184,6 +184,10 @@ struct FAugmentConditionalDamageRule
         meta = (ClampMin = "0.0", ClampMax = "1.0"))
     float LifestealRate = 0.f;
 
+    // 발동 시 준 피해 대비 자해 비율. 최소 체력 1 은 남김 (0.05 면 준 피해의 5%)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect", meta = (ClampMin = "0.0"))
+    float SelfDamageRate = 0.f;
+
     // 헤드 보너스 여부
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     bool bAppliesToHeadshotBonusOnly = false;

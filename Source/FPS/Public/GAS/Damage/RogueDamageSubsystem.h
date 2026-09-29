@@ -82,6 +82,9 @@ private:
 	                    const FRogueDamageTarget& DamageTarget,
 	                    const FRogueDamageResult& Result) const;
 
+	// 준 피해에 비례해 가해자에게 자해. 최소 체력 1 은 남김
+	void ApplySelfDamage(AActor* Instigator, const FRogueDamageResult& Result);
+
 	// SetByCaller Data.Magnitude.Primary 만 넣는 Instant GE 를 자신에게 적용
 	static void ApplyInstantMagnitude(UAbilitySystemComponent& ASC,
 	                                  const TSoftClassPtr<UGameplayEffect>& EffectClass,
