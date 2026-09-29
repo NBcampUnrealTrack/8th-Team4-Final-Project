@@ -23,7 +23,9 @@
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
 #include "Input/ShooterInteractionComponent.h"
+#include "InputAction.h"
 #include "InputActionValue.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
@@ -49,6 +51,7 @@
 #include "Voice/VoiceChatSubsystem.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Weapon/WeaponBase.h"
+#include "UObject/UObjectGlobals.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -101,6 +104,7 @@ void AShooterPlayerController::BeginPlay()
 	}
 
 	InitializeAudioSettings();
+	InitializeRuntimeInputMappings();
 
 	if (GetTeamMatchUIInitComponent())
 	{
@@ -113,23 +117,6 @@ void AShooterPlayerController::BeginPlay()
 	}
 
 	StartMatchLoadReadyCheck();
-
-	if (!InputConfig || !InputConfig->DefaultMappingContext)
-	{
-		return;
-	}
-
-	ULocalPlayer* LocalPlayer = GetLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return;
-	}
-
-	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	if (InputSubsystem)
-	{
-		InputSubsystem->AddMappingContext(InputConfig->DefaultMappingContext, InputConfig->MappingPriority);
-	}
 }
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -160,6 +147,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		{
 			SetSystemMappingContextEnabled(false);
 		}
+		ShutdownRuntimeInputMappings();
 		StopMatchLoadReadyCheck();
 
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
@@ -228,13 +216,17 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 		return;
 	}
 
-	if ((!Settings->IsVoiceChatEnabled() || !SupportsVoiceChat()) && SteamVoiceComponent)
+	if (SteamVoiceComponent)
 	{
-		if (SteamVoiceComponent->IsCapturingVoice())
+		SteamVoiceComponent->SetOutputVolume(Settings->GetVoiceChatOutputVolume());
+		if (!Settings->IsVoiceChatEnabled() || !SupportsVoiceChat())
 		{
-			StopVoiceTalking();
+			if (SteamVoiceComponent->IsCapturingVoice())
+			{
+				StopVoiceTalking();
+			}
+			SteamVoiceComponent->StopPlayback();
 		}
-		SteamVoiceComponent->StopPlayback();
 	}
 
 	const float MasterVolume = Settings->IsMasterAudioMuted()
@@ -247,7 +239,7 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 	{
 		if (FAudioDevice* AudioDevice = World->GetAudioDeviceRaw())
 		{
-			AudioDevice->SetTransientPrimaryVolume(FMath::Clamp(MasterVolume, 0.0f, 1.0f));
+			AudioDevice->SetTransientPrimaryVolume(FMath::Clamp(MasterVolume, 0.0f, 2.0f));
 		}
 	}
 
@@ -271,7 +263,7 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 			this,
 			ActiveUserSettingsSoundMix,
 			SoundClass,
-			FMath::Clamp(Volume, 0.0f, 1.0f),
+			FMath::Clamp(Volume, 0.0f, 2.0f),
 			1.0f,
 			0.0f,
 			bApplyToChildren);
@@ -285,10 +277,10 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 		Settings->GetAudioVolume(EShooterAudioChannel::SoundEffects), true);
 	SetClassVolume(EShooterAudioChannel::UserInterface,
 		Settings->GetAudioVolume(EShooterAudioChannel::UserInterface), true);
+	// Voice is the game's announcer/dialogue channel. Voice chat has its own output
+	// multiplier on USteamVoiceComponent, so disabling chat must not mute announcers.
 	SetClassVolume(EShooterAudioChannel::Voice,
-		Settings->IsVoiceChatEnabled()
-			? Settings->GetAudioVolume(EShooterAudioChannel::Voice)
-			: 0.0f,
+		Settings->GetAudioVolume(EShooterAudioChannel::Voice),
 		true);
 }
 
@@ -574,13 +566,22 @@ void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& 
 		}
 	}
 
-	if (HasAuthority())
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	const float MicrophoneVolume = Settings
+		? FMath::Clamp(Settings->GetVoiceChatMicrophoneVolume(), 0.0f, 2.0f)
+		: 1.0f;
+	if (MicrophoneVolume <= KINDA_SMALL_NUMBER)
 	{
-		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience);
 		return;
 	}
 
-	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience);
+	if (HasAuthority())
+	{
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience, MicrophoneVolume);
+		return;
+	}
+
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience, MicrophoneVolume);
 }
 
 void AShooterPlayerController::ToggleDynamicCrosshair()
@@ -1099,7 +1100,8 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 
 void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+	const EVoiceChatAudience Audience,
+	const float MicrophoneVolume)
 {
 	if (!SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
 	{
@@ -1142,7 +1144,11 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience))
 		{
 			++RoutedTargetCount;
-			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData, Audience);
+			ListenerController->ClientReceiveCompressedVoicePacket(
+				PlayerState,
+				CompressedVoiceData,
+				Audience,
+				FMath::Clamp(MicrophoneVolume, 0.0f, 2.0f));
 		}
 	}
 
@@ -1155,7 +1161,8 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
 	APlayerState* SpeakerPlayerState,
 	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+	const EVoiceChatAudience Audience,
+	const float MicrophoneVolume)
 {
 	if (!IsLocalController() || !SupportsVoiceChat() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
 	{
@@ -1186,7 +1193,10 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 
 	if (SteamVoiceComponent)
 	{
-		SteamVoiceComponent->PlayCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
+		SteamVoiceComponent->PlayCompressedVoicePacket(
+			SpeakerPlayerState,
+			CompressedVoiceData,
+			FMath::Clamp(MicrophoneVolume, 0.0f, 2.0f));
 	}
 
 	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
@@ -1554,6 +1564,299 @@ void AShooterPlayerController::Input_HideScoreboard()
 	}
 }
 
+FName AShooterPlayerController::MakeInputBindingId(
+	const FName ContextId,
+	const FEnhancedActionKeyMapping& Mapping,
+	const int32 MappingIndex)
+{
+	const FString ActionName = IsValid(Mapping.Action) ? Mapping.Action->GetName() : TEXT("None");
+	return FName(*FString::Printf(
+		TEXT("%s|%s|%s|%d"),
+		*ContextId.ToString(),
+		*ActionName,
+		*Mapping.Key.GetFName().ToString(),
+		MappingIndex));
+}
+
+bool AShooterPlayerController::IsRebindableKey(const FKey& Key)
+{
+	if (!Key.IsValid() || Key.IsGamepadKey())
+	{
+		return false;
+	}
+
+	return Key != EKeys::MouseX
+		&& Key != EKeys::MouseY
+		&& Key != EKeys::MouseWheelAxis;
+}
+
+void AShooterPlayerController::InitializeRuntimeInputMappings()
+{
+	if (!IsLocalController() || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnInputBindingsChanged.RemoveAll(this);
+		Settings->OnInputBindingsChanged.AddUObject(this, &ThisClass::HandleInputBindingsChanged);
+	}
+
+	RebuildRuntimeInputMappings();
+}
+
+void AShooterPlayerController::ShutdownRuntimeInputMappings()
+{
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnInputBindingsChanged.RemoveAll(this);
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+			LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			if (RuntimeDefaultMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(RuntimeDefaultMappingContext);
+			}
+			if (RuntimeSystemMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(RuntimeSystemMappingContext);
+			}
+		}
+	}
+
+	RuntimeDefaultMappingContext = nullptr;
+	RuntimeSystemMappingContext = nullptr;
+	bSystemMappingContextEnabled = false;
+}
+
+void AShooterPlayerController::ApplySavedBindingsToContext(
+	UInputMappingContext* RuntimeContext,
+	const UInputMappingContext* SourceContext,
+	const FName ContextId) const
+{
+	if (!IsValid(RuntimeContext) || !IsValid(SourceContext))
+	{
+		return;
+	}
+
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	// Rebuild mappings action-by-action so source modifiers/triggers are preserved while
+	// the authored mapping context remains untouched.
+	TSet<const UInputAction*> ClearedActions;
+	const TArray<FEnhancedActionKeyMapping>& SourceMappings = SourceContext->GetMappings();
+	for (const FEnhancedActionKeyMapping& Mapping : SourceMappings)
+	{
+		if (IsValid(Mapping.Action) && !ClearedActions.Contains(Mapping.Action))
+		{
+			RuntimeContext->UnmapAllKeysFromAction(Mapping.Action);
+			ClearedActions.Add(Mapping.Action);
+		}
+	}
+
+	for (int32 Index = 0; Index < SourceMappings.Num(); ++Index)
+	{
+		const FEnhancedActionKeyMapping& Mapping = SourceMappings[Index];
+		if (!IsValid(Mapping.Action))
+		{
+			continue;
+		}
+
+		FKey EffectiveKey = Mapping.Key;
+		const FName OverrideName = Settings->GetKeyBindingOverride(
+			MakeInputBindingId(ContextId, Mapping, Index));
+		if (!OverrideName.IsNone())
+		{
+			const FKey OverrideKey(OverrideName);
+			if (OverrideKey.IsValid())
+			{
+				EffectiveKey = OverrideKey;
+			}
+		}
+
+		FEnhancedActionKeyMapping& NewMapping = RuntimeContext->MapKey(Mapping.Action, EffectiveKey);
+		NewMapping.Modifiers = Mapping.Modifiers;
+		NewMapping.Triggers = Mapping.Triggers;
+	}
+}
+
+void AShooterPlayerController::RebuildRuntimeInputMappings()
+{
+	if (!IsLocalController() || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = IsValid(LocalPlayer)
+		? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>()
+		: nullptr;
+	if (!IsValid(InputSubsystem))
+	{
+		return;
+	}
+
+	if (RuntimeDefaultMappingContext)
+	{
+		InputSubsystem->RemoveMappingContext(RuntimeDefaultMappingContext);
+	}
+	if (RuntimeSystemMappingContext)
+	{
+		InputSubsystem->RemoveMappingContext(RuntimeSystemMappingContext);
+	}
+
+	RuntimeDefaultMappingContext = IsValid(InputConfig->DefaultMappingContext)
+		? DuplicateObject<UInputMappingContext>(
+			InputConfig->DefaultMappingContext,
+			this,
+			MakeUniqueObjectName(this, UInputMappingContext::StaticClass(), TEXT("RuntimeDefaultMappingContext")))
+		: nullptr;
+	RuntimeSystemMappingContext = IsValid(InputConfig->SystemMappingContext)
+		? DuplicateObject<UInputMappingContext>(
+			InputConfig->SystemMappingContext,
+			this,
+			MakeUniqueObjectName(this, UInputMappingContext::StaticClass(), TEXT("RuntimeSystemMappingContext")))
+		: nullptr;
+
+	ApplySavedBindingsToContext(RuntimeDefaultMappingContext, InputConfig->DefaultMappingContext, TEXT("Default"));
+	ApplySavedBindingsToContext(RuntimeSystemMappingContext, InputConfig->SystemMappingContext, TEXT("System"));
+
+	if (RuntimeDefaultMappingContext)
+	{
+		InputSubsystem->AddMappingContext(RuntimeDefaultMappingContext, InputConfig->MappingPriority);
+	}
+	if (bSystemMappingContextEnabled && RuntimeSystemMappingContext)
+	{
+		InputSubsystem->AddMappingContext(RuntimeSystemMappingContext, InputConfig->SystemMappingPriority);
+	}
+}
+
+void AShooterPlayerController::HandleInputBindingsChanged()
+{
+	RebuildRuntimeInputMappings();
+}
+
+void AShooterPlayerController::AppendRebindableBindings(
+	const UInputMappingContext* SourceContext,
+	const FName ContextId,
+	TArray<FShooterInputBindingEntry>& OutBindings) const
+{
+	if (!IsValid(SourceContext) || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	const TArray<FEnhancedActionKeyMapping>& Mappings = SourceContext->GetMappings();
+	for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+	{
+		const FEnhancedActionKeyMapping& Mapping = Mappings[Index];
+		if (!IsValid(Mapping.Action)
+			|| Mapping.Action == InputConfig->LookAction
+			|| Mapping.Action == InputConfig->AdjustADSZoomAction
+			|| (Mapping.Action == InputConfig->PushToTalkAction && !SupportsVoiceChat())
+			|| !IsRebindableKey(Mapping.Key))
+		{
+			continue;
+		}
+
+		FShooterInputBindingEntry& Entry = OutBindings.AddDefaulted_GetRef();
+		Entry.BindingId = MakeInputBindingId(ContextId, Mapping, Index);
+		Entry.ContextId = ContextId;
+		Entry.ActionName = Mapping.Action->GetFName();
+		Entry.DefaultKey = Mapping.Key;
+		Entry.CurrentKey = Mapping.Key;
+		if (Settings)
+		{
+			const FName OverrideName = Settings->GetKeyBindingOverride(Entry.BindingId);
+			if (!OverrideName.IsNone())
+			{
+				const FKey OverrideKey(OverrideName);
+				if (OverrideKey.IsValid())
+				{
+					Entry.CurrentKey = OverrideKey;
+				}
+			}
+		}
+	}
+}
+
+void AShooterPlayerController::GetRebindableInputBindings(TArray<FShooterInputBindingEntry>& OutBindings) const
+{
+	OutBindings.Reset();
+	if (!IsValid(InputConfig))
+	{
+		return;
+	}
+
+	AppendRebindableBindings(InputConfig->DefaultMappingContext, TEXT("Default"), OutBindings);
+	AppendRebindableBindings(InputConfig->SystemMappingContext, TEXT("System"), OutBindings);
+}
+
+bool AShooterPlayerController::RebindInput(const FName BindingId, const FKey NewKey)
+{
+	if (!IsLocalController() || BindingId.IsNone() || !IsRebindableKey(NewKey))
+	{
+		return false;
+	}
+
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return false;
+	}
+
+	TArray<FShooterInputBindingEntry> Bindings;
+	GetRebindableInputBindings(Bindings);
+	const FShooterInputBindingEntry* Target = Bindings.FindByPredicate(
+		[BindingId](const FShooterInputBindingEntry& Entry)
+		{
+			return Entry.BindingId == BindingId;
+		});
+	if (!Target)
+	{
+		return false;
+	}
+
+	if (Target->CurrentKey == NewKey)
+	{
+		return true;
+	}
+
+	// Default/System contexts can be active at the same time. Treat all exposed bindings
+	// as one key space so a remap never leaves two live actions on the same key.
+	const FShooterInputBindingEntry* Conflict = Bindings.FindByPredicate(
+		[Target, NewKey](const FShooterInputBindingEntry& Entry)
+		{
+			return Entry.BindingId != Target->BindingId
+				&& Entry.CurrentKey == NewKey;
+		});
+
+	if (Conflict)
+	{
+		Settings->SetKeyBindingOverride(Conflict->BindingId, Target->CurrentKey.GetFName());
+	}
+	Settings->SetKeyBindingOverride(Target->BindingId, NewKey.GetFName());
+	return true;
+}
+
+void AShooterPlayerController::ResetInputBindings()
+{
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->ResetKeyBindingOverrides();
+	}
+}
+
 void AShooterPlayerController::SetSystemMappingContextEnabled(const bool bEnabled)
 {
 	if (!IsValid(InputConfig))
@@ -1561,8 +1864,12 @@ void AShooterPlayerController::SetSystemMappingContextEnabled(const bool bEnable
 		return;
 	}
 
+	bSystemMappingContextEnabled = bEnabled;
+	UInputMappingContext* Context = IsValid(RuntimeSystemMappingContext)
+		? RuntimeSystemMappingContext.Get()
+		: InputConfig->SystemMappingContext.Get();
 	SetMappingContextEnabled(
-		InputConfig->SystemMappingContext,
+		Context,
 		InputConfig->SystemMappingPriority,
 		bEnabled);
 }
