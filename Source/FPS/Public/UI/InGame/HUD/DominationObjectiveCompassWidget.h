@@ -1,12 +1,14 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "TimerManager.h"
 #include "DominationObjectiveCompassWidget.generated.h"
 
 class ADominationGameState;
 class ADominationCapturePoint;
+class UWidget;
 
 /**
  * 현재 목표 거점(ADominationGameState::GetActivePointId())을 향한 화면 마커.
@@ -15,6 +17,11 @@ class ADominationCapturePoint;
  * - 목표 거점의 점령 구역 안에 로컬 플레이어가 들어가 있으면 표시하지 않는다 (ShouldShowMarker == false).
  * - Repositioning(다음 거점 활성화 대기, 30초) 중에는 IsTransitioning()==true와 함께 GetSecondsRemaining()을,
  *   그 외(점령 가능 상태)에는 GetDistanceMeters()를 보여주면 된다.
+ *
+ * 갱신 방식 (피드백 반영):
+ * - 마커 위치·표시 여부: 카메라에 따라 매 프레임 바뀌므로 C++ NativeTick에서 Marker 위젯을 직접 옮긴다.
+ * - 글자·색·진행도: 목표/전환/점령 상태가 바뀌면 즉시 BP_OnCompassRefresh를 호출하고,
+ *   목표가 있는 동안 RefreshInterval 간격으로도 호출한다(거리·남은 초 갱신).
  */
 
 UCLASS(Abstract, Blueprintable)
@@ -65,14 +72,31 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	// 글자·색·진행도를 다시 그릴 때 호출된다. 상태 변화 시 즉시 + 목표가 있는 동안 주기적으로.
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category = "Domination|Compass")
+	void BP_OnCompassRefresh();
+
+	// 마커 루트. Canvas Panel 자식이어야 하며, 위치와 표시 여부는 C++이 매 프레임 설정한다.
+	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Marker;
 
 private:
 	UFUNCTION()
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
+	UFUNCTION()
+	void HandleObjectiveFlowStateChanged();
+
+	UFUNCTION()
+	void HandleCaptureStateChanged(FDominationCaptureState CaptureState);
+
+	void HandleRefreshTimer();
 	void RefreshTargetCapturePoint();
 	void RefreshScreenPlacement();
-	void StartScreenPlacementUpdates();
+	void ApplyMarkerToWidget();
+	void UpdateRefreshTimer();
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> TargetCapturePoint;
@@ -82,14 +106,13 @@ private:
 	FVector2D ScreenPosition = FVector2D::ZeroVector;
 	float ArrowRotationDegrees = 0.0f;
 	float DistanceMeters = -1.0f;
+	FTimerHandle RefreshTimerHandle;
 
-	FTimerHandle ScreenPlacementTimerHandle;
+	// 거리·남은 초 갱신 간격 (초)
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Compass", meta = (ClampMin = "0.05", Units = "s"))
+	float RefreshInterval = 0.25f;
 
 	// 화면 가장자리에서 아이콘을 얼마나 안쪽으로 클램프할지 (px). 아이콘 크기의 절반 정도 권장.
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Compass")
 	float EdgePaddingPixels = 64.0f;
-
-	// UMG NativeTick 대신 필요한 화면 추적만 제한된 주기로 갱신한다.
-	UPROPERTY(EditDefaultsOnly, Category = "Domination|Compass", meta = (ClampMin = "0.016", ClampMax = "0.1"))
-	float ScreenPlacementUpdateInterval = 1.0f / 30.0f;
 };

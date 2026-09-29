@@ -9,9 +9,6 @@
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
-// 기믹 상호작용 실패 원인 진단용
-DEFINE_LOG_CATEGORY_STATIC(LogDominationGimmickHold, Log, All);
-
 UGA_DominationGimmickHold::UGA_DominationGimmickHold()
 {
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
@@ -44,7 +41,6 @@ bool UGA_DominationGimmickHold::CanActivateAbility(
 	const APawn* AvatarPawn = ActorInfo ? Cast<APawn>(ActorInfo->AvatarActor.Get()) : nullptr;
 	if (!IsValid(PlayerController) || !PlayerController->CanProcessActionInput() || !IsValid(AvatarPawn))
 	{
-		UE_LOG(LogDominationGimmickHold, Verbose, TEXT("[GimmickHold] 거절: 컨트롤러/폰 없음 또는 액션 입력 불가"));
 		return false;
 	}
 
@@ -56,23 +52,10 @@ bool UGA_DominationGimmickHold::CanActivateAbility(
 	if ((IsValid(CombatComponent) && !CombatComponent->IsWeaponReady())
 		|| (IsValid(EquippedWeapon) && EquippedWeapon->IsReloading()))
 	{
-		UE_LOG(LogDominationGimmickHold, Verbose, TEXT("[GimmickHold] 거절: 무기 준비 중 또는 재장전 중"));
 		return false;
 	}
 
-	if (IsValid(ADominationPointGimmick::FindUsableGimmick(AvatarPawn)))
-	{
-		return true;
-	}
-
-	// 진단: 겹친 기믹이 있는데 쓸 수 없는지, 아예 겹친 기믹이 없는지 구분한다.
-	TArray<AActor*> OverlappingGimmicks;
-	AvatarPawn->GetOverlappingActors(OverlappingGimmicks, ADominationPointGimmick::StaticClass());
-	UE_LOG(LogDominationGimmickHold, Verbose,
-		TEXT("[GimmickHold] 거절: 사용 가능한 기믹 없음 (%s, 겹친 기믹 %d개)"),
-		AvatarPawn->HasAuthority() ? TEXT("서버") : TEXT("클라"),
-		OverlappingGimmicks.Num());
-	return false;
+	return IsValid(ADominationPointGimmick::FindUsableGimmick(AvatarPawn));
 }
 
 void UGA_DominationGimmickHold::ActivateAbility(
