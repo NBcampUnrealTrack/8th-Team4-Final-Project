@@ -56,6 +56,7 @@ protected:
 	UFUNCTION() void OnRep_SprintSpeedMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_JumpHeightMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ExtraJumpCount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_LostHealthBonusRate(const FGameplayAttributeData& OldValue);
 
 	// 스킬 관련
 	UFUNCTION() void OnRep_CooldownReductionRate(const FGameplayAttributeData& OldValue);
@@ -191,6 +192,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ExtraJumpCount, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData ExtraJumpCount;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ExtraJumpCount)
+
+	// 잃은 체력 단계당 무기 피해, 연사, 이동 증가율 (광전사의 영혼)
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LostHealthBonusRate, Category = "Rogue|Augment|Movement")
+	FGameplayAttributeData LostHealthBonusRate;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,LostHealthBonusRate)
 
 	// 스킬 관련 --------------------------------------------------
 	// 액티브 증강 쿨타임 감소 비율

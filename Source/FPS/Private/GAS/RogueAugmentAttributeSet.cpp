@@ -37,6 +37,7 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitExtraJumpCount(0.f);
 	InitCooldownReductionRate(0.f);
 	InitBonusFreeRerolls(0.f);
+	InitLostHealthBonusRate(0.f);
 }
 
 void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -48,6 +49,7 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, SprintSpeedMultiplier,   COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, JumpHeightMultiplier,    COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ExtraJumpCount,          COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, LostHealthBonusRate,     COND_None, REPNOTIFY_Always);
 
 	// 나머지는 오너에게만 필요
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageMultiplier,          COND_OwnerOnly, REPNOTIFY_Always);
@@ -102,6 +104,7 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	if(Attribute == GetShieldPenetrationRateAttribute()
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetDamageReflectRateAttribute()
+	|| Attribute == GetLostHealthBonusRateAttribute()
 	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
@@ -187,6 +190,7 @@ ROGUE_AUG_REPNOTIFY(MoveSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(SprintSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(JumpHeightMultiplier)
 ROGUE_AUG_REPNOTIFY(ExtraJumpCount)
+ROGUE_AUG_REPNOTIFY(LostHealthBonusRate)
 
 ROGUE_AUG_REPNOTIFY(CooldownReductionRate)
 

@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Augment/AugmentInventoryComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Augment/AugmentTypes.h"
 #include "Data/WeaponDamageData.h"
 #include "GAS/Damage/RogueDamageTypes.h"
@@ -53,6 +54,7 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition SourceEffectiveRangeBonusDef;
 		FGameplayEffectAttributeCaptureDefinition SourcePenetrationMultiplierDef;
 		FGameplayEffectAttributeCaptureDefinition SourceLifestealRateDef;
+		FGameplayEffectAttributeCaptureDefinition SourceLostHealthBonusRateDef;
 
 		// Augment / 방어 측
 		FGameplayEffectAttributeCaptureDefinition TargetHeadshotDamageTakenRateDef;
@@ -89,6 +91,8 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetPenetrationMultiplierAttribute(),  ECaptureSource::Source);
 			SourceLifestealRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetLifestealRateAttribute(),          ECaptureSource::Source);
+			SourceLostHealthBonusRateDef =
+				MakeDef(URogueAugmentAttributeSet::GetLostHealthBonusRateAttribute(),    ECaptureSource::Source);
 
 			TargetHeadshotDamageTakenRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageTakenRateAttribute(), ECaptureSource::Target);
@@ -562,6 +566,15 @@ namespace
 		// 전체 피해량 배율
 		Acc.Scale(FMath::Max(0.f, E.Read(MultiplierDef, 1.f)));
 
+		// 잃은 체력 비례 무기 피해 증가
+		if (Source.Tag != RogueTags::Damage_Source_Skill)
+		{
+			Acc.Scale(1.f + URogueAugmentStatResolver::CalcLostHealthBonus(
+				E.Read(E.Capture.SourceHealthDef, 0.f),
+				E.Read(E.Capture.SourceMaxHealthDef, 0.f),
+				E.Read(E.Capture.SourceLostHealthBonusRateDef, 0.f)));
+		}
+
 		// 상점 기본 대미지 증폭
 		const float ShopAmplification = FMath::Clamp(
 			E.Read(E.Capture.SourceShopDamageAmplificationDef, 0.f), 0.f, MaxShopDamageAmplification);
@@ -719,6 +732,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.SourceEffectiveRangeBonusDef);
 	RelevantAttributesToCapture.Add(C.SourcePenetrationMultiplierDef);
 	RelevantAttributesToCapture.Add(C.SourceLifestealRateDef);
+	RelevantAttributesToCapture.Add(C.SourceLostHealthBonusRateDef);
 
 	RelevantAttributesToCapture.Add(C.TargetHeadshotDamageTakenRateDef);
 	RelevantAttributesToCapture.Add(C.TargetDamageReductionRateDef);
