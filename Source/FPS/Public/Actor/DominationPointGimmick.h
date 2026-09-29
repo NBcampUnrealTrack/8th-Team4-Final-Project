@@ -167,6 +167,8 @@ private:
 	void PlayInteractionStartedCosmetics();
 	void PlayInteractionEndedCosmetics(bool bCompleted);
 	void PlayReconStartedCosmetics();
+	// 확보 안내 음성. 이 머신의 로컬 플레이어 팀 기준으로 아군/적 안내를 고른다.
+	void PlaySecuredAnnouncement(EGameTeam SecuringTeam, bool bTakeover);
 	void StopInteractionLoopSound();
 
 	void HandleInteractionTick();
@@ -231,6 +233,11 @@ private:
 	// 정찰 단말 확보 완료(스캔 시작) 순간 스캔 중심(거점)에서 1회 재생. Niagara 사용자 변수 User.Radius(cm)에 스캔 반경을 넘긴다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Gimmick|AV", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNiagaraSystem> ReconScanEffect;
+
+	// 중계 비콘 확보(탈환 포함) 완료 순간 비콘 위치에서 1회 재생. 정찰 단말에서는 재생하지 않는다.
+	// 재생이 끝나면 사라지도록 Niagara 쪽에서 Loop Behavior를 Once, Auto Destroy를 켜 두어야 한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|Gimmick|AV", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraSystem> RelaySecuredEffect;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> InteractionLoopAudio;

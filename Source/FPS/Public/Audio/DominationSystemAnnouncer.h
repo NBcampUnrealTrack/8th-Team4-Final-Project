@@ -13,6 +13,14 @@ namespace DominationAnnouncementIds
 	inline const FName CaptureStarted(TEXT("Domination.CaptureStarted"));
 	inline const FName CaptureCompleted(TEXT("Domination.CaptureCompleted"));
 	inline const FName SandstormWarning(TEXT("Domination.SandstormWarning"));
+
+	// 거점 기믹 확보 안내. 각 클라이언트가 자기 팀 기준(Ally/Enemy)으로 골라 로컬 재생한다.
+	inline const FName GimmickReconSecuredAlly(TEXT("Domination.Gimmick.ReconSecured.Ally"));
+	inline const FName GimmickReconSecuredEnemy(TEXT("Domination.Gimmick.ReconSecured.Enemy"));
+	inline const FName GimmickRelaySecuredAlly(TEXT("Domination.Gimmick.RelaySecured.Ally"));
+	inline const FName GimmickRelaySecuredEnemy(TEXT("Domination.Gimmick.RelaySecured.Enemy"));
+	inline const FName GimmickRelayTakeoverAlly(TEXT("Domination.Gimmick.RelayTakeover.Ally"));
+	inline const FName GimmickRelayTakeoverEnemy(TEXT("Domination.Gimmick.RelayTakeover.Enemy"));
 }
 
 // 음성 안내와 폭풍 루프를 같은 방송기가 소유하되 서로의 재생을 막지 않는다.

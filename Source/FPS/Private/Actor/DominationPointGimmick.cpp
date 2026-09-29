@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Actor/DominationCapturePoint.h"
+#include "Audio/DominationSystemAnnouncer.h"
 #include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
@@ -280,6 +281,7 @@ void ADominationPointGimmick::MulticastInteractionEnded_Implementation(
 	BP_OnInteractionEnded(bCompleted, Team);
 	if (bCompleted)
 	{
+		PlaySecuredAnnouncement(Team, bTakeover);
 		OnGimmickSecured.Broadcast(this, Team, bTakeover);
 	}
 }
@@ -319,6 +321,55 @@ void ADominationPointGimmick::PlayInteractionEndedCosmetics(const bool bComplete
 	if (bCompleted && IsValid(InteractionCompleteSound))
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, InteractionCompleteSound, GetActorLocation());
+	}
+
+	// 완료 신호와 같은 시점에 재생하므로 늦게 접속한 클라이언트에서는 과거 확보 이펙트가 재생되지 않는다.
+	if (bCompleted
+		&& GimmickType == EDominationGimmickType::RespawnRelay
+		&& IsValid(RelaySecuredEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, RelaySecuredEffect, GetActorLocation());
+	}
+}
+
+void ADominationPointGimmick::PlaySecuredAnnouncement(const EGameTeam SecuringTeam, const bool bTakeover)
+{
+	UWorld* World = GetWorld();
+	const APlayerController* LocalController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	const ABaseTeamPlayerState* LocalPlayerState = IsValid(LocalController)
+		? LocalController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	if (!ShouldPlayCosmetics() || !IsValid(LocalPlayerState) || LocalPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return;
+	}
+
+	const bool bAlly = LocalPlayerState->GetTeam() == SecuringTeam;
+	FName AnnouncementId;
+	if (bTakeover)
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickRelayTakeoverAlly
+			: DominationAnnouncementIds::GimmickRelayTakeoverEnemy;
+	}
+	else if (GimmickType == EDominationGimmickType::RespawnRelay)
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickRelaySecuredAlly
+			: DominationAnnouncementIds::GimmickRelaySecuredEnemy;
+	}
+	else
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickReconSecuredAlly
+			: DominationAnnouncementIds::GimmickReconSecuredEnemy;
+	}
+
+	// 방송기는 맵에 하나뿐이다. 없거나 해당 ID의 음성을 등록하지 않았으면 건너뛴다.
+	for (TActorIterator<ASystemAnnouncer> Iterator(World); Iterator; ++Iterator)
+	{
+		Iterator->AnnounceLocal(AnnouncementId);
+		break;
 	}
 }
 
