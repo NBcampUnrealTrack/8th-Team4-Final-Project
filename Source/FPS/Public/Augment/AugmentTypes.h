@@ -155,6 +155,18 @@ struct FAugmentConditionalDamageRule
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
     float FlatDamageBonus = 0.f;
 
+    // 무작위 배율. 켜면 발동 시 Min ~ Max 사이 배율을 피해에 곱함 (증감률 합산과 별도)
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")
+    bool bUseRandomMultiplier = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "bUseRandomMultiplier", EditConditionHides, ClampMin = "0.0"))
+    float RandomMultiplierMin = 1.f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
+        meta = (EditCondition = "bUseRandomMultiplier", EditConditionHides, ClampMin = "0.0"))
+    float RandomMultiplierMax = 1.f;
+
     // 전역 LifestealRate 어트리뷰트와 합산되는 조건부 회복
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect",
         meta = (ClampMin = "0.0", ClampMax = "1.0"))

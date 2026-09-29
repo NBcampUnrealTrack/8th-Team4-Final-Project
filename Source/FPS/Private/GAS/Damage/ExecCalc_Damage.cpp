@@ -152,6 +152,8 @@ namespace
 		float HeadBonusRateSum = 0.f;
 		float HeadFlat         = 0.f;
 		float LifestealRate	   = 0.f; // 공격 측만 적용. 방어 측은 흡혈 없음
+		float RandomScale      = 1.f; // 무작위 배율. 증감률 합산과 별도로 곱함
+		float HeadRandomScale  = 1.f;
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -335,6 +337,13 @@ namespace
 
 			// 흡혈은 공격 측만 적용
 			Bucket.LifestealRate += FMath::Max(0.f, Rule.LifestealRate);
+
+			// 무작위 배율은 규칙마다 굴려서 곱함
+			if (Rule.bUseRandomMultiplier)
+			{
+				const float Roll = URogueAugmentStatResolver::RollRange(Rule.RandomMultiplierMin, Rule.RandomMultiplierMax);
+				(Rule.bAppliesToHeadshotBonusOnly ? Bucket.HeadRandomScale : Bucket.RandomScale) *= Roll;
+			}
 		}
 	}
 
@@ -605,6 +614,9 @@ namespace
 
 		Acc.ScaleHeadshot(ResolveRuleScale(Totals.HeadBonusRateSum, MinScale));
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
+
+		Acc.Scale(Totals.RandomScale);
+		Acc.ScaleHeadshot(Totals.HeadRandomScale);
 	}
 
 	// 5. 공격 측 조건부 증강

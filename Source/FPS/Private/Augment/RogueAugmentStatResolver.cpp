@@ -234,3 +234,8 @@ float URogueAugmentStatResolver::CalcLostHealthBonus(float Health, float MaxHeal
 	const int32 Steps = FMath::Min(FMath::FloorToInt(LostPct / LostHealthStepPct + KINDA_SMALL_NUMBER), MaxLostHealthSteps);
 	return Steps * RatePerStep;
 }
+
+float URogueAugmentStatResolver::RollRange(float Min, float Max)
+{
+	return FMath::FRandRange(FMath::Min(Min, Max), FMath::Max(Min, Max));
+}

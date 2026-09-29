@@ -88,6 +88,9 @@ public:
 	// 잃은 체력 비례 보너스. 잃은 체력 2% 마다 1단계, 최대 40단계
 	static float CalcLostHealthBonus(float Health, float MaxHealth, float RatePerStep);
 
+	// 증강 무작위 공용. Min ~ Max 사이 값
+	static float RollRange(float Min, float Max);
+
 private:
 	// Character / PlayerState / Controller 중 무엇을 넘겨도 해석
 	// 없으면 nullptr
