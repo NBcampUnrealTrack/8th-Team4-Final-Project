@@ -60,6 +60,7 @@ protected:
 	UFUNCTION() void OnRep_JumpHeightMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ExtraJumpCount(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_LostHealthBonusRate(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_HighAmmoFireRateBonus(const FGameplayAttributeData& OldValue);
 
 	// 스킬 관련
 	UFUNCTION() void OnRep_CooldownReductionRate(const FGameplayAttributeData& OldValue);
@@ -200,6 +201,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LostHealthBonusRate, Category = "Rogue|Augment|Movement")
 	FGameplayAttributeData LostHealthBonusRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,LostHealthBonusRate)
+
+	// 장착 무기 탄창이 절반 이상일 때 연사 증가율 (든든한 탄창)
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HighAmmoFireRateBonus, Category = "Rogue|Augment|Weapon")
+	FGameplayAttributeData HighAmmoFireRateBonus;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HighAmmoFireRateBonus)
 
 	// 스킬 관련 --------------------------------------------------
 	// 액티브 증강 쿨타임 감소 비율

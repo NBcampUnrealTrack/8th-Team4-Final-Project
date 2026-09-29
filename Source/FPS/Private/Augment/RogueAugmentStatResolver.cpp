@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "Combat/CombatComponent.h"
+#include "Weapon/WeaponBase.h"
 
 namespace
 {
@@ -33,6 +35,22 @@ namespace
 				Vital->GetHealth(), Vital->GetMaxHealth(), Set->GetLostHealthBonusRate())
 			: 0.f;
 	}
+
+	// 장착 무기 탄창이 절반 이상이면 연사 보너스. 발사 어빌리티가 쏘기 직전 서버와 예측 클라에서 각자 계산
+	float GetHighAmmoFireRateBonus(const AActor* Actor, const URogueAugmentAttributeSet* Set)
+	{
+		if (Set->GetHighAmmoFireRateBonus() <= 0.f || !IsValid(Actor))
+		{
+			return 0.f;
+		}
+
+		const UCombatComponent* Combat = Actor->FindComponentByClass<UCombatComponent>();
+		const AWeaponBase* Weapon = Combat ? Combat->GetEquippedWeapon() : nullptr;
+		const bool bHalfFull = IsValid(Weapon) && Weapon->UsesAmmo() && Weapon->GetEffectiveMagazineSize() > 0
+			&& Weapon->GetCurrentAmmo() * 2 >= Weapon->GetEffectiveMagazineSize();
+
+		return bHalfFull ? Set->GetHighAmmoFireRateBonus() : 0.f;
+	}
 }
 
 const URogueAugmentAttributeSet* URogueAugmentStatResolver::FindAugmentSet(const AActor* Actor)
@@ -52,7 +70,8 @@ float URogueAugmentStatResolver::GetFinalRPM(const AActor* Actor, float BaseRPM)
 		return BaseRPM;
 	}
 
-	return BaseRPM * FMath::Max(MinMultiplier, Set->GetFireRateMultiplier()) * (1.f + GetLostHealthBonus(Actor, Set));
+	return BaseRPM * FMath::Max(MinMultiplier, Set->GetFireRateMultiplier()) * (1.f + GetLostHealthBonus(Actor, Set))
+		* (1.f + GetHighAmmoFireRateBonus(Actor, Set));
 }
 
 float URogueAugmentStatResolver::GetFinalReloadTime(const AActor* Actor, float BaseReloadTime)

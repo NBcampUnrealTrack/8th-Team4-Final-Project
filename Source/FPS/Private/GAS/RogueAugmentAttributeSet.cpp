@@ -44,6 +44,7 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitLostHealthBonusRate(0.f);
 	InitCooldownRefundRate(0.f);
 	InitAmmoRefund(0.f);
+	InitHighAmmoFireRateBonus(0.f);
 }
 
 void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -72,6 +73,7 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReflectRate,         COND_OwnerOnly, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FireRateMultiplier,        COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HighAmmoFireRateBonus,     COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ReloadSpeedMultiplier,     COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, MagazineSizeMultiplier,    COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, PelletCountBonus,          COND_OwnerOnly, REPNOTIFY_Always);
@@ -111,6 +113,7 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetDamageReflectRateAttribute()
 	|| Attribute == GetLostHealthBonusRateAttribute()
+	|| Attribute == GetHighAmmoFireRateBonusAttribute()
 	|| Attribute == GetCooldownRefundRateAttribute()
 	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
@@ -231,6 +234,7 @@ ROGUE_AUG_REPNOTIFY(SprintSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(JumpHeightMultiplier)
 ROGUE_AUG_REPNOTIFY(ExtraJumpCount)
 ROGUE_AUG_REPNOTIFY(LostHealthBonusRate)
+ROGUE_AUG_REPNOTIFY(HighAmmoFireRateBonus)
 
 ROGUE_AUG_REPNOTIFY(CooldownReductionRate)
 
