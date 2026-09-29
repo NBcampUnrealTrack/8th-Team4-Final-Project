@@ -37,6 +37,9 @@ public:
 	// 수명이 라운드에 한정된 GE 제거
 	int32 RemoveRoundScopedEffects();
 
+	// 남은 액티브 쿨타임을 비율만큼 줄임. 서버 전용
+	void ReduceActiveCooldowns(float Rate);
+
 private:
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그
 	void ReportInputResult(const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount);

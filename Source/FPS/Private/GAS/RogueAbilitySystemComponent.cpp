@@ -259,3 +259,26 @@ int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
 
 	return RemovedCount;
 }
+
+void URogueAbilitySystemComponent::ReduceActiveCooldowns(float Rate)
+{
+	const UWorld* World = GetWorld();
+	if (Rate <= 0.f || !World || !IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	FGameplayTagContainer CooldownTags;
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot1);
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot2);
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot3);
+
+	const float Now = World->GetTimeSeconds();
+	for (const FActiveGameplayEffectHandle& Handle : GetActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTags)))
+	{
+		if (const FActiveGameplayEffect* Active = GetActiveGameplayEffect(Handle))
+		{
+			ModifyActiveEffectStartTime(Handle, -Active->GetTimeRemaining(Now) * FMath::Min(Rate, 1.f));
+		}
+	}
+}

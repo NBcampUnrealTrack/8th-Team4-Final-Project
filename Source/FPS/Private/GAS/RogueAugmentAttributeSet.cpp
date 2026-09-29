@@ -1,6 +1,8 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueAugmentAttributeSet.h"
+#include "GameplayEffectExtension.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Net/UnrealNetwork.h"
 
 URogueAugmentAttributeSet::URogueAugmentAttributeSet()
@@ -38,6 +40,7 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitCooldownReductionRate(0.f);
 	InitBonusFreeRerolls(0.f);
 	InitLostHealthBonusRate(0.f);
+	InitCooldownRefundRate(0.f);
 }
 
 void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -105,6 +108,7 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetDamageReflectRateAttribute()
 	|| Attribute == GetLostHealthBonusRateAttribute()
+	|| Attribute == GetCooldownRefundRateAttribute()
 	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
@@ -153,6 +157,23 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 		TEXT("[RogueAugment] PreAttributeChange 에 등록되지 않은 어트리뷰트입니다: %s. "
 		     "정의역 버킷 네 개 중 하나에 추가하세요."),
 		*Attribute.GetName());
+}
+
+void URogueAugmentAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	// 남은 액티브 쿨타임 감소
+	if (Data.EvaluatedData.Attribute == GetCooldownRefundRateAttribute())
+	{
+		const float Rate = GetCooldownRefundRate();
+		SetCooldownRefundRate(0.f);
+
+		if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(GetOwningAbilitySystemComponent()))
+		{
+			ASC->ReduceActiveCooldowns(Rate);
+		}
+	}
 }
 
 // RepNotify 는 매크로로 정의

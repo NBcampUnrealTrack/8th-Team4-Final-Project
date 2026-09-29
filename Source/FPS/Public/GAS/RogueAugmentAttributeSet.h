@@ -22,6 +22,9 @@ public:
 	// 다중 증강 중첩 시 수치 폭발 방지
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
+	// 메타 어트리뷰트 처리
+	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
+
 protected:
 	// 공격 관련
 	UFUNCTION() void OnRep_DamageMultiplier(const FGameplayAttributeData& OldValue);
@@ -203,6 +206,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CooldownReductionRate, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData CooldownReductionRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownReductionRate)
+
+	// 메타: 남은 액티브 쿨타임을 이 비율만큼 즉시 감소 (냉각 장치). 복제 안 함
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Skill")
+	FGameplayAttributeData CooldownRefundRate;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownRefundRate)
 
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율
