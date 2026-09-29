@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
 #include "GameFramework/GameUserSettings.h"
+#include "InputCoreTypes.h"
 #include "Styling/SlateTypes.h"
 #include "Types/SlateEnums.h"
 #include "Settings/ShooterGameUserSettings.h"
@@ -17,9 +18,9 @@ class USlider;
 class UTextBlock;
 class UWidgetSwitcher;
 class UTexture2D;
-class UTextureRenderTarget2D;
-class USceneCaptureComponent2D;
-class UShooterOptionsPerformanceSubsystem;
+class UShooterKeyBindingProxy;
+class UVerticalBox;
+struct FShooterInputBindingEntry;
 
 
 /**
@@ -163,9 +164,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Graphics")
 	void SetQualityLevel(EShooterScalabilitySetting Setting, int32 QualityLevel);
 
-	UFUNCTION(BlueprintCallable, Category = "UI|Options|Graphics")
-	void RunHardwareBenchmarkAndApply(int32 WorkScale = 10);
-
 	// ----- Controls / Gameplay -----
 	UFUNCTION(BlueprintPure, Category = "UI|Options|Controls")
 	float GetMouseHorizontalSensitivity() const;
@@ -216,6 +214,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Audio")
 	void SetVoiceChatEnabled(bool bEnabled);
 
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Voice Chat")
+	float GetVoiceChatMicrophoneVolume() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Voice Chat")
+	void SetVoiceChatMicrophoneVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Voice Chat")
+	float GetVoiceChatOutputVolume() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Voice Chat")
+	void SetVoiceChatOutputVolume(float Volume);
+
+	// Runtime key mapping uses transient copies of the authored IMCs. This callback is
+	// public only for the per-row UInputKeySelector proxy; WBP logic does not depend on it.
+	void HandleKeyBindingSelected(FName BindingId, FKey NewKey);
+
 	// ----- Options / Language -----
 	UFUNCTION(BlueprintPure, Category = "UI|Options|General")
 	EShooterOptionsLanguage GetLanguage() const;
@@ -249,58 +263,45 @@ protected:
 	virtual void NativeOnDeactivated() override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual void NativeDestruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 
-	// Generated WBP support. The editor generator creates widgets with these fixed names,
-	// and this screen owns their UI-only bindings while settings stay in UGameUserSettings.
-	void BindGeneratedControls();
-	void ApplyGeneratedStaticStyles();
+	// WBP_OptionsScreen의 고정 위젯 이름을 바인딩하고 실제 저장값은 UShooterGameUserSettings가 관리한다.
+	void BindOptionControls();
+	void ApplyOptionStaticStyles();
 	// 켜짐/선택 상태 버튼의 배경을 스타일 또는 기존 색 방식으로 칠한다.
-	void ApplyGeneratedButtonStateStyle(UButton* Button, bool bActive) const;
-	UFUNCTION() void RefreshGeneratedUI();
-	void ShowGeneratedPage(int32 PageIndex);
-	void RefreshGeneratedTabVisuals();
-	void RefreshGeneratedOptionRowVisuals();
-	void RefreshGeneratedDetailPanel();
-	void RefreshGeneratedPreview();
-	void ReleaseGeneratedPreviewCapture();
-	void SetGeneratedPerformanceSegments(int32 ActiveSegments, bool bRelevant) const;
-	void SetGeneratedChoiceSegments(FName Prefix, int32 ActiveIndex, int32 ChoiceCount) const;
-	void SetGeneratedButtonTextColor(FName ButtonName, const FLinearColor& Color) const;
-	void SetGeneratedWindowModeVisual() const;
+	void ApplyOptionButtonStateStyle(UButton* Button, bool bActive) const;
+	UFUNCTION() void RefreshOptionsUI();
+	void ShowOptionsPage(int32 PageIndex);
+	void RefreshTabVisuals();
+	void RefreshOptionRowVisuals();
+	void SetChoiceSegments(FName Prefix, int32 ActiveIndex, int32 ChoiceCount) const;
+	void SetButtonTextColor(FName ButtonName, const FLinearColor& Color) const;
 	void StepResolution(int32 Delta);
 	void StepWindowMode(int32 Delta);
 	void StepFrameRate(int32 Delta);
-	void StepPerformanceTargetFPS(int32 Delta);
 	void StepOverallQuality(int32 Delta);
 	void StepQuality(EShooterScalabilitySetting Setting, int32 Delta);
-	void SetGeneratedText(FName WidgetName, const FText& Text) const;
-	void SetGeneratedToggleVisual(FName ButtonName, FName TextName, bool bEnabled) const;
-	void ApplyGeneratedLanguage();
+	void SetOptionText(FName WidgetName, const FText& Text) const;
+	void SetToggleVisual(FName ButtonName, FName TextName, bool bEnabled) const;
+	void ApplyOptionLanguage();
 	FText Localize(const TCHAR* Korean, const TCHAR* English) const;
+	void RebuildKeyBindings();
+	FText BuildInputBindingDisplayName(const FShooterInputBindingEntry& Entry) const;
+	bool TryParseNumber(const FText& Text, float& OutValue) const;
+	void CommitAudioPercent(const FText& Text, ETextCommit::Type CommitMethod, EShooterAudioChannel Channel, FName OptionName, FName TextName);
+	void CommitVoiceChatPercent(const FText& Text, ETextCommit::Type CommitMethod, bool bMicrophone, FName OptionName, FName TextName);
+	void HandleAudioVolumeChangedInternal(float Value, EShooterAudioChannel Channel, FName OptionName, FName TextName);
+	void HandleVoiceChatVolumeChangedInternal(float Value, bool bMicrophone, FName OptionName, FName TextName);
 
-	// Smart tuning / visual lab
-	void RefreshGeneratedLab();
-	void RefreshGeneratedAdvisor();
-	void CaptureGeneratedBaseline();
-	void ApplyExperienceProfile(EShooterExperienceProfile Profile);
-	void ApplyAdvisorRecommendation();
-	FText BuildGameplayImpactText(FName Option) const;
-	FText BuildPerformanceCostText(FName Option) const;
-	FText BuildOptionRecommendationText(FName Option) const;
-	FText BuildAdvisorRecommendationText() const;
-	int32 GetCurrentQualityForOption(FName Option) const;
-	UShooterOptionsPerformanceSubsystem* GetPerformanceSubsystem() const;
-	void InvalidatePerformanceSamples();
 
 	UFUNCTION() void HandleSideGraphics();
 	UFUNCTION() void HandleSideDisplay();
 	UFUNCTION() void HandleSideControls();
+	UFUNCTION() void HandleSideKeyBindings();
 	UFUNCTION() void HandleSideAudio();
+	UFUNCTION() void HandleSideVoiceChat();
 	UFUNCTION() void HandleSideSettings();
-	UFUNCTION() void HandleSideSmartTuning();
 	UFUNCTION() void HandleSave();
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleReset();
@@ -311,12 +312,8 @@ private:
 	UFUNCTION() void HandleResolutionNext();
 	UFUNCTION() void HandleWindowModePrev();
 	UFUNCTION() void HandleWindowModeNext();
-	UFUNCTION() void HandleWindowModeFullscreen();
-	UFUNCTION() void HandleWindowModeWindowed();
 	UFUNCTION() void HandleFrameRatePrev();
 	UFUNCTION() void HandleFrameRateNext();
-	UFUNCTION() void HandleTargetFPSPrev();
-	UFUNCTION() void HandleTargetFPSNext();
 	UFUNCTION() void HandleOverallPrev();
 	UFUNCTION() void HandleOverallNext();
 	UFUNCTION() void HandleViewDistancePrev();
@@ -340,22 +337,6 @@ private:
 	UFUNCTION() void HandleShadingPrev();
 	UFUNCTION() void HandleShadingNext();
 
-	// Hover/click on selector labels updates the contextual detail panel without changing the value.
-	UFUNCTION() void HandleInfoResolution();
-	UFUNCTION() void HandleInfoWindowMode();
-	UFUNCTION() void HandleInfoFrameRate();
-	UFUNCTION() void HandleInfoOverall();
-	UFUNCTION() void HandleInfoViewDistance();
-	UFUNCTION() void HandleInfoAntiAliasing();
-	UFUNCTION() void HandleInfoShadow();
-	UFUNCTION() void HandleInfoGlobalIllumination();
-	UFUNCTION() void HandleInfoReflection();
-	UFUNCTION() void HandleInfoPostProcessing();
-	UFUNCTION() void HandleInfoTexture();
-	UFUNCTION() void HandleInfoEffects();
-	UFUNCTION() void HandleInfoFoliage();
-	UFUNCTION() void HandleInfoShading();
-	UFUNCTION() void HandleInfoLanguage();
 
 	UFUNCTION() void HandleVSyncToggle();
 	UFUNCTION() void HandleDynamicResolutionToggle();
@@ -363,6 +344,7 @@ private:
 	UFUNCTION() void HandleDynamicCrosshairToggle();
 	UFUNCTION() void HandleMasterMuteToggle();
 	UFUNCTION() void HandleVoiceChatToggle();
+	UFUNCTION() void HandleResetKeyBindings();
 
 	UFUNCTION() void HandleResolutionScaleChanged(float Value);
 	UFUNCTION() void HandleHorizontalSensitivityChanged(float Value);
@@ -373,21 +355,27 @@ private:
 	UFUNCTION() void HandleHorizontalSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleVerticalSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleAimSensitivityCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
+	UFUNCTION() void HandleMasterVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleMusicVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleSfxVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleUiVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleVoiceVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleVoiceChatMicrophoneVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleVoiceChatOutputVolumeCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
 	UFUNCTION() void HandleMasterVolumeChanged(float Value);
 	UFUNCTION() void HandleMusicVolumeChanged(float Value);
 	UFUNCTION() void HandleSfxVolumeChanged(float Value);
 	UFUNCTION() void HandleUiVolumeChanged(float Value);
 	UFUNCTION() void HandleVoiceVolumeChanged(float Value);
+	UFUNCTION() void HandleVoiceChatMicrophoneVolumeChanged(float Value);
+	UFUNCTION() void HandleVoiceChatOutputVolumeChanged(float Value);
 	UFUNCTION() void HandleLanguagePrev();
 	UFUNCTION() void HandleLanguageNext();
-	UFUNCTION() void HandleCaptureBaseline();
-	UFUNCTION() void HandleProfileVisual60();
-	UFUNCTION() void HandleProfileBalanced120();
-	UFUNCTION() void HandleProfileCompetitive144();
-	UFUNCTION() void HandleProfileMaxQuality();
-	UFUNCTION() void HandleApplyAdvisorRecommendation();
 
 	UShooterGameUserSettings* GetGameUserSettings() const;
+	void ResetSettingsInternal(bool bResetProjectSettings);
 	void RevertVideoModeInternal(bool bNotifySettingsChanged);
 	void StartVideoModeConfirmationTimeout();
 	void ClearVideoModeConfirmationTimeout();
@@ -447,7 +435,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowPadding"))
 	FMargin StepperArrowContentPadding;
 
-	// 토글/창 모드/프로필 버튼을 켜짐·꺼짐 상태에 따라 교체한다.
+	// 토글/창 모드 버튼을 켜짐·꺼짐 상태에 따라 교체한다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
 	bool bOverrideToggleStyle = false;
 
@@ -457,7 +445,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideToggleStyle"))
 	FButtonStyle ToggleOffStyle;
 
-	// 선택 칸 표시줄과 성능 영향도 막대가 공유하는 색.
+	// 선택 칸 표시줄 색.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
 	FLinearColor SegmentActiveColor = FLinearColor(0.030f, 0.900f, 0.820f, 1.00f);
 
@@ -485,34 +473,17 @@ private:
 	static EShooterWindowMode FromEngineWindowMode(EWindowMode::Type WindowMode);
 	static EWindowMode::Type ToEngineWindowMode(EShooterWindowMode WindowMode);
 
-	bool bGeneratedUIBound = false;
-	bool bRefreshingGeneratedUI = false;
-	int32 ActiveGeneratedPage = 0;
-	FName ActiveGeneratedSideButton = TEXT("Btn_Side_Graphics");
-	FName ActiveGeneratedOption = TEXT("Overall");
+	bool bControlsBound = false;
+	bool bRefreshingUI = false;
+	int32 ActivePage = 0;
+	FName ActiveSideButton = TEXT("Btn_Side_Graphics");
+	FName ActiveOption = TEXT("Overall");
 
 	// 사이드 탭이 모두 CommonButton일 때만 생성되며 선택 상태를 대신 관리한다.
 	UPROPERTY(Transient)
 	TObjectPtr<UCommonButtonGroupBase> SideTabGroup;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTextureRenderTarget2D> GeneratedPreviewRenderTarget;
+	TArray<TObjectPtr<UShooterKeyBindingProxy>> KeyBindingProxies;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UTextureRenderTarget2D> GeneratedBaselineRenderTarget;
-
-	bool bGeneratedLabHasBaseline = false;
-	float GeneratedLabBaselineFrameTimeMs = 0.0f;
-	float GeneratedLabRollingFrameTimeMs = 0.0f;
-	FName GeneratedLabBaselineOption = NAME_None;
-	FText GeneratedLabBaselineValue;
-
-	float SessionAverageFPS = 0.0f;
-	float SessionOnePercentLowFPS = 0.0f;
-	float SessionTargetMissPercent = 0.0f;
-	int32 SessionSampleCount = 0;
-	bool bSessionRecommendationApplied = false;
-
-	TWeakObjectPtr<USceneCaptureComponent2D> GeneratedPreviewCaptureComponent;
-	bool bGeneratedPreviewOwnsRenderTarget = false;
 };

@@ -10,6 +10,7 @@
 
 class UScreenTransitionWidget;
 class UShooterMatchResultScreen;
+class UShooterOptionsScreen;
 class USoundBase;
 class UTexture2D;
 class UWorld;
@@ -42,10 +43,18 @@ class FPS_API UShooterUISettings : public UDeveloperSettings
 	GENERATED_BODY()
 	
 public:
+	UShooterUISettings();
+
 	// 매치가 끝나고 로비에서 띄울 결과 화면
 	UPROPERTY(Config, EditAnywhere, Category = "Match Result")
 	TSoftClassPtr<UShooterMatchResultScreen> MatchResultScreenClass;
 	
+	// 메뉴별 지정이 없을 때 사용할 공통 옵션 화면. 프로젝트 설정에서 교체할 수 있다.
+	UPROPERTY(Config, EditAnywhere, Category = "Options")
+	TSoftClassPtr<UShooterOptionsScreen> DefaultOptionsScreenClass;
+
+	static TSubclassOf<UShooterOptionsScreen> LoadDefaultOptionsScreenClass();
+
 	UFUNCTION(BlueprintPure, Category = "UI|Theme")
 	static FLinearColor GetAllyColor();
 	

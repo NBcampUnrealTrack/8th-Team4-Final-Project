@@ -1,12 +1,10 @@
-#include "Voice/SteamVoiceComponent.h"
+﻿#include "Voice/SteamVoiceComponent.h"
 
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/PlayerState.h"
 #include "Player/ShooterPlayerController.h"
-#include "Settings/ShooterAudioSettings.h"
-#include "Sound/SoundClass.h"
 #include "Sound/SoundGroups.h"
 #include "Sound/SoundNode.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -74,7 +72,10 @@ void USteamVoiceComponent::StopCapture()
 	}
 }
 
-void USteamVoiceComponent::PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData)
+void USteamVoiceComponent::PlayCompressedVoicePacket(
+	APlayerState* SpeakerPlayerState,
+	const TArray<uint8>& CompressedVoiceData,
+	const float SenderMicrophoneVolume)
 {
 	TArray<uint8> PcmVoiceData;
 	if (!DecompressVoicePacket(SpeakerPlayerState, CompressedVoiceData, PcmVoiceData))
@@ -82,17 +83,32 @@ void USteamVoiceComponent::PlayCompressedVoicePacket(APlayerState* SpeakerPlayer
 		return;
 	}
 
+	ApplyPcmGain(PcmVoiceData, SenderMicrophoneVolume);
+
 	FSteamVoicePlaybackSlot* PlaybackSlot = FindOrCreatePlaybackSlot(SpeakerPlayerState);
 	if (!PlaybackSlot || !PlaybackSlot->SoundWave || !PlaybackSlot->AudioComponent)
 	{
 		return;
 	}
 
+	PlaybackSlot->AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
 	PlaybackSlot->SoundWave->QueueAudio(PcmVoiceData.GetData(), PcmVoiceData.Num());
 
 	if (!PlaybackSlot->AudioComponent->IsPlaying())
 	{
 		PlaybackSlot->AudioComponent->Play();
+	}
+}
+
+void USteamVoiceComponent::SetOutputVolume(const float Volume)
+{
+	VoiceOutputVolume = FMath::Clamp(Volume, 0.0f, 2.0f);
+	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
+	{
+		if (PlaybackSlot.AudioComponent)
+		{
+			PlaybackSlot.AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
+		}
 	}
 }
 
@@ -163,8 +179,30 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 	return true;
 }
 
+void USteamVoiceComponent::ApplyPcmGain(TArray<uint8>& PcmVoiceData, const float Gain)
+{
+	if (PcmVoiceData.Num() < static_cast<int32>(sizeof(int16)))
+	{
+		return;
+	}
+
+	const float ClampedGain = FMath::Clamp(Gain, 0.0f, 2.0f);
+	int16* Samples = reinterpret_cast<int16*>(PcmVoiceData.GetData());
+	const int32 SampleCount = PcmVoiceData.Num() / static_cast<int32>(sizeof(int16));
+	for (int32 Index = 0; Index < SampleCount; ++Index)
+	{
+		const int32 Scaled = FMath::RoundToInt(static_cast<float>(Samples[Index]) * ClampedGain);
+		Samples[Index] = static_cast<int16>(FMath::Clamp(Scaled, static_cast<int32>(MIN_int16), static_cast<int32>(MAX_int16)));
+	}
+}
+
 void USteamVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	StopCapture();
 	StopPlayback();
 
@@ -340,12 +378,8 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	SoundWave->SampleByteSize = sizeof(int16);
 	SoundWave->Duration = INDEFINITELY_LOOPING_DURATION;
 	SoundWave->SoundGroup = SOUNDGROUP_Voice;
-	SoundWave->SoundClassObject = GetDefault<UShooterAudioSettings>()->VoiceSoundClass.LoadSynchronous();
-	if (!ensureMsgf(SoundWave->SoundClassObject,
-		TEXT("Assign VoiceSoundClass in Project Settings > Shooter Audio Settings before playing voice.")))
-	{
-		return nullptr;
-	}
+	// Voice chat is intentionally not routed through the game's Voice SoundClass.
+	// Incoming voice has its own user volume and still follows the device/master output volume.
 
 	UAudioComponent* AudioComponent = NewObject<UAudioComponent>(OwnerActor);
 	if (!IsValid(AudioComponent))
@@ -355,6 +389,7 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 
 	AudioComponent->bAutoActivate = false;
 	AudioComponent->SetSound(SoundWave);
+	AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
 	AudioComponent->RegisterComponentWithWorld(World);
 
 	PlaybackSlot->SoundWave = SoundWave;
