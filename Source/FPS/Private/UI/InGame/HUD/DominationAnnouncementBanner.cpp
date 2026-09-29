@@ -2,7 +2,6 @@
 #include "UI/InGame/HUD/DominationAnnouncementBanner.h"
 
 #include "Animation/WidgetAnimation.h"
-#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "GameMode/State/DominationGameState.h"
@@ -102,7 +101,6 @@ void UDominationAnnouncementBanner::PresentAnnouncement(const FDominationAnnounc
 		Text_Prefix->SetText(MatchStartText);
 		Text_Point->SetVisibility(ESlateVisibility::Collapsed);
 		Text_Result->SetVisibility(ESlateVisibility::Collapsed);
-		Image_Accent->SetColorAndOpacity(NeutralAccentColor);
 	}
 	else
 	{
@@ -130,7 +128,6 @@ void UDominationAnnouncementBanner::PresentAnnouncement(const FDominationAnnounc
 			? (bAlly ? CaptureCompletedAllyText : CaptureCompletedEnemyText)
 			: (bAlly ? CaptureStartedAllyText : CaptureStartedEnemyText));
 		Text_Result->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Image_Accent->SetColorAndOpacity(RelationColor);
 	}
 
 	SetVisibility(ESlateVisibility::HitTestInvisible);

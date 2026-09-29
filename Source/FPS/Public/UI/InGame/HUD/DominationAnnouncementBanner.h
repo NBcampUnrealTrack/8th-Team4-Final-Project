@@ -9,7 +9,6 @@
 #include "DominationAnnouncementBanner.generated.h"
 
 class ADominationGameState;
-class UImage;
 class UTextBlock;
 class UWidgetAnimation;
 
@@ -40,8 +39,6 @@ private:
 	static FDominationAnnouncementSnapshot BuildSnapshot(const ADominationGameState& GameState);
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UImage> Image_Accent;
-	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_Prefix;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_Point;
@@ -63,9 +60,6 @@ private:
 	FText CaptureCompletedAllyText;
 	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
 	FText CaptureCompletedEnemyText;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Color")
-	FLinearColor NeutralAccentColor = FLinearColor(0.93f, 0.89f, 0.80f);
 
 	FDominationAnnouncementDetector Detector;
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
