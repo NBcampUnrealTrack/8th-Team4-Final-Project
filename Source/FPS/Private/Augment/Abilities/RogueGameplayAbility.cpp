@@ -18,6 +18,7 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueTargetFilter.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
 
@@ -187,6 +188,23 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 	UsedInputTag = RogueTags::Event_Utility_Input_Primary;
 
 	ExecuteAbility(EventTarget);
+}
+
+void URogueGameplayAbility::OnAvatarSet(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec)
+{
+	Super::OnAvatarSet(ActorInfo, Spec);
+
+	// 관전 폰 말고 전투 캐릭터에 연결될 때만
+	if (!bActivateOnAvatarSet || !ActorInfo || !ActorInfo->IsNetAuthority() || Spec.IsActive()
+		|| !IsValid(ActorInfo->AvatarActor.Get()) || !ActorInfo->AvatarActor->Implements<UPlayerInterface>())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get())
+	{
+		ASC->TryActivateAbility(Spec.Handle);
+	}
 }
 
 void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)

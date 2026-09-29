@@ -60,6 +60,9 @@ protected:
 	                        const FGameplayAbilityActivationInfo ActivationInfo,
 	                        bool bReplicateEndAbility, bool bWasCancelled) override;
 
+	// bActivateOnAvatarSet 이면 부여, 부활 시 자동 발동
+	virtual void OnAvatarSet(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec) override;
+
 	// 페이로드 조립 -> 커밋 -> 큐 -> 시전 대기 -> Deliver.
 	// bHoldToUse 면 사용 입력이 온 시점에 불린다
 	void ExecuteAbility(AActor* EventTarget);
@@ -163,6 +166,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
 		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, Categories = "GameplayCue"))
 	FGameplayTag RepeatCueTag;
+
+	// 부여되거나 부활해 아바타가 연결되면 자동 발동 (주기 발동 증강용)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
+	bool bActivateOnAvatarSet = false;
 
 	// 어느 입력으로 사용했는지. 홀드가 아니면 Primary
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Activation",
