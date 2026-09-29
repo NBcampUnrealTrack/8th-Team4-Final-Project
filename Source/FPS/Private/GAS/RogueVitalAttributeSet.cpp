@@ -2,8 +2,10 @@
 
 #include "GAS/RogueVitalAttributeSet.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 
 URogueVitalAttributeSet::URogueVitalAttributeSet()
 {
@@ -114,7 +116,25 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 
 		if (Delta > 0.f)
 		{
-			SetHealth(FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth()));
+			float NewHealth = FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth());
+
+			// 치명 피해를 목숨당 1번 체력 1로 버팀
+			if (NewHealth <= 0.f && CanSurviveLethal())
+			{
+				NewHealth = 1.f;
+				bLethalSurviveUsed = true;
+
+				if (AActor* Avatar = GetOwningAbilitySystemComponent()->GetAvatarActor())
+				{
+					FGameplayEventData Payload;
+					Payload.EventTag   = RogueTags::Event_Combat_LethalSurvived;
+					Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
+					Payload.Target     = Avatar;
+					UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, RogueTags::Event_Combat_LethalSurvived, Payload);
+				}
+			}
+
+			SetHealth(NewHealth);
 		}
 
 		TryDeclareDeath(Data.EffectSpec.GetContext());
@@ -238,6 +258,14 @@ void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle
 		*GetNameSafe(OwnerASC->GetAvatarActor()));
 
 	OnOutOfHealth.Broadcast(OwnerASC, Context);
+}
+
+bool URogueVitalAttributeSet::CanSurviveLethal() const
+{
+	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+
+	return !bLethalSurviveUsed && !bDeathDeclared && ASC && ASC->IsOwnerActorAuthoritative()
+		&& ASC->HasMatchingGameplayTag(RogueTags::State_Augment_LethalSurvive);
 }
 
 void URogueVitalAttributeSet::AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
