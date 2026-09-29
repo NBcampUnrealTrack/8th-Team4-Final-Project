@@ -768,6 +768,24 @@ void AWeaponBase::FinishReload()
 	}
 }
 
+int32 AWeaponBase::AdjustMagazineAmmoLocal(const int32 Delta)
+{
+	if (!bUsesAmmo || bInfiniteAmmo || Delta == 0)
+	{
+		return 0;
+	}
+
+	const int32 NewAmmo = FMath::Clamp(CurrentAmmo + Delta, 0, EffectiveMagazineSize);
+	const int32 Applied = NewAmmo - CurrentAmmo;
+	if (Applied != 0)
+	{
+		CurrentAmmo = NewAmmo;
+		bEmptyClipNotified = false;
+		OnAmmoChanged.Broadcast();
+	}
+	return Applied;
+}
+
 void AWeaponBase::OnRep_CurrentReserveAmmo()
 {
 	OnAmmoChanged.Broadcast();
