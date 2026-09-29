@@ -14,7 +14,7 @@ DECLARE_MULTICAST_DELEGATE(FOnRoomMenuAction);
 /**
  * 방에서 ESC 로 여는 메뉴
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterRoomMenuScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

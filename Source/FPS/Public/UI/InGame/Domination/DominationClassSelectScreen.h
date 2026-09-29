@@ -33,7 +33,7 @@ struct FDominationPlayerSlotEntry
  * 클래스 선택 화면이다.
  * 설정된 클래스 카드를 생성하고 기존 Domination 선택 요청으로 전달한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

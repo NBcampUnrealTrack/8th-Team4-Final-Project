@@ -45,7 +45,7 @@ struct FShooterKillFeedEntryData
 	EShooterKillFeedEventType EventType = EShooterKillFeedEventType::Elimination;
 };
 
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterKillFeedEntry : public UCommonUserWidget
 {
 	GENERATED_BODY()

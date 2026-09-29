@@ -14,7 +14,7 @@ class UTextBlock;
 /**
  * 방 만들기 창 (Modal). 방 이름·최대 인원을 받아 생성 요청
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterCreateRoomDialog : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

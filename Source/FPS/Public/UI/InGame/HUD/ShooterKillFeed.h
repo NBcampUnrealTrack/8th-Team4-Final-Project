@@ -10,7 +10,7 @@ class UShooterKillFeedEntry;
 class UVerticalBox;
 struct FShooterKillFeedEntryData;
 
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterKillFeed : public UCommonUserWidget
 {
 	GENERATED_BODY()

@@ -27,7 +27,7 @@ enum class EAugmentBannerKind : uint8
  * 증강 선택 안내 문구와 남은 선택 시간을 나타낸다 
  * PendingCard 상태일때는 HUD Hint를 띄우고 Card는 닫는다
  */
-UCLASS(Abstract, Blueprintable)
+UCLASS(Abstract, Blueprintable, meta = (DisableNativeTick))
 class FPS_API UShooterAugmentSelectBanner : public UUserWidget
 {
 	GENERATED_BODY()
