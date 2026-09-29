@@ -66,6 +66,12 @@ void UShooterSkillSlot::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// 평소에는 RT 를 거치지 않는다
+	if (RetainerBox_Glitch)
+	{
+		RetainerBox_Glitch->SetRetainRendering(false);
+	}
+
 	// 생성 전에 시작된 쿨다운도 여기서 이어 받는다
 	if (RecoveryEndWorldTime > 0.f)
 	{
@@ -154,6 +160,11 @@ void UShooterSkillSlot::HandleGlowReadyAnimFinished()
 	if (CachedGlitchMID)
 	{
 		CachedGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
+	}
+
+	if (RetainerBox_Glitch)
+	{
+		RetainerBox_Glitch->SetRetainRendering(false);
 	}
 }
 
@@ -558,6 +569,12 @@ void UShooterSkillSlot::PlayReadyGlow()
 	{
 		StopAnimation(Anim_ReadyGlow);
 		PlayAnimation(Anim_ReadyGlow, 0.f, 1);
+
+		// 글리치 동안만 RT 로 그린다
+		if (RetainerBox_Glitch)
+		{
+			RetainerBox_Glitch->SetRetainRendering(true);
+		}
 
 		if (UMaterialInstanceDynamic* MID = GetGlitchMID())
 		{
