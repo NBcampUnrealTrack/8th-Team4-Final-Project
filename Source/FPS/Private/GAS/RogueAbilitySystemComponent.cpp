@@ -282,3 +282,20 @@ void URogueAbilitySystemComponent::ReduceActiveCooldowns(float Rate)
 		}
 	}
 }
+
+void URogueAbilitySystemComponent::OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect)
+{
+	Super::OnGameplayEffectDurationChange(ActiveEffect);
+
+	FGameplayTagContainer GrantedTags;
+	ActiveEffect.Spec.GetAllGrantedTags(GrantedTags);
+
+	for (const FGameplayTag& SlotTag : { RogueTags::Cooldown_Augment_Slot1.GetTag(),
+		RogueTags::Cooldown_Augment_Slot2.GetTag(), RogueTags::Cooldown_Augment_Slot3.GetTag() })
+	{
+		if (GrantedTags.HasTagExact(SlotTag))
+		{
+			OnCooldownTimeChanged.Broadcast(SlotTag);
+		}
+	}
+}
