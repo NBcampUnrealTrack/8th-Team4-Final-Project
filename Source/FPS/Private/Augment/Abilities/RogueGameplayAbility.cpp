@@ -578,6 +578,7 @@ const FAugmentGrantedAbility* URogueGameplayAbility::FindGrantedEntry(
 bool URogueGameplayAbility::LoadEffectClasses(const FAugmentGrantedAbility& Entry,
                                               TArray<TSubclassOf<UGameplayEffect>>& OutClasses) const
 {
+	OutClasses.Reset();
 	OutClasses.Reserve(Entry.EffectsToApply.Num());
 
 	for (int32 Index = 0; Index < Entry.EffectsToApply.Num(); ++Index)
