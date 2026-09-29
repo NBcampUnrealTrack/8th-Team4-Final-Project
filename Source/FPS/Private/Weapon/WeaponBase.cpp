@@ -768,6 +768,38 @@ void AWeaponBase::FinishReload()
 	}
 }
 
+void AWeaponBase::AddMagazineAmmo(const int32 Amount)
+{
+	if (!HasAuthority() || !bUsesAmmo || bInfiniteAmmo || Amount <= 0)
+	{
+		return;
+	}
+
+	ApplyMagazineAmmo(Amount);
+	Client_AddMagazineAmmo(Amount);
+}
+
+void AWeaponBase::Client_AddMagazineAmmo_Implementation(const int32 Amount)
+{
+	if (!HasAuthority())
+	{
+		ApplyMagazineAmmo(Amount);
+	}
+}
+
+void AWeaponBase::ApplyMagazineAmmo(const int32 Amount)
+{
+	const int32 Added = FMath::Clamp(Amount, 0, FMath::Max(EffectiveMagazineSize - CurrentAmmo, 0));
+	if (Added <= 0)
+	{
+		return;
+	}
+
+	CurrentAmmo += Added;
+	bEmptyClipNotified = false;
+	OnAmmoChanged.Broadcast();
+}
+
 void AWeaponBase::OnRep_CurrentReserveAmmo()
 {
 	OnAmmoChanged.Broadcast();

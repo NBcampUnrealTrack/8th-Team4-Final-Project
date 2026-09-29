@@ -207,10 +207,15 @@ public:
 	FGameplayAttributeData CooldownReductionRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownReductionRate)
 
-	// 메타: 남은 액티브 쿨타임을 이 비율만큼 즉시 감소 (냉각 장치). 복제 안 함
+	// 메타: 남은 액티브 쿨타임을 이 비율만큼 즉시 감소 (냉각 장치)
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData CooldownRefundRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownRefundRate)
+
+	// 메타: 장착 무기 탄창에 이만큼 탄 추가 (예비탄 소모 없음)
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Weapon")
+	FGameplayAttributeData AmmoRefund;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,AmmoRefund)
 
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율

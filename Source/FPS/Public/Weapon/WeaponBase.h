@@ -114,6 +114,9 @@ public:
 	// 예비 탄약 최대치를 바꾸고 차이만큼 예비 탄약 조정. 서버 전용
 	void ResizeReserve(int32 NewMaxReserveAmmo);
 
+	// 탄창에 탄 추가 (예비탄 소모 없음, 탄창 크기가 상한). 서버 전용
+	void AddMagazineAmmo(int32 Amount);
+
 	// 현재 적용 중인 실제 재장전 시간(초).
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveReloadDuration(float NewReloadDuration);
@@ -361,6 +364,12 @@ protected:
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_StopCancelledReload();
+
+	// CurrentAmmo 는 복제하지 않으므로 서버에서 더한 양을 클라에 전달
+	UFUNCTION(Client, Reliable)
+	void Client_AddMagazineAmmo(int32 Amount);
+
+	void ApplyMagazineAmmo(int32 Amount);
 
 	// --- Fire() 단계 분리 ---
 	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.

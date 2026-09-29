@@ -1,9 +1,11 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueAugmentAttributeSet.h"
+#include "Combat/CombatComponent.h"
 #include "GameplayEffectExtension.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Weapon/WeaponBase.h"
 
 URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 {
@@ -41,6 +43,7 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitBonusFreeRerolls(0.f);
 	InitLostHealthBonusRate(0.f);
 	InitCooldownRefundRate(0.f);
+	InitAmmoRefund(0.f);
 }
 
 void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -123,6 +126,7 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	 || Attribute == GetEffectiveRangeBonusAttribute()
 	 || Attribute == GetMeleeRangeBonusAttribute()
 	 || Attribute == GetExtraJumpCountAttribute()
+	 || Attribute == GetAmmoRefundAttribute()
 	 || Attribute == GetBonusFreeRerollsAttribute())
 	{
 		NewValue = FMath::Max(0.f, NewValue);
@@ -172,6 +176,21 @@ void URogueAugmentAttributeSet::PostGameplayEffectExecute(const FGameplayEffectM
 		if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(GetOwningAbilitySystemComponent()))
 		{
 			ASC->ReduceActiveCooldowns(Rate);
+		}
+	}
+
+	// 장착 무기 탄창에 탄 추가
+	if (Data.EvaluatedData.Attribute == GetAmmoRefundAttribute())
+	{
+		const int32 Amount = FMath::FloorToInt(GetAmmoRefund());
+		SetAmmoRefund(0.f);
+
+		const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+		const AActor* Avatar = ASC ? ASC->GetAvatarActor() : nullptr;
+		const UCombatComponent* Combat = Avatar ? Avatar->FindComponentByClass<UCombatComponent>() : nullptr;
+		if (AWeaponBase* Weapon = Combat ? Combat->GetEquippedWeapon() : nullptr)
+		{
+			Weapon->AddMagazineAmmo(Amount);
 		}
 	}
 }
