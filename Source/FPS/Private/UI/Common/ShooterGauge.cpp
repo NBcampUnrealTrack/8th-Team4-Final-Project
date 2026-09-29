@@ -3,6 +3,7 @@
 #include "Components/Image.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Texture2D.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 void UShooterGauge::SetProgress(float InProgress)
 {
@@ -22,6 +23,8 @@ void UShooterGauge::SetProgressImmediate(float InProgress)
 
 void UShooterGauge::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ShooterGauge_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	
 	// 목표에 도달했고 한 번은 넘겼으면 셰이더를 다시 갱신하지 않는다

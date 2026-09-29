@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Camera/PlayerCameraManager.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 void UTeammateIndicatorEntry::NativeConstruct()
 {
@@ -31,6 +32,8 @@ void UTeammateIndicatorEntry::NativeConstruct()
 
 void UTeammateIndicatorEntry::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TeammateIndicatorEntry_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	
 	UpdateScreenPositionAndVisibility();
@@ -197,6 +200,8 @@ void UTeammateIndicatorEntry::HandleAliveStateChanged(bool bNewIsAlive)
 
 bool UTeammateIndicatorEntry::HasLineOfSightToTargetHead(const FVector& HeadLocation, const AActor* TargetActor) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TeammateIndicatorEntry_LineOfSight);
+
 	const UWorld* World = GetWorld();
 	const APlayerController* PC = GetOwningPlayer();
 	

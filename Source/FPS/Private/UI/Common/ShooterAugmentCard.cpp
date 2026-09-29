@@ -7,6 +7,7 @@
 #include "Components/RetainerBox.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Animation/WidgetAnimation.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentCard, Log, All);
 
@@ -182,6 +183,8 @@ void UShooterAugmentCard::SetRerollWipeProgress(const float Progress)
 
 void UShooterAugmentCard::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ShooterAugmentCard_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	if (!Anim_Reroll || !IsAnimationPlaying(Anim_Reroll))

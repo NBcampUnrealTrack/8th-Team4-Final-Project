@@ -17,6 +17,7 @@
 #include "Materials/MaterialInterface.h"
 #include "Engine/Texture2D.h"
 #include "Abilities/GameplayAbility.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterSkillSlot, Log, All);
 
@@ -76,6 +77,8 @@ void UShooterSkillSlot::NativeDestruct()
 
 void UShooterSkillSlot::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ShooterSkillSlot_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	// Ready 상태(진행 중인 회복 없음)
