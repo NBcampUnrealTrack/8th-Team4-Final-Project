@@ -80,7 +80,6 @@ TOptional<FDominationAnnouncement> FDominationAnnouncementDetector::Update(
 
 	if (bNewCapture)
 	{
-		// 마지막 점령은 결과 화면에 맡김
 		if (Flow.ActivePointId == Flow.LastCapturedPointId)
 		{
 			return {};

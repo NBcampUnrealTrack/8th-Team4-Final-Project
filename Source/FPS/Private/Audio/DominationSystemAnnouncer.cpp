@@ -2,12 +2,21 @@
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Components/AudioComponent.h"
+#include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Settings/DominationSandstormSettings.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "DominationSystemAnnouncer"
 
 ADominationSystemAnnouncer::ADominationSystemAnnouncer()
 {
@@ -33,6 +42,16 @@ ADominationSystemAnnouncer::ADominationSystemAnnouncer()
 	SandstormCue.bInterruptLowerPriority = true;
 	SandstormCue.MaxQueueDelaySeconds = 1.0f;
 	Announcements.Add(DominationAnnouncementIds::SandstormWarning, SandstormCue);
+
+	FSystemAnnouncerCue MatchStartedCue;
+	MatchStartedCue.Priority = 50;
+	Announcements.Add(DominationAnnouncementIds::MatchStarted, MatchStartedCue);
+
+	FSystemAnnouncerCue OutcomeCue;
+	OutcomeCue.Priority = 200;
+	OutcomeCue.bInterruptLowerPriority = true;
+	Announcements.Add(DominationAnnouncementIds::Victory, OutcomeCue);
+	Announcements.Add(DominationAnnouncementIds::Defeat, OutcomeCue);
 }
 
 void ADominationSystemAnnouncer::BeginPlay()
@@ -56,6 +75,7 @@ void ADominationSystemAnnouncer::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	{
 		GameState->OnSandstormStateChanged.RemoveDynamic(this, &ThisClass::HandleSandstormStateChanged);
 		GameState->OnDominationFlowStateChanged.RemoveDynamic(this, &ThisClass::HandleMatchFlowStateChanged);
+		GameState->OnMatchStateChanged.RemoveDynamic(this, &ThisClass::HandleMatchStateChanged);
 	}
 	BoundGameState.Reset();
 	SetActorTickEnabled(false);
@@ -89,6 +109,7 @@ void ADominationSystemAnnouncer::BindSandstormState()
 	{
 		PreviousGameState->OnSandstormStateChanged.RemoveDynamic(this, &ThisClass::HandleSandstormStateChanged);
 		PreviousGameState->OnDominationFlowStateChanged.RemoveDynamic(this, &ThisClass::HandleMatchFlowStateChanged);
+		PreviousGameState->OnMatchStateChanged.RemoveDynamic(this, &ThisClass::HandleMatchStateChanged);
 	}
 	BoundGameState = GameState;
 	LastWarningPhaseEndServerTime = 0.0;
@@ -97,6 +118,7 @@ void ADominationSystemAnnouncer::BindSandstormState()
 	{
 		GameState->OnSandstormStateChanged.AddUniqueDynamic(this, &ThisClass::HandleSandstormStateChanged);
 		GameState->OnDominationFlowStateChanged.AddUniqueDynamic(this, &ThisClass::HandleMatchFlowStateChanged);
+		GameState->OnMatchStateChanged.AddUniqueDynamic(this, &ThisClass::HandleMatchStateChanged);
 		// 진행 중 입장도 현재 단계와 남은 시간부터 재생한다.
 		HandleSandstormStateChanged(GameState->GetSandstormState());
 	}
@@ -140,6 +162,40 @@ void ADominationSystemAnnouncer::HandleMatchFlowStateChanged()
 	{
 		HandleSandstormStateChanged(GameState->GetSandstormState());
 	}
+	TryAnnounceMatchOutcome();
+}
+
+void ADominationSystemAnnouncer::HandleMatchStateChanged()
+{
+	TryAnnounceMatchOutcome();
+}
+
+void ADominationSystemAnnouncer::TryAnnounceMatchOutcome()
+{
+	const ADominationGameState* GameState = BoundGameState.Get();
+	if (bMatchOutcomeAnnounced || !GameState
+		|| GameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
+		|| GameState->GetMatchWinner() == EGameTeam::None)
+	{
+		return;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	const APlayerController* LocalController = GameInstance
+		? GameInstance->GetFirstLocalPlayerController(GetWorld())
+		: nullptr;
+	const ABaseTeamPlayerState* LocalPlayerState = LocalController
+		? LocalController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	if (!LocalPlayerState || LocalPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return;
+	}
+
+	bMatchOutcomeAnnounced = true;
+	QueueAnnouncement(LocalPlayerState->GetTeam() == GameState->GetMatchWinner()
+		? DominationAnnouncementIds::Victory
+		: DominationAnnouncementIds::Defeat);
 }
 
 void ADominationSystemAnnouncer::Tick(const float DeltaSeconds)
@@ -225,3 +281,39 @@ void ADominationSystemAnnouncer::SetSandstormPreviewIntensity(const float Intens
 	UpdateSandstormAudio();
 }
 #endif
+
+#if WITH_EDITOR
+EDataValidationResult ADominationSystemAnnouncer::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	for (const FName AnnouncementId : {
+		DominationAnnouncementIds::MatchStarted,
+		DominationAnnouncementIds::CaptureStarted,
+		DominationAnnouncementIds::CaptureCompleted,
+		DominationAnnouncementIds::Victory,
+		DominationAnnouncementIds::Defeat })
+	{
+		const FSystemAnnouncerCue* Cue = Announcements.Find(AnnouncementId);
+		if (Cue == nullptr || !Cue->Sound)
+		{
+			Context.AddWarning(FText::Format(
+				LOCTEXT("MissingSound", "'{0}' 에 사운드가 없습니다. 방송해도 소리 없이 건너뜁니다"),
+				FText::FromName(AnnouncementId)));
+			continue;
+		}
+
+		if (Cue->Sound->IsLooping())
+		{
+			Context.AddError(FText::Format(
+				LOCTEXT("LoopingSound", "'{0}' 의 사운드가 반복 재생입니다. 방송기가 거부해 재생되지 않습니다"),
+				FText::FromName(AnnouncementId)));
+			Result = EDataValidationResult::Invalid;
+		}
+	}
+
+	return Result;
+}
+#endif
+
+#undef LOCTEXT_NAMESPACE

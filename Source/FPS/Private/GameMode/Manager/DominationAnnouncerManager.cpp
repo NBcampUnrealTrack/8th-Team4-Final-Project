@@ -44,6 +44,7 @@ bool UDominationAnnouncerManager::Initialize(
 		this, &ThisClass::HandleObjectiveFlowStateChanged);
 	DominationGameState->OnCaptureStateChanged.AddUniqueDynamic(
 		this, &ThisClass::HandleCaptureStateChanged);
+	InOwnerGameMode->OnDominationMatchStarted.AddUObject(this, &ThisClass::HandleMatchStarted);
 	return true;
 }
 
@@ -55,6 +56,10 @@ void UDominationAnnouncerManager::Shutdown()
 			this, &ThisClass::HandleObjectiveFlowStateChanged);
 		DominationGameState->OnCaptureStateChanged.RemoveDynamic(
 			this, &ThisClass::HandleCaptureStateChanged);
+	}
+	if (ADominationGameMode* GameMode = GetOwnerGameMode())
+	{
+		GameMode->OnDominationMatchStarted.RemoveAll(this);
 	}
 
 	if (ASystemAnnouncer* Announcer = SystemAnnouncer.Get())
@@ -142,6 +147,11 @@ void UDominationAnnouncerManager::HandleCaptureStateChanged(
 		LastAnnouncedCaptureTeam = NewCaptureState.CapturingTeam;
 		Announce(DominationAnnouncementIds::CaptureStarted);
 	}
+}
+
+void UDominationAnnouncerManager::HandleMatchStarted()
+{
+	Announce(DominationAnnouncementIds::MatchStarted);
 }
 
 void UDominationAnnouncerManager::Announce(const FName AnnouncementId)
