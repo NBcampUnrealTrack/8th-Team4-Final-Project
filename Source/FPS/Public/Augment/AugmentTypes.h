@@ -146,6 +146,14 @@ struct FAugmentConditionalDamageRule
         meta = (EditCondition = "bUseShotIndexRange", EditConditionHides, ClampMin = "0"))
     int32 ShotIndexInterval = 0;
 
+    // 발동 확률 조건. 켜면 다른 조건을 통과해도 이 확률로만 발동
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition")
+    bool bUseActivationChance = false;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Condition",
+        meta = (EditCondition = "bUseActivationChance", EditConditionHides, ClampMin = "0.0", ClampMax = "1.0"))
+    float ActivationChance = 1.f;
+
     // 조건을 만족했을 때 더하는 피해 증감률. 0.25 면 +25%
     // 상시 증강 GE 의 SetByCaller 와 같은 표기
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Effect")

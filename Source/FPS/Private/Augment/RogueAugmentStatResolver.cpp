@@ -235,6 +235,11 @@ float URogueAugmentStatResolver::CalcLostHealthBonus(float Health, float MaxHeal
 	return Steps * RatePerStep;
 }
 
+bool URogueAugmentStatResolver::RollChance(float Chance)
+{
+	return Chance >= 1.f || (Chance > 0.f && FMath::FRand() < Chance);
+}
+
 float URogueAugmentStatResolver::RollRange(float Min, float Max)
 {
 	return FMath::FRandRange(FMath::Min(Min, Max), FMath::Max(Min, Max));

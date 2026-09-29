@@ -289,6 +289,12 @@ namespace
 			return false;
 		}
 
+		// 발동 확률. 다른 조건을 모두 통과한 뒤에 굴림
+		if (Rule.bUseActivationChance && !URogueAugmentStatResolver::RollChance(Rule.ActivationChance))
+		{
+			return false;
+		}
+
 		// 켜져있는 조건을 모두 통과하면
 		return true;
 	}
