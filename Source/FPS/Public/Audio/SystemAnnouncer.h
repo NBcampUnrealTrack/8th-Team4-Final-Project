@@ -48,6 +48,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Announcer")
 	bool Announce(FName AnnouncementId);
 
+	// 이 머신에서만 재생한다(서버 방송 없음). 팀에 따라 내용이 달라지는 안내처럼 각 클라이언트가
+	// 자기 기준으로 ID를 골라야 할 때 사용한다. 대기열·우선순위·음성 볼륨 분류는 서버 방송과 동일하다.
+	UFUNCTION(BlueprintCallable, Category = "Announcer")
+	void AnnounceLocal(FName AnnouncementId);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Announcer")
 	void StopAnnouncements();
 

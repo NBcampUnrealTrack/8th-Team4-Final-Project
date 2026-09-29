@@ -1,5 +1,7 @@
 #include "Player/DominationPlayerState.h"
 
+#include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Net/UnrealNetwork.h"
 
@@ -10,6 +12,43 @@ void ADominationPlayerState::GetLifetimeReplicatedProps(
 
 	DOREPLIFETIME(ADominationPlayerState, CombatClass);
 	DOREPLIFETIME(ADominationPlayerState, PreviewCombatClass);
+	DOREPLIFETIME(ADominationPlayerState, RespawnEndServerTime);
+	DOREPLIFETIME(ADominationPlayerState, RespawnReductionSeconds);
+}
+
+void ADominationPlayerState::SetRespawnTimer(const float DelaySeconds, const float ReductionSeconds)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	RespawnEndServerTime = GetServerTimeSeconds() + FMath::Max(0.0f, DelaySeconds);
+	RespawnReductionSeconds = FMath::Max(0.0f, ReductionSeconds);
+	OnRep_RespawnTimer();
+	ForceNetUpdate();
+}
+
+float ADominationPlayerState::GetRespawnSecondsRemaining() const
+{
+	return IsAlive() ? 0.0f : FMath::Max(0.0f, RespawnEndServerTime - GetServerTimeSeconds());
+}
+
+float ADominationPlayerState::GetRespawnReductionSeconds() const
+{
+	return RespawnReductionSeconds;
+}
+
+void ADominationPlayerState::OnRep_RespawnTimer()
+{
+	OnRespawnTimerChanged.Broadcast();
+}
+
+float ADominationPlayerState::GetServerTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	return IsValid(GameState) ? static_cast<float>(GameState->GetServerWorldTimeSeconds()) : 0.0f;
 }
 
 EDominationCombatClass ADominationPlayerState::GetCombatClass() const

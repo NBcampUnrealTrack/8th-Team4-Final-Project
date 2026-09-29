@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "Actor/DominationCapturePoint.h"
+#include "Audio/DominationSystemAnnouncer.h"
 #include "Components/AudioComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
@@ -273,10 +274,16 @@ void ADominationPointGimmick::HandleInteractionSphereEndOverlap(
 
 void ADominationPointGimmick::MulticastInteractionEnded_Implementation(
 	const bool bCompleted,
-	const EGameTeam Team)
+	const EGameTeam Team,
+	const bool bTakeover)
 {
 	PlayInteractionEndedCosmetics(bCompleted);
 	BP_OnInteractionEnded(bCompleted, Team);
+	if (bCompleted)
+	{
+		PlaySecuredAnnouncement(Team, bTakeover);
+		OnGimmickSecured.Broadcast(this, Team, bTakeover);
+	}
 }
 
 bool ADominationPointGimmick::ShouldPlayCosmetics() const
@@ -314,6 +321,55 @@ void ADominationPointGimmick::PlayInteractionEndedCosmetics(const bool bComplete
 	if (bCompleted && IsValid(InteractionCompleteSound))
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, InteractionCompleteSound, GetActorLocation());
+	}
+
+	// 완료 신호와 같은 시점에 재생하므로 늦게 접속한 클라이언트에서는 과거 확보 이펙트가 재생되지 않는다.
+	if (bCompleted
+		&& GimmickType == EDominationGimmickType::RespawnRelay
+		&& IsValid(RelaySecuredEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, RelaySecuredEffect, GetActorLocation());
+	}
+}
+
+void ADominationPointGimmick::PlaySecuredAnnouncement(const EGameTeam SecuringTeam, const bool bTakeover)
+{
+	UWorld* World = GetWorld();
+	const APlayerController* LocalController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	const ABaseTeamPlayerState* LocalPlayerState = IsValid(LocalController)
+		? LocalController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	if (!ShouldPlayCosmetics() || !IsValid(LocalPlayerState) || LocalPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return;
+	}
+
+	const bool bAlly = LocalPlayerState->GetTeam() == SecuringTeam;
+	FName AnnouncementId;
+	if (bTakeover)
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickRelayTakeoverAlly
+			: DominationAnnouncementIds::GimmickRelayTakeoverEnemy;
+	}
+	else if (GimmickType == EDominationGimmickType::RespawnRelay)
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickRelaySecuredAlly
+			: DominationAnnouncementIds::GimmickRelaySecuredEnemy;
+	}
+	else
+	{
+		AnnouncementId = bAlly
+			? DominationAnnouncementIds::GimmickReconSecuredAlly
+			: DominationAnnouncementIds::GimmickReconSecuredEnemy;
+	}
+
+	// 방송기는 맵에 하나뿐이다. 없거나 해당 ID의 음성을 등록하지 않았으면 건너뛴다.
+	for (TActorIterator<ASystemAnnouncer> Iterator(World); Iterator; ++Iterator)
+	{
+		Iterator->AnnounceLocal(AnnouncementId);
+		break;
 	}
 }
 
@@ -377,6 +433,12 @@ void ADominationPointGimmick::EndInteraction(const bool bCompleted)
 	InteractingPlayerState = nullptr;
 	InteractionStartServerTime = 0.0f;
 
+	// 소유 팀이 바뀌기 전에 탈취 여부를 정한다(효과 적용이 OwningTeam을 덮어쓰기 때문).
+	const bool bTakeover = bCompleted
+		&& GimmickType == EDominationGimmickType::RespawnRelay
+		&& OwningTeam != EGameTeam::None
+		&& OwningTeam != Team;
+
 	if (bCompleted && Team != EGameTeam::None)
 	{
 		switch (GimmickType)
@@ -393,7 +455,7 @@ void ADominationPointGimmick::EndInteraction(const bool bCompleted)
 	}
 
 	OnInteractionEnded.Broadcast(Controller, bCompleted);
-	MulticastInteractionEnded(bCompleted, Team);
+	MulticastInteractionEnded(bCompleted, Team, bTakeover);
 	NotifyStateChanged();
 }
 

@@ -51,7 +51,7 @@ private:
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
 	void HandleRespawnTimer(TWeakObjectPtr<AController> WaitingController);
-	void ScheduleRespawnInternal(AController* WaitingController, float DelaySeconds);
+	void ScheduleRespawnInternal(AController* WaitingController, float DelaySeconds, float ReductionSeconds = 0.0f);
 	void EndRespawnProtection(AShooterPlayerState* PlayerState);
 
     UPROPERTY(Transient)

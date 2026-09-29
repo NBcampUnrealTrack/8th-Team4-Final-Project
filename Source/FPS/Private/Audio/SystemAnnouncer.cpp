@@ -68,6 +68,14 @@ bool ASystemAnnouncer::Announce(const FName AnnouncementId)
 	return true;
 }
 
+void ASystemAnnouncer::AnnounceLocal(const FName AnnouncementId)
+{
+	if (GetNetMode() != NM_DedicatedServer && !bShuttingDown)
+	{
+		QueueAnnouncement(AnnouncementId);
+	}
+}
+
 void ASystemAnnouncer::StopAnnouncements()
 {
 	if (HasAuthority() && !bShuttingDown)

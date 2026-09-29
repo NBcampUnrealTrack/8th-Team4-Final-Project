@@ -4,6 +4,7 @@
 #include "AbilitySystemGlobals.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/TextBlock.h"
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -111,8 +112,15 @@ void UDominationGimmickHUDWidget::NativeConstruct()
 		for (TActorIterator<ADominationPointGimmick> Iterator(World); Iterator; ++Iterator)
 		{
 			Iterator->OnGimmickStateChanged.AddUniqueDynamic(this, &ThisClass::HandleGimmickStateChanged);
+			Iterator->OnGimmickSecured.AddUniqueDynamic(this, &ThisClass::HandleGimmickSecured);
 			BoundGimmicks.Add(*Iterator);
 		}
+	}
+
+	// 확보 알림 배너는 확보 전까지 숨겨 둔다.
+	if (IsValid(SecuredBanner))
+	{
+		SecuredBanner->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	RefreshRevealedTagBinding();
@@ -128,6 +136,7 @@ void UDominationGimmickHUDWidget::NativeDestruct()
 		if (Gimmick.IsValid())
 		{
 			Gimmick->OnGimmickStateChanged.RemoveDynamic(this, &ThisClass::HandleGimmickStateChanged);
+			Gimmick->OnGimmickSecured.RemoveDynamic(this, &ThisClass::HandleGimmickSecured);
 		}
 	}
 
@@ -136,6 +145,7 @@ void UDominationGimmickHUDWidget::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RefreshTimerHandle);
+		World->GetTimerManager().ClearTimer(SecuredHideTimerHandle);
 	}
 
 	Super::NativeDestruct();
@@ -166,6 +176,60 @@ void UDominationGimmickHUDWidget::NativeTick(const FGeometry& MyGeometry, float 
 void UDominationGimmickHUDWidget::HandleGimmickStateChanged(ADominationPointGimmick*)
 {
 	bRefreshPending = true;
+}
+
+void UDominationGimmickHUDWidget::HandleGimmickSecured(
+	ADominationPointGimmick* Gimmick,
+	const EGameTeam SecuringTeam,
+	const bool bTakeover)
+{
+	if (!IsValid(Gimmick))
+	{
+		return;
+	}
+
+	const EDominationGimmickType GimmickType = Gimmick->GetGimmickType();
+	const EDominationCaptureRelation Relation =
+		DominationRules::GetCaptureRelation(SecuringTeam, GetLocalTeam());
+	const bool bAlly = Relation == EDominationCaptureRelation::Ally;
+	const FLinearColor Color = bAlly ? AllySecuredColor : EnemySecuredColor;
+
+	const FText& KindText = bTakeover
+		? RelayTakeoverText
+		: (GimmickType == EDominationGimmickType::RespawnRelay ? RelaySecuredText : ReconSecuredText);
+
+	if (IsValid(SecuredWhoText))
+	{
+		SecuredWhoText->SetText(bAlly ? AllyWhoText : EnemyWhoText);
+		SecuredWhoText->SetColorAndOpacity(FSlateColor(Color));
+	}
+
+	if (IsValid(SecuredKindText))
+	{
+		SecuredKindText->SetText(KindText);
+		SecuredKindText->SetColorAndOpacity(FSlateColor(Color));
+	}
+
+	// 배너를 보이고 일정 시간 뒤 숨긴다. 연달아 확보되면 타이머를 다시 시작한다.
+	if (IsValid(SecuredBanner))
+	{
+		SecuredBanner->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				SecuredHideTimerHandle, this, &ThisClass::HideSecuredBanner, SecuredBannerDuration, false);
+		}
+	}
+
+	BP_OnGimmickSecured(GimmickType, Relation, bTakeover);
+}
+
+void UDominationGimmickHUDWidget::HideSecuredBanner()
+{
+	if (IsValid(SecuredBanner))
+	{
+		SecuredBanner->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UDominationGimmickHUDWidget::HandleRevealedTagChanged(const FGameplayTag, int32)
