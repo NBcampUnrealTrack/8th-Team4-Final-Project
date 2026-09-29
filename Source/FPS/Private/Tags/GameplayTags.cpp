@@ -77,6 +77,7 @@ namespace RogueTags
 	// 증강 효과 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_RecentlyDamaged, "State.Augment.RecentlyDamaged", "자가 치유: 최근 피격. 있는 동안 회복 정지");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_ShotHit, "State.Augment.ShotHit", "연속 명중 증강: 이번 사격이 명중. 발사 이벤트에서 제거");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_HyperRecharge, "State.Augment.HyperRecharge", "하이퍼 리차지: 스킬 사용 후 지속 중. 사격마다 탄 환급");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_LethalSurvive, "State.Augment.LethalSurvive", "기합의 띠 보유: 치명 피해를 목숨당 1번 체력 1로 버팀");
 
 	// 이동 상태

@@ -84,6 +84,7 @@ namespace RogueTags
 	// 증강 효과 상태
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Augment_RecentlyDamaged);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Augment_ShotHit);
+	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Augment_HyperRecharge);
 	FPS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Augment_LethalSurvive);
 
 	// 이동 상태
