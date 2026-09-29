@@ -273,10 +273,15 @@ void ADominationPointGimmick::HandleInteractionSphereEndOverlap(
 
 void ADominationPointGimmick::MulticastInteractionEnded_Implementation(
 	const bool bCompleted,
-	const EGameTeam Team)
+	const EGameTeam Team,
+	const bool bTakeover)
 {
 	PlayInteractionEndedCosmetics(bCompleted);
 	BP_OnInteractionEnded(bCompleted, Team);
+	if (bCompleted)
+	{
+		OnGimmickSecured.Broadcast(this, Team, bTakeover);
+	}
 }
 
 bool ADominationPointGimmick::ShouldPlayCosmetics() const
@@ -377,6 +382,12 @@ void ADominationPointGimmick::EndInteraction(const bool bCompleted)
 	InteractingPlayerState = nullptr;
 	InteractionStartServerTime = 0.0f;
 
+	// 소유 팀이 바뀌기 전에 탈취 여부를 정한다(효과 적용이 OwningTeam을 덮어쓰기 때문).
+	const bool bTakeover = bCompleted
+		&& GimmickType == EDominationGimmickType::RespawnRelay
+		&& OwningTeam != EGameTeam::None
+		&& OwningTeam != Team;
+
 	if (bCompleted && Team != EGameTeam::None)
 	{
 		switch (GimmickType)
@@ -393,7 +404,7 @@ void ADominationPointGimmick::EndInteraction(const bool bCompleted)
 	}
 
 	OnInteractionEnded.Broadcast(Controller, bCompleted);
-	MulticastInteractionEnded(bCompleted, Team);
+	MulticastInteractionEnded(bCompleted, Team, bTakeover);
 	NotifyStateChanged();
 }
 

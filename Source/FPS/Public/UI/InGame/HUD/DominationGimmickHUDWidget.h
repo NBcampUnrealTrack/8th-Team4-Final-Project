@@ -7,6 +7,7 @@
 #include "DominationGimmickHUDWidget.generated.h"
 
 class UWidget;
+class UTextBlock;
 class UAbilitySystemComponent;
 struct FGameplayTag;
 
@@ -79,11 +80,30 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category = "Domination|Gimmick HUD")
 	void BP_OnActiveGimmickChanged(ADominationPointGimmick* NewGimmick);
 
+	// 기믹 확보가 완료됐을 때 1회 호출
+	// SecuringRelation: 확보한 팀이 내 팀이면 Ally, 상대면 Enemy. bTakeover: 상대가 소유하던 중계 비콘을 빼앗은 경우
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCosmetic, Category = "Domination|Gimmick HUD")
+	void BP_OnGimmickSecured(
+		EDominationGimmickType GimmickType,
+		EDominationCaptureRelation SecuringRelation,
+		bool bTakeover);
+
 	// 마커 루트. Canvas Panel 자식이어야 하며, 위치와 표시 여부는 C++이 매 프레임 설정한다.
 	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> MarkerRoot;
 
-	// "내 위치 노출!" 알림 루트. 표시 여부는 C++이 내 캐릭터의 발각 태그에 맞춰 설정한다.
+	// 확보 알림 배너 루트와 문구
+	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> SecuredBanner;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SecuredWhoText;
+
+	// "정찰 단말 확보" / "중계 비콘 확보" / "중계 비콘 탈환"
+	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SecuredKindText;
+
+	// "내 위치 노출!" 알림 루트. 표시 여부는 내 캐릭터의 발각 태그에 맞춰 설정
 	UPROPERTY(BlueprintReadOnly, Category = "Domination|Widgets", meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> AlertRoot;
 
@@ -96,6 +116,9 @@ private:
 
 	UFUNCTION()
 	void HandleGimmickStateChanged(ADominationPointGimmick* Gimmick);
+
+	UFUNCTION()
+	void HandleGimmickSecured(ADominationPointGimmick* Gimmick, EGameTeam SecuringTeam, bool bTakeover);
 
 	void HandleRefreshTimer();
 	void RefreshActiveGimmick();
@@ -120,6 +143,35 @@ private:
 	bool bShouldShowMarker = false;
 	FVector2D MarkerScreenPosition = FVector2D::ZeroVector;
 	float DistanceMeters = -1.0f;
+
+	// --- 확보 알림 문구·색 (Class Defaults에서 수정 가능) ---
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FText AllyWhoText = NSLOCTEXT("DominationGimmickHUD", "AllyWho", "아군이 ");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FText EnemyWhoText = NSLOCTEXT("DominationGimmickHUD", "EnemyWho", "적이 ");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FText ReconSecuredText = NSLOCTEXT("DominationGimmickHUD", "ReconSecured", "정찰 단말을 확보했습니다");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FText RelaySecuredText = NSLOCTEXT("DominationGimmickHUD", "RelaySecured", "중계 비콘을 확보했습니다");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FText RelayTakeoverText = NSLOCTEXT("DominationGimmickHUD", "RelayTakeover", "중계 비콘을 탈환했습니다");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FLinearColor AllySecuredColor = FLinearColor(0.2f, 0.9f, 0.3f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured")
+	FLinearColor EnemySecuredColor = FLinearColor(0.95f, 0.2f, 0.2f, 1.0f);
+
+	// 배너가 보이는 시간 (초). 연달아 확보되면 마지막 확보 기준으로 다시 센다.
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD|Secured", meta = (ClampMin = "0.1", Units = "s"))
+	float SecuredBannerDuration = 2.5f;
+
+	FTimerHandle SecuredHideTimerHandle;
+	void HideSecuredBanner();
 
 	// 남은 초·거리 갱신 간격 (초)
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Gimmick HUD", meta = (ClampMin = "0.05", Units = "s"))
