@@ -46,6 +46,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Health")
 	bool IsDead() const { return bIsDead; }
 
+	// Populated from the lethal effect before OnDeathStateChanged is broadcast.
+	const FRogueDeathReaction& GetDeathReaction() const { return DeathReaction; }
+
 protected:
 	virtual void OnUnregister() override;
 

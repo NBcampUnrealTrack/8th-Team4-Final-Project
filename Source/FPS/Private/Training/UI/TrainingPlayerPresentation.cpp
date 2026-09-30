@@ -126,25 +126,35 @@ UTrainingDamageFeedbackWidget* UTrainingPlayerPresentation::EnsureDamageFeedback
     }
 
     const UTrainingSettings* Settings = GetDefault<UTrainingSettings>();
+    if (DamageFeedbackWidget)
+    {
+        if (!DamageFeedbackWidget->IsInViewport())
+        {
+            DamageFeedbackWidget->AddToPlayerScreen(Settings->DamageFeedbackZOrder);
+        }
+        return DamageFeedbackWidget;
+    }
+
     TSubclassOf<UTrainingDamageFeedbackWidget> WidgetClass = Bridge->DamageFeedbackWidgetClass;
-    if (!WidgetClass && Settings)
+    if (!WidgetClass)
     {
         WidgetClass = Settings->DamageFeedbackWidgetClass.LoadSynchronous();
     }
     if (!WidgetClass)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[Training] Damage feedback widget is not configured. Set Training > UI > Damage Feedback Widget Class or a component override."));
+        if (!bDamageFeedbackSetupErrorReported)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[Training] Damage feedback widget is not configured. Set Training > UI > Damage Feedback Widget Class or a component override."));
+            bDamageFeedbackSetupErrorReported = true;
+        }
         return nullptr;
     }
-
-    if (!DamageFeedbackWidget)
-    {
-        DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, WidgetClass);
-    }
+    bDamageFeedbackSetupErrorReported = false;
+    DamageFeedbackWidget = CreateWidget<UTrainingDamageFeedbackWidget>(LocalController, WidgetClass);
     if (DamageFeedbackWidget && !DamageFeedbackWidget->IsInViewport())
     {
-        DamageFeedbackWidget->AddToPlayerScreen(Settings ? Settings->DamageFeedbackZOrder : 18);
+        DamageFeedbackWidget->AddToPlayerScreen(Settings->DamageFeedbackZOrder);
     }
     return DamageFeedbackWidget;
 }
@@ -244,32 +254,40 @@ void UTrainingPlayerPresentation::UpdateCQBProgress(const int32 KilledTroopers,
 void UTrainingPlayerPresentation::StopCQBSession()
 {
     if (!bCQBHUD) { return; }
-    if (SessionHUDWidget)
-    {
-        SessionHUDWidget->RemoveFromParent();
-        SessionHUDWidget = nullptr;
-    }
+    ClearSessionHUD();
+}
+
+void UTrainingPlayerPresentation::ClearSessionHUD()
+{
+    UTrainingSessionHUDWidget* HUD = SessionHUDWidget.Get();
+    SessionHUDWidget = nullptr;
     bCQBHUD = false;
+    if (HUD)
+    {
+        HUD->StopSession();
+        HUD->RemoveFromParent();
+    }
 }
 
 void UTrainingPlayerPresentation::Clear(const bool bKeepCQBHUD)
 {
     if (!bKeepCQBHUD || !bCQBHUD)
     {
-        if (SessionHUDWidget) { SessionHUDWidget->RemoveFromParent(); }
-        SessionHUDWidget = nullptr;
-        bCQBHUD = false;
+        ClearSessionHUD();
     }
-    if (StartFeedbackWidget)
+    UTrainingStartFeedbackWidget* Feedback = StartFeedbackWidget.Get();
+    StartFeedbackWidget = nullptr;
+    if (Feedback)
     {
-        StartFeedbackWidget->ClearFeedback();
-        StartFeedbackWidget->RemoveFromParent();
-        StartFeedbackWidget = nullptr;
+        Feedback->ClearFeedback();
+        Feedback->RemoveFromParent();
     }
-    if (DamageFeedbackWidget)
+    UTrainingDamageFeedbackWidget* Damage = DamageFeedbackWidget.Get();
+    DamageFeedbackWidget = nullptr;
+    if (Damage)
     {
-        DamageFeedbackWidget->RemoveFromParent();
-        DamageFeedbackWidget = nullptr;
+        Damage->ClearDamageNumbers();
+        Damage->RemoveFromParent();
     }
     FeedbackSessionId = 0;
 }

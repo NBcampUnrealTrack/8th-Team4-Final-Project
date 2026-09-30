@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameMode/TrainingGameMode.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "../TrainingInteractionRegistration.h"
@@ -13,6 +14,7 @@
 #include "Training/CQB/CQBTrainingPlayerSpawnPoint.h"
 #include "Training/TrainingPlayerComponent.h"
 #include "Training/TrainingSessionSubsystem.h"
+#include "Training/UI/TrainingSessionHUDWidget.h"
 
 #define LOCTEXT_NAMESPACE "CQBTrainingSpawner"
 
@@ -232,6 +234,7 @@ void ACQBTrainingSpawner::ResetRuntimeData()
     }
 
     DestroySpawnedTroopersOnly();
+    SessionTrooperClass = nullptr;
     OrderedSpawnPoints.Reset();
     CountedDeadTroopers.Reset();
     NextSpawnIndex = 0;
@@ -243,7 +246,7 @@ void ACQBTrainingSpawner::ResetRuntimeData()
     }
 }
 
-void ACQBTrainingSpawner::ResetSessionState()
+void ACQBTrainingSpawner::ResetSessionState(const FText* StartFailure)
 {
     if (bStopping)
     {
@@ -251,11 +254,19 @@ void ACQBTrainingSpawner::ResetSessionState()
     }
 
     TGuardValue<bool> StopGuard(bStopping, true);
+    ++SessionGeneration;
     SessionState = ECQBTrainingSessionState::Idle;
     ResetRuntimeData();
-    PendingStartRequestId = 0;
+    if (!StartFailure)
+    {
+        PendingStartRequestId = 0;
+    }
 
     NotifyParticipantStopped();
+    if (StartFailure)
+    {
+        ResolvePendingStart(false, *StartFailure);
+    }
     Participant.Reset();
 }
 
@@ -301,12 +312,7 @@ void ACQBTrainingSpawner::AbortPendingStart(const FText& Failure)
         return;
     }
 
-    TGuardValue<bool> StopGuard(bStopping, true);
-    SessionState = ECQBTrainingSessionState::Idle;
-    ResetRuntimeData();
-    NotifyParticipantStopped();
-    ResolvePendingStart(false, Failure);
-    Participant.Reset();
+    ResetSessionState(&Failure);
 }
 
 void ACQBTrainingSpawner::NotifyParticipantStarted()

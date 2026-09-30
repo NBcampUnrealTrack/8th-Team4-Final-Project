@@ -79,6 +79,7 @@ struct FPS_API FTrainingDistanceBand
     UPROPERTY(BlueprintReadOnly, Category = "Training")
     float MaxCentimeters = 2200.0f;
 
+    bool IsValid() const;
     bool Contains(const FVector& Center, const FVector& Position) const;
     bool ContainsSegment(const FVector& Center, const FVector& Start, const FVector& End) const;
 };
@@ -126,6 +127,9 @@ namespace TrainingRules
 {
     // Unit conversion is not gameplay tuning; editable training values live in UTrainingSettings.
     inline constexpr float CentimetersPerMeter = 100.0f;
+
+    // 시각 효과만 사용하는 갱신 간격. 게임플레이 타이머와 분리한다.
+    inline constexpr float PresentationUpdateIntervalSeconds = 1.0f / 60.0f;
 
     FPS_API bool ResolveDistanceBand(ETrainingDistancePreset Preset,
         float CustomMeters, FTrainingDistanceBand& OutBand);

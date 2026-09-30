@@ -70,6 +70,9 @@ public:
 		APlayerController* PlayerController,
 		EDominationPointId ObjectivePointId);
 	void RespawnPlayer(AController* Controller);
+
+	// 거점 기믹(중계 비콘)이 호출하는 팀별 부활 대기 감소. RespawnManager로 전달한다.
+	void SetTeamRespawnDelayReduction(EGameTeam Team, float Seconds);
 	bool PrepareCombatPawn(APlayerController* PlayerController);
 	void ActivateCombatPlayer(APlayerController* PlayerController);
 

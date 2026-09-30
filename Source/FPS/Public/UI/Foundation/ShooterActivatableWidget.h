@@ -20,7 +20,7 @@ enum class EShooterWidgetInputMode : uint8
 	GameAndMenu_LockLook
 };
  
-UCLASS(Abstract, Blueprintable)
+UCLASS(Abstract, Blueprintable, meta = (DisableNativeTick))
 class FPS_API UShooterActivatableWidget : public UCommonActivatableWidget
 {
 	GENERATED_BODY()

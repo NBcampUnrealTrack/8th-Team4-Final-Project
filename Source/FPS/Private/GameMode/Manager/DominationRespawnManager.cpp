@@ -8,6 +8,7 @@
 #include "GameMode/DominationGameMode.h"
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Manager/DominationObjectiveManager.h"
+#include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
@@ -83,6 +84,8 @@ void UDominationRespawnManager::Shutdown()
 	SpawnObjectivePointId = EDominationPointId::None;
 	NextSpawnCandidateIndices.Reset();
 	SpawnVolumes.Reset();
+	// 부활 대기 감소값 초기화
+	TeamRespawnDelayReduction.Reset();
 	BoundGameState.Reset();
 	ObjectiveManager.Reset();
 	Super::Shutdown();
@@ -111,7 +114,37 @@ void UDominationRespawnManager::ClearAllRespawnProtections()
 
 void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 {
-	ScheduleRespawnInternal(WaitingController, RespawnDelay);
+	// 소속 팀의 부활 대기 감소값(중계 비콘)을 반영한다.
+	// ScheduleRespawnInternal(WaitingController, RespawnDelay); // Removed: 팀별 감소값 적용으로 대체
+	const ABaseTeamPlayerState* PlayerState = IsValid(WaitingController)
+		? WaitingController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const float Reduction = IsValid(PlayerState)
+		? TeamRespawnDelayReduction.FindRef(PlayerState->GetTeam())
+		: 0.0f;
+	ScheduleRespawnInternal(
+		WaitingController,
+		DominationRules::GetRespawnDelay(RespawnDelay, Reduction),
+		Reduction);
+}
+
+// 중계 비콘 부활 대기 감소값 설정
+void UDominationRespawnManager::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (Team == EGameTeam::None)
+	{
+		return;
+	}
+
+	if (Seconds <= 0.0f)
+	{
+		TeamRespawnDelayReduction.Remove(Team);
+		return;
+	}
+
+	TeamRespawnDelayReduction.Add(Team, Seconds);
 }
 
 void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingController)
@@ -122,7 +155,8 @@ void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingControl
 
 void UDominationRespawnManager::ScheduleRespawnInternal(
 	AController* WaitingController,
-	const float DelaySeconds)
+	const float DelaySeconds,
+	const float ReductionSeconds)
 {
 	const TWeakObjectPtr<AController> ControllerKey(WaitingController);
 	if (IsValid(WaitingController))
@@ -157,6 +191,13 @@ void UDominationRespawnManager::ScheduleRespawnInternal(
 			ControllerKey),
 		FMath::Max(0.1f, DelaySeconds),
 		false);
+
+	// 부활 대기 타이머 UI용으로 부활 예정 시각과 적용된 감소 시간을 플레이어 상태에 알린다.
+	if (ADominationPlayerState* DominationPlayerState =
+		WaitingController->GetPlayerState<ADominationPlayerState>())
+	{
+		DominationPlayerState->SetRespawnTimer(FMath::Max(0.1f, DelaySeconds), ReductionSeconds);
+	}
 }
 
 void UDominationRespawnManager::BeginRespawnProtection(AShooterPlayerState* PlayerState)

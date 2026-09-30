@@ -22,7 +22,7 @@ ATrainingArena::ATrainingArena()
 
     MovementArea = CreateDefaultSubobject<USphereComponent>(TEXT("MovementArea"));
     MovementArea->SetupAttachment(CenterPoint);
-    MovementArea->SetSphereRadius(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters));
+    MovementArea->SetSphereRadius(GetDefault<UTrainingSettings>()->GetMovementRadiusCentimeters());
     MovementArea->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     MovementArea->SetCanEverAffectNavigation(false);
     MovementArea->SetHiddenInGame(true);
@@ -49,11 +49,12 @@ void ATrainingArena::OnConstruction(const FTransform& Transform)
     Super::OnConstruction(Transform);
     SetActorScale3D(FVector::OneVector);
     SetActorRotation(FRotator(0.0, GetActorRotation().Yaw, 0.0));
-    MovementArea->SetSphereRadius(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters));
+    const float MovementRadius = GetDefault<UTrainingSettings>()->GetMovementRadiusCentimeters();
+    MovementArea->SetSphereRadius(MovementRadius);
 
     const float HalfStep = PI / static_cast<float>(MovementBoundary.Num());
-    const float Apothem = FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters) * FMath::Cos(HalfStep);
-    const float HalfLength = FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters) * FMath::Sin(HalfStep) + 2.0f;
+    const float Apothem = MovementRadius * FMath::Cos(HalfStep);
+    const float HalfLength = MovementRadius * FMath::Sin(HalfStep) + 2.0f;
     for (int32 Index = 0; Index < MovementBoundary.Num(); ++Index)
     {
         UBoxComponent* BoundaryPiece = MovementBoundary[Index];
@@ -98,7 +99,7 @@ bool ATrainingArena::IsInMovementArea(const AActor& Participant) const
     const FVector Center = GetCenterLocation();
     const FVector Position = Participant.GetActorLocation();
     return FVector::DistSquared2D(Center, Position)
-            <= FMath::Square(FMath::Max(50.0f, GetDefault<UTrainingSettings>()->MovementRadiusCentimeters))
+            <= FMath::Square(GetDefault<UTrainingSettings>()->GetMovementRadiusCentimeters())
         && FMath::Abs(Position.Z - Center.Z) <= 600.0;
 }
 
@@ -134,7 +135,12 @@ bool ATrainingArena::ProjectGroundPosition(const FVector& Candidate,
 
 bool ATrainingArena::FindGroundSpawn(const FTrainingDistanceBand& Band, FVector& OutGroundPosition) const
 {
-    for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+    if (!Band.IsValid())
+    {
+        return false;
+    }
+    const int32 AttemptLimit = FMath::Clamp(SpawnSearchAttempts, 1, 64);
+    for (int32 Attempt = 0; Attempt < AttemptLimit; ++Attempt)
     {
         if (ProjectGroundPosition(MakeRadialCandidate(Band), Band, OutGroundPosition))
         {
@@ -147,6 +153,10 @@ bool ATrainingArena::FindGroundSpawn(const FTrainingDistanceBand& Band, FVector&
 bool ATrainingArena::ProjectNavPosition(const FVector& Candidate, const FTrainingDistanceBand& Band,
     const FNavAgentProperties& AgentProperties, FVector& OutNavPosition) const
 {
+    if (!Band.IsValid() || Candidate.ContainsNaN())
+    {
+        return false;
+    }
     UNavigationSystemV1* Navigation = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
     if (!Navigation)
     {
@@ -167,7 +177,12 @@ bool ATrainingArena::ProjectNavPosition(const FVector& Candidate, const FTrainin
 bool ATrainingArena::FindNavSpawn(const FTrainingDistanceBand& Band,
     const FNavAgentProperties& AgentProperties, FVector& OutNavPosition) const
 {
-    for (int32 Attempt = 0; Attempt < 16; ++Attempt)
+    if (!Band.IsValid())
+    {
+        return false;
+    }
+    const int32 AttemptLimit = FMath::Clamp(SpawnSearchAttempts, 1, 64);
+    for (int32 Attempt = 0; Attempt < AttemptLimit; ++Attempt)
     {
         if (ProjectNavPosition(MakeRadialCandidate(Band), Band, AgentProperties, OutNavPosition))
         {
@@ -181,7 +196,7 @@ bool ATrainingArena::FindBotStepDestination(const FVector& CurrentPosition,
     const FTrainingDistanceBand& Band, const FNavAgentProperties& AgentProperties,
     const float SignedArcCentimeters, const float RadialStepCentimeters, FVector& OutNavPosition) const
 {
-    if (!FMath::IsFinite(SignedArcCentimeters) || !FMath::IsFinite(RadialStepCentimeters)
+    if (!Band.IsValid() || !FMath::IsFinite(SignedArcCentimeters) || !FMath::IsFinite(RadialStepCentimeters)
         || Band.MaxCentimeters <= Band.MinCentimeters)
     {
         return false;

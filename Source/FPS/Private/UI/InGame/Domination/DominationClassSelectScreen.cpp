@@ -1,4 +1,4 @@
-#include "UI/InGame/Domination/DominationClassSelectScreen.h"
+﻿#include "UI/InGame/Domination/DominationClassSelectScreen.h"
 
 #include "CommonButtonBase.h"
 #include "CommonTextBlock.h"
@@ -88,9 +88,11 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(TimerTextHandle);
-		World->GetTimerManager().ClearTimer(ReconcileTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
+	TimerTextHandle.Invalidate();
+	ReconcileTimerHandle.Invalidate();
+	HoverUpdateTimerHandle.Invalidate();
 
 	if (IsValid(Button_LockIn))
 	{
@@ -128,29 +130,30 @@ void UDominationClassSelectScreen::ApplyBGMSettings()
 		return;
 	}
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	if (USoundClass* MusicClass = AudioSettings->MusicSoundClass.LoadSynchronous())
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
-		BGMComponent->SoundClassOverride = MusicClass;
+		if (USoundClass* MusicClass = Settings->GetAudioChannelSoundClass(EShooterAudioChannel::Music))
+		{
+			BGMComponent->SoundClassOverride = MusicClass;
+		}
 	}
 
 	BGMComponent->SetVolumeMultiplier(ResolveBGMComponentVolume());
 }
 
-float UDominationClassSelectScreen::ResolveBGMComponentVolume() const
+float UDominationClassSelectScreen::ResolveBGMComponentVolume()
 {
-	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 	if (!IsValid(Settings))
 	{
 		return 1.0f;
 	}
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	const bool bHasMusicClass = IsValid(AudioSettings->MusicSoundClass.LoadSynchronous());
-	const bool bHasUserMix = IsValid(AudioSettings->UserSettingsSoundMix.LoadSynchronous());
+	const bool bHasMusicClass = IsValid(Settings->GetAudioChannelSoundClass(EShooterAudioChannel::Music));
+	const bool bHasUserMix = IsValid(Settings->GetUserSettingsSoundMix());
 	return bHasMusicClass && bHasUserMix
 		? 1.0f
-		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 2.0f);
 }
 
 void UDominationClassSelectScreen::HandleCombatClassChanged(
@@ -223,6 +226,7 @@ void UDominationClassSelectScreen::HandleClassCardHovered(
 	if (!bHovered || bLockInRequestPending)
 	{
 		CardHoverController.SetHovered(INDEX_NONE);
+		StartHoverUpdates();
 		return;
 	}
 
@@ -233,18 +237,32 @@ void UDominationClassSelectScreen::HandleClassCardHovered(
 		});
 
 	CardHoverController.SetHovered(HoveredIndex);
+	StartHoverUpdates();
 }
 
-void UDominationClassSelectScreen::NativeTick(
-	const FGeometry& MyGeometry,
-	const float InDeltaTime)
+void UDominationClassSelectScreen::StartHoverUpdates()
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	if (!CardHoverController.Tick(InDeltaTime, CardHoverSettings))
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
 	{
 		return;
 	}
+
+	if (!World->GetTimerManager().IsTimerActive(HoverUpdateTimerHandle))
+	{
+		World->GetTimerManager().SetTimer(
+			HoverUpdateTimerHandle,
+			this,
+			&ThisClass::UpdateHoverAnimation,
+			FMath::Max(0.008f, HoverUpdateInterval),
+			true);
+	}
+}
+
+void UDominationClassSelectScreen::UpdateHoverAnimation()
+{
+	const float DeltaTime = FMath::Max(0.008f, HoverUpdateInterval);
+	const bool bChanged = CardHoverController.Tick(DeltaTime, CardHoverSettings);
 
 	const TArray<FDominationCardHoverState>& States = CardHoverController.GetStates();
 	for (int32 Index = 0; Index < ClassCards.Num(); ++Index)
@@ -253,6 +271,15 @@ void UDominationClassSelectScreen::NativeTick(
 		{
 			ClassCards[Index]->ApplyHoverState(States[Index]);
 		}
+	}
+
+	if (!bChanged)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(HoverUpdateTimerHandle);
+		}
+		HoverUpdateTimerHandle.Invalidate();
 	}
 }
 

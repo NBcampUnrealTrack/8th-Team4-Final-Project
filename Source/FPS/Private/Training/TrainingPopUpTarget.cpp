@@ -1,4 +1,4 @@
-#include "Training/TrainingPopUpTarget.h"
+﻿#include "Training/TrainingPopUpTarget.h"
 
 #include "AbilitySystemComponent.h"
 #include "Components/BoxComponent.h"
@@ -43,8 +43,7 @@ ATrainingPopUpTarget::ATrainingPopUpTarget()
 {
     TargetMaxHealth = FMath::Max(1.0f, GetDefault<UTrainingSettings>()->PopUpTargetHealth);
 
-    PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.bStartWithTickEnabled = false;
+    PrimaryActorTick.bCanEverTick = false;
     bReplicates = false;
     SetReplicateMovement(false);
 
@@ -114,6 +113,8 @@ void ATrainingPopUpTarget::BeginPlay()
 
 void ATrainingPopUpTarget::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
+    StopMotionUpdate();
     GetWorldTimerManager().ClearTimer(ResetTimer);
 
     if (DamageTakenHandle.IsValid() && AbilitySystem)
@@ -161,11 +162,6 @@ void ATrainingPopUpTarget::InitializeHealth()
     AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetHealthAttribute(), Health);
     AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetMaxShieldAttribute(), 0.0f);
     AbilitySystem->SetNumericAttributeBase(URogueVitalAttributeSet::GetShieldAttribute(), 0.0f);
-}
-
-void ATrainingPopUpTarget::ResetHealthForNextCycle()
-{
-    InitializeHealth();
 }
 
 void ATrainingPopUpTarget::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
@@ -246,7 +242,7 @@ void ATrainingPopUpTarget::KnockDown()
 void ATrainingPopUpTarget::ResetTarget()
 {
     GetWorldTimerManager().ClearTimer(ResetTimer);
-    ResetHealthForNextCycle();
+    InitializeHealth();
 
     if (TargetState == ETrainingPopUpTargetState::Up)
     {
@@ -261,7 +257,7 @@ void ATrainingPopUpTarget::ResetTarget()
 
 void ATrainingPopUpTarget::BeginRise()
 {
-    ResetHealthForNextCycle();
+    InitializeHealth();
     SetTargetState(ETrainingPopUpTargetState::Rising);
 }
 
@@ -286,42 +282,75 @@ void ATrainingPopUpTarget::ApplyTargetState()
     switch (TargetState)
     {
     case ETrainingPopUpTargetState::Up:
+        StopMotionUpdate();
         MotionAlpha = 0.0f;
         UpdateTargetRotation();
         SetHitBoxActive(true);
-        SetActorTickEnabled(false);
         break;
 
     case ETrainingPopUpTargetState::Falling:
         SetHitBoxActive(false);
-        SetActorTickEnabled(true);
+        StartMotionUpdate();
         break;
 
     case ETrainingPopUpTargetState::Down:
+        StopMotionUpdate();
         MotionAlpha = 1.0f;
         UpdateTargetRotation();
         SetHitBoxActive(false);
-        SetActorTickEnabled(false);
         break;
 
     case ETrainingPopUpTargetState::Rising:
         SetHitBoxActive(false);
-        SetActorTickEnabled(true);
+        StartMotionUpdate();
         break;
     }
 }
 
-void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
+void ATrainingPopUpTarget::StartMotionUpdate()
 {
-    Super::Tick(DeltaSeconds);
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
 
+    World->GetTimerManager().ClearTimer(MotionTimer);
+    MotionStartAlpha = MotionAlpha;
+    MotionStartSeconds = World->GetTimeSeconds();
+    UpdateMotion();
+    FTimerManagerTimerParameters TimerParameters;
+    TimerParameters.bLoop = true;
+    TimerParameters.bMaxOncePerFrame = true;
+    World->GetTimerManager().SetTimer(
+        MotionTimer, this, &ThisClass::UpdateMotion,
+        TrainingRules::PresentationUpdateIntervalSeconds, TimerParameters);
+}
+
+void ATrainingPopUpTarget::StopMotionUpdate()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(MotionTimer);
+    }
+}
+
+void ATrainingPopUpTarget::UpdateMotion()
+{
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    const double Elapsed = FMath::Max(0.0, World->GetTimeSeconds() - MotionStartSeconds);
     if (TargetState == ETrainingPopUpTargetState::Falling)
     {
         const float Duration = FMath::Max(0.01f, FallDurationSeconds);
-        MotionAlpha = FMath::Min(1.0f, MotionAlpha + DeltaSeconds / Duration);
+        const float Alpha = FMath::Clamp(static_cast<float>(Elapsed / Duration), 0.0f, 1.0f);
+        MotionAlpha = FMath::Lerp(MotionStartAlpha, 1.0f, Alpha);
         UpdateTargetRotation();
-
-        if (MotionAlpha >= 1.0f - KINDA_SMALL_NUMBER)
+        if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
         {
             SetTargetState(ETrainingPopUpTargetState::Down);
             if (DownHoldSeconds <= 0.0f)
@@ -330,7 +359,7 @@ void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
             }
             else
             {
-                GetWorldTimerManager().SetTimer(ResetTimer, this, &ThisClass::BeginRise,
+                World->GetTimerManager().SetTimer(ResetTimer, this, &ThisClass::BeginRise,
                     DownHoldSeconds, false);
             }
         }
@@ -340,10 +369,10 @@ void ATrainingPopUpTarget::Tick(const float DeltaSeconds)
     if (TargetState == ETrainingPopUpTargetState::Rising)
     {
         const float Duration = FMath::Max(0.01f, RiseDurationSeconds);
-        MotionAlpha = FMath::Max(0.0f, MotionAlpha - DeltaSeconds / Duration);
+        const float Alpha = FMath::Clamp(static_cast<float>(Elapsed / Duration), 0.0f, 1.0f);
+        MotionAlpha = FMath::Lerp(MotionStartAlpha, 0.0f, Alpha);
         UpdateTargetRotation();
-
-        if (MotionAlpha <= KINDA_SMALL_NUMBER)
+        if (Alpha >= 1.0f - KINDA_SMALL_NUMBER)
         {
             SetTargetState(ETrainingPopUpTargetState::Up);
         }

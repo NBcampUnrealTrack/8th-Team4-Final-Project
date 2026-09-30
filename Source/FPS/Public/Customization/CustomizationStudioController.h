@@ -31,6 +31,7 @@ public:
  void SaveAppearance();
  void LoadAppearance();
  void ResetAppearance();
+ void RequestReturnToFrontend();
  bool CanSave() const;
  FString CloudStatus() const;
  bool HasCloudConflict() const;

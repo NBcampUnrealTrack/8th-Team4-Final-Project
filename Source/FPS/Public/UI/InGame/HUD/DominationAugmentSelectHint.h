@@ -13,7 +13,7 @@ class UCombatUIInitComponent;
  * 증강 선택 화면을 보류한 동안 HUD에 뜨는 힌트
  * 증강 선택 시간과 B키 안내 문구 표시
  */
-UCLASS(Abstract, Blueprintable)
+UCLASS(Abstract, Blueprintable, meta = (DisableNativeTick))
 class FPS_API UDominationAugmentSelectHint : public UUserWidget
 {
 	GENERATED_BODY()

@@ -2,6 +2,7 @@
 
 #include "Actor/DominationCapturePoint.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanelSlot.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -27,6 +28,8 @@ void UDominationObjectiveCompassWidget::NativeConstruct()
 
 	BoundGameState = DominationGameState;
 	DominationGameState->OnActivePointChanged.AddUniqueDynamic(this, &ThisClass::HandleActivePointChanged);
+	DominationGameState->OnObjectiveFlowStateChanged.AddUniqueDynamic(this, &ThisClass::HandleObjectiveFlowStateChanged);
+	DominationGameState->OnCaptureStateChanged.AddUniqueDynamic(this, &ThisClass::HandleCaptureStateChanged);
 	RefreshTargetCapturePoint();
 }
 
@@ -35,6 +38,13 @@ void UDominationObjectiveCompassWidget::NativeDestruct()
 	if (ADominationGameState* DominationGameState = BoundGameState.Get())
 	{
 		DominationGameState->OnActivePointChanged.RemoveDynamic(this, &ThisClass::HandleActivePointChanged);
+		DominationGameState->OnObjectiveFlowStateChanged.RemoveDynamic(this, &ThisClass::HandleObjectiveFlowStateChanged);
+		DominationGameState->OnCaptureStateChanged.RemoveDynamic(this, &ThisClass::HandleCaptureStateChanged);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(RefreshTimerHandle);
 	}
 
 	BoundGameState.Reset();
@@ -46,7 +56,12 @@ void UDominationObjectiveCompassWidget::NativeTick(const FGeometry& MyGeometry, 
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	RefreshScreenPlacement();
+	// 마커 위치만 카메라에 따라 매 프레임 갱신한다. 목표가 없으면 아무것도 하지 않는다.
+	if (TargetCapturePoint.IsValid() || bShouldShow)
+	{
+		RefreshScreenPlacement();
+		ApplyMarkerToWidget();
+	}
 }
 
 EDominationPointId UDominationObjectiveCompassWidget::GetTargetPointId() const
@@ -119,31 +134,92 @@ void UDominationObjectiveCompassWidget::HandleActivePointChanged(const EDominati
 	RefreshTargetCapturePoint();
 }
 
+void UDominationObjectiveCompassWidget::HandleObjectiveFlowStateChanged()
+{
+	BP_OnCompassRefresh();
+}
+
+void UDominationObjectiveCompassWidget::HandleCaptureStateChanged(FDominationCaptureState)
+{
+	BP_OnCompassRefresh();
+}
+
+void UDominationObjectiveCompassWidget::HandleRefreshTimer()
+{
+	BP_OnCompassRefresh();
+}
+
+void UDominationObjectiveCompassWidget::UpdateRefreshTimer()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	// 거리·남은 초는 시간과 위치에 따라 바뀌므로 목표가 있는 동안만 주기적으로 갱신한다.
+	FTimerManager& TimerManager = World->GetTimerManager();
+	if (TargetCapturePoint.IsValid() && !TimerManager.IsTimerActive(RefreshTimerHandle))
+	{
+		TimerManager.SetTimer(RefreshTimerHandle, this, &ThisClass::HandleRefreshTimer, RefreshInterval, true);
+	}
+	else if (!TargetCapturePoint.IsValid())
+	{
+		TimerManager.ClearTimer(RefreshTimerHandle);
+	}
+}
+
+void UDominationObjectiveCompassWidget::ApplyMarkerToWidget()
+{
+	if (!IsValid(Marker))
+	{
+		return;
+	}
+
+	const ESlateVisibility NewVisibility = bShouldShow
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed;
+	if (Marker->GetVisibility() != NewVisibility)
+	{
+		Marker->SetVisibility(NewVisibility);
+	}
+
+	if (bShouldShow)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Marker->Slot))
+		{
+			CanvasSlot->SetPosition(ScreenPosition);
+		}
+	}
+}
+
 void UDominationObjectiveCompassWidget::RefreshTargetCapturePoint()
 {
 	TargetCapturePoint.Reset();
 
 	const ADominationGameState* DominationGameState = BoundGameState.Get();
 	UWorld* World = GetWorld();
-	if (!IsValid(DominationGameState) || !IsValid(World))
-	{
-		return;
-	}
+	const EDominationPointId TargetPointId = IsValid(DominationGameState)
+		? DominationGameState->GetActivePointId()
+		: EDominationPointId::None;
 
-	const EDominationPointId TargetPointId = DominationGameState->GetActivePointId();
-	if (TargetPointId == EDominationPointId::None)
+	// 목표가 없어도 아래 정리(타이머 해제, 마커 숨김, BP 갱신)는 항상 수행한다.
+	if (IsValid(World) && TargetPointId != EDominationPointId::None)
 	{
-		return;
-	}
-
-	for (TActorIterator<ADominationCapturePoint> Iterator(World); Iterator; ++Iterator)
-	{
-		if (Iterator->GetPointId() == TargetPointId)
+		for (TActorIterator<ADominationCapturePoint> Iterator(World); Iterator; ++Iterator)
 		{
-			TargetCapturePoint = *Iterator;
-			return;
+			if (Iterator->GetPointId() == TargetPointId)
+			{
+				TargetCapturePoint = *Iterator;
+				break;
+			}
 		}
 	}
+
+	UpdateRefreshTimer();
+	RefreshScreenPlacement();
+	ApplyMarkerToWidget();
+	BP_OnCompassRefresh();
 }
 
 void UDominationObjectiveCompassWidget::RefreshScreenPlacement()

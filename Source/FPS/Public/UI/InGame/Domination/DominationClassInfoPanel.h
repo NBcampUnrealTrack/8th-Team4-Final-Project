@@ -16,7 +16,7 @@ class UVerticalBox;
  *   - 클래스명 / 주무기명 / 특성 태그 : UDominationClassSettings
  *   - 무기 아이콘                    : 화면의 아이콘 캐시
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UDominationClassInfoPanel : public UCommonUserWidget
 {
 	GENERATED_BODY()

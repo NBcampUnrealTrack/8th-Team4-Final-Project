@@ -1,4 +1,4 @@
-#include "Training/UI/TrainingStartFeedbackWidget.h"
+﻿#include "Training/UI/TrainingStartFeedbackWidget.h"
 
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
@@ -75,6 +75,7 @@ void UTrainingStartFeedbackWidget::ShowStarted(const float ElapsedSeconds)
 void UTrainingStartFeedbackWidget::ShowPulse(const FText& Message,
     const float Duration, const float InitialElapsed)
 {
+    ClearFeedback();
     ApplyStyle();
     if (!GetWorld() || !FeedbackContent || !Txt_FeedbackMessage)
     {
@@ -86,9 +87,11 @@ void UTrainingStartFeedbackWidget::ShowPulse(const FText& Message,
     PulseDurationSeconds = Duration;
     Txt_FeedbackMessage->SetText(Message);
     SetVisibility(ESlateVisibility::HitTestInvisible);
+    FTimerManagerTimerParameters TimerParameters;
+    TimerParameters.bLoop = true;
+    TimerParameters.bMaxOncePerFrame = true;
     GetWorld()->GetTimerManager().SetTimer(PulseUpdateTimer, this, &ThisClass::UpdatePulse,
-        1.0f / 60.0f, true);
-    GetWorld()->GetTimerManager().ClearTimer(CountdownTimer);
+        TrainingRules::PresentationUpdateIntervalSeconds, TimerParameters);
     UpdatePulse();
     if (bCountdownPulse) { RefreshCountdown(); }
 }
@@ -146,6 +149,12 @@ void UTrainingStartFeedbackWidget::ClearFeedback()
 
 void UTrainingStartFeedbackWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    PulseUpdateTimer.Invalidate();
+    CountdownTimer.Invalidate();
     ClearFeedback();
     Super::NativeDestruct();
 }

@@ -24,16 +24,9 @@ enum class EShooterOptionsLanguage : uint8
 	English UMETA(DisplayName = "English")
 };
 
-UENUM(BlueprintType)
-enum class EShooterExperienceProfile : uint8
-{
-	Visual60 UMETA(DisplayName = "Visual 60"),
-	Balanced120 UMETA(DisplayName = "Balanced 120"),
-	Competitive144 UMETA(DisplayName = "Competitive 144"),
-	MaxQuality UMETA(DisplayName = "Max Quality")
-};
 
 DECLARE_MULTICAST_DELEGATE(FOnShooterAudioSettingsChanged);
+DECLARE_MULTICAST_DELEGATE(FOnShooterInputBindingsChanged);
 
 // 크로스헤어 커스터마이징이 바뀔 때마다 발신. UShooterReticle이 구독해서 Dynamic Material
 // Instance 파라미터를 즉시 다시 적용한다(설정 화면에서 슬라이더 움직이는 동안 바로 미리보기됨).
@@ -53,8 +46,21 @@ public:
 	virtual void ValidateSettings() override;
 	virtual void ApplyNonResolutionSettings() override;
 
+	// 런타임 검증과 옵션 UI가 같은 제한값을 사용한다.
+	static FIntPoint GetMaxSupportedResolution();
+	static int32 GetFrameRateLimitChoiceCount();
+	static float GetFrameRateLimitChoice(int32 Index);
+	static int32 FindFrameRateLimitChoiceIndex(float FramesPerSecond);
+	static float NormalizeFrameRateLimit(float FramesPerSecond);
+	static float GetDefaultFrameRateLimit();
+	static float GetMinMouseSensitivity();
+	static float GetMaxMouseSensitivity();
+	static float GetMinAudioVolume();
+	static float GetMaxAudioVolume();
+
 	// The local runtime applies audio changes independently of any options widget.
 	FOnShooterAudioSettingsChanged OnAudioSettingsChanged;
+	FOnShooterInputBindingsChanged OnInputBindingsChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Gameplay")
 	bool IsDynamicCrosshairEnabled() const { return bDynamicCrosshair; }
@@ -140,6 +146,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Audio")
 	void SetVoiceChatEnabled(bool bEnabled);
 
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Voice Chat")
+	float GetVoiceChatMicrophoneVolume() const { return VoiceChatMicrophoneVolume; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Voice Chat")
+	void SetVoiceChatMicrophoneVolume(float Volume);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Voice Chat")
+	float GetVoiceChatOutputVolume() const { return VoiceChatOutputVolume; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Voice Chat")
+	void SetVoiceChatOutputVolume(float Volume);
+
+	FName GetKeyBindingOverride(FName BindingId) const;
+	void SetKeyBindingOverride(FName BindingId, FName KeyName);
+	void ResetKeyBindingOverrides();
+
 	USoundMix* GetUserSettingsSoundMix();
 	USoundClass* GetAudioChannelSoundClass(EShooterAudioChannel Channel);
 
@@ -152,17 +174,6 @@ public:
 	/** Applies the selected culture immediately. */
 	void ApplyLanguageCulture() const;
 
-	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Smart Tuning")
-	EShooterExperienceProfile GetExperienceProfile() const { return ExperienceProfile; }
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Smart Tuning")
-	void SetExperienceProfile(EShooterExperienceProfile NewProfile) { ExperienceProfile = NewProfile; }
-
-	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Smart Tuning")
-	float GetPerformanceTargetFPS() const { return PerformanceTargetFPS; }
-
-	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Smart Tuning")
-	void SetPerformanceTargetFPS(float TargetFPS) { PerformanceTargetFPS = FMath::Clamp(TargetFPS, 30.0f, 240.0f); }
 
 protected:
 	UPROPERTY(Config)
@@ -182,31 +193,31 @@ protected:
 	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float CrosshairOutlineThickness = 0.f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MouseHorizontalSensitivity = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MouseVerticalSensitivity = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float AimSensitivityMultiplier = 1.0f;
 
 	UPROPERTY(Config)
 	bool bInvertVerticalLook = false;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MasterVolume = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MusicVolume = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float SoundEffectsVolume = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float UserInterfaceVolume = 1.0f;
 
-	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float VoiceVolume = 1.0f;
 
 	UPROPERTY(Config)
@@ -214,6 +225,21 @@ protected:
 
 	UPROPERTY(Config)
 	bool bVoiceChatEnabled = true;
+
+	// Outgoing voice level. Steam captures compressed voice, so this gain is applied after
+	// decode on receivers and routed with each voice packet. 0 mutes outgoing voice.
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float VoiceChatMicrophoneVolume = 1.0f;
+
+	// Local playback level for other players. Kept separate from the general Voice channel
+	// so announcer/dialogue volume does not control voice chat.
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float VoiceChatOutputVolume = 1.0f;
+
+	// BindingId -> FKey name. IDs are generated from the original mapping context and
+	// never mutate the authored IMC asset.
+	UPROPERTY(Config)
+	TMap<FName, FName> KeyBindingOverrides;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundMix> CachedUserSettingsSoundMix;
@@ -225,9 +251,4 @@ protected:
 	UPROPERTY(Config)
 	EShooterOptionsLanguage Language = EShooterOptionsLanguage::Korean;
 
-	UPROPERTY(Config)
-	EShooterExperienceProfile ExperienceProfile = EShooterExperienceProfile::Balanced120;
-
-	UPROPERTY(Config, meta = (ClampMin = "30.0", ClampMax = "240.0"))
-	float PerformanceTargetFPS = 120.0f;
 };

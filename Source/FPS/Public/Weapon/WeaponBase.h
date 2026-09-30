@@ -116,6 +116,9 @@ public:
 	// 예비 탄약 최대치를 바꾸고 차이만큼 예비 탄약 조정. 서버 전용
 	void ResizeReserve(int32 NewMaxReserveAmmo);
 
+	// 이 머신의 탄창만 조정 (RPC 없음). 탄창 0 ~ 크기로 제한, 실제 바뀐 양 반환. 증강 예측 GA 용
+	int32 AdjustMagazineAmmoLocal(int32 Delta);
+
 	// 현재 적용 중인 실제 재장전 시간(초).
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveReloadDuration(float NewReloadDuration);

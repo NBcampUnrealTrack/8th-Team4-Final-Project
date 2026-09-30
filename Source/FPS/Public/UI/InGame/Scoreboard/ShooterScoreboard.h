@@ -14,7 +14,7 @@ class UShooterScoreboardAugmentTooltip;
 class UShooterWeaponDisplaySet;
 struct FStreamableHandle;
 
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterScoreboard : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

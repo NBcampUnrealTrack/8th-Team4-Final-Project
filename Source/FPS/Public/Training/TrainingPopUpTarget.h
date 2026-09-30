@@ -37,7 +37,6 @@ class FPS_API ATrainingPopUpTarget : public AActor, public IAbilitySystemInterfa
 public:
     ATrainingPopUpTarget();
 
-    virtual void Tick(float DeltaSeconds) override;
     virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
     virtual void HandleHitscanImpact(AActor* InstigatorActor, const FVector& ImpactPoint,
         const FVector& ShotDirection) override;
@@ -120,9 +119,11 @@ private:
     void HandleDamageTaken(FGameplayTag EventTag, const FGameplayEventData* Payload);
     void HandleOutOfHealth(UAbilitySystemComponent* VictimASC, const FGameplayEffectContextHandle& ContextHandle);
     void InitializeHealth();
-    void ResetHealthForNextCycle();
     void SetTargetState(ETrainingPopUpTargetState NewState);
     void UpdateTargetRotation();
+    void StartMotionUpdate();
+    void UpdateMotion();
+    void StopMotionUpdate();
     void ConfigureTargetComponents();
     void ConfigureHitBoxCollision();
     void SetHitBoxActive(bool bActive);
@@ -152,5 +153,8 @@ private:
     FDelegateHandle OutOfHealthHandle;
     FRotator RaisedRotation = FRotator::ZeroRotator;
     float MotionAlpha = 0.0f;
+    float MotionStartAlpha = 0.0f;
+    double MotionStartSeconds = 0.0;
+    FTimerHandle MotionTimer;
     FTimerHandle ResetTimer;
 };

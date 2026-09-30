@@ -1,6 +1,7 @@
 #include "Training/CQB/CQBTrainingPatrolComponent.h"
 
 #include "AIController.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Training/CQB/CQBTrainingLocomotionComponent.h"
 

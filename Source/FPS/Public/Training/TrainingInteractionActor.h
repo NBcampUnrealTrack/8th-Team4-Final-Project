@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Interfaces/RogueInteractable.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingAreaTransitionTypes.h"
 #include "TrainingInteractionActor.generated.h"
 
 class APlayerController;
@@ -22,6 +23,10 @@ class FPS_API ATrainingInteractionActor : public AActor, public IRogueInteractab
 
 public:
     ATrainingInteractionActor();
+
+    // 복귀 위치를 저장할 때 함께 보관할 출발 구역입니다.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Area Transition")
+    FName OriginAreaId = TrainingAreaIds::FreePractice;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual bool CanInteract(const APlayerController& RequestingPlayer) const override;
     virtual void Interact(APlayerController& RequestingPlayer) override;

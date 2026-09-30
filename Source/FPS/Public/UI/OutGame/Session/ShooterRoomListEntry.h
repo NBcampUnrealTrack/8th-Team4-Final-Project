@@ -11,7 +11,7 @@ class UTextBlock;
 /**
  * 방 목록 한 줄. 행 전체가 버튼
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterRoomListEntry : public UShooterButtonBase
 {
 	GENERATED_BODY()

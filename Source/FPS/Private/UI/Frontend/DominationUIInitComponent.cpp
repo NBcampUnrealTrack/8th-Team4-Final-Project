@@ -1,15 +1,22 @@
-#include "UI/Frontend/DominationUIInitComponent.h"
+﻿#include "UI/Frontend/DominationUIInitComponent.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Tags/UITags.h"
 #include "TimerManager.h"
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Settings/DominationSandstormSettings.h"
-#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Preload/DominationPreloadSubsystem.h"
+#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
+#include "UI/InGame/ShooterMatchOutcomeScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
 
 void UDominationUIInitComponent::BeginPlay()
 {
@@ -33,6 +40,20 @@ void UDominationUIInitComponent::BeginPlay()
 
 void UDominationUIInitComponent::ResetWorldBinding()
 {
+    if (UWorld* World = GetWorld())
+    {
+        // 매치종료 트랜지션 늦음 방지 예약
+        if (World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+        {
+            UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly before travel."));
+            BeginMatchExitTransition(true);
+        }
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+	
+    MatchExitTransitionTimer.Invalidate();
+    SandstormWarningTimer.Invalidate();
+
     UnbindFromGameState();
     ClearSandstormWarning();
     LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
@@ -78,6 +99,7 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 	RefreshCombatUI();
 	UpdateSandstormWarning();
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
 
 	if (IsTeamMatchUIReady())
 	{
@@ -88,6 +110,7 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 void UDominationUIInitComponent::HandleMatchStateChanged()
 {
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
 	
 	// 새 매치가 InProgress 로 진입하는 순간, 이전 매치에서 남은
 	// 증강 선택 보류 상태와 진입 연출 이력을 초기화한다.
@@ -144,6 +167,103 @@ void UDominationUIInitComponent::TryCaptureMatchResult()
 		{
 			MatchResultSubsystem->CaptureSnapshot(BoundGameState.Get());
 		}
+	}
+}
+
+void UDominationUIInitComponent::TryPresentMatchEnd()
+{
+	if (!BoundGameState.IsValid()
+		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
+		|| BoundGameState->GetMatchWinner() == EGameTeam::None)
+	{
+		return;
+	}
+
+	SuspendScreenPresentation();
+	TryPresentMatchOutcome();
+
+	// 연출 성공과 무관하게 예약
+	TryScheduleMatchExitTransition();
+}
+
+void UDominationUIInitComponent::TryPresentMatchOutcome()
+{
+	if (IsValid(MatchOutcomeScreen) || !MatchOutcomeScreenClass)
+	{
+		return;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+	const ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const EGameTeam LocalTeam = IsValid(PlayerState) ? PlayerState->GetTeam() : EGameTeam::None;
+	if (LocalTeam == EGameTeam::None)
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!IsValid(UIManager))
+	{
+		return;
+	}
+
+	MatchOutcomeScreen = Cast<UShooterMatchOutcomeScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, MatchOutcomeScreenClass));
+	if (!IsValid(MatchOutcomeScreen))
+	{
+		return;
+	}
+
+	// 내 팀 점수가 먼저
+	const bool bLocalIsTeamA = (LocalTeam == EGameTeam::TeamA);
+	const int32 TeamAScore = BoundGameState->GetTeamAScore();
+	const int32 TeamBScore = BoundGameState->GetTeamBScore();
+
+	MatchOutcomeScreen->ShowOutcome(
+		LocalTeam == BoundGameState->GetMatchWinner(),
+		bLocalIsTeamA ? TeamAScore : TeamBScore,
+		bLocalIsTeamA ? TeamBScore : TeamAScore);
+}
+
+void UDominationUIInitComponent::TryScheduleMatchExitTransition()
+{
+	UWorld* World = GetWorld();
+	if (bMatchExitTransitionAttempted
+		|| !IsValid(World)
+		|| World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+	{
+		return;
+	}
+
+	// 서버가 복제한 종료 시각 기준
+	const float Remaining = BoundGameState->GetPhaseTimeRemaining();
+	if (Remaining <= MatchExitCoverLeadSeconds)
+	{
+		BeginMatchExitTransition(true);
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		MatchExitTransitionTimer,
+		FTimerDelegate::CreateUObject(this, &ThisClass::BeginMatchExitTransition, false),
+		Remaining - MatchExitCoverLeadSeconds,
+		false);
+}
+
+void UDominationUIInitComponent::BeginMatchExitTransition(const bool bInstant)
+{
+	bMatchExitTransitionAttempted = true;
+
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr;
+
+	if (!Transition || !Transition->BeginTransition(FSimpleDelegate(), bInstant))
+	{
+		UE_LOG(LogDominationUIInit, Warning, TEXT("Match exit transition could not start."));
 	}
 }
 

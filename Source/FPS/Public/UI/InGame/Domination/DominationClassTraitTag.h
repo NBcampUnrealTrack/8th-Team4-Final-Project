@@ -8,7 +8,7 @@
 /**
  * 우측 정보 패널의 특성 태그 한 줄
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UDominationClassTraitTag : public UCommonUserWidget
 {
 	GENERATED_BODY()

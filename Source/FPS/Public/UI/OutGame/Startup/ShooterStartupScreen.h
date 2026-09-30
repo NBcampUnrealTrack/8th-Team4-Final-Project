@@ -5,6 +5,7 @@
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterStartupScreen.generated.h"
 
+class UButton;
 class UCommonActivatableWidget;
 class UShooterButtonBase;
 class UTextBlock;
@@ -13,7 +14,7 @@ class UWidgetAnimation;
 /**
  * 첫 실행 인트로와 온라인 상태 확인
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterStartupScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
@@ -30,6 +31,7 @@ private:
 	void HandleIntroFinished();
 	UFUNCTION()
 	void HandleOpenFinished();
+	UFUNCTION()
 	void HandleLoginClicked();
 	void HandleRetryClicked();
 	void HandleQuitClicked();
@@ -37,7 +39,7 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_Status;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterButtonBase> Btn_Login;
+	TObjectPtr<UButton> Btn_Login;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Retry;
 	UPROPERTY(meta = (BindWidget))

@@ -1,6 +1,8 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueAugmentAttributeSet.h"
+#include "GameplayEffectExtension.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Net/UnrealNetwork.h"
 
 URogueAugmentAttributeSet::URogueAugmentAttributeSet()
@@ -37,6 +39,9 @@ URogueAugmentAttributeSet::URogueAugmentAttributeSet()
 	InitExtraJumpCount(0.f);
 	InitCooldownReductionRate(0.f);
 	InitBonusFreeRerolls(0.f);
+	InitLostHealthBonusRate(0.f);
+	InitCooldownRefundRate(0.f);
+	InitHighAmmoFireRateBonus(0.f);
 }
 
 void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -48,6 +53,7 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, SprintSpeedMultiplier,   COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, JumpHeightMultiplier,    COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ExtraJumpCount,          COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, LostHealthBonusRate,     COND_None, REPNOTIFY_Always);
 
 	// 나머지는 오너에게만 필요
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageMultiplier,          COND_OwnerOnly, REPNOTIFY_Always);
@@ -64,6 +70,7 @@ void URogueAugmentAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, DamageReflectRate,         COND_OwnerOnly, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, FireRateMultiplier,        COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, HighAmmoFireRateBonus,     COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, ReloadSpeedMultiplier,     COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, MagazineSizeMultiplier,    COND_OwnerOnly, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueAugmentAttributeSet, PelletCountBonus,          COND_OwnerOnly, REPNOTIFY_Always);
@@ -102,6 +109,9 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 	if(Attribute == GetShieldPenetrationRateAttribute()
 	|| Attribute == GetLifestealRateAttribute()
 	|| Attribute == GetDamageReflectRateAttribute()
+	|| Attribute == GetLostHealthBonusRateAttribute()
+	|| Attribute == GetHighAmmoFireRateBonusAttribute()
+	|| Attribute == GetCooldownRefundRateAttribute()
 	|| Attribute == GetHeadshotDamageTakenRateAttribute())
 	{
 		NewValue = FMath::Clamp(NewValue, 0.f, 1.f);
@@ -152,6 +162,23 @@ void URogueAugmentAttributeSet::PreAttributeChange(const FGameplayAttribute& Att
 		*Attribute.GetName());
 }
 
+void URogueAugmentAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	// 남은 액티브 쿨타임 감소
+	if (Data.EvaluatedData.Attribute == GetCooldownRefundRateAttribute())
+	{
+		const float Rate = GetCooldownRefundRate();
+		SetCooldownRefundRate(0.f);
+
+		if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(GetOwningAbilitySystemComponent()))
+		{
+			ASC->ReduceActiveCooldowns(Rate);
+		}
+	}
+}
+
 // RepNotify 는 매크로로 정의
 #define ROGUE_AUG_REPNOTIFY(PropertyName)                                                    \
 	void URogueAugmentAttributeSet::OnRep_##PropertyName(const FGameplayAttributeData& Old)  \
@@ -187,6 +214,8 @@ ROGUE_AUG_REPNOTIFY(MoveSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(SprintSpeedMultiplier)
 ROGUE_AUG_REPNOTIFY(JumpHeightMultiplier)
 ROGUE_AUG_REPNOTIFY(ExtraJumpCount)
+ROGUE_AUG_REPNOTIFY(LostHealthBonusRate)
+ROGUE_AUG_REPNOTIFY(HighAmmoFireRateBonus)
 
 ROGUE_AUG_REPNOTIFY(CooldownReductionRate)
 

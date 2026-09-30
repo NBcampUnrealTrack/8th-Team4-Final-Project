@@ -1,4 +1,4 @@
-#include "GameMode/DominationGameMode.h"
+﻿#include "GameMode/DominationGameMode.h"
 
 #include "Augment/AugmentDraftProfile.h"
 #include "Audio/DominationSystemAnnouncer.h"
@@ -137,6 +137,7 @@ void ADominationGameMode::BeginPlay()
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
 	SandstormManager->Shutdown();
 
@@ -368,6 +369,17 @@ bool ADominationGameMode::RestartPlayerAtObjective(
 	RestartPlayerAtTransform(PlayerController, SpawnTransform);
 	APawn* SpawnedPawn = PlayerController->GetPawn();
 	return IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
+}
+
+// 거점 기믹(중계 비콘)의 팀별 부활 대기 감소를 RespawnManager로 전달
+void ADominationGameMode::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (IsValid(RespawnManager))
+	{
+		RespawnManager->SetTeamRespawnDelayReduction(Team, Seconds);
+	}
 }
 
 void ADominationGameMode::RespawnPlayer(AController* Controller)

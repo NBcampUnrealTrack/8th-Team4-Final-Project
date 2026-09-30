@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Containers/RingBuffer.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
 #include "Augment/AugmentAssembler.h"
@@ -188,7 +189,7 @@ private:
 	bool bOfferSelectionEnabled = false;
 
 	// 적립된 증강 보상 후보. 서버 전용
-	TArray<FAugmentPendingReward> PendingRewards;
+	TRingBuffer<FAugmentPendingReward> PendingRewards;
 
 	UPROPERTY(Replicated)
 	float SelectionDeadline = 0.f;

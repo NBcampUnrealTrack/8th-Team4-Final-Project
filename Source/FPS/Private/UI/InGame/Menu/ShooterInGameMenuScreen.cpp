@@ -1,5 +1,6 @@
 #include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
 
+#include "Animation/WidgetAnimation.h"
 #include "CommonButtonBase.h"
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
@@ -62,6 +63,56 @@ void UShooterInGameMenuScreen::NativeOnInitialized()
 	{
 		UMGButton->OnClicked.AddDynamic(this, &ThisClass::HandleQuitGameClicked);
 	}
+
+	if (Anim_Exit)
+	{
+		ExitFinishedDelegate.BindDynamic(this, &ThisClass::HandleExitFinished);
+		BindToAnimationFinished(Anim_Exit, ExitFinishedDelegate);
+	}
+}
+
+void UShooterInGameMenuScreen::NativeOnActivated()
+{
+	Super::NativeOnActivated();
+
+	// 스택이 인스턴스를 재사용하고, 옵션에서 돌아올 때도 다시 불린다.
+	bClosing = false;
+	if (Anim_Exit)
+	{
+		StopAnimation(Anim_Exit);
+	}
+	if (Anim_Enter)
+	{
+		PlayAnimation(Anim_Enter);
+	}
+}
+
+void UShooterInGameMenuScreen::RequestResume()
+{
+	if (bClosing)
+	{
+		return;
+	}
+
+	if (!Anim_Exit)
+	{
+		OnResumeRequested.Broadcast();
+		return;
+	}
+
+	bClosing = true;
+	PlayAnimation(Anim_Exit);
+}
+
+void UShooterInGameMenuScreen::HandleExitFinished()
+{
+	if (!bClosing)
+	{
+		return;
+	}
+
+	bClosing = false;
+	OnResumeRequested.Broadcast();
 }
 
 void UShooterInGameMenuScreen::SetSurrenderEnabled(const bool bEnabled)
@@ -76,31 +127,47 @@ void UShooterInGameMenuScreen::SetStatusText(const FText& StatusText)
 
 void UShooterInGameMenuScreen::HandleResumeClicked()
 {
-	OnResumeRequested.Broadcast();
+	RequestResume();
 }
 
 void UShooterInGameMenuScreen::HandleOptionsClicked()
 {
+	if (bClosing)
+	{
+		return;
+	}
 	OnOptionsRequested.Broadcast();
 }
 
 void UShooterInGameMenuScreen::HandleReturnToLobbyClicked()
 {
+	if (bClosing)
+	{
+		return;
+	}
 	OnReturnToLobbyRequested.Broadcast();
 }
 
 void UShooterInGameMenuScreen::HandleQuitGameClicked()
 {
+	if (bClosing)
+	{
+		return;
+	}
 	OnQuitGameRequested.Broadcast();
 }
 
 void UShooterInGameMenuScreen::HandleSurrenderClicked()
 {
+	if (bClosing)
+	{
+		return;
+	}
 	OnSurrenderRequested.Broadcast();
 }
 
 bool UShooterInGameMenuScreen::NativeOnHandleBackAction()
 {
-	OnResumeRequested.Broadcast();
+	RequestResume();
 	return true;
 }

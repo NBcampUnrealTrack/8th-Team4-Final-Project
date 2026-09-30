@@ -10,6 +10,8 @@
 
 class URogueAbilitySet;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCooldownTimeChanged, FGameplayTag /*CooldownTag*/);
+
 UCLASS()
 class FPS_API URogueAbilitySystemComponent : public UAbilitySystemComponent
 {
@@ -37,6 +39,14 @@ public:
 
 	// 수명이 라운드에 한정된 GE 제거
 	int32 RemoveRoundScopedEffects();
+
+	// 남은 액티브 쿨타임을 비율만큼 줄임. 서버 전용
+	void ReduceActiveCooldowns(float Rate);
+
+	// 슬롯 쿨타임의 시간이 바뀜 (태그 개수 변화 없이). 서버, 클라 모두
+	FOnCooldownTimeChanged OnCooldownTimeChanged;
+
+	virtual void OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect) override;
 
 private:
 	// GAS clears Spec.InputPressed on EndAbility; keep physical holds separately.

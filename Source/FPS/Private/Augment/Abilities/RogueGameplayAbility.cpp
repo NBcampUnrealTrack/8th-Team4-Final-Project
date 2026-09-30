@@ -18,7 +18,9 @@
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueTargetFilter.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Tags/GameplayTags.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentAbility, Log, All);
 
@@ -27,14 +29,13 @@ namespace
 	// 설정에 등록된 GE 애셋을 로드 (쿨타임/지속 시간)
 	UClass* LoadConfiguredEffectClass(const TSoftClassPtr<UGameplayEffect>& SoftClass, const TCHAR* FieldName)
 	{
+		UE_CLOG(SoftClass.IsPending(), LogAugmentAbility, Warning,
+			TEXT("[AugmentAbility] %s 가 프리로드되지 않아 동기 로드합니다"), *SoftClass.ToString());
 		UClass* Loaded = SoftClass.LoadSynchronous();
-		if (!Loaded)
-		{
-			UE_LOG(LogAugmentAbility, Error,
-				TEXT("[AugmentAbility] %s 를 로드하지 못했습니다. DefaultGame.ini 의 [/Script/FPS.RogueGASSettings] 등록과 ")
-				TEXT("애셋 경로를 확인하세요 (Duration Policy = Has Duration, Duration = SetByCaller %s)"),
-				FieldName, *RogueTags::Data_Magnitude_Duration.GetTag().ToString());
-		}
+		ensureMsgf(Loaded,
+			TEXT("[AugmentAbility] %s 를 로드하지 못했습니다. DefaultGame.ini 의 [/Script/FPS.RogueGASSettings] 등록과 ")
+			TEXT("애셋 경로를 확인하세요 (Duration Policy = Has Duration, Duration = SetByCaller %s)"),
+			FieldName, *RogueTags::Data_Magnitude_Duration.GetTag().ToString());
 
 		return Loaded;
 	}
@@ -75,7 +76,7 @@ void URogueGameplayAbility::CommitExecute(const FGameplayAbilitySpecHandle Handl
 	}
 
 	AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
-	if (!Avatar)
+	if (!ensure(Avatar))
 	{
 		return;
 	}
@@ -106,9 +107,9 @@ bool URogueGameplayAbility::CanActivateAbility(const FGameplayAbilitySpecHandle 
 	}
 
 	const UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (!ASC)
+	if (!ensure(ASC))
 	{
-		return true;
+		return false;
 	}
 
 	if (ASC->HasMatchingGameplayTag(RogueTags::State_Combat_ActionBlocked))
@@ -132,19 +133,17 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 	AActor* Avatar = ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr;
 	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
 
-	if (!Avatar || !SourceASC)
+	if (!ensure(Avatar && SourceASC))
 	{
 		EndSelf(true);
 		return;
 	}
 
 	const FAugmentGrantedAbility* Entry = FindGrantedEntry(Handle, ActorInfo);
-	if (!Entry)
+	if (!ensureMsgf(Entry,
+		TEXT("[AugmentAbility] %s 를 부여한 증강 정의에서 자기 GrantedAbilities 항목을 찾지 못했습니다. ")
+		TEXT("PDA 의 AbilityClass 가 이 클래스를 가리키는지 확인하세요"), *GetName()))
 	{
-		UE_LOG(LogAugmentAbility, Error,
-			TEXT("[AugmentAbility] %s 를 부여한 증강 정의에서 자기 GrantedAbilities 항목을 찾지 못했습니다. ")
-			TEXT("PDA 의 AbilityClass 가 이 클래스를 가리키는지 확인하세요"), *GetName());
-
 		EndSelf(true);
 		return;
 	}
@@ -179,8 +178,6 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		}
 	}
 
-	ActiveEntry = Entry;
-
 	// 손에 드는 증강은 사용 입력을 기다림
 	if (bHoldToUse)
 	{
@@ -193,17 +190,35 @@ void URogueGameplayAbility::ActivateAbility(const FGameplayAbilitySpecHandle Han
 	ExecuteAbility(EventTarget);
 }
 
+void URogueGameplayAbility::OnAvatarSet(const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilitySpec& Spec)
+{
+	Super::OnAvatarSet(ActorInfo, Spec);
+
+	// 관전 폰 말고 전투 캐릭터에 연결될 때만
+	if (!bActivateOnAvatarSet || !ActorInfo || !ActorInfo->IsNetAuthority() || Spec.IsActive()
+		|| !IsValid(ActorInfo->AvatarActor.Get()) || !ActorInfo->AvatarActor->Implements<UPlayerInterface>())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get())
+	{
+		ASC->TryActivateAbility(Spec.Handle);
+	}
+}
+
 void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 {
 	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
 
-	if (!Avatar || !ActiveEntry)
+	if (!ensure(Avatar && Entry))
 	{
 		EndSelf(true);
 		return;
 	}
 
-	if (!BuildEffectPayload(*ActiveEntry, Avatar, EventTarget,
+	if (!BuildEffectPayload(*Entry, Avatar, EventTarget,
 			CurrentSpecHandle, CurrentActorInfo, ActivePayload))
 	{
 		EndSelf(true);
@@ -218,6 +233,7 @@ void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 	}
 
 	ExecuteCue(ActivationCueTag);
+	ExecuteCue(VoiceCueTag);
 
 	// 시전 지연이 있으면 대기 후 발동, 없으면 바로 발동
 	if (CastDelaySeconds > 0.f)
@@ -240,7 +256,8 @@ void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 
 void URogueGameplayAbility::FinishDeliver()
 {
-	if (!ActiveEntry)
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
+	if (!ensure(Entry))
 	{
 		EndSelf(true);
 		return;
@@ -253,7 +270,14 @@ void URogueGameplayAbility::FinishDeliver()
 	{
 		PayHealthCost(CurrentActorInfo, ActivePayload.Level);
 
-		Deliver(*ActiveEntry, ActivePayload);
+		Deliver(*Entry, ActivePayload);
+	}
+
+	// 반복 발동 증강은 지속 시간 동안 종료하지 않고 재발동
+	if (RepeatDuration > 0.f)
+	{
+		BeginRepeatDeliver();
+		return;
 	}
 
 	// 손에 든 증강은 사용 후 큐 제거
@@ -273,12 +297,54 @@ void URogueGameplayAbility::FinishDeliver()
 		}
 	}
 
-	EndSelf(false);
+	// 클라 종료가 서버의 발동 대기를 끊지 않게 복제하지 않음
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
+		/*bReplicateEndAbility*/ HasAuthority(&CurrentActivationInfo), false);
+}
+
+void URogueGameplayAbility::BeginRepeatDeliver()
+{
+	if (RepeatCueTag.IsValid())
+	{
+		K2_AddGameplayCueWithParams(RepeatCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
+	}
+
+	if (UAbilityTask_WaitDelay* Task = UAbilityTask_WaitDelay::WaitDelay(this, RepeatDuration))
+	{
+		Task->OnFinish.AddDynamic(this, &ThisClass::HandleRecoveryFinished);
+		Task->ReadyForActivation();
+	}
+
+	// 판정은 서버에서만
+	if (HasAuthority(&CurrentActivationInfo))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(RepeatTimer, this, &ThisClass::RepeatDeliver, RepeatInterval, true);
+		}
+	}
+}
+
+void URogueGameplayAbility::RepeatDeliver()
+{
+	AActor* Avatar = CurrentActorInfo ? CurrentActorInfo->AvatarActor.Get() : nullptr;
+	const FAugmentGrantedAbility* Entry = FindGrantedEntry(CurrentSpecHandle, CurrentActorInfo);
+
+	// 매번 현재 시선 기준으로 다시 조립
+	if (!Entry || !URogueTargetFilter::IsAlive(Avatar)
+		|| !BuildEffectPayload(*Entry, Avatar, nullptr, CurrentSpecHandle, CurrentActorInfo, ActivePayload))
+	{
+		EndSelf(true);
+		return;
+	}
+
+	Deliver(*Entry, ActivePayload);
 }
 
 void URogueGameplayAbility::HandleRecoveryFinished()
 {
-	EndSelf(false);
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo,
+		/*bReplicateEndAbility*/ HasAuthority(&CurrentActivationInfo), false);
 }
 
 FGameplayCueParameters URogueGameplayAbility::MakeCueParams() const
@@ -311,7 +377,7 @@ void URogueGameplayAbility::BeginHold()
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
 
 	UAbilityTask_WaitInputPress* WaitCancel = UAbilityTask_WaitInputPress::WaitInputPress(this);
-	if (!ASC || !WaitCancel)
+	if (!ensure(ASC && WaitCancel))
 	{
 		EndSelf(true);
 		return;
@@ -356,7 +422,7 @@ void URogueGameplayAbility::HandleEquipFinished()
 		/*OnlyTriggerOnce*/ true,
 		/*OnlyMatchExact*/ false);
 
-	if (!WaitUse)
+	if (!ensure(WaitUse))
 	{
 		EndSelf(true);
 		return;
@@ -388,6 +454,11 @@ void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
                                        const FGameplayAbilityActivationInfo ActivationInfo,
                                        bool bReplicateEndAbility, bool bWasCancelled)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(RepeatTimer);
+	}
+
 	if (bHoldTagApplied)
 	{
 		bHoldTagApplied = false;
@@ -399,7 +470,6 @@ void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 		}
 	}
 
-	ActiveEntry = nullptr;
 	ActivePayload = FRogueEffectPayload();
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -509,17 +579,17 @@ const FAugmentGrantedAbility* URogueGameplayAbility::FindGrantedEntry(
 bool URogueGameplayAbility::LoadEffectClasses(const FAugmentGrantedAbility& Entry,
                                               TArray<TSubclassOf<UGameplayEffect>>& OutClasses) const
 {
+	OutClasses.Reset();
 	OutClasses.Reserve(Entry.EffectsToApply.Num());
 
 	for (int32 Index = 0; Index < Entry.EffectsToApply.Num(); ++Index)
 	{
+		UE_CLOG(Entry.EffectsToApply[Index].IsPending(), LogAugmentAbility, Warning,
+			TEXT("[AugmentAbility] %s 가 프리로드되지 않아 동기 로드합니다"), *Entry.EffectsToApply[Index].ToString());
 		UClass* EffectClass = Entry.EffectsToApply[Index].LoadSynchronous();
-		if (!EffectClass)
+		if (!ensureMsgf(EffectClass,
+			TEXT("[AugmentAbility] %s 의 EffectsToApply[%d] 를 로드하지 못했습니다"), *GetName(), Index))
 		{
-			UE_LOG(LogAugmentAbility, Error,
-				TEXT("[AugmentAbility] %s 의 EffectsToApply[%d] 를 로드하지 못했습니다"),
-				*GetName(), Index);
-
 			OutClasses.Reset();
 			return false;
 		}
@@ -564,18 +634,17 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 	OutPayload.FlatDamage = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Damage);
 
 	// GE, 대미지가 둘 다 없으면 효과가 없는 것. 액터를 남기는 계열은 액터가 목적이다
-	if (OutPayload.EffectClasses.IsEmpty() && OutPayload.FlatDamage <= 0.f
-		&& Entry.SpawnActorClass.IsNull())
+	if (!ensureMsgf(!OutPayload.EffectClasses.IsEmpty() || OutPayload.FlatDamage > 0.f
+		|| !Entry.SpawnActorClass.IsNull(),
+		TEXT("[AugmentAbility] %s 를 부여한 계열에 EffectsToApply 도 %s 도 없습니다"),
+		*GetName(), *RogueTags::Data_Magnitude_Damage.GetTag().ToString()))
 	{
-		UE_LOG(LogAugmentAbility, Error,
-			TEXT("[AugmentAbility] %s 를 부여한 계열에 EffectsToApply 도 %s 도 없습니다"),
-			*GetName(), *RogueTags::Data_Magnitude_Damage.GetTag().ToString());
 		return false;
 	}
 
 	if (Entry.TargetScope == ERogueTargetScope::AimSweep)
 	{
-		if (!IsValid(Avatar))
+		if (!ensure(IsValid(Avatar)))
 		{
 			return false;
 		}
@@ -589,12 +658,11 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 		OutPayload.Length    = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Range) * 100.f;
 		OutPayload.Radius    = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Radius) * 100.f;
 
-		if (OutPayload.Length <= 0.f || OutPayload.Radius <= 0.f)
+		if (!ensureMsgf(OutPayload.Length > 0.f && OutPayload.Radius > 0.f,
+			TEXT("[AugmentAbility] %s 가 조준 스윕이지만 레벨 수치에 %s 나 %s 가 없습니다"),
+			*GetName(), *RogueTags::Data_Magnitude_Range.GetTag().ToString(),
+			*RogueTags::Data_Magnitude_Radius.GetTag().ToString()))
 		{
-			UE_LOG(LogAugmentAbility, Warning,
-				TEXT("[AugmentAbility] %s 가 조준 스윕이지만 레벨 수치에 %s 나 %s 가 없습니다"),
-				*GetName(), *RogueTags::Data_Magnitude_Range.GetTag().ToString(),
-				*RogueTags::Data_Magnitude_Radius.GetTag().ToString());
 			return false;
 		}
 
@@ -607,21 +675,18 @@ bool URogueGameplayAbility::BuildEffectPayload(const FAugmentGrantedAbility& Ent
 	}
 
 	const AActor* Center = (Entry.bAreaCentersOnEventTarget && EventTarget) ? EventTarget : Avatar;
-	if (!IsValid(Center))
+	if (!ensureMsgf(IsValid(Center), TEXT("[AugmentAbility] %s 의 범위 중심이 없습니다"), *GetName()))
 	{
-		UE_LOG(LogAugmentAbility, Warning,
-			TEXT("[AugmentAbility] %s 의 범위 중심이 없습니다"), *GetName());
 		return false;
 	}
 
 	OutPayload.Origin = Center->GetActorLocation();
 	OutPayload.Radius = OutPayload.Magnitudes.FindRef(RogueTags::Data_Magnitude_Radius) * 100.f;
 
-	if (OutPayload.Radius <= 0.f)
+	if (!ensureMsgf(OutPayload.Radius > 0.f,
+		TEXT("[AugmentAbility] %s 가 범위 적용이지만 레벨 수치에 %s 가 없습니다"),
+		*GetName(), *RogueTags::Data_Magnitude_Radius.GetTag().ToString()))
 	{
-		UE_LOG(LogAugmentAbility, Warning,
-			TEXT("[AugmentAbility] %s 가 범위 적용이지만 레벨 수치에 %s 가 없습니다"),
-			*GetName(), *RogueTags::Data_Magnitude_Radius.GetTag().ToString());
 		return false;
 	}
 
@@ -643,10 +708,9 @@ float URogueGameplayAbility::PayHealthCost(const FGameplayAbilityActorInfo* Acto
 	const UWorld* World = Avatar ? Avatar->GetWorld() : nullptr;
 
 	URogueDamageSubsystem* Subsystem = World ? World->GetSubsystem<URogueDamageSubsystem>() : nullptr;
-	if (!Subsystem)
+	if (!ensureMsgf(Subsystem,
+		TEXT("[AugmentAbility] %s 가 RogueDamageSubsystem 을 얻지 못해 체력을 지불하지 못했습니다"), *GetName()))
 	{
-		UE_LOG(LogAugmentAbility, Error,
-			TEXT("[AugmentAbility] %s 가 RogueDamageSubsystem 을 얻지 못해 체력을 지불하지 못했습니다"), *GetName());
 		return 0.f;
 	}
 
@@ -703,9 +767,9 @@ bool URogueGameplayAbility::CheckCooldown(const FGameplayAbilitySpecHandle Handl
 	}
 
 	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	if (!ASC)
+	if (!ensure(ASC))
 	{
-		return true;
+		return false;
 	}
 
 	const FGameplayTagContainer CooldownTags(EffectiveCooldownTag);
@@ -793,7 +857,7 @@ void URogueGameplayAbility::ApplyCooldown(const FGameplayAbilitySpecHandle Handl
 		Handle, ActorInfo, ActivationInfo,
 		CooldownEffectClass, Level);
 
-	if (!SpecHandle.IsValid())
+	if (!ensure(SpecHandle.IsValid()))
 	{
 		return;
 	}

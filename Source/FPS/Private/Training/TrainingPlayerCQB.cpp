@@ -1,7 +1,6 @@
 #include "Training/TrainingPlayerComponent.h"
 
 #include "GameFramework/PlayerController.h"
-#include "Input/ShooterInteractionComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/TrainingPlayerController.h"
 #include "Tags/UITags.h"
@@ -55,14 +54,13 @@ bool UTrainingPlayerComponent::TryGetCQBRespawnTransform(FTransform& OutTransfor
 void UTrainingPlayerComponent::OpenCQBStartDialog(ACQBTrainingSpawner& Spawner)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !Spawner.CanInteract(*ParticipantPlayer))
+    if (!ParticipantPlayer || IsAreaTransitionBlockingInput() || !Spawner.CanInteract(*ParticipantPlayer))
     {
         return;
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Start, PendingCQBRequestId, Spawner.StartDialogWidgetClass);
@@ -71,7 +69,7 @@ void UTrainingPlayerComponent::OpenCQBStartDialog(ACQBTrainingSpawner& Spawner)
 void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer
+    if (!ParticipantPlayer || IsAreaTransitionBlockingInput()
         || !Spawner.CanInteract(*ParticipantPlayer)
         || !IsCQBTrainingActiveWith(Spawner))
     {
@@ -79,8 +77,7 @@ void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBSpawner = &Spawner;
     PendingCQBEndActor.Reset();
     ShowCQBDialog(ECQBTrainingDialogKind::Cancel, PendingCQBRequestId, Spawner.GetCancelDialogWidgetClass());
@@ -89,14 +86,13 @@ void UTrainingPlayerComponent::OpenCQBCancelDialog(ACQBTrainingSpawner& Spawner)
 void UTrainingPlayerComponent::OpenCQBEndDialog(ACQBTrainingEndActor& EndActor)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer || !EndActor.CanInteract(*ParticipantPlayer))
+    if (!ParticipantPlayer || IsAreaTransitionBlockingInput() || !EndActor.CanInteract(*ParticipantPlayer))
     {
         return;
     }
 
     CancelCQBDialogRequest(PendingCQBRequestId);
-    RequestSequence = RequestSequence == MAX_int32 ? 1 : RequestSequence + 1;
-    PendingCQBRequestId = RequestSequence;
+    PendingCQBRequestId = AllocateRequestId();
     PendingCQBEndActor = &EndActor;
     PendingCQBSpawner = EndActor.Spawner;
     ShowCQBDialog(ECQBTrainingDialogKind::End, PendingCQBRequestId, EndActor.EndDialogWidgetClass);
@@ -182,12 +178,11 @@ void UTrainingPlayerComponent::ClearPendingCQBRequest()
 
 bool UTrainingPlayerComponent::ValidatePendingCQBRequest(const int32 RequestId, FText& OutFailure) const
 {
-    const UShooterInteractionComponent* Interaction = GetOwner()->FindComponentByClass<UShooterInteractionComponent>();
     const AActor* Candidate = PendingCQBEndActor.IsValid()
         ? static_cast<const AActor*>(PendingCQBEndActor.Get())
         : static_cast<const AActor*>(PendingCQBSpawner.Get());
     if (RequestId <= 0 || RequestId != PendingCQBRequestId || !Candidate
-        || !Interaction || !Interaction->CanReachInteractable(Candidate))
+        || !CanReachPendingTrainingActor(Candidate))
     {
         OutFailure = LOCTEXT("CQBExpired", "This CQB request is no longer valid. Interact again.");
         return false;
@@ -336,79 +331,6 @@ void UTrainingPlayerComponent::NotifyCQBStartRequestResolved(
 
     if (bSuccess)
     {
-        ClearPendingCQBRequest();
-    }
-    ResolveCQBRequest(RequestId, bSuccess, Failure);
-}
-
-void UTrainingPlayerComponent::SubmitCQBReturnToOrigin(const int32 RequestId)
-{
-    FText Failure;
-    if (!ValidatePendingCQBRequest(RequestId, Failure) || PendingCQBEndActor.IsValid()
-        || IsCQBTrainingActive())
-    {
-        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
-            ? LOCTEXT("CQBReturnWrongDialog", "Return is only available before CQB starts.") : Failure);
-        return;
-    }
-
-    const bool bSuccess = TeleportToSavedPreTrainingPosition(Failure, true);
-    if (bSuccess)
-    {
-        ClearPendingCQBRequest();
-    }
-    ResolveCQBRequest(RequestId, bSuccess, Failure);
-}
-
-void UTrainingPlayerComponent::SubmitCQBEndToStart(const int32 RequestId)
-{
-    FText Failure;
-    if (!ValidatePendingCQBRequest(RequestId, Failure) || !PendingCQBSpawner.IsValid()
-        || !PendingCQBEndActor.IsValid() || !PendingCQBSpawner->IsTrainingComplete())
-    {
-        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
-            ? LOCTEXT("CQBEndUnavailable", "CQB completion is no longer available.") : Failure);
-        return;
-    }
-
-    ACQBTrainingPlayerSpawnPoint* StartPoint = PendingCQBSpawner->GetPlayerStartPoint();
-    if (!StartPoint) StartPoint = ReturnCQBEntryPoint.Get();
-    if (!StartPoint)
-    {
-        ResolveCQBRequest(RequestId, false,
-            LOCTEXT("CQBStartPointMissing", "Assign a CQB Training Player Spawn Point to the spawner."));
-        return;
-    }
-
-    const FTransform Destination = StartPoint->GetActorTransform();
-    const bool bSuccess = TeleportParticipant(Destination, Destination.Rotator());
-    if (bSuccess)
-    {
-        PendingCQBSpawner->FinishTrainingAndReset();
-        ClearPendingCQBRequest();
-    }
-    else
-    {
-        Failure = LOCTEXT("CQBStartBlocked", "The CQB start point is blocked.");
-    }
-    ResolveCQBRequest(RequestId, bSuccess, Failure);
-}
-
-void UTrainingPlayerComponent::SubmitCQBEndToOrigin(const int32 RequestId)
-{
-    FText Failure;
-    if (!ValidatePendingCQBRequest(RequestId, Failure) || !PendingCQBSpawner.IsValid()
-        || !PendingCQBEndActor.IsValid() || !PendingCQBSpawner->IsTrainingComplete())
-    {
-        ResolveCQBRequest(RequestId, false, Failure.IsEmpty()
-            ? LOCTEXT("CQBEndOriginUnavailable", "CQB completion is no longer available.") : Failure);
-        return;
-    }
-
-    const bool bSuccess = TeleportToSavedPreTrainingPosition(Failure, true);
-    if (bSuccess)
-    {
-        PendingCQBSpawner->FinishTrainingAndReset();
         ClearPendingCQBRequest();
     }
     ResolveCQBRequest(RequestId, bSuccess, Failure);

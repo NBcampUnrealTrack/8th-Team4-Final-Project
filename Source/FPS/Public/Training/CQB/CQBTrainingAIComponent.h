@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Interfaces/RogueCombatFeedbackPolicy.h"
+#include "Training/CQB/CQBTrainingAwarenessTypes.h"
+#include "Training/CQB/CQBTrainingTacticalTypes.h"
 #include "CQBTrainingAIComponent.generated.h"
 
 class AActor;
@@ -81,7 +83,13 @@ struct FPS_API FCQBPatrolSettings
     float InvestigateTimeoutSeconds = 5.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Patrol", meta = (ClampMin = "0.5", Units = "s"))
-    float SearchDurationSeconds = 4.0f;
+    float SearchDurationSeconds = 10.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Patrol", meta = (ClampMin = "2", ClampMax = "4"))
+    int32 SearchPointCount = 3;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Patrol", meta = (ClampMin = "100.0", Units = "cm"))
+    float SearchRadius = 350.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Patrol", meta = (ClampMin = "0.1", Units = "s"))
     float SearchScanIntervalSeconds = 0.75f;
@@ -121,6 +129,23 @@ struct FPS_API FCQBPerceptionSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Perception", meta = (ClampMin = "0.1", Units = "s"))
     float HearingMaxAgeSeconds = 2.5f;
+
+    float GetMaximumHearingRange() const
+    {
+        return FMath::Max(100.0f, FMath::Max(FMath::Max(HearingRange, FootstepHearingRange),
+            FMath::Max(LandingHearingRange, GunshotHearingRange)));
+    }
+
+    float GetHearingRangeForTag(const FName NoiseTag) const
+    {
+        if (NoiseTag == TEXT("Gunshot") || NoiseTag == TEXT("CQB_AI_Gunshot"))
+        {
+            return FMath::Max(0.0f, GunshotHearingRange);
+        }
+        if (NoiseTag == TEXT("Landing")) { return FMath::Max(0.0f, LandingHearingRange); }
+        if (NoiseTag == TEXT("Footstep")) { return FMath::Max(0.0f, FootstepHearingRange); }
+        return FMath::Max(0.0f, HearingRange);
+    }
 };
 
 USTRUCT(BlueprintType)
@@ -232,9 +257,6 @@ struct FPS_API FCQBCombatSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Combat", meta = (ClampMin = "0.0", Units = "cm"))
     float GunshotNoiseMaxRange = 567.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Combat")
-    bool bDrawDebugShots = false;
 };
 
 UCLASS(ClassGroup = (Training), meta = (BlueprintSpawnableComponent, DisplayName = "CQB Training AI"))
@@ -271,6 +293,12 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Settings")
     FCQBCombatSettings CombatSettings;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Settings")
+    FCQBAwarenessSettings AwarenessSettings;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Settings")
+    FCQBTacticalSettings TacticalSettings;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Presentation")
     TObjectPtr<USoundBase> FireSound;

@@ -5,6 +5,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Training/TrainingTypes.h"
 #include "Training/TrainingModeDefinition.h"
+#include "Training/TrainingAreaTransitionTypes.h"
 #include "TrainingSettings.generated.h"
 
 class UTrainingDamageFeedbackWidget;
@@ -18,9 +19,16 @@ class FPS_API UTrainingSettings : public UDeveloperSettings
 public:
     UTrainingSettings();
 
+    UPROPERTY(Config, EditAnywhere, Category = "Area Transition")
+    FTrainingAreaTransitionStyle AreaTransition;
+
+    UPROPERTY(Config, EditAnywhere, Category = "Area Transition", meta = (TitleProperty = "Title"))
+    TMap<FName, FTrainingAreaTitle> AreaTitles;
+
     float GetMinDistanceMeters() const { return FMath::Max(1.0f, MinDistanceMeters); }
     float GetMaxDistanceMeters() const { return FMath::Max(GetMinDistanceMeters(), MaxDistanceMeters); }
     float GetCountdownSeconds() const { return FMath::Max(0.0f, CountdownSeconds); }
+    float GetMovementRadiusCentimeters() const { return FMath::Max(50.0f, MovementRadiusCentimeters); }
 
     UPROPERTY(Config, EditAnywhere, Category = "Distance", meta = (ClampMin = "1.0", Units = "m"))
     float MinDistanceMeters = 5.0f;

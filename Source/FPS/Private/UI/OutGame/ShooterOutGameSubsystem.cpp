@@ -168,7 +168,7 @@ float UShooterOutGameSubsystem::ResolveMusicComponentVolume() const
 	// 정상 설정이면 Music SoundClass/SoundMix를 사용하고, 누락 시 컴포넌트 볼륨으로 보정한다.
 	return bHasMusicClass && bHasUserMix
 		? 1.0f
-		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 2.0f);
 }
 
 void UShooterOutGameSubsystem::HandleSeamlessTravelStart(UWorld* DepartingWorld, const FString& DestinationMap)

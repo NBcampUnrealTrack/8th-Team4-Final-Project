@@ -34,6 +34,7 @@ public:
     int32 GetSessionId() const { return FeedbackSessionId; }
 
 private:
+    void ClearSessionHUD();
     UTrainingDamageFeedbackWidget* EnsureDamageFeedbackWidget();
     void PresentDamage(float Damage, bool bKilled, const FVector& WorldPosition);
 
@@ -53,4 +54,5 @@ private:
 
     int32 FeedbackSessionId = 0;
     bool bCQBHUD = false;
+    bool bDamageFeedbackSetupErrorReported = false;
 };

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingAreaTransitionTypes.h"
 #include "TrainingArena.generated.h"
 
 class ATrainingTarget;
@@ -19,6 +20,9 @@ class FPS_API ATrainingArena : public AActor
 
 public:
     ATrainingArena();
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Area Transition")
+    FName AreaId = TrainingAreaIds::Arena;
 
     UFUNCTION(BlueprintPure, Category = "Training")
     FVector GetCenterLocation() const;
@@ -70,6 +74,9 @@ public:
 
     UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1.0", Units = "cm"))
     float GroundProbeDownCentimeters = 2000.0f;
+
+    UPROPERTY(EditAnywhere, Category = "Training|Placement", meta = (ClampMin = "1", ClampMax = "64"))
+    int32 SpawnSearchAttempts = 16;
 
     UPROPERTY(EditAnywhere, Category = "Training|Placement")
     FVector NavigationProjectionExtent = FVector(100.0, 100.0, 300.0);

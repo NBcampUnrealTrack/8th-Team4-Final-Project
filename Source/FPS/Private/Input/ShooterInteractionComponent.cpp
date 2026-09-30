@@ -233,10 +233,15 @@ void UShooterInteractionComponent::SetInteractionPromptZOrder(const int32 InZOrd
 bool UShooterInteractionComponent::CanReachInteractable(const AActor* Candidate) const
 {
     const AShooterPlayerController* Player = Cast<AShooterPlayerController>(GetOwner());
+    return Player && Player->CanProcessActionInput() && CanReachAcceptedInteractable(Candidate);
+}
+
+bool UShooterInteractionComponent::CanReachAcceptedInteractable(const AActor* Candidate) const
+{
+    const AShooterPlayerController* Player = Cast<AShooterPlayerController>(GetOwner());
     const IRogueInteractable* Interactable = Cast<IRogueInteractable>(Candidate);
     if (!Player || !Player->GetPawn() || !IsValid(Candidate) || !Interactable
-        || Candidate->GetWorld() != GetWorld() || !Player->CanProcessActionInput()
-        || !Interactable->CanInteract(*Player))
+        || Candidate->GetWorld() != GetWorld() || !Interactable->CanInteract(*Player))
     {
         return false;
     }

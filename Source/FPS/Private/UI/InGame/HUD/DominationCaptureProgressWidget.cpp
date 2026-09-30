@@ -1,4 +1,4 @@
-#include "UI/InGame/HUD/DominationCaptureProgressWidget.h"
+﻿#include "UI/InGame/HUD/DominationCaptureProgressWidget.h"
 
 #include "Actor/DominationCapturePoint.h"
 #include "EngineUtils.h"
@@ -54,6 +54,11 @@ void UDominationCaptureProgressWidget::NativeConstruct()
 
 void UDominationCaptureProgressWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	if (ADominationGameState* DominationGameState = BoundGameState.Get())
 	{
 		DominationGameState->OnActivePointChanged.RemoveDynamic(

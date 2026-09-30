@@ -1,4 +1,5 @@
-#include "Training/AI/TrainingStrafeTask.h"
+﻿#include "Training/AI/TrainingStrafeTask.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
@@ -29,6 +30,7 @@ EStateTreeRunStatus FTrainingStrafeTask::EnterState(FStateTreeExecutionContext& 
 
 EStateTreeRunStatus FTrainingStrafeTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TrainingStrafeTask_Tick);
     FInstanceDataType& Data = Context.GetInstanceData(*this);
     ATrainingCombatAIController* TrainingController = Cast<ATrainingCombatAIController>(Data.AIController);
     const ATrainingCombatAI* TrainingPawn = TrainingController

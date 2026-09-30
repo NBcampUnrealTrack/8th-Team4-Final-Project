@@ -10,6 +10,7 @@
 #include "Session/SessionSubSystem.h"
 #include "UI/Foundation/ShooterButtonBase.h"
 #include "UI/OutGame/Room/ShooterRoomTypes.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 namespace ShooterCreateRoomDialogLimits
 {
@@ -85,10 +86,28 @@ void UShooterCreateRoomDialog::HandleConfirmClicked()
 	const FString RoomName = FShooterRoomRules::SanitizeRoomName(
 		TextBox_RoomName->GetText().ToString(),
 		GetLocalPlayerName());
+	const int32 MaxPlayers = GetSelectedMaxPlayers();
 
 	// 상태부터 바꾸고 호출. 실패는 CreateRoom 안에서 즉시 돌아옴
 	SetBusy(true, NSLOCTEXT("ShooterLobby", "CreatingRoom", "방 만드는 중"));
-	Session->CreateRoom(GetSelectedMaxPlayers(), RoomName, TEXT("DominationMap"), TEXT("Domination"));
+
+	// 방장은 요청한 그 프레임에 맵 로드로 멈춘다. 다 덮은 뒤에 요청한다
+	const FSimpleDelegate Request = FSimpleDelegate::CreateWeakLambda(
+		Session,
+		[Session, MaxPlayers, RoomName]()
+		{
+			Session->CreateRoom(MaxPlayers, RoomName, TEXT("DominationMap"), TEXT("Domination"));
+		});
+
+	UGameInstance* GameInstance = GetGameInstance();
+	UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr;
+	if (!Transition || !Transition->BeginTransition(Request))
+	{
+		// 덮개가 없으면 지금처럼 바로 요청한다
+		Request.ExecuteIfBound();
+	}
 }
 
 void UShooterCreateRoomDialog::HandleCancelClicked()
@@ -111,6 +130,15 @@ void UShooterCreateRoomDialog::HandleCreateRoomComplete(const bool bWasSuccessfu
 	if (bWasSuccessful)
 	{
 		return;
+	}
+
+	// 덮은 채 실패했다. 도착지가 없으니 연 쪽이 걷는다
+	UGameInstance* GameInstance = GetGameInstance();
+	if (UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr)
+	{
+		Transition->EndTransition();
 	}
 
 	SetBusy(false, NSLOCTEXT("ShooterLobby", "CreateRoomFailed", "방을 만들지 못했습니다"));

@@ -1,4 +1,4 @@
-#include "UI/InGame/HUD/DominationSiteTrackerWidget.h"
+﻿#include "UI/InGame/HUD/DominationSiteTrackerWidget.h"
 
 #include "Actor/DominationCapturePoint.h"
 #include "EngineUtils.h"
@@ -45,6 +45,11 @@ void UDominationSiteTrackerWidget::NativeConstruct()
 
 void UDominationSiteTrackerWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	if (ADominationGameState* DominationGameState = BoundGameState.Get())
 	{
 		DominationGameState->OnActivePointChanged.RemoveDynamic(this, &ThisClass::HandleActivePointChanged);

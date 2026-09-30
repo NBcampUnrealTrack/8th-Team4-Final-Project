@@ -93,7 +93,7 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 
 		for (const TSubclassOf<UGameplayEffect>& EffectClass : Payload.EffectClasses)
 		{
-			if (!EffectClass)
+			if (!ensure(EffectClass))
 			{
 				continue;
 			}
@@ -106,10 +106,9 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 			const FGameplayEffectSpecHandle SpecHandle =
 				SourceASC->MakeOutgoingSpec(EffectClass, Payload.Level, Context);
 
-			if (!SpecHandle.IsValid())
+			if (!ensureMsgf(SpecHandle.IsValid(),
+				TEXT("[EffectApplier] %s 스펙 생성에 실패했습니다"), *GetNameSafe(EffectClass)))
 			{
-				UE_LOG(LogEffectApplier, Error,
-					TEXT("[EffectApplier] %s 스펙 생성에 실패했습니다"), *GetNameSafe(EffectClass));
 				continue;
 			}
 
@@ -136,11 +135,15 @@ void URogueEffectApplier::Apply(const FRogueEffectPayload& Payload)
 void URogueEffectApplier::ApplyDamage(const FRogueEffectPayload& Payload,
                                       AActor* Instigator, AActor* TargetActor)
 {
-	const UWorld* World = IsValid(TargetActor) ? TargetActor->GetWorld() : nullptr;
-	URogueDamageSubsystem* Subsystem = World ? World->GetSubsystem<URogueDamageSubsystem>() : nullptr;
-	if (!Subsystem)
+	if (!IsValid(TargetActor))
 	{
-		UE_LOG(LogEffectApplier, Error, TEXT("[EffectApplier] RogueDamageSubsystem 을 얻지 못했습니다"));
+		return;
+	}
+
+	const UWorld* World = TargetActor->GetWorld();
+	URogueDamageSubsystem* Subsystem = World ? World->GetSubsystem<URogueDamageSubsystem>() : nullptr;
+	if (!ensureMsgf(Subsystem, TEXT("[EffectApplier] RogueDamageSubsystem 을 얻지 못했습니다")))
+	{
 		return;
 	}
 
@@ -174,7 +177,7 @@ void URogueEffectApplier::SplitIntoIntegerTicks(const FGameplayEffectSpecHandle&
                                                 UClass* EffectClass, const int32 Level)
 {
 	const UGameplayEffect* EffectCDO = EffectClass ? EffectClass->GetDefaultObject<UGameplayEffect>() : nullptr;
-	if (!EffectCDO)
+	if (!ensure(EffectCDO))
 	{
 		return;
 	}
@@ -193,11 +196,10 @@ void URogueEffectApplier::SplitIntoIntegerTicks(const FGameplayEffectSpecHandle&
 	const float TargetDuration =
 		SpecHandle.Data->GetSetByCallerMagnitude(RogueTags::Data_Magnitude_Duration, false, 0.f);
 
-	if (TotalAmount <= 0.f || TargetDuration <= 0.f)
+	if (!ensureMsgf(TotalAmount > 0.f && TargetDuration > 0.f,
+		TEXT("[EffectApplier] %s 를 틱으로 나누지 못했습니다. ")
+		TEXT("레벨 수치에 Primary 와 Duration 이 있는지 확인하세요"), *GetNameSafe(EffectClass)))
 	{
-		UE_LOG(LogEffectApplier, Warning,
-			TEXT("[EffectApplier] %s 를 틱으로 나누지 못했습니다. ")
-			TEXT("레벨 수치에 Primary 와 Duration 이 있는지 확인하세요"), *GetNameSafe(EffectClass));
 		return;
 	}
 

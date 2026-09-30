@@ -5,6 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingAreaTransitionTypes.h"
 #include "Training/TrainingModeDefinition.h"
 #include "Training/TrainingLoadoutSnapshot.h"
 #include "Training/UI/TrainingPlayerPresentation.h"
@@ -12,6 +13,7 @@
 #include "TrainingPlayerComponent.generated.h"
 
 class APlayerController;
+class UTrainingAreaTransition;
 class UAugmentInventoryComponent;
 class ATrainingInteractionActor;
 class ATrainingArena;
@@ -38,6 +40,8 @@ class FPS_API UTrainingPlayerComponent : public UActorComponent, public IRogueCo
 public:
     UTrainingPlayerComponent();
     void ResetTrainingState();
+    bool IsAreaTransitionBlockingInput() const;
+    void CancelAreaTransition();
     void HandleParticipantDeath();
     void NotifyMessage(const FText& Message);
     void OpenDialogFor(ATrainingInteractionActor& Interactable);
@@ -127,19 +131,29 @@ protected:
 
 private:
     friend class UTrainingPlayerPresentation;
+    int32 AllocateRequestId();
     APlayerController* GetParticipantController() const;
     UAugmentInventoryComponent* GetAugmentInventory() const;
     FTrainingLoadoutSnapshot BuildLoadoutSnapshot() const;
     bool ValidateLoadoutRequest(int32 RequestId, FText& OutFailure) const;
     UShooterUIManagerSubsystem* GetUIManager() const;
     bool ValidatePendingRequest(int32 RequestId, FText& OutFailure) const;
+    bool CanReachPendingTrainingActor(const AActor* Candidate) const;
     void ClearPendingRequest();
     void CloseActiveDialog();
     void CloseResults(bool bPlayCloseSound = false);
     void HandleWorldLeaving(UWorld* DepartingWorld);
     void HandleSeamlessTravel(UWorld* DepartingWorld, const FString& Destination);
     bool TeleportParticipant(const FTransform& Destination, const FRotator& TargetControlRotation);
-    bool TeleportToSavedPreTrainingPosition(FText& OutFailure, bool bClearSavedPosition);
+    bool TeleportToSavedPreTrainingPosition(FText& OutFailure);
+    void ClearSavedTrainingPosition();
+    void BeginAreaTransition(FName AreaId, FTrainingAreaMove Move, FTrainingAreaMoveResolved Resolved);
+    bool ResolveTrainingDestination(int32 RequestId, ETrainingDestination Destination,
+        FTransform& OutTransform, FName& OutAreaId, FText& OutFailure) const;
+    bool ValidateArenaReturnRequest(int32 RequestId, FText& OutFailure) const;
+    bool ValidateCQBMoveRequest(int32 RequestId, bool bRequireComplete, FText& OutFailure) const;
+    ACQBTrainingPlayerSpawnPoint* ResolveCQBReturnStart(int32 RequestId, FText& OutFailure) const;
+    void BeginCQBReturnToSavedPosition(int32 RequestId, bool bRequireComplete);
     void CloseActiveCQBDialog();
     void ClearPendingCQBRequest();
     bool ValidatePendingCQBRequest(int32 RequestId, FText& OutFailure) const;
@@ -169,6 +183,9 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<UTrainingPlayerPresentation> Presentation;
 
+    UPROPERTY(Transient)
+    TObjectPtr<UTrainingAreaTransition> AreaTransition;
+
     TWeakObjectPtr<UTrainingResultsWidget> ResultsWidget;
     int32 LastStoppedSessionId = 0;
 
@@ -192,6 +209,7 @@ private:
     FTransform PreTrainingTransform = FTransform::Identity;
     FRotator PreTrainingControlRotation = FRotator::ZeroRotator;
     bool bHasPreTrainingTransform = false;
+    FName PreTrainingAreaId;
 
     FDelegateHandle WorldTearDownHandle;
     FDelegateHandle SeamlessTravelHandle;

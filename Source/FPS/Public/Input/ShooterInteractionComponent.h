@@ -23,6 +23,8 @@ public:
 
     bool TryInteract();
     bool CanReachInteractable(const AActor* Candidate) const;
+    // 이미 수락한 비동기 작업의 거리/시야/대상 상태만 재검증합니다.
+    bool CanReachAcceptedInteractable(const AActor* Candidate) const;
     void RegisterProximityInteractable(AActor* Candidate);
     void UnregisterProximityInteractable(AActor* Candidate);
     void SetInteractionPromptWidgetClass(TSubclassOf<UUserWidget> InWidgetClass);

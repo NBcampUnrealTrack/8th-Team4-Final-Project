@@ -23,7 +23,7 @@ enum class EDominationSlotState : uint8
 /**
  * 클래스 선택 화면 좌측의 팀원 슬롯
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UDominationPlayerSlot : public UCommonUserWidget
 {
 	GENERATED_BODY()

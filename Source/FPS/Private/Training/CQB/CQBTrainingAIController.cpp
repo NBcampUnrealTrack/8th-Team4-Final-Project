@@ -1,4 +1,4 @@
-#include "Training/CQB/CQBTrainingAIController.h"
+﻿#include "Training/CQB/CQBTrainingAIController.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -19,6 +19,7 @@
 #include "TimerManager.h"
 #include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Training/CQB/CQBTrainingAwarenessComponent.h"
+#include "Training/CQB/CQBCombatIncidentSubsystem.h"
 #include "Training/CQB/CQBTrainingCombatComponent.h"
 #include "Training/CQB/CQBTrainingInvestigationComponent.h"
 #include "Training/CQB/CQBTrainingLocomotionComponent.h"
@@ -37,21 +38,22 @@ ACQBTrainingAIController::ACQBTrainingAIController()
     CQBPerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("CQBPerception"));
     SetPerceptionComponent(*CQBPerceptionComponent);
 
+    const FCQBPerceptionSettings DefaultPerception;
     SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("CQBSightConfig"));
-    SightConfig->SightRadius = 2200.0f;
-    SightConfig->LoseSightRadius = 2500.0f;
-    SightConfig->PeripheralVisionAngleDegrees = 75.0f;
+    SightConfig->SightRadius = DefaultPerception.SightRadius;
+    SightConfig->LoseSightRadius = DefaultPerception.LoseSightRadius;
+    SightConfig->PeripheralVisionAngleDegrees = DefaultPerception.PeripheralVisionAngleDegrees;
     SightConfig->DetectionByAffiliation.bDetectEnemies = true;
     SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
     SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
-    SightConfig->SetMaxAge(1.2f);
+    SightConfig->SetMaxAge(DefaultPerception.SightMaxAgeSeconds);
 
     HearingConfig = CreateDefaultSubobject<UAISenseConfig_Hearing>(TEXT("CQBHearingConfig"));
-    HearingConfig->HearingRange = 600.0f;
+    HearingConfig->HearingRange = DefaultPerception.GetMaximumHearingRange();
     HearingConfig->DetectionByAffiliation.bDetectEnemies = true;
     HearingConfig->DetectionByAffiliation.bDetectFriendlies = true;
     HearingConfig->DetectionByAffiliation.bDetectNeutrals = true;
-    HearingConfig->SetMaxAge(2.5f);
+    HearingConfig->SetMaxAge(DefaultPerception.HearingMaxAgeSeconds);
 
     CQBPerceptionComponent->ConfigureSense(*SightConfig);
     CQBPerceptionComponent->ConfigureSense(*HearingConfig);
@@ -59,6 +61,7 @@ ACQBTrainingAIController::ACQBTrainingAIController()
 
     CQBStateTreeComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("CQBStateTree"));
     CQBStateTreeComponent->SetStartLogicAutomatically(false);
+    CQBStateTreeComponent->PrimaryComponentTick.bStartWithTickEnabled = false;
     BrainComponent = CQBStateTreeComponent;
 
     AwarenessComponent = CreateDefaultSubobject<UCQBTrainingAwarenessComponent>(TEXT("CQBAwareness"));
@@ -70,6 +73,7 @@ ACQBTrainingAIController::ACQBTrainingAIController()
 
 void ACQBTrainingAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(DeathShutdownTimer);
@@ -158,7 +162,9 @@ bool ACQBTrainingAIController::StartCQBBrain()
         return false;
     }
 
+    AwarenessComponent->StopListening();
     CQBStateTreeComponent->StopLogic(TEXT("CQB brain restart"));
+    CQBStateTreeComponent->SetComponentTickEnabled(false);
     UStateTree* StateTree = Config->BehaviorStateTree;
     if (!IsValid(StateTree) || !StateTree->IsReadyToRun())
     {
@@ -169,21 +175,26 @@ bool ACQBTrainingAIController::StartCQBBrain()
     }
 
     CQBStateTreeComponent->SetStateTree(StateTree);
+    CQBStateTreeComponent->SetComponentTickEnabled(true);
     CQBStateTreeComponent->StartLogic();
     if (!CQBStateTreeComponent->IsRunning())
     {
+        StopCQBBrain();
         UE_LOG(LogCQBTrainingAI, Warning,
             TEXT("%s: StateTree failed to start."), *GetNameSafe(Config));
         return false;
     }
+    AwarenessComponent->StartListening();
     return true;
 }
 
 void ACQBTrainingAIController::StopCQBBrain()
 {
+    AwarenessComponent->StopListening();
     if (CQBStateTreeComponent)
     {
         CQBStateTreeComponent->StopLogic(TEXT("CQB stopped"));
+        CQBStateTreeComponent->SetComponentTickEnabled(false);
     }
     if (PatrolComponent)
     {
@@ -235,7 +246,7 @@ bool ACQBTrainingAIController::RefreshFromPawnConfiguration()
         Movement->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
     }
 
-    AwarenessComponent->ResetRuntimeState();
+    AwarenessComponent->Configure(*Config);
     LocomotionComponent->Configure(Config->PatrolSettings);
     InvestigationComponent->Configure(*Config, *AwarenessComponent, *LocomotionComponent);
     CombatComponent->Configure(*Config, *AwarenessComponent, *LocomotionComponent);
@@ -305,7 +316,8 @@ void ACQBTrainingAIController::ConfigurePerceptionFromPawn()
         Settings.PeripheralVisionAngleDegrees, 10.0f, 180.0f);
     SightConfig->SetMaxAge(FMath::Max(0.1f, Settings.SightMaxAgeSeconds));
 
-    HearingConfig->HearingRange = FMath::Max(100.0f, Settings.HearingRange);
+    // 개별 소리 범위가 전체 감지 반경에서 먼저 잘리지 않도록 한다.
+    HearingConfig->HearingRange = Settings.GetMaximumHearingRange();
     HearingConfig->SetMaxAge(FMath::Max(0.1f, Settings.HearingMaxAgeSeconds));
 
     CQBPerceptionComponent->ConfigureSense(*SightConfig);
@@ -322,29 +334,14 @@ bool ACQBTrainingAIController::IsHearingStimulusInRange(const FAIStimulus& Stimu
         return false;
     }
 
-    const FCQBPerceptionSettings& Settings = Config->PerceptionSettings;
-    float MaxRange = FMath::Max(0.0f, Settings.HearingRange);
-    if (Stimulus.Tag == TEXT("Gunshot") || Stimulus.Tag == TEXT("CQB_AI_Gunshot"))
-    {
-        MaxRange = FMath::Max(0.0f, Settings.GunshotHearingRange);
-    }
-    else if (Stimulus.Tag == TEXT("Landing"))
-    {
-        MaxRange = FMath::Max(0.0f, Settings.LandingHearingRange);
-    }
-    else if (Stimulus.Tag == TEXT("Footstep"))
-    {
-        MaxRange = FMath::Max(0.0f, Settings.FootstepHearingRange);
-    }
+    const float MaxRange = Config->PerceptionSettings.GetHearingRangeForTag(Stimulus.Tag);
 
     if (MaxRange <= 0.0f)
     {
         return false;
     }
 
-    const FVector NoiseLocation = Stimulus.StimulusLocation.IsNearlyZero()
-        ? Stimulus.ReceiverLocation
-        : Stimulus.StimulusLocation;
+    const FVector NoiseLocation = Stimulus.StimulusLocation;
     return FVector::DistSquared(ControlledPawn->GetActorLocation(), NoiseLocation)
         <= FMath::Square(MaxRange);
 }
@@ -383,7 +380,7 @@ void ACQBTrainingAIController::HandleTargetPerceptionUpdated(
         {
             AwarenessComponent->RecordSightLost(
                 *Actor,
-                Actor->GetActorLocation(),
+                AwarenessComponent->GetLastSeenLocation(),
                 Config->PatrolSettings.SearchDurationSeconds,
                 Now);
         }
@@ -395,9 +392,7 @@ void ACQBTrainingAIController::HandleTargetPerceptionUpdated(
         && IsCombatTargetValid(Actor)
         && IsHearingStimulusInRange(Stimulus))
     {
-        const FVector NoiseLocation = Stimulus.StimulusLocation.IsNearlyZero()
-            ? Actor->GetActorLocation()
-            : Stimulus.StimulusLocation;
+        const FVector NoiseLocation = Stimulus.StimulusLocation;
         AwarenessComponent->RecordNoiseHeard(
             *Actor,
             NoiseLocation,
@@ -437,7 +432,7 @@ void ACQBTrainingAIController::UnbindHealthEvents()
 
 void ACQBTrainingAIController::HandlePawnDamageTaken(
     const AActor* InstigatorActor,
-    FVector)
+    const FVector Direction)
 {
     if (!IsControlledPawnAlive())
     {
@@ -456,15 +451,14 @@ void ACQBTrainingAIController::HandlePawnDamageTaken(
 
     UCQBTrainingAIComponent* CurrentConfig = GetCQBComponent();
     UWorld* World = GetWorld();
-    AActor* ThreatActor = const_cast<AActor*>(InstigatorActor);
-    if (!CurrentConfig || !World || !IsValid(ThreatActor))
+    if (!CurrentConfig || !World)
     {
         return;
     }
 
-    AwarenessComponent->RecordDamageThreat(
-        *ThreatActor,
-        ThreatActor->GetActorLocation(),
+    AwarenessComponent->RecordDirectionalDamage(
+        CurrentConfig->GetActorLocation(),
+        Direction,
         CurrentConfig->CombatSettings.DamageThreatMemorySeconds,
         CurrentConfig->PatrolSettings.SearchDurationSeconds,
         World->GetTimeSeconds());
@@ -472,8 +466,21 @@ void ACQBTrainingAIController::HandlePawnDamageTaken(
 
 void ACQBTrainingAIController::HandlePawnDeathStateChanged(const bool bIsDead)
 {
-    if (bIsDead)
+    if (bIsDead && !bDeathShutdownStarted)
     {
+        UCQBTrainingAIComponent* Config = GetCQBComponent();
+        APawn* Victim = GetPawn();
+        if (Config && Victim && BoundHealthComponent && Config->GetTrainingSpawner())
+        {
+            FCQBCombatIncident Incident;
+            Incident.Origin = Victim->GetActorLocation();
+            // The normal damage delegate arrives after death; use this lethal effect's retained direction.
+            Incident.ThreatDirection = -FVector(BoundHealthComponent->GetDeathReaction().Direction);
+            Incident.Timestamp = GetWorld()->GetTimeSeconds();
+            Incident.SourceActor = Victim;
+            Incident.Encounter = Config->GetTrainingSpawner();
+            GetWorld()->GetSubsystem<UCQBCombatIncidentSubsystem>()->ReportIncident(Incident);
+        }
         BeginDeathShutdown();
     }
 }
