@@ -329,6 +329,19 @@ void UShooterMapWidget::HandleMapBoundsChanged(AShooterMinimapBounds* NewBounds)
 	BoundMapBounds = NewBounds;
 	ApplyBackgroundTexture();
 
+	// 기준 액터가 없는 레벨(훈련장 등)은 같은 HUD를 써도 맵 UI를 띄우지 않는다.
+	if (MapMode == EShooterMapMode::FullMap)
+	{
+		if (NewBounds == nullptr && BoundPlayerController.IsValid())
+		{
+			BoundPlayerController->SetFullMapOpen(false);
+		}
+	}
+	else
+	{
+		SetVisibility(NewBounds ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	// 기준이 바뀌면 이전 기준으로 계산한 핑 좌표는 의미가 없다.
 	ClearAllPings();
 	RefreshMarkers();

@@ -40,6 +40,7 @@
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
+#include "Minimap/ShooterMinimapSubsystem.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
@@ -2150,8 +2151,9 @@ void AShooterPlayerController::Input_ToggleFullMap()
 
 void AShooterPlayerController::SetFullMapOpen(const bool bOpen)
 {
-	// 전체 맵 위젯이 없는 HUD(훈련장 등)에서 보이지 않는 맵이 "열림"으로 남아 ESC를 한 번 먹는 걸 막는다.
-	const bool bNewOpen = bOpen && OnFullMapOpenChanged.IsBound();
+	// 전체 맵 위젯이 없거나 맵 기준 액터가 없는 레벨(훈련장 등)에서 보이지 않는 맵이 "열림"으로 남아 ESC를 한 번 먹는 걸 막는다.
+	const UShooterMinimapSubsystem* MinimapSubsystem = UShooterMinimapSubsystem::Get(this);
+	const bool bNewOpen = bOpen && OnFullMapOpenChanged.IsBound() && MinimapSubsystem && MinimapSubsystem->GetMapBounds();
 	if (bFullMapOpen == bNewOpen)
 	{
 		return;
