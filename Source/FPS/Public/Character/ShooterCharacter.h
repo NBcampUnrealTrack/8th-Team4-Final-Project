@@ -42,6 +42,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
     virtual void UnPossessed() override;
@@ -133,6 +134,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	FVector StandingCameraRelativeLocation = FVector::ZeroVector;
+	bool bInterpolatingCrouchCamera = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Avatar")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
