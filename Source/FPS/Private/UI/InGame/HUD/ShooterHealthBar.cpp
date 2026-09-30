@@ -5,6 +5,7 @@
 #include "Components/Image.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
+#include "UI/Common/ShooterGauge.h"
 #include "UI/InGame/HUD/ShooterVitalBar.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterHealthBar, Log, All);
@@ -29,11 +30,17 @@ void UShooterHealthBar::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 		URogueVitalAttributeSet::GetShieldAttribute()).AddUObject(this, &ThisClass::HandleShieldChanged);
 	ASC->GetGameplayAttributeValueChangeDelegate(
 		URogueVitalAttributeSet::GetMaxShieldAttribute()).AddUObject(this, &ThisClass::HandleMaxShieldChanged);
+	ASC->GetGameplayAttributeValueChangeDelegate(
+		URogueVitalAttributeSet::GetStaminaAttribute()).AddUObject(this, &ThisClass::HandleStaminaChanged);
+	ASC->GetGameplayAttributeValueChangeDelegate(
+		URogueVitalAttributeSet::GetMaxStaminaAttribute()).AddUObject(this, &ThisClass::HandleMaxStaminaChanged);
 	
 	CachedHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetHealthAttribute());
 	CachedMaxHealth = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxHealthAttribute());
 	CachedShield = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetShieldAttribute());
 	CachedMaxShield = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxShieldAttribute());
+	CachedStamina = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetStaminaAttribute());
+	CachedMaxStamina = ASC->GetNumericAttribute(URogueVitalAttributeSet::GetMaxStaminaAttribute());
 	
 	// 초기에 0에서 1.0 까지 차오르는 걸 막기 위함
 	// 초기 세팅에는 꽉 채워져 있어야함
@@ -41,6 +48,9 @@ void UShooterHealthBar::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 	
 	RefreshHealth();
 	RefreshShield();
+
+	Gauge_Stamina->SetProgressImmediate(CachedMaxStamina > 0.f ? CachedStamina / CachedMaxStamina : 0.f);
+	RefreshStamina();
 }
 
 void UShooterHealthBar::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
@@ -53,6 +63,10 @@ void UShooterHealthBar::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
 		URogueVitalAttributeSet::GetShieldAttribute()).RemoveAll(this);
 	ASC->GetGameplayAttributeValueChangeDelegate(
 		URogueVitalAttributeSet::GetMaxShieldAttribute()).RemoveAll(this);
+	ASC->GetGameplayAttributeValueChangeDelegate(
+		URogueVitalAttributeSet::GetStaminaAttribute()).RemoveAll(this);
+	ASC->GetGameplayAttributeValueChangeDelegate(
+		URogueVitalAttributeSet::GetMaxStaminaAttribute()).RemoveAll(this);
 }
 
 void UShooterHealthBar::HandleHealthChanged(const FOnAttributeChangeData& Data)
@@ -101,6 +115,18 @@ void UShooterHealthBar::HandleMaxShieldChanged(const FOnAttributeChangeData& Dat
 	RefreshShield();
 }
 
+void UShooterHealthBar::HandleStaminaChanged(const FOnAttributeChangeData& Data)
+{
+	CachedStamina = Data.NewValue;
+	RefreshStamina();
+}
+
+void UShooterHealthBar::HandleMaxStaminaChanged(const FOnAttributeChangeData& Data)
+{
+	CachedMaxStamina = Data.NewValue;
+	RefreshStamina();
+}
+
 void UShooterHealthBar::RefreshHealth()
 {
 	Text_Health->SetText(FText::AsNumber(CachedHealth));
@@ -140,6 +166,29 @@ void UShooterHealthBar::RefreshShield()
 	if (Image_ShieldDeco)
 	{
 		Image_ShieldDeco->SetVisibility(CachedMaxShield > 0.f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+void UShooterHealthBar::RefreshStamina()
+{
+	Gauge_Stamina->SetProgress(CachedMaxStamina > 0.f ? CachedStamina / CachedMaxStamina : 0.f);
+
+	// 콜백이 0.1초마다 오므로 상태가 바뀔 때만 튼다
+	const bool bNowShown = (CachedStamina < CachedMaxStamina);
+	if (bNowShown == bStaminaShown)
+	{
+		return;
+	}
+
+	bStaminaShown = bNowShown;
+
+	if (bNowShown)
+	{
+		PlayAnimationForward(Anim_StaminaShow);
+	}
+	else
+	{
+		PlayAnimationReverse(Anim_StaminaShow);
 	}
 }
 

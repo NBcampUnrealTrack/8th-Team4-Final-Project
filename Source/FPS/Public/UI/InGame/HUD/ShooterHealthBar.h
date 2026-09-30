@@ -6,6 +6,7 @@
 #include "ShooterHealthBar.generated.h"
 
 class UShooterVitalBar;
+class UShooterGauge;
 class UCommonTextBlock;
 class UImage;
 class UMaterialInstanceDynamic;
@@ -51,10 +52,14 @@ protected:
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShieldChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxShieldChanged(const FOnAttributeChangeData& Data);
+	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
+	void HandleMaxStaminaChanged(const FOnAttributeChangeData& Data);
 	
 	// 캐싱 된 값으로 텍스트 갱신 후 바에 전달한다.
 	void RefreshHealth();
 	void RefreshShield();
+	// 게이지 갱신, 가득 참 여부가 바뀔 때만 페이드
+	void RefreshStamina();
 
 	// 캐시 4개로 만든 바 입력
 	FShooterVitalValues MakeVitalValues() const;
@@ -77,12 +82,18 @@ protected:
 	// 쉴드 용량이 있을 때만 보이는 장식
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_ShieldDeco;
+	// WBP_ShooterGauge
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UShooterGauge> Gauge_Stamina;
 	
 	// 체력 바 자체 피격 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_HealthHit;
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_ShieldHit;
+	// Gauge_Stamina 불투명도 0 → 1. 가득 차면 역재생
+	UPROPERTY(Transient, meta = (BindWidgetAnim))
+	TObjectPtr<UWidgetAnimation> Anim_StaminaShow;
 	
 	// 이 비율 이하면 저체력으로 본다
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
@@ -93,6 +104,9 @@ protected:
 	float CachedMaxHealth = 0.f; 
 	float CachedShield = 0.f;
 	float CachedMaxShield = 0.f; 
+	float CachedStamina = 0.f;
+	float CachedMaxStamina = 0.f;
 	
 	bool bIsLowHealth = false;
+	bool bStaminaShown = false;
 };
