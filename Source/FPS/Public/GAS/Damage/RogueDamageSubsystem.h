@@ -12,6 +12,7 @@
 class UAbilitySystemComponent;
 class UGameplayEffect;
 class URogueVitalAttributeSet;
+struct FStreamableHandle;
 
 struct FRogueDamageTarget
 {
@@ -25,6 +26,9 @@ class FPS_API URogueDamageSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+
 	// 신규 히트스캔 경로
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Damage")
 	FRogueDamageResult ApplyHitscanDamage(const FRogueDamageParams& Params, const FRogueHitContext& Hit);
@@ -38,6 +42,9 @@ public:
 	float ApplyHealthCost(AActor* Payer, float Amount, float MinHealthRemaining = 1.f);
 
 private:
+	// 대미지, 회복 GE 와 무기 계수 들고 있는 동안 GC 되지 않음
+	TSharedPtr<FStreamableHandle> PreloadHandle;
+
 	// 두 진입점의 공통 흐름
 	FRogueDamageResult ApplyDamageInternal(const FRogueDamageParams& Params,
 	                                       AActor* TargetActor,
@@ -74,6 +81,9 @@ private:
 	void ApplyLifesteal(UAbilitySystemComponent* SourceASC,
 	                    const FRogueDamageTarget& DamageTarget,
 	                    const FRogueDamageResult& Result) const;
+
+	// 준 피해에 비례해 가해자에게 자해. 최소 체력 1 은 남김
+	void ApplySelfDamage(AActor* Instigator, const FRogueDamageResult& Result);
 
 	// SetByCaller Data.Magnitude.Primary 만 넣는 Instant GE 를 자신에게 적용
 	static void ApplyInstantMagnitude(UAbilitySystemComponent& ASC,

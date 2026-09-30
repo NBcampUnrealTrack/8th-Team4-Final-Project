@@ -40,7 +40,7 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 
 	UninitializeFromAbilitySystem();
 
-	if (!InASC)
+	if (!ensure(InASC))
 	{
 		return;
 	}
@@ -48,11 +48,9 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 	URogueVitalAttributeSet* Set =
 		const_cast<URogueVitalAttributeSet*>(InASC->GetSet<URogueVitalAttributeSet>());
 
-	if (!Set)
+	if (!ensureMsgf(Set, TEXT("[RogueHealth] %s: ASC 에 URogueVitalAttributeSet 이 없습니다."),
+		*GetNameSafe(GetOwner())))
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueHealth] %s: ASC 에 URogueVitalAttributeSet 이 없습니다."),
-			*GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -99,13 +97,14 @@ void URogueHealthComponent::UninitializeFromAbilitySystem()
 void URogueHealthComponent::ServerResetDeathState()
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!ensure(Owner && Owner->HasAuthority()))
 	{
 		return;
 	}
 
 	// 데미지 처리를 위한 AttributeSet의 플래그 초기화
-	if (VitalSet)
+	if (ensureMsgf(VitalSet, TEXT("[RogueHealth] %s: VitalSet 이 없어 사망 플래그를 지우지 못했습니다"),
+		*GetNameSafe(Owner)))
 	{
 		VitalSet->ClearDeathDeclared();
 	}
@@ -266,7 +265,7 @@ void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
 void URogueHealthComponent::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
                                               const FGameplayEffectContextHandle& ContextHandle)
 {
-	if (!VictimASC || VictimASC != AbilitySystemComponent)
+	if (!ensure(VictimASC && VictimASC == AbilitySystemComponent))
 	{
 		return;
 	}
@@ -349,7 +348,13 @@ void URogueHealthComponent::ServerBuildDeathReaction(const FGameplayEffectContex
 void URogueHealthComponent::NotifyDeath(const FGameplayEffectContextHandle& ContextHandle) const
 {
 	AActor* Victim = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
-	if (!Victim || !Victim->Implements<URogueDamageableTarget>())
+	if (!Victim)
+	{
+		return;
+	}
+
+	if (!ensureMsgf(Victim->Implements<URogueDamageableTarget>(),
+		TEXT("[RogueHealth] %s 가 IRogueDamageableTarget 을 구현하지 않았습니다"), *GetNameSafe(Victim)))
 	{
 		return;
 	}

@@ -60,6 +60,13 @@ void ARogueAugmentActor::BeginPlay()
 	}
 }
 
+void ARogueAugmentActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void ARogueAugmentActor::StartFuse()
 {
 	if (!HasAuthority())
@@ -160,12 +167,13 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		return;
 	}
 
+	UE_CLOG(SpawnOnDetonateClass.IsPending(), LogAugmentActor, Warning,
+		TEXT("[AugmentActor] %s 가 프리로드되지 않아 동기 로드합니다"), *SpawnOnDetonateClass.ToString());
 	UClass* FollowUpClass = SpawnOnDetonateClass.LoadSynchronous();
 	UWorld* World = GetWorld();
-	if (!FollowUpClass || !World)
+	if (!ensureMsgf(FollowUpClass && World,
+		TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName()))
 	{
-		UE_LOG(LogAugmentActor, Error,
-			TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName());
 		return;
 	}
 
@@ -176,7 +184,8 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		FollowUpClass, SpawnTransform, GetOwner(), GetInstigator(),
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
-	if (!FollowUp)
+	if (!ensureMsgf(FollowUp, TEXT("[AugmentActor] %s 의 후속 액터 %s 스폰에 실패했습니다"),
+		*GetName(), *GetNameSafe(FollowUpClass)))
 	{
 		return;
 	}

@@ -40,6 +40,7 @@
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
+#include "Minimap/ShooterMinimapSubsystem.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
@@ -370,6 +371,11 @@ void AShooterPlayerController::SetupInputComponent()
 	if (InputConfig->PingAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->PingAction, ETriggerEvent::Started, this, &ThisClass::Input_Ping);
+	}
+	if (InputConfig->ToggleFullMapAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ToggleFullMapAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFullMap);
 	}
 	if (InputConfig->ToggleInGameMenuAction)
 	{
@@ -1532,6 +1538,13 @@ void AShooterPlayerController::Input_ToggleInGameMenu()
 		return;
 	}
 
+	// 전체 맵이 열려 있으면 ESC는 맵 닫기로만 쓴다.
+	if (bFullMapOpen)
+	{
+		SetFullMapOpen(false);
+		return;
+	}
+
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
 		UIInitComponent->ToggleInGameMenu();
@@ -2125,6 +2138,31 @@ void AShooterPlayerController::Input_Ping()
 	ServerSendPing(Hit.Location, Type);
 }
 
+void AShooterPlayerController::Input_ToggleFullMap()
+{
+	// 맵은 보기 전용 UI라 사망·관전·라운드 잠금 중에도 열 수 있다. 채팅 입력 중 M은 글자로 쳐야 하므로 제외.
+	if (!IsLocalController() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	SetFullMapOpen(!bFullMapOpen);
+}
+
+void AShooterPlayerController::SetFullMapOpen(const bool bOpen)
+{
+	// 전체 맵 위젯이 없거나 맵 기준 액터가 없는 레벨(훈련장 등)에서 보이지 않는 맵이 "열림"으로 남아 ESC를 한 번 먹는 걸 막는다.
+	const UShooterMinimapSubsystem* MinimapSubsystem = UShooterMinimapSubsystem::Get(this);
+	const bool bNewOpen = bOpen && OnFullMapOpenChanged.IsBound() && MinimapSubsystem && MinimapSubsystem->GetMapBounds();
+	if (bFullMapOpen == bNewOpen)
+	{
+		return;
+	}
+
+	bFullMapOpen = bNewOpen;
+	OnFullMapOpenChanged.Broadcast(bFullMapOpen);
+}
+
 void AShooterPlayerController::HandleChatSubmit(const FString& RawText)
 {
 	FString Trimmed = RawText;
@@ -2251,13 +2289,20 @@ void AShooterPlayerController::HandleChatChannelSwitchRequested()
 
 void AShooterPlayerController::Input_AdjustADSZoom(const FInputActionValue& Value)
 {
-	if (!CanProcessActionInput())
+	const float ZoomInput = Value.Get<float>();
+	if (FMath::IsNearlyZero(ZoomInput))
 	{
 		return;
 	}
 
-	const float ZoomInput = Value.Get<float>();
-	if (FMath::IsNearlyZero(ZoomInput))
+	// 전체 맵이 열려 있으면 휠은 무기 배율 대신 맵 확대/축소로 쓴다. 보기 전용이라 행동 입력 게이트와 무관하다.
+	if (bFullMapOpen)
+	{
+		OnFullMapZoomInput.Broadcast(ZoomInput);
+		return;
+	}
+
+	if (!CanProcessActionInput())
 	{
 		return;
 	}

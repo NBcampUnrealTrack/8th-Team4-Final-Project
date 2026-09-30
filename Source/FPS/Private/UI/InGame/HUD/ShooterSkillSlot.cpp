@@ -140,6 +140,12 @@ void UShooterSkillSlot::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
 		AbilityFailedEventHandle.Reset();
 	}
 
+	if (ASC && CooldownTimeChangedHandle.IsValid())
+	{
+		ASC->OnCooldownTimeChanged.Remove(CooldownTimeChangedHandle);
+		CooldownTimeChangedHandle.Reset();
+	}
+
 	if (BoundInventory.IsValid())
 	{
 		BoundInventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
@@ -557,6 +563,7 @@ void UShooterSkillSlot::TryBindCooldownTag(URogueAbilitySystemComponent* ASC)
 	CooldownTagEventHandle = ASC->RegisterGameplayTagEvent(CachedCooldownTag, EGameplayTagEventType::AnyCountChange).
 	                              AddUObject(this, &ThisClass::HandleCooldownTagChanged);
 	AbilityFailedEventHandle = ASC->AbilityFailedCallbacks.AddUObject(this, &ThisClass::HandleAbilityFailed);
+	CooldownTimeChangedHandle = ASC->OnCooldownTimeChanged.AddUObject(this, &ThisClass::HandleCooldownTimeChanged);
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	// 늦게 발견 됐을 경우 이미 쿨다운 중일 수 있으므로 즉시 한번 반영
@@ -605,6 +612,14 @@ void UShooterSkillSlot::HandleCooldownTagChanged(FGameplayTag Tag, int32 NewCoun
 {
 	RefreshCooldownDisplay();
 	RefreshSlotIcon();
+}
+
+void UShooterSkillSlot::HandleCooldownTimeChanged(FGameplayTag Tag)
+{
+	if (Tag == CachedCooldownTag)
+	{
+		RefreshCooldownDisplay();
+	}
 }
 
 UMaterialInstanceDynamic* UShooterSkillSlot::GetGlitchMID()

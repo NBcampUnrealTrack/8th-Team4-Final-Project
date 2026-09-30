@@ -288,6 +288,9 @@ private:
 	void HandleInventoryChanged();
 	void HandleCooldownTagChanged(FGameplayTag Tag, int32 NewCount);
 
+	// 태그 개수 변화 없이 쿨타임 시간만 바뀐 경우 (냉각 장치 등)
+	void HandleCooldownTimeChanged(FGameplayTag Tag);
+
 	// 충전 완료시 연출
 	void PlayReadyGlow();
 
@@ -306,6 +309,7 @@ private:
 	FGameplayTag CachedCooldownTag;
 	FDelegateHandle CooldownTagEventHandle;
 	FDelegateHandle AbilityFailedEventHandle;
+	FDelegateHandle CooldownTimeChangedHandle;
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 
 	// bounded retry 이 횟수만큼 짧게 재확인하고 멈춤

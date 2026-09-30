@@ -2,8 +2,10 @@
 
 #include "GAS/RogueVitalAttributeSet.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 
 URogueVitalAttributeSet::URogueVitalAttributeSet()
 {
@@ -114,7 +116,25 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 
 		if (Delta > 0.f)
 		{
-			SetHealth(FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth()));
+			float NewHealth = FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth());
+
+			// 치명 피해를 목숨당 1번 체력 1로 버팀
+			if (NewHealth <= 0.f && CanSurviveLethal())
+			{
+				NewHealth = 1.f;
+				bLethalSurviveUsed = true;
+
+				if (AActor* Avatar = GetOwningAbilitySystemComponent()->GetAvatarActor())
+				{
+					FGameplayEventData Payload;
+					Payload.EventTag   = RogueTags::Event_Combat_LethalSurvived;
+					Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
+					Payload.Target     = Avatar;
+					UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, RogueTags::Event_Combat_LethalSurvived, Payload);
+				}
+			}
+
+			SetHealth(NewHealth);
 		}
 
 		TryDeclareDeath(Data.EffectSpec.GetContext());
@@ -205,7 +225,7 @@ void URogueVitalAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& Old
 void URogueVitalAttributeSet::ServerForceDeath(const FGameplayEffectContextHandle& Context)
 {
 	UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
-	if (!OwnerASC || !OwnerASC->IsOwnerActorAuthoritative() || bDeathDeclared)
+	if (!ensure(OwnerASC && OwnerASC->IsOwnerActorAuthoritative()) || bDeathDeclared)
 	{
 		return;
 	}
@@ -232,15 +252,20 @@ void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle
 
 	// 사망시 HealthComponent 의 OnOutOfHealth 이벤트를 발신
 	// 구독되지 않은 상태면 사망 처리가 정상적으로 진행되지 않음
-	if (!OnOutOfHealth.IsBound())
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
-			     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
-			*GetNameSafe(OwnerASC->GetAvatarActor()));
-	}
+	ensureMsgf(OnOutOfHealth.IsBound(),
+		TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
+		     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
+		*GetNameSafe(OwnerASC->GetAvatarActor()));
 
 	OnOutOfHealth.Broadcast(OwnerASC, Context);
+}
+
+bool URogueVitalAttributeSet::CanSurviveLethal() const
+{
+	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+
+	return !bLethalSurviveUsed && !bDeathDeclared && ASC && ASC->IsOwnerActorAuthoritative()
+		&& ASC->HasMatchingGameplayTag(RogueTags::State_Augment_LethalSurvive);
 }
 
 void URogueVitalAttributeSet::AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,
