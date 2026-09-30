@@ -50,6 +50,8 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/,
 // 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapOpenChanged, bool /*bOpen*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapZoomInput, float /*WheelDelta*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteStartResult, ESurrenderVoteStartResult);
 
 USTRUCT(BlueprintType)
@@ -256,6 +258,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Ping")
 	FOnPingReceivedSignature OnPingReceived;
 
+	// 전체 맵 열림 상태. M으로 토글하고, 열려 있을 때 ESC는 설정 메뉴 대신 전체 맵만 닫는다.
+	// 전체 맵 위젯(UShooterMapWidget, FullMap 모드)이 OnFullMapOpenChanged를 구독해서 보이고 숨는다.
+	bool IsFullMapOpen() const { return bFullMapOpen; }
+	void SetFullMapOpen(bool bOpen);
+
+	FOnFullMapOpenChanged OnFullMapOpenChanged;
+
+	// 전체 맵이 열려 있는 동안의 마우스 휠 입력(양수 = 휠 위 = 확대). 전체 맵 위젯이 구독한다.
+	FOnFullMapZoomInput OnFullMapZoomInput;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -404,6 +416,7 @@ private:
 	void Input_OpenChat();
 	void CloseChatInput();
 	void Input_Ping();
+	void Input_ToggleFullMap();
 	void Input_ToggleInGameMenu();
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
@@ -442,6 +455,7 @@ private:
 
 	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
 	bool bIsChatInputOpen = false;
+	bool bFullMapOpen = false;
 	EChatChannel CurrentChatChannel = EChatChannel::Team;
 
 	// CurrentChatChannel==Whisper일 때 대상 이름. 그 외엔 비어있다.
