@@ -32,6 +32,9 @@ struct FShooterAugmentDisplay
 	FText Description;
 	UPROPERTY(BlueprintReadOnly)
 	TSoftObjectPtr<UTexture2D> Icon;
+	// 액티브 슬롯 번호, 패시브는 INDEX_NONE
+	UPROPERTY(BlueprintReadOnly)
+	int32 ActiveSlotIndex = INDEX_NONE;
 };
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAugmentChipHovered, 
