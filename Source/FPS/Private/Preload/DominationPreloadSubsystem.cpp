@@ -19,6 +19,11 @@ namespace
 		return MapNameOrPath.Contains(DominationMapToken);
 	}
 
+	bool IsLobbyMap(const FString& MapNameOrPath)
+	{
+		return MapNameOrPath.EndsWith(TEXT("Lobby"));
+	}
+
 	const TCHAR* LexNetMode(const ENetMode NetMode)
 	{
 		switch (NetMode)
@@ -76,14 +81,36 @@ void UDominationPreloadSubsystem::HandleSeamlessTravelStart(
 		return;
 	}
 
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->BeginTravelProgress();
+	}
+
 	EnsurePreloadStarted(DepartingWorld);
+
+	if (PawnPreloadHandle.IsValid() && PawnPreloadHandle->HasLoadCompleted())
+	{
+		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+		{
+			LoadingScreenSubsystem->NotifyPreloadComplete();
+		}
+	}
 }
 
 void UDominationPreloadSubsystem::HandlePostLoadMapWithWorld(UWorld* LoadedWorld)
 {
-	// 전환 맵에서는 불리지 않고 최종 목적지에서만 불린다
-	if (!IsOwnedByThisGameInstance(LoadedWorld)
-		|| IsDominationMap(LoadedWorld->GetMapName()))
+	if (!IsOwnedByThisGameInstance(LoadedWorld))
+	{
+		return;
+	}
+
+	if (IsLobbyMap(LoadedWorld->GetMapName()))
+	{
+		EnsurePreloadStarted(LoadedWorld);
+		return;
+	}
+
+	if (IsDominationMap(LoadedWorld->GetMapName()))
 	{
 		return;
 	}
@@ -126,12 +153,6 @@ void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorl
 		*GetNameSafe(ContextWorld),
 		IsValid(ContextWorld) ? LexNetMode(ContextWorld->GetNetMode()) : TEXT("None"),
 		PawnPaths.Num());
-
-	// 완료 콜백보다 반드시 먼저 열린다
-	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
-	{
-		LoadingScreenSubsystem->BeginTravelProgress();
-	}
 
 	PawnPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		PawnPaths,

@@ -32,6 +32,8 @@ struct FHitscanPhysicalSurfaceRule
 	TObjectPtr<UParticleSystem> HeadshotImpactParticle;
 };
 
+
+
 UCLASS(BlueprintType)
 class FPS_API UHitscanSurfaceDefinition : public UDataAsset
 {
@@ -57,3 +59,4 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Impact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UParticleSystem> DefaultImpactParticle;
 };
+
