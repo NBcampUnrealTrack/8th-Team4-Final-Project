@@ -1,6 +1,8 @@
 ﻿#include "Preload/DominationPreloadSubsystem.h"
 
+#include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Loading/LoadingScreenSubsystem.h"
@@ -9,110 +11,174 @@ DEFINE_LOG_CATEGORY_STATIC(LogDominationPreload, Log, All);
 
 namespace
 {
+	// 맵 경로에 이 토큰이 들어가면 Domination 으로 본다.
+	const TCHAR* DominationMapToken = TEXT("Domination");
+
 	bool IsDominationMap(const FString& MapNameOrPath)
 	{
-		return MapNameOrPath.Contains(TEXT("Domination"));
+		return MapNameOrPath.Contains(DominationMapToken);
+	}
+
+	const TCHAR* LexNetMode(const ENetMode NetMode)
+	{
+		switch (NetMode)
+		{
+		case NM_Standalone:      return TEXT("Standalone");
+		case NM_DedicatedServer: return TEXT("DedicatedServer");
+		case NM_ListenServer:    return TEXT("ListenServer");
+		case NM_Client:          return TEXT("Client");
+		default:                 return TEXT("Unknown");
+		}
 	}
 }
 
 void UDominationPreloadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// 해제 시 로딩 상태를 닫아야 하므로 로딩 서브시스템이 먼저 생기고 나중에 사라져야 한다
 	Collection.InitializeDependency<ULoadingScreenSubsystem>();
 
 	SeamlessTravelHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(
-		this, &ThisClass::HandleSeamlessTravelStart);
-	SeamlessTransitionHandle = FWorldDelegates::OnSeamlessTravelTransition.AddUObject(
-		this, &ThisClass::HandleSeamlessTravelTransition);
+		this,
+		&ThisClass::HandleSeamlessTravelStart);
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
-		this, &ThisClass::HandlePostLoadMapWithWorld);
+		this,
+		&ThisClass::HandlePostLoadMapWithWorld);
 }
 
 void UDominationPreloadSubsystem::Deinitialize()
 {
-	FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessTravelHandle);
-	FWorldDelegates::OnSeamlessTravelTransition.Remove(SeamlessTransitionHandle);
-	FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
-	bTravelProgressStarted = false;
+	if (SeamlessTravelHandle.IsValid())
+	{
+		FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessTravelHandle);
+		SeamlessTravelHandle.Reset();
+	}
+
+	if (PostLoadMapHandle.IsValid())
+	{
+		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+		PostLoadMapHandle.Reset();
+	}
+
+	ReleasePreload();
+
 	Super::Deinitialize();
 }
 
 void UDominationPreloadSubsystem::HandleSeamlessTravelStart(
-	UWorld* DepartingWorld, const FString& DestinationMap)
+	UWorld* DepartingWorld,
+	const FString& DestinationMap)
 {
-	if (!IsOwnedByThisGameInstance(DepartingWorld))
+	if (!IsOwnedByThisGameInstance(DepartingWorld)
+		|| !IsDominationMap(DestinationMap))
 	{
 		return;
 	}
 
-	bTravelProgressStarted = false;
-	if (IsDominationMap(DestinationMap))
-	{
-		UE_LOG(LogDominationPreload, Log,
-			TEXT("[DominationTravel] SeamlessStart T=%.3f From=%s Destination=%s"),
-			FPlatformTime::Seconds(), *GetNameSafe(DepartingWorld), *DestinationMap);
-		EnsurePreloadStarted(DepartingWorld);
-	}
-}
-
-void UDominationPreloadSubsystem::HandleSeamlessTravelTransition(UWorld* World)
-{
-	if (bTravelProgressStarted && IsOwnedByThisGameInstance(World))
-	{
-		UE_LOG(LogDominationPreload, Log,
-			TEXT("[DominationTravel] SeamlessTransition T=%.3f World=%s Elapsed=%.3fs"),
-			FPlatformTime::Seconds(), *GetNameSafe(World),
-			FPlatformTime::Seconds() - TravelStartSeconds);
-	}
+	EnsurePreloadStarted(DepartingWorld);
 }
 
 void UDominationPreloadSubsystem::HandlePostLoadMapWithWorld(UWorld* LoadedWorld)
 {
-	if (bTravelProgressStarted && IsOwnedByThisGameInstance(LoadedWorld))
+	// 전환 맵에서는 불리지 않고 최종 목적지에서만 불린다
+	if (!IsOwnedByThisGameInstance(LoadedWorld)
+		|| IsDominationMap(LoadedWorld->GetMapName()))
 	{
-		UE_LOG(LogDominationPreload, Log,
-			TEXT("[DominationTravel] MapPostLoad T=%.3f World=%s Elapsed=%.3fs"),
-			FPlatformTime::Seconds(), *GetNameSafe(LoadedWorld),
-			FPlatformTime::Seconds() - TravelStartSeconds);
+		return;
 	}
+
+	ReleasePreload();
 }
 
 void UDominationPreloadSubsystem::EnsurePreloadStarted(const UWorld* ContextWorld)
 {
-	if (bTravelProgressStarted || !IsOwnedByThisGameInstance(ContextWorld))
+	if (AssetPreloadHandle.IsValid())
 	{
 		return;
 	}
-	bTravelProgressStarted = true;
-	TravelStartSeconds = FPlatformTime::Seconds();
 
-	UE_LOG(LogDominationPreload, Log,
-		TEXT("[Preload] Start T=%.3f World=%s Assets=0 Policy=DemandLoadedAfterWorld"),
-		TravelStartSeconds, *GetNameSafe(ContextWorld));
-
-	// 설정 경로만 기록한다. 클래스 선택 전에 모든 Pawn의 하드 참조를 읽지 않는다.
-	for (const FDominationCombatClassDefinition& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+	const UDominationClassSettings* ClassSettings =
+		GetDefault<UDominationClassSettings>();
+	if (!IsValid(ClassSettings))
 	{
-		UE_LOG(LogDominationPreload, Verbose,
-			TEXT("[Preload] Deferred Class=%d Pawn=%s Icon=%s Portrait=%s WeaponArt=%s Voice=%s"),
-			static_cast<uint8>(Definition.CombatClass),
-			*Definition.PawnClass.ToSoftObjectPath().ToString(),
-			*Definition.Icon.ToSoftObjectPath().ToString(),
-			*Definition.Portrait.ToSoftObjectPath().ToString(),
-			*Definition.WeaponArt.ToSoftObjectPath().ToString(),
-			*Definition.SelectionVoice.ToSoftObjectPath().ToString());
+		return;
 	}
 
-	// 클래스는 월드 진입 후 선택한다. 맵 이동 전에 필요한 별도 자산은 없다.
+	TArray<FSoftObjectPath> AssetPaths;
+	auto AddAssetPath = [&AssetPaths](const FSoftObjectPath& Path)
+	{
+		if (Path.IsValid())
+		{
+			AssetPaths.AddUnique(Path);
+		}
+	};
+
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		AddAssetPath(Definition.PawnClass.ToSoftObjectPath());
+		AddAssetPath(Definition.Icon.ToSoftObjectPath());
+		AddAssetPath(Definition.Portrait.ToSoftObjectPath());
+		AddAssetPath(Definition.WeaponArt.ToSoftObjectPath());
+		AddAssetPath(Definition.SelectionVoice.ToSoftObjectPath());
+	}
+
+	if (AssetPaths.IsEmpty())
+	{
+		return;
+	}
+
+	PreloadStartTime = FPlatformTime::Seconds();
+
+	UE_LOG(LogDominationPreload, Log,
+		TEXT("[Preload] Start World=%s NetMode=%s Assets=%d"),
+		*GetNameSafe(ContextWorld),
+		IsValid(ContextWorld) ? LexNetMode(ContextWorld->GetNetMode()) : TEXT("None"),
+		AssetPaths.Num());
+
+	// 완료 콜백보다 반드시 먼저 열린다
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		LoadingScreenSubsystem->BeginTravelProgress();
-		LoadingScreenSubsystem->NotifyPreloadComplete();
+	}
+
+	AssetPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		AssetPaths,
+		FStreamableDelegate::CreateWeakLambda(this, [this]()
+		{
+			UE_LOG(LogDominationPreload, Log,
+				TEXT("[Preload] Complete Elapsed=%.2fs"),
+				FPlatformTime::Seconds() - PreloadStartTime);
+
+			// 실제 완료 90% 를 여는 유일한 경로다
+			if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+			{
+				LoadingScreenSubsystem->NotifyPreloadComplete();
+			}
+		}));
+}
+
+void UDominationPreloadSubsystem::ReleasePreload()
+{
+	if (!AssetPreloadHandle.IsValid())
+	{
+		return;
 	}
 
 	UE_LOG(LogDominationPreload, Log,
-		TEXT("[Preload] Complete Elapsed=%.3fs Assets=0; selected combat assets load asynchronously before spawn."),
-		FPlatformTime::Seconds() - TravelStartSeconds);
+		TEXT("[Preload] Release Completed=%d"),
+		AssetPreloadHandle->HasLoadCompleted());
+
+	// 핸들을 놓으면 완료 콜백도 사라진다. 완료가 아니므로 게이트만 푼다
+	if (!AssetPreloadHandle->HasLoadCompleted())
+	{
+		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+		{
+			LoadingScreenSubsystem->AbandonPreloadWait();
+		}
+	}
+
+	AssetPreloadHandle.Reset();
 }
 
 bool UDominationPreloadSubsystem::IsOwnedByThisGameInstance(const UWorld* World) const

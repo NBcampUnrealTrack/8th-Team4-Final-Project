@@ -10,8 +10,6 @@ class UCustomizableObjectInstance;
 class USkeletalMeshComponent;
 class UGroomComponent;
 class UPrimitiveComponent;
-class USkeletalMesh;
-struct FStreamableHandle;
 
 UCLASS(ClassGroup=(Customization))
 class FPS_API UGameplayAppearanceComponent : public UActorComponent
@@ -29,16 +27,10 @@ protected:
     virtual void TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function) override;
 private:
     void StartUpdate();
-    void LoadAppearanceAssets(uint32 Serial);
-    void GenerateAppearance(uint32 Serial);
-    bool ContinueRequest(uint32 Serial);
-    void FailUpdate(const FString& Reason);
     void EnsureVisualComponents();
     FName ResolveClassId() const;
     UPROPERTY(Transient) TObjectPtr<UGameplayAppearanceConfig> Config;
     UPROPERTY(Transient) TObjectPtr<UCustomizationStudioConfig> Studio;
-    UPROPERTY(Transient) TObjectPtr<USkeletalMesh> PendingSourceFace;
-    TSharedPtr<FStreamableHandle> AssetLoadHandle;
     UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> Pending;
     UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> Live;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Body;
@@ -52,6 +44,5 @@ private:
     uint32 AppliedRevision = 0;
     bool bBusy = false;
     bool bQueued = false;
-    bool bEndingPlay = false;
     FString Failure;
 };

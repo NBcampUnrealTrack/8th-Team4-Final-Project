@@ -769,10 +769,7 @@ void ALobbyGameMode::TravelToPendingGameMap()
 	}
 
 	bUseSeamlessTravel = true;
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ServerTravelRequested Target=%s Players=%d"),
-		*PendingGameMapPath, World->GetNumPlayerControllers());
-	const bool bTravelAccepted = World->ServerTravel(PendingGameMapPath + TEXT("?listen"));
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ServerTravelAccepted Accepted=%d"), bTravelAccepted);
+	World->ServerTravel(PendingGameMapPath + TEXT("?listen"));
 }
 
 void ALobbyGameMode::HandleStartRoomGameComplete(const bool bWasSuccessful)

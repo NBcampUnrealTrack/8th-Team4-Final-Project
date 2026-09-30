@@ -1,18 +1,10 @@
 ﻿#include "GameMode/Settings/DominationClassSettings.h"
 
 #include "Character/ShooterCharacter.h"
-#include "Customization/GameplayAppearanceConfig.h"
 #include "Tags/GameplayTags.h"
 
 UDominationClassSettings::UDominationClassSettings()
 {
-	GameplayAppearanceConfigs =
-	{
-		{TEXT("Trooper"), TSoftObjectPtr<UGameplayAppearanceConfig>(FSoftObjectPath(TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_GameplayTrooper.DA_GameplayTrooper")))},
-		{TEXT("Ranger"), TSoftObjectPtr<UGameplayAppearanceConfig>(FSoftObjectPath(TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_GameplayRanger.DA_GameplayRanger")))},
-		{TEXT("Vanguard"), TSoftObjectPtr<UGameplayAppearanceConfig>(FSoftObjectPath(TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_GameplayVanguard.DA_GameplayVanguard")))}
-	};
-
 	FDominationCombatClassDefinition& Trooper = CombatClasses.AddDefaulted_GetRef();
 	Trooper.CombatClass = EDominationCombatClass::Trooper;
 	Trooper.PrimaryWeaponTag = RogueTags::Weapon_Type_Rifle;
@@ -100,7 +92,7 @@ UClass* UDominationClassSettings::ResolvePawnClass(
 		return nullptr;
 	}
 
-	// 단독 Training의 초기 클래스 선택 경로에서만 사용한다.
-	// Domination은 LoadoutManager의 비동기 준비 후 PawnClass.Get()으로 조회한다.
+	// Domination에서는 UDominationPreloadSubsystem이 이동 중 미리 읽으므로 즉시 반환된다.
+	// Training은 클래스 선택/초기 스폰 준비 구간에서만 이 경로를 사용하므로 startup load로 허용한다.
 	return Definition->PawnClass.LoadSynchronous();
 }

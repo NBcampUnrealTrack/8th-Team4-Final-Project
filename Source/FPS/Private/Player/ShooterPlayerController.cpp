@@ -349,8 +349,6 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
 {
 	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=PlayerWorldLoaded World=%s Final=%d Local=%d"),
-		*WorldPackageName.ToString(), bFinalDest, IsLocalController());
 
 	if (!bFinalDest || !IsLocalController())
 	{
@@ -552,8 +550,6 @@ void AShooterPlayerController::ClearLoadingScreenGameStateBinding(
 
 void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 {
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ReadyRequested Player=%s Ready=%d NetMode=%d"),
-		*GetNameSafe(this), bNewLobbyReady, static_cast<int32>(GetNetMode()));
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())

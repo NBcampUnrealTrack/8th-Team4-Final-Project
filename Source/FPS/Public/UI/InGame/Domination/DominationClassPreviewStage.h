@@ -53,7 +53,6 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> PreviewMID;
 
 private:
-	void SpawnPreviewPawn(UClass* PawnClass);
 	void CollectPreviewWeapons();
 	void RegisterPreviewComponents();
 	void DestroyPreviewPawn();
@@ -71,7 +70,5 @@ private:
 	TObjectPtr<AShooterCharacter> PreviewPawn;
 	TArray<TWeakObjectPtr<AWeaponBase>> PreviewWeapons;
 
-	TSharedPtr<struct FStreamableHandle> PreviewLoadHandle;
-	uint32 PreviewLoadGeneration = 0;
-	EDominationCombatClass RequestedPreviewClass = EDominationCombatClass::Unselected;
+	EDominationCombatClass CurrentPreviewClass = EDominationCombatClass::Unselected;
 };

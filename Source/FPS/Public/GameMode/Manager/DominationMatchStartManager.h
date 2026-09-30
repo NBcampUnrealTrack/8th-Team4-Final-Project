@@ -41,8 +41,6 @@ public:
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
 	void GetInitialParticipantPlayerStates(TArray<ADominationPlayerState*>& OutPlayerStates) const;
-	void NotifyClientInitialCombatAssetsReady(
-		ADominationPlayerController* PlayerController, FGuid Generation, bool bSucceeded);
 
 	// GameMode가 초기 거점 활성화와 외부 연결 이벤트를 조율하기 위한 내부 완료 신호다.
 	FOnDominationInitialPlayersSpawned OnInitialPlayersSpawned;
@@ -51,7 +49,6 @@ private:
 	enum class EInitialSpawnResult : uint8
 	{
 		Succeeded,
-		AssetsLoading,
 		TemporarilyBlocked,
 		InvalidConfiguration
 	};
@@ -66,22 +63,15 @@ private:
 	void BeginClassSelection();
 	void HandleClassSelectionTimeout();
 	void CompleteClassSelection();
-	void HandleCombatAssetsReady(EDominationCombatClass CombatClass, bool bSucceeded);
-	bool EnsureClientCombatAssets();
-	void ResetClientCombatAssetPreparation();
 	EInitialSpawnResult SpawnInitialParticipants();
 
 	TArray<TWeakObjectPtr<ADominationPlayerController>> InitialParticipants;
-	TSet<TWeakObjectPtr<ADominationPlayerController>> PendingClientCombatAssets;
-	FGuid ClientCombatAssetGeneration;
-	bool bClientCombatAssetsRequested = false;
 	FTimerHandle ClassSelectionTimerHandle;
 	int32 MinimumPlayersToStart = 2;
 	int32 MinimumPlayersPerTeam = 1;
 	float ClassSelectionDuration = 15.0f;
 	int32 SpawnRetryCount = 0;
 	bool bStartSuspended = false;
-	bool bWaitingForCombatAssets = false;
 	static constexpr int32 MaxSpawnRetries = 3;
 	static constexpr float SpawnRetryDelay = 0.5f;
 };
