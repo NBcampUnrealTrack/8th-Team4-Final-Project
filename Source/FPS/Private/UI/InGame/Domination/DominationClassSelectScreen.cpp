@@ -5,6 +5,9 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelWidget.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/Settings/DominationClassSettings.h"
@@ -17,6 +20,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
+#include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
 #include "UI/InGame/Domination/DominationClassInfoPanel.h"
@@ -71,10 +75,18 @@ void UDominationClassSelectScreen::NativeOnActivated()
 	}
 
 	RefreshSelectionModePresentation();
+	RequestClassPresentationAssets();
 }
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	++PresentationLoadGeneration;
+	if (PresentationLoadHandle.IsValid())
+	{
+		PresentationLoadHandle->CancelHandle();
+		PresentationLoadHandle.Reset();
+	}
+
 	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
 		Settings->OnAudioSettingsChanged.RemoveAll(this);
@@ -396,6 +408,81 @@ void UDominationClassSelectScreen::RefreshClassInfoPanel()
 		GetCachedClassIcon(DisplayClass));
 }
 
+void UDominationClassSelectScreen::RequestClassPresentationAssets()
+{
+	const uint32 RequestGeneration = ++PresentationLoadGeneration;
+	if (PresentationLoadHandle.IsValid())
+	{
+		PresentationLoadHandle->CancelHandle();
+		PresentationLoadHandle.Reset();
+	}
+
+	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
+	TArray<FSoftObjectPath> Paths;
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		if (Definition.CombatClass == EDominationCombatClass::Unselected)
+		{
+			continue;
+		}
+
+		const FSoftObjectPath PresentationPaths[] = {
+			Definition.Icon.ToSoftObjectPath(),
+			Definition.Portrait.ToSoftObjectPath(),
+			Definition.WeaponArt.ToSoftObjectPath(),
+			Definition.SelectionVoice.ToSoftObjectPath() };
+		for (const FSoftObjectPath& Path : PresentationPaths)
+		{
+			if (Path.IsValid() && !Path.ResolveObject())
+			{
+				Paths.AddUnique(Path);
+			}
+		}
+	}
+
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	// 표시용 에셋은 화면을 연 뒤 불러오며 선택 요청이나 맵 전환을 막지 않는다.
+	PresentationLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths,
+		FStreamableDelegate::CreateWeakLambda(this, [this, RequestGeneration]()
+		{
+			if (RequestGeneration != PresentationLoadGeneration || !IsActivated())
+			{
+				return;
+			}
+
+			BuildIconCache();
+			const UDominationClassSettings* Settings = GetDefault<UDominationClassSettings>();
+			for (UDominationClassSelectCard* Card : ClassCards)
+			{
+				if (!IsValid(Card))
+				{
+					continue;
+				}
+				const FDominationCombatClassDefinition* Definition =
+					Settings->FindDefinition(Card->GetCombatClass());
+				if (!Definition)
+				{
+					continue;
+				}
+				FDominationClassCardPresentation Presentation;
+				Presentation.CombatClass = Definition->CombatClass;
+				Presentation.DisplayName = Definition->DisplayName;
+				Presentation.Description = Definition->Description;
+				Presentation.WeaponArt = GetCachedClassWeaponArt(Definition->CombatClass);
+				Card->SetClassData(Presentation);
+			}
+			RefreshSelectionState();
+			RefreshClassInfoPanel();
+			RefreshAllSlots();
+			PresentationLoadHandle.Reset();
+		}));
+}
+
 void UDominationClassSelectScreen::BuildIconCache()
 {
 	ClassIconCache.Empty();
@@ -417,22 +504,22 @@ void UDominationClassSelectScreen::BuildIconCache()
 			continue;
 		}
 
-		if (UTexture2D* IconTexture = Definition.Icon.LoadSynchronous())
+		if (UTexture2D* IconTexture = Definition.Icon.Get())
 		{
 			ClassIconCache.Add(Definition.CombatClass, IconTexture);
 		}
 
-		if (UTexture2D* PortraitTexture = Definition.Portrait.LoadSynchronous())
+		if (UTexture2D* PortraitTexture = Definition.Portrait.Get())
 		{
 			ClassPortraitCache.Add(Definition.CombatClass, PortraitTexture);
 		}
 
-		if (UTexture2D* WeaponArtTexture = Definition.WeaponArt.LoadSynchronous())
+		if (UTexture2D* WeaponArtTexture = Definition.WeaponArt.Get())
 		{
 			ClassWeaponArtCache.Add(Definition.CombatClass, WeaponArtTexture);
 		}
 
-		if (USoundBase* Voice = Definition.SelectionVoice.LoadSynchronous())
+		if (USoundBase* Voice = Definition.SelectionVoice.Get())
 		{
 			ClassVoiceCache.Add(Definition.CombatClass, Voice);
 		}

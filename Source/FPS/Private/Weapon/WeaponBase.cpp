@@ -696,7 +696,7 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
-			ImpactEffect.bHasHit,
+			ImpactEffect.bHasHit && bUsesAmmo,
 			bIsFirstPerson,
 			bHeadshot);
 	}

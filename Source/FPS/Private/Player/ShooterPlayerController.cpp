@@ -14,7 +14,12 @@
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "Engine/GameViewportClient.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UnrealClient.h"
 #include "GameFramework/InputSettings.h"
+#include "Input/CommonUIActionRouterBase.h"
+#include "UI/Foundation/ShooterActionRouter.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -106,6 +111,7 @@ void AShooterPlayerController::BeginPlay()
 
 	InitializeAudioSettings();
 	InitializeRuntimeInputMappings();
+	BindApplicationActivation();
 
 	if (GetTeamMatchUIInitComponent())
 	{
@@ -142,6 +148,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 
 		ShutdownAudioSettings();
+		UnbindApplicationActivation();
 		HideSpectatorWidget();
 
 		if (GetTeamMatchUIInitComponent())
@@ -166,6 +173,60 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+// 창이 다시 활성화되면 CommonUI 입력 설정을 강제로 재적용
+void AShooterPlayerController::BindApplicationActivation()
+{
+	if (!FSlateApplication::IsInitialized() || ApplicationActivationHandle.IsValid())
+	{
+		return;
+	}
+
+	ApplicationActivationHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(
+		this, &AShooterPlayerController::HandleApplicationActivationChanged);
+}
+
+void AShooterPlayerController::UnbindApplicationActivation()
+{
+	if (ApplicationActivationHandle.IsValid() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(ApplicationActivationHandle);
+	}
+	ApplicationActivationHandle.Reset();
+}
+
+void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
+{
+	if (!bIsActive || !IsLocalController())
+	{
+		return;
+	}
+
+	// 활성화 이벤트 직후에는 창 포커스와 뷰포트 상태가 아직 정리되지 않았을 수 있어 다음 틱에 적용한다.
+	GetWorldTimerManager().SetTimerForNextTick(this, &AShooterPlayerController::ReapplyCommonUIInputConfig);
+}
+
+void AShooterPlayerController::ReapplyCommonUIInputConfig()
+{
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!LocalPlayer)
+	{
+		return;
+	}
+
+	// 여러개의 창을 활용하기 위한 처리
+	const UGameViewportClient* ViewportClient = LocalPlayer->ViewportClient;
+	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
+	if (!Viewport || !Viewport->IsForegroundWindow())
+	{
+		return;
+	}
+	
+	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
+	{
+		Router->RecalculateActiveInputConfig();
+	}
 }
 
 void AShooterPlayerController::InitializeAudioSettings()
@@ -288,6 +349,8 @@ void AShooterPlayerController::HandleAudioSettingsChanged()
 void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
 {
 	Super::NotifyLoadedWorld(WorldPackageName, bFinalDest);
+	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=PlayerWorldLoaded World=%s Final=%d Local=%d"),
+		*WorldPackageName.ToString(), bFinalDest, IsLocalController());
 
 	if (!bFinalDest || !IsLocalController())
 	{
@@ -489,6 +552,8 @@ void AShooterPlayerController::ClearLoadingScreenGameStateBinding(
 
 void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 {
+	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ReadyRequested Player=%s Ready=%d NetMode=%d"),
+		*GetNameSafe(this), bNewLobbyReady, static_cast<int32>(GetNetMode()));
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())

@@ -8,12 +8,16 @@
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "MuCO/CustomizableObject.h"
 #include "MuCO/CustomizableObjectInstance.h"
 #include "GroomComponent.h"
 #include "GroomBindingAsset.h"
 #include "GroomAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogGameplayAppearance, Log, All);
 
 namespace
 {
@@ -68,7 +72,7 @@ void UGameplayAppearanceComponent::RefreshFromPlayerState()
 
 void UGameplayAppearanceComponent::RequestAppearance(const FReplicatedAppearance& Data)
 {
-    if (GetNetMode() == NM_DedicatedServer || Data.ClassId != ResolveClassId()
+    if (bEndingPlay || GetNetMode() == NM_DedicatedServer || Data.ClassId != ResolveClassId()
         || Data.Revision == 0 || !Data.Appearance.ValidateForClass(Data.ClassId.ToString())) return;
     if (Desired.ClassId == Data.ClassId && Desired.Revision == Data.Revision) return;
     Desired = Data;
@@ -127,30 +131,106 @@ void UGameplayAppearanceComponent::EnsureVisualComponents()
     }
 }
 
+void UGameplayAppearanceComponent::FailUpdate(const FString& Reason)
+{
+    bBusy = false;
+    Pending = nullptr;
+    PendingSourceFace = nullptr;
+    AssetLoadHandle.Reset();
+    Failure = Reason;
+    UE_LOG(LogGameplayAppearance, Warning, TEXT("%s: %s"), *GetNameSafe(GetOwner()), *Failure);
+}
+
+bool UGameplayAppearanceComponent::ContinueRequest(const uint32 Serial)
+{
+    if (!bEndingPlay && Serial == RequestSerial) return true;
+    bBusy = false;
+    Pending = nullptr;
+    PendingSourceFace = nullptr;
+    AssetLoadHandle.Reset();
+    if (bQueued && !bEndingPlay) StartUpdate();
+    return false;
+}
+
 void UGameplayAppearanceComponent::StartUpdate()
 {
     bQueued = false;
-    if (!Config)
+    bBusy = true;
+    const uint32 Serial = RequestSerial;
+    const auto* Reference = GetDefault<UDominationClassSettings>()->GameplayAppearanceConfigs.Find(Desired.ClassId);
+    if (!Reference || Reference->IsNull())
     {
-        const FString Path = TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_Gameplay") + Desired.ClassId.ToString();
-        Config = LoadObject<UGameplayAppearanceConfig>(nullptr, *Path);
-        Studio = Config ? Config->StudioConfig.LoadSynchronous() : nullptr;
+        FailUpdate(TEXT("Gameplay appearance catalog is not configured in Domination Classes"));
+        return;
     }
-    if (!Config || !Studio || !Studio->CustomizableObject) { Failure = TEXT("Gameplay appearance catalog missing"); return; }
-#if WITH_EDITOR
+    if (UGameplayAppearanceConfig* Loaded = Reference->Get())
+    {
+        Config = Loaded;
+        LoadAppearanceAssets(Serial);
+        return;
+    }
+    const TSoftObjectPtr<UGameplayAppearanceConfig> Catalog = *Reference;
+    AssetLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        Catalog.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this, [this, Serial, Catalog]()
+        {
+            if (!ContinueRequest(Serial)) return;
+            Config = Catalog.Get();
+            AssetLoadHandle.Reset();
+            if (!Config) { FailUpdate(TEXT("Gameplay appearance catalog could not be loaded")); return; }
+            LoadAppearanceAssets(Serial);
+        }));
+    if (!AssetLoadHandle.IsValid()) FailUpdate(TEXT("Gameplay appearance catalog load could not be started"));
+}
+
+void UGameplayAppearanceComponent::LoadAppearanceAssets(const uint32 Serial)
+{
+    const FGameplayAppearanceBody* Definition = Config->Bodies.FindByPredicate(
+        [this](const auto& BodyDefinition) { return BodyDefinition.BodyType == Desired.Appearance.BodyType; });
+    if (!Definition || Definition->FaceMesh.IsNull() || Config->StudioConfig.IsNull())
+    {
+        FailUpdate(TEXT("Gameplay appearance studio or binding face is not configured"));
+        return;
+    }
+    const TSoftObjectPtr<USkeletalMesh> FaceReference = Definition->FaceMesh;
+    Studio = Config->StudioConfig.Get();
+    PendingSourceFace = FaceReference.Get();
+    if (Studio && PendingSourceFace)
+    {
+        GenerateAppearance(Serial);
+        return;
+    }
+    TArray<FSoftObjectPath> Paths;
+    if (!Studio) Paths.Add(Config->StudioConfig.ToSoftObjectPath());
+    if (!PendingSourceFace) Paths.AddUnique(FaceReference.ToSoftObjectPath());
+    AssetLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        Paths, FStreamableDelegate::CreateWeakLambda(this, [this, Serial, FaceReference]()
+        {
+            if (!ContinueRequest(Serial)) return;
+            Studio = Config->StudioConfig.Get();
+            PendingSourceFace = FaceReference.Get();
+            AssetLoadHandle.Reset();
+            GenerateAppearance(Serial);
+        }));
+    if (!AssetLoadHandle.IsValid()) FailUpdate(TEXT("Gameplay appearance assets load could not be started"));
+}
+
+void UGameplayAppearanceComponent::GenerateAppearance(const uint32 Serial)
+{
+    if (!Studio || !Studio->CustomizableObject || !PendingSourceFace)
+    {
+        FailUpdate(TEXT("Gameplay appearance studio or binding face could not be loaded"));
+        return;
+    }
     if (!Studio->CustomizableObject->IsCompiled())
     {
-        FCompileParams Params; Params.bAsync = false;
-        Studio->CustomizableObject->Compile(Params);
+        FailUpdate(FString::Printf(TEXT("Prepare and cook Mutable object %s in the Editor before play; gameplay will not compile it"),
+            *Studio->CustomizableObject->GetPathName()));
+        return;
     }
-#endif
-    if (!Studio->CustomizableObject->IsCompiled()) { Failure = TEXT("Gameplay CO not compiled/cooked"); return; }
-    const FGameplayAppearanceBody* Definition = Config->Bodies.FindByPredicate([this](const auto& B){ return B.BodyType == Desired.Appearance.BodyType; });
-    USkeletalMesh* SourceFace = Definition ? Definition->FaceMesh.LoadSynchronous() : nullptr;
-    if (!SourceFace) { Failure = TEXT("Original binding face missing"); return; }
+    USkeletalMesh* SourceFace = PendingSourceFace;
     Pending = Studio->CustomizableObject->CreateInstance();
-    if (!ApplyAppearanceParameters(Pending, Studio, Desired.Appearance)) { Pending = nullptr; Failure = TEXT("Invalid appearance parameters"); return; }
-    const uint32 Serial = RequestSerial;
+    if (!Pending || !ApplyAppearanceParameters(Pending, Studio, Desired.Appearance))
+    { FailUpdate(TEXT("Invalid appearance parameters")); return; }
     const FReplicatedAppearance Snapshot = Desired;
     bBusy = true;
     TWeakObjectPtr<UGameplayAppearanceComponent> Weak(this);
@@ -160,12 +240,7 @@ void UGameplayAppearanceComponent::StartUpdate()
         if (!Weak.IsValid()) return;
         auto* Self = Weak.Get();
         Self->bBusy = false;
-        if (Serial != Self->RequestSerial)
-        {
-            Self->Pending = nullptr;
-            if (Self->bQueued) Self->StartUpdate();
-            return;
-        }
+        if (!Self->ContinueRequest(Serial)) return;
         auto* Instance = Self->Pending.Get();
         bool Valid = Instance && (Context.UpdateResult == EUpdateResult::Success || Context.UpdateResult == EUpdateResult::Warning);
         const FName Names[] = {TEXT("Body"), TEXT("Face"), TEXT("Outfit")};
@@ -176,7 +251,7 @@ void UGameplayAppearanceComponent::StartUpdate()
             Meshes.Add(Mesh);
             Valid &= Mesh != nullptr;
         }
-        if (!Valid) { Self->Failure = TEXT("Mutable generation failed; previous appearance retained"); Self->Pending = nullptr; return; }
+        if (!Valid) { Self->FailUpdate(TEXT("Mutable generation failed; previous appearance retained")); return; }
         // Verify every chosen groom against the actual authored binding surface before replacing anything.
         for (const auto& Choice : Self->Studio->Grooms)
         {
@@ -185,7 +260,7 @@ void UGameplayAppearanceComponent::StartUpdate()
             if (!Choice.Groom || !Choice.Binding || !UGroomBindingAsset::IsCompatible(SourceFace, Choice.Binding, false)
                 || !UGroomBindingAsset::IsCompatible(Choice.Groom, Choice.Binding, false)) Valid = false;
         }
-        if (!Valid) { Self->Failure = TEXT("Groom binding is incompatible with selected face"); Self->Pending = nullptr; return; }
+        if (!Valid) { Self->FailUpdate(TEXT("Groom binding is incompatible with selected face")); return; }
         Self->EnsureVisualComponents();
         auto* Character = CastChecked<AShooterCharacter>(Self->GetOwner());
         auto* Driver = Character->GetMesh();
@@ -246,7 +321,7 @@ void UGameplayAppearanceComponent::StartUpdate()
             Authored->SetRenderCustomDepth(false);
         }
         for (auto* Target : Targets) Target->SetVisibility(true);
-        Self->Live = Self->Pending; Self->Pending = nullptr;
+        Self->Live = Self->Pending; Self->Pending = nullptr; Self->PendingSourceFace = nullptr;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
         Self->SetComponentTickEnabled(true);
         Character->RefreshTeamOutline();
@@ -266,7 +341,10 @@ void UGameplayAppearanceComponent::TickComponent(float Delta, ELevelTick Tick, F
 
 void UGameplayAppearanceComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+    bEndingPlay = true;
     ++RequestSerial; bQueued = false;
+    if (AssetLoadHandle.IsValid()) { AssetLoadHandle->CancelHandle(); AssetLoadHandle.Reset(); }
+    PendingSourceFace = nullptr;
     Pending = nullptr; Live = nullptr;
     Super::EndPlay(Reason);
 }
