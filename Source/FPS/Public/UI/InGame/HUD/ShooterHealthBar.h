@@ -5,13 +5,14 @@
 #include "ShooterAttributeWidget.h"
 #include "ShooterHealthBar.generated.h"
 
-class UShooterGauge;
+class UShooterVitalBar;
 class UCommonTextBlock;
 class UImage;
 class UMaterialInstanceDynamic;
 class URogueAbilitySystemComponent;
 class UWidgetAnimation;
 struct FOnAttributeChangeData;
+struct FShooterVitalValues;
 
 // HUD가 구독해서 피격시 화면 전체 Feedback 연출 재생
 DECLARE_MULTICAST_DELEGATE(FOnHealthDamaged);
@@ -51,9 +52,12 @@ protected:
 	void HandleShieldChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxShieldChanged(const FOnAttributeChangeData& Data);
 	
-	// 캐싱 된 값으로 텍스트 갱신 후 목표 비율을 다시 계산한다.
+	// 캐싱 된 값으로 텍스트 갱신 후 바에 전달한다.
 	void RefreshHealth();
 	void RefreshShield();
+
+	// 캐시 4개로 만든 바 입력
+	FShooterVitalValues MakeVitalValues() const;
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Health;
@@ -67,11 +71,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Shield;
-	// WBP_ShooterGauge 
+	// WBP_ShooterVitalBar
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterGauge> Gauge_Health;
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterGauge> Gauge_Shield;
+	TObjectPtr<UShooterVitalBar> VitalBar;
+	// 쉴드 용량이 있을 때만 보이는 장식
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_ShieldDeco;
 	
 	// 체력 바 자체 피격 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))

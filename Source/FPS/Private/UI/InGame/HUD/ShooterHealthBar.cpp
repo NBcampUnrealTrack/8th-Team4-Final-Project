@@ -2,9 +2,10 @@
 #include "UI/InGame/HUD/ShooterHealthBar.h"
 
 #include "CommonTextBlock.h"
+#include "Components/Image.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
-#include "UI/Common/ShooterGauge.h"
+#include "UI/InGame/HUD/ShooterVitalBar.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterHealthBar, Log, All);
 
@@ -36,11 +37,7 @@ void UShooterHealthBar::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
 	
 	// 초기에 0에서 1.0 까지 차오르는 걸 막기 위함
 	// 초기 세팅에는 꽉 채워져 있어야함
-	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
-	const float TargetShieldRatio = (CachedMaxShield > 0.f) ? CachedShield / CachedMaxShield : 0.f;
-	
-	Gauge_Health->SetProgressImmediate(TargetHealthRatio);
-	Gauge_Shield->SetProgressImmediate(TargetShieldRatio);
+	VitalBar->SetVitalsImmediate(MakeVitalValues());
 	
 	RefreshHealth();
 	RefreshShield();
@@ -123,7 +120,7 @@ void UShooterHealthBar::RefreshHealth()
 	
 	const float TargetHealthRatio = (CachedMaxHealth > 0.f) ? CachedHealth / CachedMaxHealth : 0.f;
 	
-	Gauge_Health->SetProgress(TargetHealthRatio);
+	VitalBar->SetVitals(MakeVitalValues());
 	
 	// 체력이 LowHealthThreshold 아래로 내려가거나 올라가면 Broadcast
 	const bool bNowLow = (TargetHealthRatio <= LowHealthThreshold);
@@ -138,9 +135,17 @@ void UShooterHealthBar::RefreshShield()
 {
 	Text_Shield->SetText(FText::AsNumber(CachedShield));
 	
-	const float TargetShieldRatio = (CachedMaxShield > 0.f) ? CachedShield / CachedMaxShield : 0.f;
-	
-	Gauge_Shield->SetProgress(TargetShieldRatio);
+	VitalBar->SetVitals(MakeVitalValues());
+
+	if (Image_ShieldDeco)
+	{
+		Image_ShieldDeco->SetVisibility(CachedMaxShield > 0.f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+FShooterVitalValues UShooterHealthBar::MakeVitalValues() const
+{
+	return FShooterVitalValues(CachedHealth, CachedMaxHealth, CachedShield, CachedMaxShield);
 }
 
 bool UShooterHealthBar::IsLowHealth() const
