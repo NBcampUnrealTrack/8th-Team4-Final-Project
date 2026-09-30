@@ -5,6 +5,7 @@
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Player/DominationPlayerState.h"
@@ -132,6 +133,44 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 float UShooterAnimInstance::GetIdlePostureSourceWeight() const
 {
 	return 1.f - FMath::Clamp(GetSlotMontageGlobalWeight(TEXT("DefaultSlot")), 0.f, 1.f);
+}
+
+float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const
+{
+	const float BaseWeight = GetIdlePostureSourceWeight();
+	if (bFirstPersonAnimation || !IsValid(Combat))
+	{
+		return BaseWeight;
+	}
+	const UWeaponData* Data = Combat->GetWeaponData();
+	const UAnimMontage* Active = nullptr;
+	// IsActive excludes natural blend-out, but its pose is still on screen.
+	// Newest DefaultSlot action wins, including its blend-out. This keeps a
+	// completed Draw steady without overriding a newer fire/reload action.
+	for (int32 Index = MontageInstances.Num() - 1; Index >= 0; --Index)
+	{
+		const FAnimMontageInstance* Instance = MontageInstances[Index];
+		if (Instance && Instance->IsValid() && Instance->Montage->SlotAnimTracks.ContainsByPredicate(
+			[](const FSlotAnimationTrack& Slot) { return Slot.SlotName == TEXT("DefaultSlot"); }))
+		{
+			Active = Instance->Montage;
+			break;
+		}
+	}
+	if (!IsValid(Data) || !Active || !CurrentWeaponType.IsValid())
+	{
+		return BaseWeight;
+	}
+	// Match the data-selected equip asset, including remote class overrides.
+	for (const auto& Class : Data->ClassAnimationOverrides)
+	{
+		if (const auto* Equip = Class.Value.ThirdPersonEquipMontages.Find(CurrentWeaponType))
+		{
+			if (Equip->Get() == Active) return 1.f;
+		}
+	}
+	const auto* Common = Data->FindWeaponMontages(CurrentWeaponType, false);
+	return Common && Common->EquipMontage == Active ? 1.f : BaseWeight;
 }
 
 void UShooterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -287,13 +326,26 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 		return;
 	}
 
-	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
-	if (!MontageData || !IsValid(MontageData->EquipMontage))
+	EDominationCombatClass DrawClass = GetCurrentCombatClass();
+	// Preview/training pawns and newly replicated pawns can precede PlayerState.
+	if (!bFirstPersonAnimation && DrawClass == EDominationCombatClass::Unselected)
+	{
+		for (const auto& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+		{
+			if (Definition.PawnClass.Get() && ShooterCharacter->IsA(Definition.PawnClass.Get()))
+			{
+				DrawClass = Definition.CombatClass;
+				break;
+			}
+		}
+	}
+	UAnimMontage* EquipMontage = WeaponData->FindEquipMontage(CurrentWeaponType, bFirstPersonAnimation, DrawClass);
+	if (!IsValid(EquipMontage))
 	{
 		return;
 	}
 
-	const float PlayedDuration = Montage_Play(MontageData->EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
+	const float PlayedDuration = Montage_Play(EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(
@@ -303,7 +355,7 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 			*GetNameSafe(ShooterCharacter.Get()),
 			*CurrentWeaponType.ToString(),
 			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
-			*GetNameSafe(MontageData->EquipMontage));
+			*GetNameSafe(EquipMontage));
 	}
 }
 

@@ -55,6 +55,23 @@ const FWeaponMontageData* UWeaponData::FindWeaponMontages(const FGameplayTag Wea
 	return WeaponMontages.Find(WeaponTag);
 }
 
+UAnimMontage* UWeaponData::FindEquipMontage(const FGameplayTag WeaponTag, const bool bFirstPerson,
+	const EDominationCombatClass CombatClass) const
+{
+	if (!bFirstPerson)
+	{
+		if (const auto* ClassAnims = ClassAnimationOverrides.Find(CombatClass))
+		{
+			if (const auto* Montage = ClassAnims->ThirdPersonEquipMontages.Find(WeaponTag); Montage && IsValid(*Montage))
+			{
+				return Montage->Get();
+			}
+		}
+	}
+	const auto* Data = FindWeaponMontages(WeaponTag, bFirstPerson);
+	return Data ? Data->EquipMontage.Get() : nullptr;
+}
+
 float UWeaponData::GetSwitchAnimationRate(const FGameplayTag WeaponTag)
 {
 	// Draw presentation and equip readiness share this modest speed-up.
@@ -84,6 +101,13 @@ float UWeaponData::GetEquipDuration(const FGameplayTag WeaponTag) const
 		if (IsValid(ThirdPersonData->EquipMontage))
 		{
 			Duration = FMath::Max(Duration, ThirdPersonData->EquipMontage->GetPlayLength());
+		}
+	}
+	for (const auto& Class : ClassAnimationOverrides)
+	{
+		if (const auto* Montage = Class.Value.ThirdPersonEquipMontages.Find(WeaponTag); Montage && IsValid(*Montage))
+		{
+			Duration = FMath::Max(Duration, (*Montage)->GetPlayLength());
 		}
 	}
 

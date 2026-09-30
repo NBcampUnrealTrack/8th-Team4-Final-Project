@@ -23,6 +23,8 @@ public:
  bool SelectClass(FName Class);
  TArray<FString> BodyChoices() const;
  bool CanEditPart(int32 Part) const;
+ bool CanToggleAttachment() const;
+ void ToggleAttachment();
  void SetAccountIdentity(const FString& NewService,const FString& NewAccount);
  void Changed();
  void SelectBody(const FString& Type);

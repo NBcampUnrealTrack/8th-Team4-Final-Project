@@ -40,11 +40,14 @@ bool FCustomizationAppearance::NetSerialize(FArchive& Ar, UPackageMap*, bool& bO
  if (Ar.IsError()) return true;
  if (Ar.IsLoading()) HairId = FName(*Hair);
  Ar << HairColor << EyeColor << SkinColor << SkinValue;
- uint8 Original = bUseOriginalHairColor ? 1 : 0;
- Ar.SerializeBits(&Original, 1);
+ // Memory archives already store this as one byte. Bit 1 was zero in v1,
+ // so old local/cloud payloads continue to mean "attachment equipped".
+ uint8 Original = (bUseOriginalHairColor ? 1 : 0) | (bAttachmentVisible ? 0 : 2);
+ Ar.SerializeBits(&Original, 2);
  if (Ar.IsLoading())
  {
-  bUseOriginalHairColor = Original != 0;
+  bUseOriginalHairColor = (Original & 1) != 0;
+  bAttachmentVisible = (Original & 2) == 0;
   Colors.SetNum(8); Values.SetNum(8); Originals.SetNum(8);
  }
  for (int32 I = 0; I < 8 && !Ar.IsError(); ++I) Ar << Colors[I] << Values[I] << Originals[I];

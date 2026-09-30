@@ -20,6 +20,7 @@ public:
     void RefreshFromPlayerState();
     void RequestAppearance(const FReplicatedAppearance& Data);
     uint32 GetAppliedRevision() const { return AppliedRevision; }
+    USkeletalMeshComponent* GetReadyBody() const;
     const FString& GetFailure() const { return Failure; }
 protected:
     virtual void BeginPlay() override;

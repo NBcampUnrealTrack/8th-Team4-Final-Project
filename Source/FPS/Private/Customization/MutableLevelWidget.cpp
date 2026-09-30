@@ -144,16 +144,23 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
    int32 Index=Row*2+Col;
    if(!Parts.IsValidIndex(Index)){Pair->AddSlot().FillWidth(1)[SNullWidget::NullWidget];continue;}
    auto Button=Action(Parts[Index],[this,Index](){if(auto* C=Controller()){
+    if(Index==3&&C->CanToggleAttachment()){C->ToggleAttachment();return;}
     C->BeginColorEdit(Index);if(C->IsColorEditOpen()){Selected=Index;ColorInputError.Reset();if(auto Popup=ColorPopup.Pin())FSlateApplication::Get().SetKeyboardFocus(Popup);}
    }});
-   Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Index](){auto* C=Controller();return C&&C->CanEditPart(Index);}));
-   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){return FSlateColor(Selected==Index?Accent:FLinearColor::White);}));
+   Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Index](){auto* C=Controller();return C&&(C->CanEditPart(Index)||(Index==3&&C->CanToggleAttachment()));}));
+   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){auto* C=Controller();const bool Active=Index==3&&C&&C->CanToggleAttachment()?C->Draft.bAttachmentVisible:Selected==Index;return FSlateColor(Active?Accent:FLinearColor::White);}));
+   if(Index==3)
+   {
+    auto Caption=Label(TEXT("부착물"),15);
+    Caption->SetText(TAttribute<FText>::CreateLambda([this](){auto* C=Controller();return FText::FromString(C&&(C->ActiveClass==TEXT("Ranger")||C->ActiveClass==TEXT("Vanguard"))?(C->Draft.bAttachmentVisible?TEXT("부착물 ON"):TEXT("부착물 OFF")):TEXT("부착물"));}));
+    Button->SetContent(SNew(SBox).MinDesiredHeight(22).VAlign(VAlign_Center).HAlign(HAlign_Center)[Caption]);
+   }
    Pair->AddSlot().FillWidth(1).Padding(0,0,4,4)[Button];
   }
   PartRows->AddSlot().AutoHeight()[Pair];
  }
  Edit->AddSlot().AutoHeight()[PartRows];
- Edit->AddSlot().AutoHeight().Padding(0,8)[Label(TEXT("부위를 누르면 색상 창이 열립니다."),12,Muted)];
+ Edit->AddSlot().AutoHeight().Padding(0,8)[Label(TEXT("부위: 색상 변경 · 부착물: 착용/해제"),12,Muted)];
 
  auto Preview=SNew(SModelViewport).BorderImage(FCoreStyle::Get().GetBrush("NoBrush"));
  if(auto* C=Controller())Preview->Studio=C->Studio;

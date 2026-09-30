@@ -37,6 +37,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Animation|Posture")
 	float GetIdlePostureSourceWeight() const;
 
+	// Equip starts in the same stance as idle. Other full-body actions retain
+	// their original posture suppression (including an interrupted equip).
+	UFUNCTION(BlueprintPure, Category = "FPS|Animation|Posture")
+	float GetEquipAwarePostureSourceWeight() const;
+
 protected:
 	// Opt-in from the third-person graph only while a support-hand-held action plays.
 	// Keeps the weapon with the supporting hand so the trigger hand can leave the grip.

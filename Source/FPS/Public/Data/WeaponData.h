@@ -65,6 +65,10 @@ struct FCombatClassWeaponAnims
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
 	TMap<FGameplayTag, FPlayerAnims> ThirdPersonAnims;
+
+	// Draw is fitted to the class body; reload/fire keep their existing routing.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
+	TMap<FGameplayTag, TObjectPtr<UAnimMontage>> ThirdPersonEquipMontages;
 };
 
 UCLASS(BlueprintType)
@@ -78,6 +82,8 @@ public:
 		bool bFirstPerson,
 		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 	const FWeaponMontageData* FindWeaponMontages(FGameplayTag WeaponTag, bool bFirstPerson) const;
+	UAnimMontage* FindEquipMontage(FGameplayTag WeaponTag, bool bFirstPerson,
+		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
 
 	// Draw presentation must use the same rate as the equip readiness timer.

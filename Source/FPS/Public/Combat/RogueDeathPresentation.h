@@ -17,6 +17,7 @@ struct FPS_API FRogueRagdollSettings
 
 namespace RogueDeathPresentation
 {
+    FPS_API void RefreshRagdollFollowers(ACharacter& Character);
     FPS_API void StartRagdoll(ACharacter& Character, const FRogueDeathReaction& Reaction,
         const FRogueRagdollSettings& Settings);
 }
