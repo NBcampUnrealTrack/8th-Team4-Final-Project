@@ -376,6 +376,13 @@ private:
 	void ShutdownAudioSettings();
 	void HandleAudioSettingsChanged();
 
+	// 조작이 안되는 문제 수정하기 위해 갱신
+	void BindApplicationActivation();
+	void UnbindApplicationActivation();
+	void HandleApplicationActivationChanged(bool bIsActive);
+	void ReapplyCommonUIInputConfig();
+	FDelegateHandle ApplicationActivationHandle;
+
 	void InitializeRuntimeInputMappings();
 	void ShutdownRuntimeInputMappings();
 	void RebuildRuntimeInputMappings();
