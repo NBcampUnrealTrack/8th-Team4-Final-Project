@@ -46,6 +46,7 @@ protected:
 	virtual void OnRep_PlayerState() override;
     virtual void UnPossessed() override;
     virtual void OnRep_Controller() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
 	// 팀 윤곽선 초기화
@@ -203,6 +204,16 @@ private:
 
 	// 사망 연출 중복 진입 방지
 	bool bDeathStateApplied = false;
+
+	// 관전 전환으로 ASC 아바타가 바뀌어도 시체 폰 채널로 래그돌 전달
+	UFUNCTION()
+	void OnRep_ReplicatedDeath();
+
+	UPROPERTY(Replicated)
+	FRogueDeathReaction ReplicatedDeathReaction;
+
+	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedDeath)
+	bool bReplicatedDeath = false;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;

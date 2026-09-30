@@ -23,6 +23,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
+#include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Perception/AISense_Hearing.h"
@@ -124,6 +125,7 @@ void AShooterCharacter::UnPossessed()
 {
     Super::UnPossessed();
     FirstPersonAppearance->RefreshFromPlayerState();
+    UpdateTagSubscriptions();
 }
 
 void AShooterCharacter::OnRep_Controller()
@@ -582,6 +584,13 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	}
 	bDeathStateApplied = true;
 
+	if (HasAuthority())
+	{
+		ReplicatedDeathReaction = Reaction;
+		bReplicatedDeath = true;
+		ForceNetUpdate();
+	}
+
 	// Keep player-only visibility here; share only the established physical death presentation.
 	Mesh1P->SetHiddenInGame(true, true);
 	GetMesh()->SetOwnerNoSee(false);
@@ -593,6 +602,22 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	Settings.ImpulseBone = DeathImpulseBoneName;
 	Settings.HeadshotImpulseBone = HeadshotDeathImpulseBoneName;
 	RogueDeathPresentation::StartRagdoll(*this, Reaction, Settings);
+}
+
+void AShooterCharacter::OnRep_ReplicatedDeath()
+{
+	if (bReplicatedDeath)
+	{
+		IRogueDamageableTarget::Execute_PlayDeathReaction(this, ReplicatedDeathReaction);
+	}
+}
+
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AShooterCharacter, ReplicatedDeathReaction);
+	DOREPLIFETIME(AShooterCharacter, bReplicatedDeath);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const
