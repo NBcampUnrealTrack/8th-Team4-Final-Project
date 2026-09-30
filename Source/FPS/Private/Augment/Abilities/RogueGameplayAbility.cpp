@@ -233,6 +233,7 @@ void URogueGameplayAbility::ExecuteAbility(AActor* EventTarget)
 	}
 
 	ExecuteCue(ActivationCueTag);
+	ExecuteCue(VoiceCueTag);
 
 	// 시전 지연이 있으면 대기 후 발동, 없으면 바로 발동
 	if (CastDelaySeconds > 0.f)
