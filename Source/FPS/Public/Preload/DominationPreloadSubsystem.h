@@ -5,12 +5,8 @@
 #include "DominationPreloadSubsystem.generated.h"
 
 class ULoadingScreenSubsystem;
-struct FStreamableHandle;
 
-/**
- * Domination 전투 클래스 Pawn/UI/선택 음성 자산을 맵 이동 시작 시 비동기로 미리 읽는다.
- * PlayerController 는 맵 로딩이 끝나야 생기므로 소유자를 GameInstance 계층에 둔다.
- */
+/** 이동 진행 상태만 연다. 전투 클래스와 표시 자산은 사용 지점에서 비동기로 준비한다. */
 UCLASS()
 class FPS_API UDominationPreloadSubsystem : public UGameInstanceSubsystem
 {
@@ -20,23 +16,18 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	// 멱등. 이미 요청이 살아 있으면 아무것도 하지 않는다
 	void EnsurePreloadStarted(const UWorld* ContextWorld);
 
 private:
 	void HandleSeamlessTravelStart(UWorld* DepartingWorld, const FString& DestinationMap);
+	void HandleSeamlessTravelTransition(UWorld* World);
 	void HandlePostLoadMapWithWorld(UWorld* LoadedWorld);
-	void ReleasePreload();
-
 	bool IsOwnedByThisGameInstance(const UWorld* World) const;
-
 	ULoadingScreenSubsystem* GetLoadingScreenSubsystem() const;
 
 	FDelegateHandle SeamlessTravelHandle;
+	FDelegateHandle SeamlessTransitionHandle;
 	FDelegateHandle PostLoadMapHandle;
-
-	// Pawn/UI 자산을 매치 중에도 강한 스트리밍 참조로 유지한다
-	TSharedPtr<FStreamableHandle> AssetPreloadHandle;
-
-	double PreloadStartTime = 0.0;
+	bool bTravelProgressStarted = false;
+	double TravelStartSeconds = 0.0;
 };

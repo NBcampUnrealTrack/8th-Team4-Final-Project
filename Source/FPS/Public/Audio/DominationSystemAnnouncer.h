@@ -6,6 +6,7 @@
 #include "DominationSystemAnnouncer.generated.h"
 
 class ADominationGameState;
+struct FStreamableHandle;
 
 namespace DominationAnnouncementIds
 {
@@ -77,6 +78,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> StormAudioComponent;
 
+	TSharedPtr<FStreamableHandle> StormSoundClassLoadHandle;
+	bool bStormSoundClassLoading = false;
+	bool bStormAudioShuttingDown = false;
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	double LastWarningPhaseEndServerTime = 0.0;
 	bool bMatchOutcomeAnnounced = false;

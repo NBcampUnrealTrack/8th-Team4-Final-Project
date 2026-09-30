@@ -9,6 +9,7 @@ class USkeletalMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 struct FCustomizationAppearance;
+struct FStreamableHandle;
 
 UCLASS(ClassGroup=(Customization))
 class FPS_API UFirstPersonAppearanceComponent : public UActorComponent
@@ -24,6 +25,7 @@ protected:
     virtual void TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function) override;
 private:
     void Restore();
+    void CancelVisualLoad();
     void UpdateColors(const FCustomizationAppearance* Appearance);
     void UpdateVisibility();
     UPROPERTY(EditDefaultsOnly, Category="Appearance") TMap<FName, TSoftObjectPtr<USkeletalMesh>> ClassVisuals;
@@ -31,6 +33,9 @@ private:
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Driver;
     UPROPERTY(Transient) TObjectPtr<USkeletalMesh> AppliedMesh;
     UPROPERTY(Transient) TObjectPtr<USkeletalMesh> AppliedVisual;
+    TSharedPtr<FStreamableHandle> VisualLoadHandle;
+    FSoftObjectPath RequestedVisualPath;
+    bool bEndingPlay = false;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Skin;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Top;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Gloves;

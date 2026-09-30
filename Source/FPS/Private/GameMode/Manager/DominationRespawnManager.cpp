@@ -378,7 +378,8 @@ bool UDominationRespawnManager::CacheSpawnVolumes()
 		});
 
 	UE_LOG(LogDominationRespawn, Log,
-		TEXT("Registered six Domination SpawnVolumes from the A-side boundary to the E-side boundary."));
+		TEXT("Registered %d Domination SpawnVolumes from the A-side boundary to the E-side boundary."),
+		SpawnVolumes.Num());
 	return true;
 }
 

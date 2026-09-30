@@ -3,6 +3,8 @@
 
 #include "Components/AudioComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Settings/DominationSandstormSettings.h"
@@ -64,13 +66,35 @@ void ADominationSystemAnnouncer::BeginPlay()
 
 	if (!StormSoundClass)
 	{
-		StormSoundClass = GetDefault<UShooterAudioSettings>()->SoundEffectsSoundClass.LoadSynchronous();
+		const TSoftObjectPtr<USoundClass> Reference = GetDefault<UShooterAudioSettings>()->SoundEffectsSoundClass;
+		StormSoundClass = Reference.Get();
+		if (!StormSoundClass && !Reference.IsNull())
+		{
+			bStormSoundClassLoading = true;
+			StormSoundClassLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+				Reference.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this, [this, Reference]()
+				{
+					if (bStormAudioShuttingDown) return;
+					StormSoundClass = Reference.Get();
+					bStormSoundClassLoading = false;
+					StormSoundClassLoadHandle.Reset();
+					UpdateSandstormAudio();
+				}));
+			if (!StormSoundClassLoadHandle.IsValid()) bStormSoundClassLoading = false;
+		}
 	}
 	BindSandstormState();
 }
 
 void ADominationSystemAnnouncer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	bStormAudioShuttingDown = true;
+	if (StormSoundClassLoadHandle.IsValid())
+	{
+		StormSoundClassLoadHandle->CancelHandle();
+		StormSoundClassLoadHandle.Reset();
+	}
+	bStormSoundClassLoading = false;
 	if (ADominationGameState* GameState = BoundGameState.Get())
 	{
 		GameState->OnSandstormStateChanged.RemoveDynamic(this, &ThisClass::HandleSandstormStateChanged);
@@ -207,6 +231,11 @@ void ADominationSystemAnnouncer::Tick(const float DeltaSeconds)
 
 void ADominationSystemAnnouncer::UpdateSandstormAudio()
 {
+	if (bStormAudioShuttingDown || bStormSoundClassLoading)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
 	const ADominationGameState* GameState = BoundGameState.Get();
 	if (!GameState || GameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded)
 	{
