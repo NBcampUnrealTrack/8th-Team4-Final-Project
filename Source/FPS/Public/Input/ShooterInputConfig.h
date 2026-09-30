@@ -99,4 +99,8 @@ public:
 	// 스코어보드. 누르고 있는 동안 열리므로 Started/Completed 둘 다 바인딩한다
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
 	TObjectPtr<UInputAction> ShowScoreboardAction;
+
+	// 전체 맵 토글(M). 라운드 입력 잠금 중에도 열 수 있게 SystemMappingContext에 매핑한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input|Actions")
+	TObjectPtr<UInputAction> ToggleFullMapAction;
 };

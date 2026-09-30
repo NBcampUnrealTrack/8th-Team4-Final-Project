@@ -16,7 +16,7 @@ class UTextBlock;
 /**
  * Menu 1번 칸. 방 찾기 · 목록 · 참가 요청
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterSessionBrowserScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

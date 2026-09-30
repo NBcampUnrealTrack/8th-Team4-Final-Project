@@ -16,6 +16,7 @@
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/InGame/Scoreboard/ShooterScoreboard.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
+#include "UI/ShooterUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTeamMatchUIInit, Log, All);
 
@@ -213,16 +214,14 @@ void UTeamMatchUIInitComponent::PresentOptionsScreen()
 	TSubclassOf<UShooterOptionsScreen> ResolvedOptionsClass = OptionsScreenClass;
 	if (!IsValid(ResolvedOptionsClass))
 	{
-		ResolvedOptionsClass = LoadClass<UShooterOptionsScreen>(
-			nullptr,
-			TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen.WBP_OptionsScreen_C"));
+		ResolvedOptionsClass = UShooterUISettings::LoadDefaultOptionsScreenClass();
 	}
 
 
 	if (!IsValid(UIManager) || !IsValid(ResolvedOptionsClass))
 	{
 		UE_LOG(LogTeamMatchUIInit, Error,
-			TEXT("Options screen class is unavailable. Assign OptionsScreenClass or verify /Game/FPS/UI/InGame/Option/WBP_OptionsScreen."));
+			TEXT("Options screen class is unavailable. Assign OptionsScreenClass or configure the default options screen."));
 		return;
 	}
 

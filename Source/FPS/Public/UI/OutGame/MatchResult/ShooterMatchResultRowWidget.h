@@ -11,7 +11,7 @@ class UCommonTextBlock;
 /**
  * 결과 화면의 플레이어 한 줄로 표시만 한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterMatchResultRowWidget : public UUserWidget
 {
 	GENERATED_BODY()

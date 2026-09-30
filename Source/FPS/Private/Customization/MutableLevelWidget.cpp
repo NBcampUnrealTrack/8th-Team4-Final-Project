@@ -159,6 +159,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  if(auto* C=Controller())Preview->Studio=C->Studio;
  auto HeaderFont=HeadingFont?FSlateFontInfo(HeadingFont,46):FCoreStyle::GetDefaultFontStyle("Bold",46);
  auto Left=SNew(SVerticalBox);
+ Left->AddSlot().AutoHeight().HAlign(HAlign_Left).Padding(0,0,0,16)[Action(TEXT("뒤로가기"),[this](){if(auto* C=Controller())C->RequestReturnToFrontend();})];
  Left->AddSlot().AutoHeight()[Label(TEXT("OPERATOR  /  APPEARANCE"),14,Accent)];
  Left->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Font(HeaderFont).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->ActiveClass.ToString().ToUpper():TEXT(""));})];
  Left->AddSlot().AutoHeight()[Label(TEXT("외형 커스터마이징"),20)];

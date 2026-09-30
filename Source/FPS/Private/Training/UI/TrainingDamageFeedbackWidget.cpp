@@ -1,11 +1,13 @@
-#include "Training/UI/TrainingDamageFeedbackWidget.h"
+﻿#include "Training/UI/TrainingDamageFeedbackWidget.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Training/TrainingTypes.h"
 #include "TrainingWidgetStyle.h"
 
 UTrainingDamageFeedbackWidget::UTrainingDamageFeedbackWidget(const FObjectInitializer& ObjectInitializer)
@@ -38,11 +40,20 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
     const int32 Limit = FMath::Clamp(MaxVisibleDamageNumbers, 1, 64);
     while (DamageNumbers.Num() >= Limit)
     {
-        if (UTextBlock* OldText = DamageNumbers[0].Text.Get())
+        int32 OldestIndex = 0;
+        for (int32 Index = 1; Index < DamageNumbers.Num(); ++Index)
+        {
+            if (DamageNumbers[Index].SpawnSeconds < DamageNumbers[OldestIndex].SpawnSeconds)
+            {
+                OldestIndex = Index;
+            }
+        }
+
+        if (UTextBlock* OldText = DamageNumbers[OldestIndex].Text.Get())
         {
             OldText->RemoveFromParent();
         }
-        DamageNumbers.RemoveAt(0, 1, EAllowShrinking::No);
+        DamageNumbers.RemoveAtSwap(OldestIndex, 1, EAllowShrinking::No);
     }
 
     UTextBlock* DamageText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
@@ -68,35 +79,72 @@ void UTrainingDamageFeedbackWidget::PresentDamage(const float Damage, const bool
     FDamageNumber& Entry = DamageNumbers.AddDefaulted_GetRef();
     Entry.Text = DamageText;
     Entry.WorldPosition = WorldPosition + DamageNumberWorldOffset;
+    Entry.SpawnSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
     Entry.HorizontalOffset = static_cast<float>(DamageSequence - 1) * FMath::Max(0.0f, DamageHorizontalSpreadPixels);
     Entry.bLethal = bLethal;
     DamageSequence = (DamageSequence + 1) % 3;
+    StartAnimationUpdates();
 }
 
-void UTrainingDamageFeedbackWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+void UTrainingDamageFeedbackWidget::StartAnimationUpdates()
 {
-    Super::NativeTick(MyGeometry, InDeltaTime);
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
 
+    UpdateDamageNumbers();
+    if (!DamageNumbers.IsEmpty() && !World->GetTimerManager().IsTimerActive(AnimationTimer))
+    {
+        FTimerManagerTimerParameters TimerParameters;
+        TimerParameters.bLoop = true;
+        TimerParameters.bMaxOncePerFrame = true;
+        World->GetTimerManager().SetTimer(
+            AnimationTimer, this, &ThisClass::UpdateDamageNumbers,
+            TrainingRules::PresentationUpdateIntervalSeconds, TimerParameters);
+    }
+}
+
+void UTrainingDamageFeedbackWidget::StopAnimationUpdates()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(AnimationTimer);
+    }
+}
+
+void UTrainingDamageFeedbackWidget::UpdateDamageNumbers()
+{
     if (DamageNumbers.IsEmpty())
     {
+        StopAnimationUpdates();
         SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        ClearDamageNumbers();
+        return;
+    }
+
+    const double Now = World->GetTimeSeconds();
     const float Lifetime = FMath::Max(0.1f, DamageNumberLifetime);
     APlayerController* ParticipantController = GetOwningPlayer();
     for (int32 Index = DamageNumbers.Num() - 1; Index >= 0; --Index)
     {
         FDamageNumber& Entry = DamageNumbers[Index];
         UTextBlock* DamageText = Entry.Text.Get();
-        Entry.Age += InDeltaTime;
-        if (!DamageText || Entry.Age >= Lifetime)
+        const float Age = static_cast<float>(FMath::Max(0.0, Now - Entry.SpawnSeconds));
+        if (!DamageText || Age >= Lifetime)
         {
             if (DamageText)
             {
                 DamageText->RemoveFromParent();
             }
-            DamageNumbers.RemoveAt(Index, 1, EAllowShrinking::No);
+            DamageNumbers.RemoveAtSwap(Index, 1, EAllowShrinking::No);
             continue;
         }
 
@@ -106,33 +154,38 @@ void UTrainingDamageFeedbackWidget::NativeTick(const FGeometry& MyGeometry, cons
         {
             if (UCanvasPanelSlot* DamageSlot = Cast<UCanvasPanelSlot>(DamageText->Slot))
             {
-                const float Progress = FMath::Clamp(Entry.Age / Lifetime, 0.0f, 1.0f);
+                const float Progress = FMath::Clamp(Age / Lifetime, 0.0f, 1.0f);
                 const float RiseAlpha = 1.0f - FMath::Square(1.0f - Progress);
                 const float Rise = FMath::Max(0.0f, DamageRisePixels) * RiseAlpha;
                 DamageSlot->SetPosition(Position + FVector2D(Entry.HorizontalOffset, -Rise));
             }
 
             const float ScaleDuration = FMath::Max(0.01f, DamageScaleInSeconds);
-            const float ScaleAlpha = FMath::Clamp(Entry.Age / ScaleDuration, 0.0f, 1.0f);
+            const float ScaleAlpha = FMath::Clamp(Age / ScaleDuration, 0.0f, 1.0f);
             const float StartScale = Entry.bLethal ? LethalDamageStartScale : NormalDamageStartScale;
-            const float Scale = FMath::Lerp(StartScale, 1.0f, FMath::InterpEaseOut(0.0f, 1.0f, ScaleAlpha, 3.0f));
+            const float Scale = FMath::Lerp(
+                StartScale, 1.0f, FMath::InterpEaseOut(0.0f, 1.0f, ScaleAlpha, 3.0f));
             DamageText->SetRenderScale(FVector2D(Scale, Scale));
             DamageText->SetVisibility(ESlateVisibility::HitTestInvisible);
-            DamageText->SetRenderOpacity(FMath::Clamp((Lifetime - Entry.Age) / (Lifetime * 0.36f), 0.0f, 1.0f));
+            DamageText->SetRenderOpacity(FMath::Clamp(
+                (Lifetime - Age) / (Lifetime * 0.36f), 0.0f, 1.0f));
         }
         else
         {
             DamageText->SetVisibility(ESlateVisibility::Hidden);
         }
     }
+
     if (DamageNumbers.IsEmpty())
     {
+        StopAnimationUpdates();
         SetVisibility(ESlateVisibility::Collapsed);
     }
 }
 
 void UTrainingDamageFeedbackWidget::ClearDamageNumbers()
 {
+    StopAnimationUpdates();
     for (const FDamageNumber& Entry : DamageNumbers)
     {
         if (UTextBlock* DamageText = Entry.Text.Get())
@@ -147,6 +200,11 @@ void UTrainingDamageFeedbackWidget::ClearDamageNumbers()
 
 void UTrainingDamageFeedbackWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    AnimationTimer.Invalidate();
     ClearDamageNumbers();
     Super::NativeDestruct();
 }

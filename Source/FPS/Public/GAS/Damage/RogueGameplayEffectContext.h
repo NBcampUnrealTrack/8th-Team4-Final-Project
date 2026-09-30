@@ -29,6 +29,8 @@ public:
 
 	UPROPERTY() float LifestealRate = 0.f;
 
+	UPROPERTY() float SelfDamageRate = 0.f;
+
 	virtual UScriptStruct* GetScriptStruct() const override
 	{
 		return FRogueGameplayEffectContext::StaticStruct();

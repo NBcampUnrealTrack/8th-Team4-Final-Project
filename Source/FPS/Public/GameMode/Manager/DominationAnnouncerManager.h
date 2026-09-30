@@ -26,6 +26,8 @@ private:
 	UFUNCTION()
 	void HandleCaptureStateChanged(FDominationCaptureState NewCaptureState);
 
+	void HandleMatchStarted();
+
 	void Announce(FName AnnouncementId);
 
 	TWeakObjectPtr<ASystemAnnouncer> SystemAnnouncer;

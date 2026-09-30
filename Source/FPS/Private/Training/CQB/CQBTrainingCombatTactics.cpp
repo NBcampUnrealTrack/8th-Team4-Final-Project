@@ -1,7 +1,6 @@
-#include "Training/CQB/CQBTrainingCombatComponent.h"
+﻿#include "Training/CQB/CQBTrainingCombatComponent.h"
 
 #include "Components/CapsuleComponent.h"
-#include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -25,6 +24,7 @@ void UCQBTrainingCombatComponent::ResetTactics()
     PeekPhase = EPeekPhase::None;
     SelectedCover = FCQBCoverPosition();
     RecentCoverLocations.Reset();
+    RecentCoverWriteIndex = 0;
     NearbyAllyLocations.Reset();
     NearbyCoverReservations.Reset();
     NextTacticalEvaluationTime = 0.0;
@@ -178,7 +178,6 @@ void UCQBTrainingCombatComponent::EvaluateTacticalIntent()
         if (FindCover(true, Alternative) && BeginCoverMove(Alternative, ECQBTacticalIntent::Reposition, Now))
         {
             NextRepositionTime = Now + Config->TacticalSettings.RepositionCooldownSeconds;
-            DrawTacticalDebug();
             return;
         }
         NextRepositionTime = Now + Config->TacticalSettings.RepositionCooldownSeconds;
@@ -190,7 +189,6 @@ void UCQBTrainingCombatComponent::EvaluateTacticalIntent()
         FCQBCoverPosition Cover;
         if (FindCover(false, Cover) && BeginCoverMove(Cover, ECQBTacticalIntent::TakeCover, Now))
         {
-            DrawTacticalDebug();
             return;
         }
     }
@@ -213,7 +211,6 @@ void UCQBTrainingCombatComponent::EvaluateTacticalIntent()
             FinishDefensiveEpisode();
         }
     }
-    DrawTacticalDebug();
 }
 
 void UCQBTrainingCombatComponent::TickTacticalIntent(
@@ -538,10 +535,15 @@ bool UCQBTrainingCombatComponent::BeginCoverMove(
     if (SelectedCover.bValid
         && FVector::DistSquared2D(SelectedCover.Location, Cover.Location) > FMath::Square(CQBTactics::CoverSeparation))
     {
-        RecentCoverLocations.Add(SelectedCover.Location);
-        if (RecentCoverLocations.Num() > CQBTactics::MaxRecentCovers)
+        const int32 MaxRecent = FMath::Max(1, CQBTactics::MaxRecentCovers);
+        if (RecentCoverLocations.Num() < MaxRecent)
         {
-            RecentCoverLocations.RemoveAt(0);
+            RecentCoverLocations.Add(SelectedCover.Location);
+        }
+        else
+        {
+            RecentCoverLocations[RecentCoverWriteIndex] = SelectedCover.Location;
+            RecentCoverWriteIndex = (RecentCoverWriteIndex + 1) % MaxRecent;
         }
     }
     SelectedCover = Cover;
@@ -621,29 +623,4 @@ void UCQBTrainingCombatComponent::AbandonCover(const double NowSeconds)
     }
 }
 
-void UCQBTrainingCombatComponent::DrawTacticalDebug() const
-{
-    if (!GetConfig()->TacticalSettings.bDrawDebugTactics)
-    {
-        return;
-    }
-    const float Duration = GetConfig()->TacticalSettings.ReevaluationIntervalSeconds;
-    DrawDebugLine(GetWorld(), GetConfig()->GetPawnViewLocation(), ResolveTargetAimPoint(),
-        GetAwareness()->HasVisibleTarget() ? FColor::Red : FColor::Yellow, false, Duration);
-    if (SelectedCover.bValid)
-    {
-        DrawDebugSphere(GetWorld(), SelectedCover.Location + FVector(0.0f, 0.0f, 40.0f),
-            25.0f, 8, FColor::Green, false, Duration);
-        if (SelectedCover.bLeftPeek)
-        {
-            DrawDebugLine(GetWorld(), SelectedCover.Location, SelectedCover.LeftPeek, FColor::Cyan, false, Duration);
-        }
-        if (SelectedCover.bRightPeek)
-        {
-            DrawDebugLine(GetWorld(), SelectedCover.Location, SelectedCover.RightPeek, FColor::Cyan, false, Duration);
-        }
-    }
-    DrawDebugString(GetWorld(), GetConfig()->GetActorLocation() + FVector(0.0f, 0.0f, 130.0f),
-        StaticEnum<ECQBTacticalIntent>()->GetNameStringByValue(static_cast<int64>(TacticalIntent)),
-        nullptr, FColor::White, Duration);
-}
+

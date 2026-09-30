@@ -19,7 +19,7 @@ class UBorder;
  * 폴링하지 않는다 - PlayerController::OnPossessedPawnChanged로 빙의 변경(리스폰 포함)을 감지해
  * CombatComponent::OnCurrentWeaponChanged를 구독하고, 무기가 바뀌면 그 무기의 OnAmmoChanged를 구독한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterWeaponStatus : public UCommonUserWidget
 {
 	GENERATED_BODY()

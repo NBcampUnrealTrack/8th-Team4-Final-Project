@@ -16,7 +16,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnRoomSlotJoinRequested, EGameTeam);
 /**
  * 사설 방 화면의 한 칸.
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterRoomPlayerSlot : public UCommonUserWidget
 {
 	GENERATED_BODY()

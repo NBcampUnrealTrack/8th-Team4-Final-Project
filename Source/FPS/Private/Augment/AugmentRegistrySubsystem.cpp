@@ -4,20 +4,32 @@
 #include "Augment/AugmentRegistrySubsystem.h"
 
 #include "Augment/AugmentDefinition.h"
+#include "Augment/Actor/RogueAugmentActor.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
+#include "GAS/RogueGASSettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAugmentRegistry, Log, All);
+
+namespace
+{
+	void AddPreloadPath(TArray<FSoftObjectPath>& OutPaths, const FSoftObjectPath& Path)
+	{
+		if (!Path.IsNull())
+		{
+			OutPaths.AddUnique(Path);
+		}
+	}
+}
 
 void UAugmentRegistrySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
 	// AssetManager 가 없으면 PrimaryAssetType 스캔이 불가능
-	if (!UAssetManager::IsInitialized())
+	if (!ensureMsgf(UAssetManager::IsInitialized(),
+		TEXT("[AugmentRegistry] AssetManager 가 없습니다. 증강 카탈로그를 로드하지 못했습니다")))
 	{
-		UE_LOG(LogAugmentRegistry, Error,
-			TEXT("[AugmentRegistry] AssetManager 가 없습니다. 증강 카탈로그를 로드하지 못했습니다"));
 		return;
 	}
 
@@ -30,6 +42,18 @@ void UAugmentRegistrySubsystem::Deinitialize()
 	{
 		LoadHandle->CancelHandle();
 		LoadHandle.Reset();
+	}
+
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
+
+	if (FollowUpPreloadHandle.IsValid())
+	{
+		FollowUpPreloadHandle->CancelHandle();
+		FollowUpPreloadHandle.Reset();
 	}
 
 	DefinitionsById.Reset();
@@ -80,6 +104,8 @@ void UAugmentRegistrySubsystem::OnCatalogLoaded()
 
 	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 계열 %d개 로드 완료"),
 		DefinitionsById.Num());
+
+	StartAssetPreload();
 }
 
 void UAugmentRegistrySubsystem::BuildIndex()
@@ -94,12 +120,11 @@ void UAugmentRegistrySubsystem::BuildIndex()
 	TArray<FPrimaryAssetId> Ids;
 	Manager.GetPrimaryAssetIdList(UAugmentDefinition::AugmentAssetType, Ids);
 
-	if (Ids.IsEmpty())
+	// ini 의 PrimaryAssetTypesToScan 등록이 빠졌거나 스캔 경로가 다른 경우
+	if (!ensureMsgf(!Ids.IsEmpty(),
+		TEXT("[AugmentRegistry] '%s' 타입 애셋이 0건입니다. DefaultGame.ini 의 PrimaryAssetTypesToScan 등록과 스캔 경로를 확인하세요"),
+		*UAugmentDefinition::AugmentAssetType.ToString()))
 	{
-		// ini 의 PrimaryAssetTypesToScan 등록이 빠졌거나 스캔 경로가 다른 경우
-		UE_LOG(LogAugmentRegistry, Error,
-			TEXT("[AugmentRegistry] '%s' 타입 애셋이 0건입니다. DefaultGame.ini 의 PrimaryAssetTypesToScan 등록과 스캔 경로를 확인하세요"),
-			*UAugmentDefinition::AugmentAssetType.ToString());
 		return;
 	}
 
@@ -109,25 +134,23 @@ void UAugmentRegistrySubsystem::BuildIndex()
 	for (const FPrimaryAssetId& Id : Ids)
 	{
 		UAugmentDefinition* Definition = Manager.GetPrimaryAssetObject<UAugmentDefinition>(Id);
-		if (!Definition)
+		if (!ensureMsgf(Definition, TEXT("[AugmentRegistry] %s 를 로드하지 못했습니다"), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Warning, TEXT("[AugmentRegistry] %s 를 로드하지 못했습니다"), *Id.ToString());
 			continue;
 		}
 
 		// 증강 계열이 없는 경우
-		if (!Definition->LineTag.IsValid())
+		if (!ensureMsgf(Definition->LineTag.IsValid(),
+			TEXT("[AugmentRegistry] %s 에 LineTag 가 없어 제외합니다"), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] %s 에 LineTag 가 없어 제외합니다"), *Id.ToString());
 			continue;
 		}
 
-		if (const FPrimaryAssetId* Owner = LineOwners.Find(Definition->LineTag))
+		const FPrimaryAssetId* Owner = LineOwners.Find(Definition->LineTag);
+		if (!ensureMsgf(!Owner,
+			TEXT("[AugmentRegistry] 계열 '%s' 를 %s 와 %s 가 함께 쓰고 있습니다. %s 를 제외합니다"),
+			*Definition->LineTag.ToString(), *Owner->ToString(), *Id.ToString(), *Id.ToString()))
 		{
-			UE_LOG(LogAugmentRegistry, Error,
-				TEXT("[AugmentRegistry] 계열 '%s' 를 %s 와 %s 가 함께 쓰고 있습니다. %s 를 제외합니다"),
-				*Definition->LineTag.ToString(), *Owner->ToString(), *Id.ToString(), *Id.ToString());
 			continue;
 		}
 
@@ -141,4 +164,74 @@ void UAugmentRegistrySubsystem::BuildIndex()
 			ActiveDefinitions.Add(Definition);
 		}
 	}
+}
+
+// 증강이 쓰는 애셋을 미리 로드해 게임 중 동기 로드를 없앰
+void UAugmentRegistrySubsystem::StartAssetPreload()
+{
+	TArray<FSoftObjectPath> Paths;
+
+	for (const UAugmentDefinition* Definition : AllDefinitions)
+	{
+		for (const TSoftClassPtr<UGameplayEffect>& Effect : Definition->GrantedEffects)
+		{
+			AddPreloadPath(Paths, Effect.ToSoftObjectPath());
+		}
+
+		for (const FAugmentGrantedAbility& Granted : Definition->GrantedAbilities)
+		{
+			AddPreloadPath(Paths, Granted.AbilityClass.ToSoftObjectPath());
+			AddPreloadPath(Paths, Granted.SpawnActorClass.ToSoftObjectPath());
+
+			for (const TSoftClassPtr<UGameplayEffect>& Effect : Granted.EffectsToApply)
+			{
+				AddPreloadPath(Paths, Effect.ToSoftObjectPath());
+			}
+		}
+
+		// 손에 드는 메시는 화면용이라 데디케이티드 서버에선 생략
+		if (!IsRunningDedicatedServer())
+		{
+			AddPreloadPath(Paths, Definition->HeldVisual.Mesh.ToSoftObjectPath());
+		}
+	}
+
+	const URogueGASSettings* Settings = GetDefault<URogueGASSettings>();
+	AddPreloadPath(Paths, Settings->CooldownEffectClass.ToSoftObjectPath());
+	AddPreloadPath(Paths, Settings->StatusEffectClass.ToSoftObjectPath());
+
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 애셋 %d개 프리로드 시작"), Paths.Num());
+
+	PreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths, FStreamableDelegate::CreateUObject(this, &ThisClass::OnAssetPreloaded));
+}
+
+void UAugmentRegistrySubsystem::OnAssetPreloaded()
+{
+	TArray<FSoftObjectPath> FollowUps;
+
+	for (const UAugmentDefinition* Definition : AllDefinitions)
+	{
+		for (const FAugmentGrantedAbility& Granted : Definition->GrantedAbilities)
+		{
+			if (UClass* ActorClass = Granted.SpawnActorClass.Get())
+			{
+				const ARogueAugmentActor* ActorCDO = GetDefault<ARogueAugmentActor>(ActorClass);
+				AddPreloadPath(FollowUps, ActorCDO->GetSpawnOnDetonateClass().ToSoftObjectPath());
+			}
+		}
+	}
+
+	if (!FollowUps.IsEmpty())
+	{
+		FollowUpPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(FollowUps);
+	}
+
+	UE_LOG(LogAugmentRegistry, Display, TEXT("[AugmentRegistry] 증강 애셋 프리로드 완료 (후속 액터 %d개)"),
+		FollowUps.Num());
 }

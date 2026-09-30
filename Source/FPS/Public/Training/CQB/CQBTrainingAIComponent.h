@@ -257,9 +257,6 @@ struct FPS_API FCQBCombatSettings
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Combat", meta = (ClampMin = "0.0", Units = "cm"))
     float GunshotNoiseMaxRange = 567.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "CQB|Combat")
-    bool bDrawDebugShots = false;
 };
 
 UCLASS(ClassGroup = (Training), meta = (BlueprintSpawnableComponent, DisplayName = "CQB Training AI"))

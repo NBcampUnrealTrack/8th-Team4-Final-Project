@@ -8,7 +8,7 @@
 /**
  * 프로젝트 모든 버튼의 부모로 텍스트를 C++ 이 들고, 어디에 그릴지는 WBP에서 정함
  */
-UCLASS(Abstract, Blueprintable)
+UCLASS(Abstract, Blueprintable, meta = (DisableNativeTick))
 class FPS_API UShooterButtonBase : public UCommonButtonBase{
 	GENERATED_BODY()
 	

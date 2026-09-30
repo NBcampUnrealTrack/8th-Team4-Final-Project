@@ -38,7 +38,7 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAugmentChipHovered,
 	const FShooterAugmentDisplay&, UShooterAugmentChip*);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAugmentChipUnHovered, UShooterAugmentChip*);
 
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterAugmentChip : public UUserWidget
 {
 	GENERATED_BODY()

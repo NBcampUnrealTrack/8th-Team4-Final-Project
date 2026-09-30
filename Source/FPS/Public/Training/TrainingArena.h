@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Training/TrainingTypes.h"
+#include "Training/TrainingAreaTransitionTypes.h"
 #include "TrainingArena.generated.h"
 
 class ATrainingTarget;
@@ -19,6 +20,9 @@ class FPS_API ATrainingArena : public AActor
 
 public:
     ATrainingArena();
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Training|Area Transition")
+    FName AreaId = TrainingAreaIds::Arena;
 
     UFUNCTION(BlueprintPure, Category = "Training")
     FVector GetCenterLocation() const;

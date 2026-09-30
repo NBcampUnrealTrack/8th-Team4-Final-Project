@@ -185,7 +185,7 @@ void AShooterCharacter::RefreshTeamOutline()
 	}
 
 	USkeletalMeshComponent* Mesh3P = GetMesh();
-	if (!IsValid(Mesh3P))
+	if (!ensure(IsValid(Mesh3P)))
 	{
 		return;
 	}
@@ -408,7 +408,7 @@ void AShooterCharacter::UpdateSprintBlocked(const float Stamina)
 
 void AShooterCharacter::HandleUtilityHeldChanged(const FGameplayTag, const int32 NewCount)
 {
-	if (!IsValid(Combat))
+	if (!ensure(IsValid(Combat)))
 	{
 		return;
 	}
@@ -469,7 +469,7 @@ void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, ui
 	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
 
 	const UCharacterMovementComponent* Movement = GetCharacterMovement();
-	if (!IsValid(Movement))
+	if (!ensure(IsValid(Movement)))
 	{
 		return;
 	}

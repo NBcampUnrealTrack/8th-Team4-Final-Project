@@ -97,13 +97,6 @@ public:
 		return ActiveTransactions.Num();
 	}
 
-#if WITH_DEV_AUTOMATION_TESTS
-	// 실제 GameState 페이즈를 구성하지 않는 자동화 테스트에서만 구매 가능 상태를 대체한다.
-	void SetPurchaseAvailabilityOverrideForTesting(
-		bool bEnabled,
-		bool bShopOpen);
-#endif
-
 private:
 	// 확정 구매 횟수가 소유 클라이언트에 복제됐을 때 UI 상태를 갱신한다.
 	UFUNCTION()
@@ -160,8 +153,4 @@ private:
 	// Wallet 변경 델리게이트 등으로 같은 거래 처리에 재진입하는 것을 차단한다.
 	bool bIsProcessingTransaction = false;
 
-#if WITH_DEV_AUTOMATION_TESTS
-	bool bHasPurchaseAvailabilityOverrideForTesting = false;
-	bool bPurchaseAvailabilityOverrideForTesting = false;
-#endif
 };

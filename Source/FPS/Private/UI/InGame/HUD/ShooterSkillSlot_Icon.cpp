@@ -170,7 +170,7 @@ void UShooterSkillSlot::ApplyEmptySlotState()
 
 	RecoveryEndWorldTime = 0.f;
 	DisplayCooldownDuration = 0.f;
-	LastDisplayedTenths = INDEX_NONE;
+	LastDisplayedSeconds = INDEX_NONE;
 	LastSpentCharges = INDEX_NONE;
 
 	// 이전 스킬의 쿨다운 태그 구독 해제

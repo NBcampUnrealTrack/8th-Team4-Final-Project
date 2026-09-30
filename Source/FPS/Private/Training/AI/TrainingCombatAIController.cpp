@@ -21,7 +21,6 @@ ATrainingCombatAIController::ATrainingCombatAIController()
     StateTreeComponent = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeComponent"));
     StateTreeComponent->SetStartLogicAutomatically(false);
     StateTreeComponent->PrimaryComponentTick.bStartWithTickEnabled = false;
-    StateTreeComponent->AddTickPrerequisiteComponent(PersonalityComponent);
     BrainComponent = StateTreeComponent;
 }
 

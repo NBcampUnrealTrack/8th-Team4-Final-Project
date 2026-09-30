@@ -1,4 +1,4 @@
-#include "Combat/Hitscan/HitscanResolverSubsystem.h"
+﻿#include "Combat/Hitscan/HitscanResolverSubsystem.h"
 
 #include "Combat/Hitscan/HitscanHitContextBuilder.h"
 #include "Combat/LagCompensationRewindScope.h"
@@ -9,6 +9,7 @@
 #include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Tags/GameplayTags.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 bool UHitscanResolverSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
@@ -63,7 +64,7 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 	}
 
 	URogueDamageSubsystem* DamageSubsystem = World->GetSubsystem<URogueDamageSubsystem>();
-	if (!IsValid(DamageSubsystem))
+	if (!ensureMsgf(IsValid(DamageSubsystem), TEXT("Hitscan world is missing RogueDamageSubsystem")))
 	{
 		return;
 	}
@@ -89,6 +90,7 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 	const FHitscanShotRequest& Request,
 	TArray<FHitscanImpactEffectData>& OutImpactEffects) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(Hitscan_ResolveServerShot);
 	OutImpactEffects.Reset();
 
 	UWorld* World = GetWorld();

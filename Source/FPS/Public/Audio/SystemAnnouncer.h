@@ -7,6 +7,7 @@
 class UAudioComponent;
 class USoundBase;
 class USoundClass;
+struct FStreamableHandle;
 
 USTRUCT(BlueprintType)
 struct FPS_API FSystemAnnouncerCue
@@ -47,6 +48,11 @@ public:
 	// 서버에서만 호출한다. 클라이언트가 임의로 전체 방송을 요청하는 RPC는 제공하지 않는다.
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Announcer")
 	bool Announce(FName AnnouncementId);
+
+	// 이 머신에서만 재생한다(서버 방송 없음). 팀에 따라 내용이 달라지는 안내처럼 각 클라이언트가
+	// 자기 기준으로 ID를 골라야 할 때 사용한다. 대기열·우선순위·음성 볼륨 분류는 서버 방송과 동일하다.
+	UFUNCTION(BlueprintCallable, Category = "Announcer")
+	void AnnounceLocal(FName AnnouncementId);
 
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Announcer")
 	void StopAnnouncements();
@@ -96,6 +102,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> VoiceAudioComponent;
 
+	TSharedPtr<FStreamableHandle> VoiceSoundClassLoadHandle;
+	bool bVoiceSoundClassLoading = false;
 	TArray<FQueuedAnnouncement> PendingAnnouncements;
 	TMap<FName, double> LastSentTimes;
 	FName CurrentAnnouncementId;

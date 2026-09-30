@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -73,7 +73,6 @@ private:
     void BeginPeekReturn(double NowSeconds);
     void FinishPeek(double NowSeconds);
     void AbandonCover(double NowSeconds);
-    void DrawTacticalDebug() const;
 
     TWeakObjectPtr<UCQBTrainingAIComponent> ConfigRef;
     TWeakObjectPtr<UCQBTrainingAwarenessComponent> AwarenessRef;
@@ -92,6 +91,7 @@ private:
     EPeekPhase PeekPhase = EPeekPhase::None;
     FCQBCoverPosition SelectedCover;
     TArray<FVector> RecentCoverLocations;
+    int32 RecentCoverWriteIndex = 0;
     TArray<FVector> NearbyAllyLocations;
     TArray<FVector> NearbyCoverReservations;
     double NextTacticalEvaluationTime = 0.0;

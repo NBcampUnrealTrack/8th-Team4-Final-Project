@@ -1,4 +1,4 @@
-#include "Training/UI/TrainingStartFeedbackWidget.h"
+﻿#include "Training/UI/TrainingStartFeedbackWidget.h"
 
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
@@ -149,6 +149,12 @@ void UTrainingStartFeedbackWidget::ClearFeedback()
 
 void UTrainingStartFeedbackWidget::NativeDestruct()
 {
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+    PulseUpdateTimer.Invalidate();
+    CountdownTimer.Invalidate();
     ClearFeedback();
     Super::NativeDestruct();
 }

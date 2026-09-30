@@ -59,6 +59,8 @@ public:
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
 	UDominationLoadoutManager* GetLoadoutManager() const;
+	void NotifyClientInitialCombatAssetsReady(
+		ADominationPlayerController* PlayerController, FGuid Generation, bool bSucceeded);
 
 	// 서버의 다른 시스템도 사건 ID로 공용 방송기를 사용할 수 있다.
 	UFUNCTION(BlueprintPure, Category = "Domination|Announcer")
@@ -70,6 +72,9 @@ public:
 		APlayerController* PlayerController,
 		EDominationPointId ObjectivePointId);
 	void RespawnPlayer(AController* Controller);
+
+	// 거점 기믹(중계 비콘)이 호출하는 팀별 부활 대기 감소. RespawnManager로 전달한다.
+	void SetTeamRespawnDelayReduction(EGameTeam Team, float Seconds);
 	bool PrepareCombatPawn(APlayerController* PlayerController);
 	void ActivateCombatPlayer(APlayerController* PlayerController);
 
@@ -88,6 +93,7 @@ public:
 	FOnDominationRoundCompleted OnRoundCompleted;
 
 protected:
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
@@ -95,6 +101,7 @@ protected:
 	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
 
 private:
+	void HandleCombatAssetsReady(EDominationCombatClass CombatClass, bool bSucceeded);
 	bool HasValidCombatClassConfiguration() const;
 	bool AreAugmentDraftDependenciesReady() const;
 	void HandleAugmentDraftDependenciesReady();
@@ -173,6 +180,7 @@ private:
 
 	// 최초 증강을 모두 끝내야 같은 시점부터 중앙 거점 전환 시간을 받는다.
 	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingInitialAugmentPlayers;
+	TSet<TWeakObjectPtr<APlayerController>> PendingCombatAssetRespawns;
 	bool bInitialObjectiveTransitionStarted = false;
 
 	FTimerHandle MatchEndTimerHandle;

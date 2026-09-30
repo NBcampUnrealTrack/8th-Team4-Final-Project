@@ -50,7 +50,6 @@ namespace
         if (!CachedFont.IsValid())
         {
             CachedFont = LoadObject<UFont>(nullptr, TEXT("/Engine/EngineFonts/Roboto.Roboto"));
-            ensureMsgf(CachedFont.IsValid(), TEXT("[TrainingUI] Cannot load /Engine/EngineFonts/Roboto.Roboto"));
         }
         return CachedFont.Get();
     }

@@ -2,10 +2,8 @@
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Input/ShooterInteractionComponent.h"
 #include "Player/TrainingPlayerController.h"
 #include "Tags/UITags.h"
 #include "Training/TrainingArena.h"
@@ -71,7 +69,7 @@ UShooterUIManagerSubsystem* UTrainingPlayerComponent::GetUIManager() const
 void UTrainingPlayerComponent::OpenDialogFor(ATrainingInteractionActor& Interactable)
 {
     APlayerController* ParticipantPlayer = GetParticipantController();
-    if (!ParticipantPlayer)
+    if (!ParticipantPlayer || IsAreaTransitionBlockingInput())
     {
         return;
     }
@@ -180,132 +178,14 @@ void UTrainingPlayerComponent::ShowDialog(const ETrainingDialogKind Kind, const 
     if (OpenSound) { UGameplayStatics::PlaySound2D(this, OpenSound, InteractionSound ? FMath::Max(0.0f, SoundVolume) : 1.0f); }
 }
 
-bool UTrainingPlayerComponent::TeleportParticipant(
-    const FTransform& Destination, const FRotator& TargetControlRotation)
-{
-    APlayerController* ParticipantPlayer = GetParticipantController();
-    APawn* ParticipantPawn = ParticipantPlayer ? ParticipantPlayer->GetPawn() : nullptr;
-    if (!ParticipantPlayer || !ParticipantPawn) return false;
-
-    const bool bSuccess = ParticipantPawn->TeleportTo(Destination.GetLocation(), Destination.Rotator());
-    if (!bSuccess) return false;
-
-    if (ACharacter* ParticipantCharacter = Cast<ACharacter>(ParticipantPawn))
-    {
-        ParticipantCharacter->GetCharacterMovement()->StopMovementImmediately();
-    }
-    ParticipantPlayer->SetControlRotation(TargetControlRotation);
-    return true;
-}
-
-bool UTrainingPlayerComponent::TeleportToSavedPreTrainingPosition(
-    FText& OutFailure, const bool bClearSavedPosition)
-{
-    if (!bHasPreTrainingTransform)
-    {
-        OutFailure = LOCTEXT("CQBOriginMissing", "No saved pre-training position is available.");
-        return false;
-    }
-
-    const bool bSuccess = TeleportParticipant(PreTrainingTransform, PreTrainingControlRotation);
-    if (!bSuccess)
-    {
-        OutFailure = LOCTEXT("CQBOriginBlocked", "The saved return position is blocked.");
-        return false;
-    }
-
-    if (bClearSavedPosition)
-    {
-        ReturnArena.Reset();
-        ReturnCQBEntryPoint.Reset();
-        PreTrainingTransform = FTransform::Identity;
-        PreTrainingControlRotation = FRotator::ZeroRotator;
-        bHasPreTrainingTransform = false;
-    }
-    return true;
-}
-
-void UTrainingPlayerComponent::SubmitTrainingDestination(
-    const int32 RequestId, const ETrainingDestination Destination)
-{
-    FText Failure;
-    if (!ValidatePendingRequest(RequestId, Failure) || PendingKind != ETrainingDialogKind::EnterArena)
-    {
-        ResolveDialogRequest(RequestId, false, Failure.IsEmpty()
-            ? LOCTEXT("DestinationExpired", "Training destination request expired.") : Failure);
-        return;
-    }
-
-    APlayerController* ParticipantPlayer = GetParticipantController();
-    APawn* ParticipantPawn = ParticipantPlayer ? ParticipantPlayer->GetPawn() : nullptr;
-    UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
-    if (!ParticipantPlayer || !ParticipantPawn || !Sessions || Sessions->GetState() != ETrainingSessionState::Idle || IsCQBTrainingActive())
-    {
-        ResolveDialogRequest(RequestId, false,
-            LOCTEXT("DestinationBusy", "Training is currently unavailable."));
-        return;
-    }
-
-    FTransform DestinationTransform;
-    ATrainingArena* RequestedArena = PendingInteractable->Arena;
-    ACQBTrainingPlayerSpawnPoint* CQBEntry = PendingInteractable->CQBEntryPoint;
-    if (Destination == ETrainingDestination::Arena)
-    {
-        if (!RequestedArena)
-        {
-            ResolveDialogRequest(RequestId, false,
-                LOCTEXT("ArenaDestinationMissing", "Training Arena is not assigned to the entrance actor."));
-            return;
-        }
-        DestinationTransform = RequestedArena->GetEntryTransform();
-    }
-    else
-    {
-        if (!CQBEntry)
-        {
-            ResolveDialogRequest(RequestId, false,
-                LOCTEXT("CQBDestinationMissing", "CQB Entry Point is not assigned to the entrance actor."));
-            return;
-        }
-        DestinationTransform = CQBEntry->GetActorTransform();
-    }
-
-    const FTransform PreviousTransform = ParticipantPawn->GetActorTransform();
-    const FRotator PreviousControlRotation = ParticipantPlayer->GetControlRotation();
-    const bool bSuccess = TeleportParticipant(DestinationTransform, DestinationTransform.Rotator());
-    if (bSuccess)
-    {
-        PreTrainingTransform = PreviousTransform;
-        PreTrainingControlRotation = PreviousControlRotation;
-        bHasPreTrainingTransform = true;
-        if (Destination == ETrainingDestination::Arena)
-        {
-            ReturnArena = RequestedArena;
-            ReturnCQBEntryPoint.Reset();
-        }
-        else
-        {
-            ReturnArena.Reset();
-            ReturnCQBEntryPoint = CQBEntry;
-        }
-        ClearPendingRequest();
-    }
-    else
-    {
-        Failure = LOCTEXT("DestinationBlocked", "The selected training entry point is blocked.");
-    }
-    ResolveDialogRequest(RequestId, bSuccess, Failure);
-}
-
 bool UTrainingPlayerComponent::ValidatePendingRequest(const int32 RequestId, FText& OutFailure) const
 {
-    const UShooterInteractionComponent* Interaction = GetOwner()->FindComponentByClass<UShooterInteractionComponent>();
     const ATrainingInteractionActor* Interactable = PendingInteractable.Get();
     const bool bHasDestination = Interactable && (Interactable->InteractionRole == ETrainingInteractionRole::Entrance
         ? (IsValid(Interactable->Arena) || IsValid(Interactable->CQBEntryPoint))
         : IsValid(Interactable->Arena));
     if (RequestId <= 0 || RequestId != PendingRequestId || !bHasDestination
-        || !Interaction || !Interaction->CanReachInteractable(Interactable))
+        || !CanReachPendingTrainingActor(Interactable))
     {
         OutFailure = LOCTEXT("Expired", "This request is no longer valid. Close the dialog and interact again.");
         return false;
@@ -379,53 +259,6 @@ void UTrainingPlayerComponent::SubmitMode(const int32 RequestId, const ETraining
     ResolveDialogRequest(RequestId, bSuccess, Failure);
 }
 
-
-void UTrainingPlayerComponent::ReturnToPreTrainingPosition(const int32 RequestId)
-{
-    FText Failure;
-    if (!ValidatePendingRequest(RequestId, Failure))
-    {
-        ResolveDialogRequest(RequestId, false, Failure);
-        return;
-    }
-
-    APlayerController* ParticipantPlayer = GetParticipantController();
-    ATrainingArena* RequestedArena = PendingInteractable.IsValid() ? PendingInteractable->Arena.Get() : nullptr;
-    UTrainingSessionSubsystem* Sessions = GetWorld()->GetSubsystem<UTrainingSessionSubsystem>();
-    bool bSuccess = false;
-
-    if (PendingKind != ETrainingDialogKind::SelectMode)
-    {
-        Failure = LOCTEXT("ReturnStartWrongDialog", "Return to start is only available from the training mode selection screen.");
-    }
-    else if (!ParticipantPlayer || !RequestedArena || !Sessions)
-    {
-        Failure = LOCTEXT("ReturnStartUnavailable", "The training return position is no longer available.");
-    }
-    else if (Sessions->GetState() != ETrainingSessionState::Idle)
-    {
-        Failure = LOCTEXT("ReturnStartSessionActive", "End the active training session before returning to the start position.");
-    }
-    else if (!bHasPreTrainingTransform || ReturnArena.Get() != RequestedArena)
-    {
-        Failure = LOCTEXT("ReturnStartMissing", "No saved pre-training position is available. Leave and enter the Training Arena again.");
-    }
-    else
-    {
-        bSuccess = TeleportToSavedPreTrainingPosition(Failure, true);
-    }
-
-    if (bSuccess)
-    {
-        ClearPendingRequest();
-    }
-    else if (Failure.IsEmpty())
-    {
-        Failure = LOCTEXT("ReturnStartFailed", "Could not return to the saved pre-training position.");
-    }
-
-    ResolveDialogRequest(RequestId, bSuccess, Failure);
-}
 
 void UTrainingPlayerComponent::ResolveDialogRequest(const int32 RequestId,
     const bool bSuccess, const FText& Failure)
@@ -554,6 +387,7 @@ void UTrainingPlayerComponent::HandleWorldLeaving(UWorld* DepartingWorld)
 
 void UTrainingPlayerComponent::HandleParticipantDeath()
 {
+    CancelAreaTransition();
     CancelCQBDialogRequest(PendingCQBRequestId);
     ClearPendingCQBRequest();
     ClearPendingRequest();
@@ -589,11 +423,7 @@ void UTrainingPlayerComponent::ResetTrainingState()
         Presentation->Clear();
     }
     ActiveCQBSpawner.Reset();
-    ReturnArena.Reset();
-    ReturnCQBEntryPoint.Reset();
-    PreTrainingTransform = FTransform::Identity;
-    PreTrainingControlRotation = FRotator::ZeroRotator;
-    bHasPreTrainingTransform = false;
+    ClearSavedTrainingPosition();
 }
 
 void UTrainingPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

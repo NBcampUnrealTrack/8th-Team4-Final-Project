@@ -30,7 +30,7 @@ struct FShooterLoadingContext
 
 /*
  * 로딩 상태
- * 90% MetaHuman PreLoad
+ * 90% 이동 전 필수 준비 완료
  * 95% World
  * 99% Player Ready
  * 뒷 배경은 Room ModeSelect의 Thumbnail에서 가져온다
@@ -59,16 +59,10 @@ public:
 	void BeginTravelProgress();
 	void NotifyPreloadComplete();
 
-	// 취소·해제·타임아웃. 게이트만 풀고 90% 는 열지 않는다
-	void AbandonPreloadWait();
-
 	void NotifyWorldLoaded();
 	void NotifyMatchLoadReady();
 
 	bool IsTravelProgressActive() const;
-
-	// 더 기다릴 대상이 있나. 도미네이션이 아니면 항상 참
-	bool CanFinishLoading() const;
 
 	// 로비가 살아 있을 때 캐시해 두는 표시값
 	void SetPendingLoadingContext(const FShooterLoadingContext& InContext);
@@ -95,11 +89,6 @@ private:
 	// 뷰포트 조작 전 위젯 월드 재바인딩
 	void RebindLoadingWidgetToCurrentWorld();
 
-	// 선로드 완료 게이트
-	void DeferFinishUntilPreloadEnd();
-	void ClearPreloadFinishTimeout();
-	bool HandlePreloadFinishTimeout(float DeltaTime);
-
 	UGameViewportClient* GetGameViewportClient() const;
 
 private:
@@ -119,9 +108,6 @@ private:
 	bool bWorldLoaded = false;
 	bool bMatchReady = false;
 
-	// 취소·해제·타임아웃. 
-	bool bPreloadWaitAbandoned = false;
-
 	// UX 용 추정치
 	float EstimatedTravelProgress = 0.0f;
 
@@ -129,10 +115,6 @@ private:
 
 	// 완료 대기를 위젯에 맡긴 상태. 즉시 Hide 가 항상 이긴다
 	bool bCompletionExitInFlight = false;
-
-	// 선로드가 끝날 때까지 미뤄 둔 완료
-	bool bFinishDeferredUntilPreloadEnd = false;
-	FTSTicker::FDelegateHandle PreloadFinishTimeoutHandle;
 
 	UPROPERTY(Transient)
 	FShooterLoadingContext PendingContext;

@@ -87,7 +87,12 @@ void UShooterSkillSlot::ApplyCooldownVisual(float RemainingSeconds, bool bProgre
 
 	const int32 DisplaySeconds = FMath::CeilToInt(FMath::Max(0.f, RemainingSeconds));
 
-	Text_Cooldown->SetText(FText::AsNumber(DisplaySeconds));
+	// 초가 바뀔 때만 글자를 다시 만든다
+	if (DisplaySeconds != LastDisplayedSeconds)
+	{
+		Text_Cooldown->SetText(FText::AsNumber(DisplaySeconds));
+		LastDisplayedSeconds = DisplaySeconds;
+	}
 }
 
 void UShooterSkillSlot::ApplyAvailabilityVisual(bool bAvailable, bool bFullyCharged)
@@ -147,7 +152,7 @@ void UShooterSkillSlot::FinalizeFullCharge()
 	{
 		Gauge_Cooldown->SetProgressImmediate(0.f);
 	}
-	LastDisplayedTenths = INDEX_NONE;
+	LastDisplayedSeconds = INDEX_NONE;
 }
 
 void UShooterSkillSlot::HandleReadyAnimFinished()

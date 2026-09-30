@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
@@ -33,7 +33,7 @@ struct FDominationPlayerSlotEntry
  * 클래스 선택 화면이다.
  * 설정된 클래스 카드를 생성하고 기존 Domination 선택 요청으로 전달한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UDominationClassSelectScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
@@ -51,7 +51,6 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -65,7 +64,10 @@ private:
 
 	void HandleClassCardClicked(EDominationCombatClass RequestedClass);
 	void HandleClassCardHovered(EDominationCombatClass HoveredClass, bool bHovered);
+	void StartHoverUpdates();
+	void UpdateHoverAnimation();
 	void HandleLockInClicked();
+	void RequestClassPresentationAssets();
 	void BuildIconCache();
 	void RebuildClassCards();
 	void ClearClassCards();
@@ -78,7 +80,7 @@ private:
 	void RefreshSelectionModePresentation();
 	void HandleAudioSettingsChanged();
 	void ApplyBGMSettings();
-	float ResolveBGMComponentVolume() const;
+	float ResolveBGMComponentVolume();
 	bool IsActiveClassReselectionMode() const;
 
 	// 팀원 슬롯 수명. PlayerArray를 주기적으로 훑어 자리를 맞춘다.
@@ -161,12 +163,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<ADominationClassPreviewStage> PreviewStage;
 
+	TSharedPtr<struct FStreamableHandle> PresentationLoadHandle;
+	uint32 PresentationLoadGeneration = 0;
+
 	FDominationCardHoverController CardHoverController;
 
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 
 	FTimerHandle TimerTextHandle;
 	FTimerHandle ReconcileTimerHandle;
+	FTimerHandle HoverUpdateTimerHandle;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection", meta = (ClampMin = "0.008", ClampMax = "0.05"))
+	float HoverUpdateInterval = 1.0f / 60.0f;
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;

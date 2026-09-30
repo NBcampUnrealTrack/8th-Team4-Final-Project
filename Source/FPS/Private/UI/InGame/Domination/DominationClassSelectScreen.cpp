@@ -1,10 +1,13 @@
-#include "UI/InGame/Domination/DominationClassSelectScreen.h"
+﻿#include "UI/InGame/Domination/DominationClassSelectScreen.h"
 
 #include "CommonButtonBase.h"
 #include "CommonTextBlock.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelWidget.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/Settings/DominationClassSettings.h"
@@ -17,6 +20,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
+#include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
 #include "UI/InGame/Domination/DominationClassInfoPanel.h"
@@ -71,10 +75,18 @@ void UDominationClassSelectScreen::NativeOnActivated()
 	}
 
 	RefreshSelectionModePresentation();
+	RequestClassPresentationAssets();
 }
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	++PresentationLoadGeneration;
+	if (PresentationLoadHandle.IsValid())
+	{
+		PresentationLoadHandle->CancelHandle();
+		PresentationLoadHandle.Reset();
+	}
+
 	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
 		Settings->OnAudioSettingsChanged.RemoveAll(this);
@@ -88,9 +100,11 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(TimerTextHandle);
-		World->GetTimerManager().ClearTimer(ReconcileTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
+	TimerTextHandle.Invalidate();
+	ReconcileTimerHandle.Invalidate();
+	HoverUpdateTimerHandle.Invalidate();
 
 	if (IsValid(Button_LockIn))
 	{
@@ -128,29 +142,30 @@ void UDominationClassSelectScreen::ApplyBGMSettings()
 		return;
 	}
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	if (USoundClass* MusicClass = AudioSettings->MusicSoundClass.LoadSynchronous())
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
-		BGMComponent->SoundClassOverride = MusicClass;
+		if (USoundClass* MusicClass = Settings->GetAudioChannelSoundClass(EShooterAudioChannel::Music))
+		{
+			BGMComponent->SoundClassOverride = MusicClass;
+		}
 	}
 
 	BGMComponent->SetVolumeMultiplier(ResolveBGMComponentVolume());
 }
 
-float UDominationClassSelectScreen::ResolveBGMComponentVolume() const
+float UDominationClassSelectScreen::ResolveBGMComponentVolume()
 {
-	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 	if (!IsValid(Settings))
 	{
 		return 1.0f;
 	}
 
-	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
-	const bool bHasMusicClass = IsValid(AudioSettings->MusicSoundClass.LoadSynchronous());
-	const bool bHasUserMix = IsValid(AudioSettings->UserSettingsSoundMix.LoadSynchronous());
+	const bool bHasMusicClass = IsValid(Settings->GetAudioChannelSoundClass(EShooterAudioChannel::Music));
+	const bool bHasUserMix = IsValid(Settings->GetUserSettingsSoundMix());
 	return bHasMusicClass && bHasUserMix
 		? 1.0f
-		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 1.0f);
+		: FMath::Clamp(Settings->GetAudioVolume(EShooterAudioChannel::Music), 0.0f, 2.0f);
 }
 
 void UDominationClassSelectScreen::HandleCombatClassChanged(
@@ -223,6 +238,7 @@ void UDominationClassSelectScreen::HandleClassCardHovered(
 	if (!bHovered || bLockInRequestPending)
 	{
 		CardHoverController.SetHovered(INDEX_NONE);
+		StartHoverUpdates();
 		return;
 	}
 
@@ -233,18 +249,32 @@ void UDominationClassSelectScreen::HandleClassCardHovered(
 		});
 
 	CardHoverController.SetHovered(HoveredIndex);
+	StartHoverUpdates();
 }
 
-void UDominationClassSelectScreen::NativeTick(
-	const FGeometry& MyGeometry,
-	const float InDeltaTime)
+void UDominationClassSelectScreen::StartHoverUpdates()
 {
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	if (!CardHoverController.Tick(InDeltaTime, CardHoverSettings))
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
 	{
 		return;
 	}
+
+	if (!World->GetTimerManager().IsTimerActive(HoverUpdateTimerHandle))
+	{
+		World->GetTimerManager().SetTimer(
+			HoverUpdateTimerHandle,
+			this,
+			&ThisClass::UpdateHoverAnimation,
+			FMath::Max(0.008f, HoverUpdateInterval),
+			true);
+	}
+}
+
+void UDominationClassSelectScreen::UpdateHoverAnimation()
+{
+	const float DeltaTime = FMath::Max(0.008f, HoverUpdateInterval);
+	const bool bChanged = CardHoverController.Tick(DeltaTime, CardHoverSettings);
 
 	const TArray<FDominationCardHoverState>& States = CardHoverController.GetStates();
 	for (int32 Index = 0; Index < ClassCards.Num(); ++Index)
@@ -253,6 +283,15 @@ void UDominationClassSelectScreen::NativeTick(
 		{
 			ClassCards[Index]->ApplyHoverState(States[Index]);
 		}
+	}
+
+	if (!bChanged)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(HoverUpdateTimerHandle);
+		}
+		HoverUpdateTimerHandle.Invalidate();
 	}
 }
 
@@ -369,6 +408,81 @@ void UDominationClassSelectScreen::RefreshClassInfoPanel()
 		GetCachedClassIcon(DisplayClass));
 }
 
+void UDominationClassSelectScreen::RequestClassPresentationAssets()
+{
+	const uint32 RequestGeneration = ++PresentationLoadGeneration;
+	if (PresentationLoadHandle.IsValid())
+	{
+		PresentationLoadHandle->CancelHandle();
+		PresentationLoadHandle.Reset();
+	}
+
+	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
+	TArray<FSoftObjectPath> Paths;
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		if (Definition.CombatClass == EDominationCombatClass::Unselected)
+		{
+			continue;
+		}
+
+		const FSoftObjectPath PresentationPaths[] = {
+			Definition.Icon.ToSoftObjectPath(),
+			Definition.Portrait.ToSoftObjectPath(),
+			Definition.WeaponArt.ToSoftObjectPath(),
+			Definition.SelectionVoice.ToSoftObjectPath() };
+		for (const FSoftObjectPath& Path : PresentationPaths)
+		{
+			if (Path.IsValid() && !Path.ResolveObject())
+			{
+				Paths.AddUnique(Path);
+			}
+		}
+	}
+
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	// 표시용 에셋은 화면을 연 뒤 불러오며 선택 요청이나 맵 전환을 막지 않는다.
+	PresentationLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths,
+		FStreamableDelegate::CreateWeakLambda(this, [this, RequestGeneration]()
+		{
+			if (RequestGeneration != PresentationLoadGeneration || !IsActivated())
+			{
+				return;
+			}
+
+			BuildIconCache();
+			const UDominationClassSettings* Settings = GetDefault<UDominationClassSettings>();
+			for (UDominationClassSelectCard* Card : ClassCards)
+			{
+				if (!IsValid(Card))
+				{
+					continue;
+				}
+				const FDominationCombatClassDefinition* Definition =
+					Settings->FindDefinition(Card->GetCombatClass());
+				if (!Definition)
+				{
+					continue;
+				}
+				FDominationClassCardPresentation Presentation;
+				Presentation.CombatClass = Definition->CombatClass;
+				Presentation.DisplayName = Definition->DisplayName;
+				Presentation.Description = Definition->Description;
+				Presentation.WeaponArt = GetCachedClassWeaponArt(Definition->CombatClass);
+				Card->SetClassData(Presentation);
+			}
+			RefreshSelectionState();
+			RefreshClassInfoPanel();
+			RefreshAllSlots();
+			PresentationLoadHandle.Reset();
+		}));
+}
+
 void UDominationClassSelectScreen::BuildIconCache()
 {
 	ClassIconCache.Empty();
@@ -390,22 +504,22 @@ void UDominationClassSelectScreen::BuildIconCache()
 			continue;
 		}
 
-		if (UTexture2D* IconTexture = Definition.Icon.LoadSynchronous())
+		if (UTexture2D* IconTexture = Definition.Icon.Get())
 		{
 			ClassIconCache.Add(Definition.CombatClass, IconTexture);
 		}
 
-		if (UTexture2D* PortraitTexture = Definition.Portrait.LoadSynchronous())
+		if (UTexture2D* PortraitTexture = Definition.Portrait.Get())
 		{
 			ClassPortraitCache.Add(Definition.CombatClass, PortraitTexture);
 		}
 
-		if (UTexture2D* WeaponArtTexture = Definition.WeaponArt.LoadSynchronous())
+		if (UTexture2D* WeaponArtTexture = Definition.WeaponArt.Get())
 		{
 			ClassWeaponArtCache.Add(Definition.CombatClass, WeaponArtTexture);
 		}
 
-		if (USoundBase* Voice = Definition.SelectionVoice.LoadSynchronous())
+		if (USoundBase* Voice = Definition.SelectionVoice.Get())
 		{
 			ClassVoiceCache.Add(Definition.CombatClass, Voice);
 		}

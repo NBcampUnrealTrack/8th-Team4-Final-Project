@@ -1,4 +1,5 @@
-#include "Training/CQB/CQBTrainingStateTreeNodes.h"
+﻿#include "Training/CQB/CQBTrainingStateTreeNodes.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 #include "Components/ActorComponent.h"
 #include "Engine/World.h"
@@ -213,6 +214,7 @@ EStateTreeRunStatus FCQBBehaviorStateTask::Tick(
     FStateTreeExecutionContext& Context,
     const float DeltaTime) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(CQBBehaviorStateTask_Tick);
     const FInstanceDataType& Data = Context.GetInstanceData(*this);
     ACQBTrainingAIController* Controller = CQBStateTree::ResolveController(Context);
     if (!Controller)
@@ -264,6 +266,7 @@ EStateTreeRunStatus FCQBTacticalIntentTask::Tick(
     FStateTreeExecutionContext& Context,
     const float DeltaTime) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(CQBTacticalIntentTask_Tick);
     ACQBTrainingAIController* Controller = CQBStateTree::ResolveController(Context);
     if (!Controller)
     {

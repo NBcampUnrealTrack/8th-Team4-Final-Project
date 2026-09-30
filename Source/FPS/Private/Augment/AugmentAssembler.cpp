@@ -16,13 +16,11 @@ namespace
 	UClass* LoadGrantedClass(const TSoftClassPtr<T>& SoftClass,
 		const UAugmentDefinition& Definition, const TCHAR* FieldName, int32 Index)
 	{
+		UE_CLOG(SoftClass.IsPending(), LogAugmentAssembler, Warning,
+			TEXT("[AugmentAssembler] %s 가 프리로드되지 않아 동기 로드합니다"), *SoftClass.ToString());
 		UClass* Loaded = SoftClass.LoadSynchronous();
-		if (!Loaded)
-		{
-			UE_LOG(LogAugmentAssembler, Error,
-				TEXT("[AugmentAssembler] %s 의 %s[%d] 를 로드하지 못했습니다"),
-				*Definition.GetName(), FieldName, Index);
-		}
+		ensureMsgf(Loaded, TEXT("[AugmentAssembler] %s 의 %s[%d] 를 로드하지 못했습니다"),
+			*Definition.GetName(), FieldName, Index);
 
 		return Loaded;
 	}
@@ -42,11 +40,10 @@ namespace
 
 			// 스펙 생성, GE 레벨은 항상 1
 			const FGameplayEffectSpecHandle Spec = ASC.MakeOutgoingSpec(Resolved.EffectClasses[Index], 1.f, Context);
-			if (!Spec.IsValid())
+			if (!ensureMsgf(Spec.IsValid(),
+				TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 스펙 생성에 실패했습니다"),
+				*Definition.GetName(), Index))
 			{
-				UE_LOG(LogAugmentAssembler, Error,
-					TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 스펙 생성에 실패했습니다"),
-					*Definition.GetName(), Index);
 				continue;
 			}
 
@@ -58,13 +55,12 @@ namespace
 
 			// 스펙 적용
 			const FActiveGameplayEffectHandle Handle = ASC.ApplyGameplayEffectSpecToSelf(*Spec.Data);
-			if (!Handle.IsValid())
+			// Instant GE 는 핸들 생성 없이 바로 적용되므로, DurationPolicy 가 Infinite 인지 확인
+			if (!ensureMsgf(Handle.IsValid(),
+				TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 핸들이 무효입니다. ")
+				TEXT("Duration Policy 가 Infinite 인지, 태그로 차단되지 않았는지 확인하세요"),
+				*Definition.GetName(), Index))
 			{
-				// Instant GE 는 핸들 생성 없이 바로 적용되므로, DurationPolicy 가 Infinite 인지 확인
-				UE_LOG(LogAugmentAssembler, Error,
-					TEXT("[AugmentAssembler] %s 의 GrantedEffects[%d] 핸들이 무효입니다. ")
-					TEXT("Duration Policy 가 Infinite 인지, 태그로 차단되지 않았는지 확인하세요"),
-					*Definition.GetName(), Index);
 				continue;
 			}
 
@@ -96,11 +92,10 @@ namespace
 
 			// 어빌리티 부여
 			const FGameplayAbilitySpecHandle Handle = ASC.GiveAbility(Spec);
-			if (!Handle.IsValid())
+			if (!ensureMsgf(Handle.IsValid(),
+				TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 부여에 실패했습니다"),
+				*Definition.GetName(), Index))
 			{
-				UE_LOG(LogAugmentAssembler, Error,
-					TEXT("[AugmentAssembler] %s 의 GrantedAbilities[%d] 부여에 실패했습니다"),
-					*Definition.GetName(), Index);
 				continue;
 			}
 
@@ -119,10 +114,8 @@ bool RogueAugmentAssembler::ResolveAugment(
 
 	// 수치 데이터 검사
 	const FAugmentLevelData* LevelData = Definition.GetLevelData();
-	if (!LevelData)
+	if (!ensureMsgf(LevelData, TEXT("[AugmentAssembler] %s 에 Levels 가 비어 있습니다"), *Definition.GetName()))
 	{
-		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] %s 에 Levels 가 비어 있습니다"), *Definition.GetName());
 		return false;
 	}
 
@@ -191,11 +184,10 @@ FAugmentGrantHandles RogueAugmentAssembler::ApplyResolved(UAbilitySystemComponen
 		return Handles;
 	}
 
-	if (!Resolved.IsValid())
+	if (!ensureMsgf(Resolved.IsValid(),
+		TEXT("[AugmentAssembler] %s 를 해석하지 않고 부여하려 했습니다. ResolveAugment 를 먼저 호출하세요"),
+		*GetNameSafe(Resolved.Definition)))
 	{
-		UE_LOG(LogAugmentAssembler, Error,
-			TEXT("[AugmentAssembler] %s 를 해석하지 않고 부여하려 했습니다. ResolveAugment 를 먼저 호출하세요"),
-			*GetNameSafe(Resolved.Definition));
 		return Handles;
 	}
 

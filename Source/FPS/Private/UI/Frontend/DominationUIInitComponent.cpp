@@ -1,17 +1,16 @@
-#include "UI/Frontend/DominationUIInitComponent.h"
+﻿#include "UI/Frontend/DominationUIInitComponent.h"
 
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Tags/UITags.h"
 #include "TimerManager.h"
 #include "GameMode/State/DominationGameState.h"
-#include "Player/BaseTeamPlayerState.h"
 #include "GameMode/Settings/DominationSandstormSettings.h"
-#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Preload/DominationPreloadSubsystem.h"
-#include "Tags/UITags.h"
-#include "TimerManager.h"
+#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
 #include "UI/InGame/ShooterMatchOutcomeScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
@@ -43,8 +42,17 @@ void UDominationUIInitComponent::ResetWorldBinding()
 {
     if (UWorld* World = GetWorld())
     {
-        World->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
+        // 매치종료 트랜지션 늦음 방지 예약
+        if (World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+        {
+            UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly before travel."));
+            BeginMatchExitTransition(true);
+        }
+        World->GetTimerManager().ClearAllTimersForObject(this);
     }
+	
+    MatchExitTransitionTimer.Invalidate();
+    SandstormWarningTimer.Invalidate();
 
     UnbindFromGameState();
     ClearSandstormWarning();
@@ -259,27 +267,6 @@ void UDominationUIInitComponent::BeginMatchExitTransition(const bool bInstant)
 	}
 }
 
-void UDominationUIInitComponent::HandleSeamlessTravelStart(UWorld* TravelingWorld, const FString& /*MapName*/)
-{
-	if (TravelingWorld != GetWorld() || bMatchExitTransitionAttempted)
-	{
-		return;
-	}
-
-	// 조건은 TryPresentMatchEnd 와 같다. 매치 종료가 아닌 travel 은 덮지 않는다
-	if (!BoundGameState.IsValid()
-		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
-		|| BoundGameState->GetMatchWinner() == EGameTeam::None)
-	{
-		return;
-	}
-
-	// 느린 프레임으로 월드 시간이 밀려 예약이 travel 보다 늦었다. 월드 교체만은 가린다
-	UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly at travel start."));
-	TravelingWorld->GetTimerManager().ClearTimer(MatchExitTransitionTimer);
-	BeginMatchExitTransition(true);
-}
-
 void UDominationUIInitComponent::BindToGameState(
 	ADominationGameState* DominationGameState)
 {
@@ -299,9 +286,6 @@ void UDominationUIInitComponent::BindToGameState(
 	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(
 		this, 
 		&ThisClass::HandleRewardRoundChanged);
-	SeamlessTravelStartHandle = FWorldDelegates::OnSeamlessTravelStart.AddUObject(
-		this,
-		&ThisClass::HandleSeamlessTravelStart);
 	DominationGameState->OnSandstormStateChanged.AddUniqueDynamic(
 		this, &ThisClass::HandleSandstormStateChanged);
 	UpdateSandstormWarning();
@@ -317,9 +301,6 @@ void UDominationUIInitComponent::UnbindFromGameState()
 		BoundGameState->OnSandstormStateChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
-
-	FWorldDelegates::OnSeamlessTravelStart.Remove(SeamlessTravelStartHandle);
-	SeamlessTravelStartHandle.Reset();
 }
 
 bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const

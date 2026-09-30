@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "TimerManager.h"
 #include "TrainingDamageFeedbackWidget.generated.h"
 
 class UCanvasPanel;
@@ -68,7 +69,6 @@ public:
 
 protected:
     virtual void NativePreConstruct() override;
-    virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
     virtual void NativeDestruct() override;
 
 private:
@@ -79,11 +79,16 @@ private:
     {
         TWeakObjectPtr<UTextBlock> Text;
         FVector WorldPosition = FVector::ZeroVector;
-        float Age = 0.0f;
+        double SpawnSeconds = 0.0;
         float HorizontalOffset = 0.0f;
         bool bLethal = false;
     };
 
+    void StartAnimationUpdates();
+    void UpdateDamageNumbers();
+    void StopAnimationUpdates();
+
     TArray<FDamageNumber> DamageNumbers;
+    FTimerHandle AnimationTimer;
     int32 DamageSequence = 0;
 };

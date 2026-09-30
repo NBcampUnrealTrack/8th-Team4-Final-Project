@@ -1,8 +1,11 @@
-#include "GameMode/DominationGameMode.h"
+﻿#include "GameMode/DominationGameMode.h"
 
+#include "Actor/DominationCapturePoint.h"
 #include "Augment/AugmentDraftProfile.h"
 #include "Audio/DominationSystemAnnouncer.h"
+#include "Character/ShooterCharacter.h"
 #include "GameMode/Manager/DominationAnnouncerManager.h"
+#include "EngineUtils.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Manager/AugmentDraftManager.h"
@@ -43,6 +46,9 @@ ADominationGameMode::ADominationGameMode()
 void ADominationGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+	UE_LOG(LogDominationGameMode, Log, TEXT("[DominationTravel] Stage=DestinationBeginPlay World=%s"),
+		*GetNameSafe(GetWorld()));
+	LoadoutManager->OnCombatAssetsReady.AddUObject(this, &ThisClass::HandleCombatAssetsReady);
 	if (!HasValidCombatClassConfiguration())
 	{
 		UE_LOG(LogDominationGameMode, Error,
@@ -137,6 +143,7 @@ void ADominationGameMode::BeginPlay()
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
 	SandstormManager->Shutdown();
 
@@ -171,6 +178,8 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		ObjectiveManager->Shutdown();
 	}
+	PendingCombatAssetRespawns.Reset();
+	LoadoutManager->Shutdown();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -182,6 +191,7 @@ ASystemAnnouncer* ADominationGameMode::GetSystemAnnouncer() const
 
 void ADominationGameMode::Logout(AController* Exiting)
 {
+	PendingCombatAssetRespawns.Remove(Cast<APlayerController>(Exiting));
 	MatchStartManager->NotifyPlayerLeaving(Cast<APlayerController>(Exiting));
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
@@ -329,6 +339,15 @@ UDominationLoadoutManager* ADominationGameMode::GetLoadoutManager() const
 	return LoadoutManager.Get();
 }
 
+void ADominationGameMode::NotifyClientInitialCombatAssetsReady(
+	ADominationPlayerController* PlayerController, const FGuid Generation, const bool bSucceeded)
+{
+	if (HasAuthority() && IsValid(MatchStartManager))
+	{
+		MatchStartManager->NotifyClientInitialCombatAssetsReady(PlayerController, Generation, bSucceeded);
+	}
+}
+
 void ADominationGameMode::GetInitialParticipantPlayerStates(
 	TArray<ADominationPlayerState*>& OutPlayerStates) const
 {
@@ -367,7 +386,23 @@ bool ADominationGameMode::RestartPlayerAtObjective(
 
 	RestartPlayerAtTransform(PlayerController, SpawnTransform);
 	APawn* SpawnedPawn = PlayerController->GetPawn();
-	return IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
+	const bool bSpawned = IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
+	UE_LOG(LogDominationGameMode, Log,
+		TEXT("[DominationTravel] Stage=PlayerSpawn Player=%s Pawn=%s Team=%d Objective=%d Success=%d"),
+		*GetNameSafe(PlayerController), *GetNameSafe(SpawnedPawn),
+		static_cast<uint8>(PlayerState->GetTeam()), static_cast<uint8>(ObjectivePointId), bSpawned);
+	return bSpawned;
+}
+
+// 거점 기믹(중계 비콘)의 팀별 부활 대기 감소를 RespawnManager로 전달
+void ADominationGameMode::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (IsValid(RespawnManager))
+	{
+		RespawnManager->SetTeamRespawnDelayReduction(Team, Seconds);
+	}
 }
 
 void ADominationGameMode::RespawnPlayer(AController* Controller)
@@ -384,6 +419,21 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 		|| PlayerState->GetParticipationState()
 			!= EPlayerParticipationState::WaitingForNextSpawn)
 	{
+		return;
+	}
+
+	const EDominationCombatAssetStatus AssetStatus =
+		LoadoutManager->EnsureCombatAssets(PlayerState->GetCombatClass());
+	if (AssetStatus == EDominationCombatAssetStatus::Loading)
+	{
+		PendingCombatAssetRespawns.Add(PlayerController);
+		return;
+	}
+	if (AssetStatus == EDominationCombatAssetStatus::Failed)
+	{
+		UE_LOG(LogDominationGameMode, Error,
+			TEXT("Domination respawn stopped: selected combat assets failed to load for %s."),
+			*GetNameSafe(PlayerState));
 		return;
 	}
 
@@ -439,12 +489,48 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 	ServeNextAugmentReward(PlayerState);
 }
 
+void ADominationGameMode::HandleCombatAssetsReady(
+	const EDominationCombatClass CombatClass, const bool bSucceeded)
+{
+	TArray<TWeakObjectPtr<APlayerController>> PlayersToResume;
+	for (auto Iterator = PendingCombatAssetRespawns.CreateIterator(); Iterator; ++Iterator)
+	{
+		APlayerController* PlayerController = Iterator->Get();
+		const ADominationPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<ADominationPlayerState>() : nullptr;
+		if (!IsValid(PlayerState))
+		{
+			Iterator.RemoveCurrent();
+		}
+		else if (PlayerState->GetCombatClass() == CombatClass)
+		{
+			PlayersToResume.Add(PlayerController);
+			Iterator.RemoveCurrent();
+		}
+	}
+	for (const TWeakObjectPtr<APlayerController>& PlayerController : PlayersToResume)
+	{
+		if (bSucceeded)
+		{
+			RespawnPlayer(PlayerController.Get());
+		}
+		else
+		{
+			UE_LOG(LogDominationGameMode, Error,
+				TEXT("Domination respawn stopped: selected combat assets failed to load for %s."),
+				*GetNameSafe(PlayerController.Get()));
+		}
+	}
+}
+
 bool ADominationGameMode::PrepareCombatPawn(APlayerController* PlayerController)
 {
 	ADominationPlayerState* PlayerState = IsValid(PlayerController)
 		? PlayerController->GetPlayerState<ADominationPlayerState>() : nullptr;
 	APawn* Pawn = IsValid(PlayerController) ? PlayerController->GetPawn() : nullptr;
-	if (!IsValid(PlayerState) || !IsValid(Pawn) || Pawn->GetController() != PlayerController)
+	if (!IsValid(PlayerState) || !IsValid(Pawn) || Pawn->GetController() != PlayerController
+		|| LoadoutManager->EnsureCombatAssets(PlayerState->GetCombatClass())
+			!= EDominationCombatAssetStatus::Ready)
 	{
 		return false;
 	}
@@ -465,6 +551,8 @@ void ADominationGameMode::ActivateCombatPlayer(APlayerController* PlayerControll
 		ShooterPlayerController->ClientExitSpectatorMode();
 	}
 	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
+	UE_LOG(LogDominationGameMode, Log, TEXT("[DominationTravel] Stage=CombatActivated Player=%s Pawn=%s"),
+		*GetNameSafe(PlayerController), *GetNameSafe(PlayerController->GetPawn()));
 }
 
 void ADominationGameMode::RetryDominationMatchStart()
@@ -804,6 +892,29 @@ void ADominationGameMode::ReturnToLobbyAfterMatch()
 	ReturnToMainMenuHost();
 }
 
+AActor* ADominationGameMode::ChoosePlayerStart_Implementation(AController* Player)
+{
+	// 입장 시 컨트롤러 위치만 정한다. 전투 Pawn은 RespawnManager의 팀별 볼륨에서 생성한다.
+	// 이 조회는 BeginPlay 이전에도 호출되므로 아직 초기화되지 않은 매니저에 의존하지 않는다.
+	for (TActorIterator<ADominationCapturePoint> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		ADominationCapturePoint* CapturePoint = *Iterator;
+		if (IsValid(CapturePoint) && CapturePoint->GetPointId() == DominationRules::InitialPointId)
+		{
+			UE_LOG(LogDominationGameMode, Log,
+				TEXT("[DominationTravel] Stage=ControllerArrival Controller=%s Anchor=%s"),
+				*GetNameSafe(Player), *GetNameSafe(CapturePoint));
+			return CapturePoint;
+		}
+	}
+
+	UE_LOG(LogDominationGameMode, Error,
+		TEXT("Domination controller arrival failed: initial capture point %d is not loaded in %s. "
+			"Keep the capture points and spawn volumes always loaded in the map."),
+		static_cast<uint8>(DominationRules::InitialPointId), *GetNameSafe(GetWorld()));
+	return nullptr;
+}
+
 void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
 	// BaseTeamGameMode의 Super 경로는 즉시 Pawn을 생성하므로 팀 배정만 수행한다.
@@ -861,15 +972,15 @@ UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(ACo
 	const EDominationCombatClass CombatClass = DominationPlayerState->GetCombatClass();
 	const UDominationClassSettings* ClassSettings =
 		GetDefault<UDominationClassSettings>();
-	UClass* PawnClass = IsValid(ClassSettings)
-		? ClassSettings->ResolvePawnClass(CombatClass)
-		: nullptr;
+	const FDominationCombatClassDefinition* Definition = IsValid(ClassSettings)
+		? ClassSettings->FindDefinition(CombatClass) : nullptr;
+	UClass* PawnClass = Definition ? Definition->PawnClass.Get() : nullptr;
 	if (!IsValid(PawnClass))
 	{
 		UE_LOG(
 			LogDominationGameMode,
 			Error,
-			TEXT("No Pawn class is configured for Domination combat class %d."),
+			TEXT("Domination combat class %d was requested before its Pawn asset became ready."),
 			static_cast<uint8>(CombatClass));
 		return nullptr;
 	}

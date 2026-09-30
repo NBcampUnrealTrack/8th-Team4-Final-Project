@@ -59,6 +59,9 @@ void UShooterPlayerHUD::NativeConstruct()
 		{
 			HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
 		}
+		
+		// 글리치가 없을 때는 RT 를 거치지 않는다
+		RetainerBox_HUD->SetRetainRendering(false);
 	}
 
 	BoundPlayerController = GetOwningPlayer();
@@ -183,6 +186,12 @@ void UShooterPlayerHUD::ScheduleNextLowHealthGlitch()
 
 void UShooterPlayerHUD::PlayLowHealthGlitchPulse()
 {
+	// 글리치 동안만 RT 로 그린다
+	if (RetainerBox_HUD)
+	{
+		RetainerBox_HUD->SetRetainRendering(true);
+	}
+	
 	if (HUDGlitchMID)
 	{
 		HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 1.0f);
@@ -246,5 +255,10 @@ void UShooterPlayerHUD::HandleLowHealthAnimationFinished()
 	if (HUDGlitchMID)
 	{
 		HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
+	}
+	
+	if (RetainerBox_HUD)
+	{
+		RetainerBox_HUD->SetRetainRendering(false);
 	}
 }

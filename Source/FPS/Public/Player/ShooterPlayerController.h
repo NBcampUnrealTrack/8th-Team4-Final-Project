@@ -9,6 +9,7 @@
 #include "GameMode/Types/LobbyTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameplayTagContainer.h"
+#include "InputCoreTypes.h"
 #include "GAS/Damage/RogueDamageTypes.h"
 #include "Ping/PingTypes.h"
 #include "TimerManager.h"
@@ -33,6 +34,7 @@ class UInputMappingContext;
 class APlayerState;
 class USoundMix;
 struct FInputActionValue;
+struct FEnhancedActionKeyMapping;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
@@ -48,7 +50,30 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/,
 // 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapOpenChanged, bool /*bOpen*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapZoomInput, float /*WheelDelta*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSurrenderVoteStartResult, ESurrenderVoteStartResult);
+
+USTRUCT(BlueprintType)
+struct FShooterInputBindingEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	FName BindingId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName ContextId;
+
+	UPROPERTY(BlueprintReadOnly)
+	FName ActionName;
+
+	UPROPERTY(BlueprintReadOnly)
+	FKey DefaultKey;
+
+	UPROPERTY(BlueprintReadOnly)
+	FKey CurrentKey;
+};
 
 UCLASS()
 class FPS_API AShooterPlayerController : public APlayerController
@@ -78,6 +103,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
+
+	void GetRebindableInputBindings(TArray<FShooterInputBindingEntry>& OutBindings) const;
+	bool RebindInput(FName BindingId, FKey NewKey);
+	void ResetInputBindings();
+
+	// Game modes can disable voice chat without changing the user's global voice-chat setting.
+	virtual bool SupportsVoiceChat() const { return true; }
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Shooter|Voice")
 	void ReceiveCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
@@ -226,6 +258,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Ping")
 	FOnPingReceivedSignature OnPingReceived;
 
+	// 전체 맵 열림 상태. M으로 토글하고, 열려 있을 때 ESC는 설정 메뉴 대신 전체 맵만 닫는다.
+	// 전체 맵 위젯(UShooterMapWidget, FullMap 모드)이 OnFullMapOpenChanged를 구독해서 보이고 숨는다.
+	bool IsFullMapOpen() const { return bFullMapOpen; }
+	void SetFullMapOpen(bool bOpen);
+
+	FOnFullMapOpenChanged OnFullMapOpenChanged;
+
+	// 전체 맵이 열려 있는 동안의 마우스 휠 입력(양수 = 휠 위 = 확대). 전체 맵 위젯이 구독한다.
+	FOnFullMapZoomInput OnFullMapZoomInput;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -250,13 +292,17 @@ protected:
 	void ServerSetVoiceTalking(bool bNewVoiceTalking);
 
 	UFUNCTION(Server, Unreliable)
-	void ServerSubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData, EVoiceChatAudience Audience);
+	void ServerSubmitCompressedVoicePacket(
+		const TArray<uint8>& CompressedVoiceData,
+		EVoiceChatAudience Audience,
+		float MicrophoneVolume);
 
 	UFUNCTION(Client, Unreliable)
 	void ClientReceiveCompressedVoicePacket(
 		APlayerState* SpeakerPlayerState,
 		const TArray<uint8>& CompressedVoiceData,
-		EVoiceChatAudience Audience);
+		EVoiceChatAudience Audience,
+		float MicrophoneVolume);
 
 	UFUNCTION(Server, Reliable)
 	void ServerNotifyLoadedIntoMatch();
@@ -305,6 +351,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Input")
 	TObjectPtr<UShooterInputConfig> InputConfig;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> RuntimeDefaultMappingContext;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputMappingContext> RuntimeSystemMappingContext;
+
+	bool bSystemMappingContextEnabled = false;
+
 	URogueAbilitySystemComponent* GetRogueAbilitySystemComponent() const;
 	void SetMappingContextEnabled(
 		UInputMappingContext* MappingContext,
@@ -321,6 +375,32 @@ private:
 	void InitializeAudioSettings();
 	void ShutdownAudioSettings();
 	void HandleAudioSettingsChanged();
+
+	// 조작이 안되는 문제 수정하기 위해 갱신
+	void BindApplicationActivation();
+	void UnbindApplicationActivation();
+	void HandleApplicationActivationChanged(bool bIsActive);
+	void ReapplyCommonUIInputConfig();
+	FDelegateHandle ApplicationActivationHandle;
+
+	void InitializeRuntimeInputMappings();
+	void ShutdownRuntimeInputMappings();
+	void RebuildRuntimeInputMappings();
+	void ApplySavedBindingsToContext(
+		UInputMappingContext* RuntimeContext,
+		const UInputMappingContext* SourceContext,
+		FName ContextId) const;
+	void AppendRebindableBindings(
+		const UInputMappingContext* SourceContext,
+		FName ContextId,
+		TArray<FShooterInputBindingEntry>& OutBindings) const;
+	void HandleInputBindingsChanged();
+	static FName MakeInputBindingId(
+		FName ContextId,
+		const FEnhancedActionKeyMapping& Mapping,
+		int32 MappingIndex);
+	static bool IsRebindableKey(const FKey& Key);
+
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();
@@ -343,6 +423,7 @@ private:
 	void Input_OpenChat();
 	void CloseChatInput();
 	void Input_Ping();
+	void Input_ToggleFullMap();
 	void Input_ToggleInGameMenu();
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
@@ -381,6 +462,7 @@ private:
 
 	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
 	bool bIsChatInputOpen = false;
+	bool bFullMapOpen = false;
 	EChatChannel CurrentChatChannel = EChatChannel::Team;
 
 	// CurrentChatChannel==Whisper일 때 대상 이름. 그 외엔 비어있다.

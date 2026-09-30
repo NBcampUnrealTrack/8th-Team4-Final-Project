@@ -1,4 +1,4 @@
-﻿#include "Training/AI/TrainingBotPersonalityTypes.h"
+#include "Training/AI/TrainingBotPersonalityTypes.h"
 
 void FTrainingAimLatch::Reset()
 {
@@ -62,7 +62,7 @@ bool TrainingPersonality::IsAimNearCapsule(const FVector& Eye, const FVector& Vi
     const FVector Bottom = Center - FVector(0.0, 0.0, AxisHalfLength);
     const FVector Top = Center + FVector(0.0, 0.0, AxisHalfLength);
     double BestDistanceSquared = TNumericLimits<double>::Max();
-    const auto TestAxisPoint = [&](const FVector& AxisPoint)
+    const auto EvaluateAxisPoint = [&](const FVector& AxisPoint)
     {
         const double RayDistance = FMath::Max(0.0, FVector::DotProduct(AxisPoint - Eye, Direction));
         const FVector AimPoint = Eye + Direction * RayDistance;
@@ -73,8 +73,8 @@ bool TrainingPersonality::IsAimNearCapsule(const FVector& Eye, const FVector& Vi
             OutClosestAimPoint = AimPoint;
         }
     };
-    TestAxisPoint(Bottom);
-    TestAxisPoint(Top);
+    EvaluateAxisPoint(Bottom);
+    EvaluateAxisPoint(Top);
     const FVector Offset = Eye - Bottom;
     const double Denominator = 1.0 - FMath::Square(Direction.Z);
     if (Denominator > 1.e-8)
@@ -84,9 +84,9 @@ bool TrainingPersonality::IsAimNearCapsule(const FVector& Eye, const FVector& Vi
         const double AxisDistance = Offset.Z + Direction.Z * RayDistance;
         if (RayDistance >= 0.0 && AxisDistance >= 0.0 && AxisDistance <= 2.0 * AxisHalfLength)
         {
-            TestAxisPoint(Bottom + FVector(0.0, 0.0, AxisDistance));
+            EvaluateAxisPoint(Bottom + FVector(0.0, 0.0, AxisDistance));
         }
     }
-    TestAxisPoint(Bottom + FVector(0.0, 0.0, FMath::Clamp(Offset.Z, 0.0, 2.0 * AxisHalfLength)));
+    EvaluateAxisPoint(Bottom + FVector(0.0, 0.0, FMath::Clamp(Offset.Z, 0.0, 2.0 * AxisHalfLength)));
     return BestDistanceSquared <= FMath::Square(static_cast<double>(Radius + FMath::Max(0.0f, Padding)));
 }

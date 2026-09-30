@@ -1,4 +1,4 @@
-#include "Settings/ShooterGameUserSettings.h"
+﻿#include "Settings/ShooterGameUserSettings.h"
 
 #include "Engine/Engine.h"
 #include "Internationalization/Internationalization.h"
@@ -7,18 +7,89 @@
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
 
-namespace ShooterGameUserSettings
+namespace ShooterGameUserSettingsConstants
 {
 	constexpr float MinMouseSensitivity = 0.0f;
-	constexpr float MaxMouseSensitivity = 1.0f;
-	constexpr float MinAimSensitivityMultiplier = 0.0f;
-	constexpr float MaxAimSensitivityMultiplier = 1.0f;
+	constexpr float MaxMouseSensitivity = 2.0f;
+	constexpr float DefaultMouseSensitivity = 1.0f;
 	constexpr float MinAudioVolume = 0.0f;
-	constexpr float MaxAudioVolume = 1.0f;
+	constexpr float MaxAudioVolume = 2.0f;
+	constexpr float DefaultAudioVolume = 1.0f;
 	constexpr int32 MaxResolutionWidth = 1920;
 	constexpr int32 MaxResolutionHeight = 1080;
-	constexpr float MinFrameRateLimit = 30.0f;
-	constexpr float MaxFrameRateLimit = 240.0f;
+	static constexpr float SupportedFrameRateLimits[] = { 60.0f, 80.0f, 100.0f };
+	constexpr float DefaultFrameRateLimit = 60.0f;
+
+}
+
+FIntPoint UShooterGameUserSettings::GetMaxSupportedResolution()
+{
+	return FIntPoint(
+		ShooterGameUserSettingsConstants::MaxResolutionWidth,
+		ShooterGameUserSettingsConstants::MaxResolutionHeight);
+}
+
+int32 UShooterGameUserSettings::GetFrameRateLimitChoiceCount()
+{
+	return UE_ARRAY_COUNT(ShooterGameUserSettingsConstants::SupportedFrameRateLimits);
+}
+
+float UShooterGameUserSettings::GetFrameRateLimitChoice(const int32 Index)
+{
+	return Index >= 0 && Index < GetFrameRateLimitChoiceCount()
+		? ShooterGameUserSettingsConstants::SupportedFrameRateLimits[Index]
+		: ShooterGameUserSettingsConstants::DefaultFrameRateLimit;
+}
+
+int32 UShooterGameUserSettings::FindFrameRateLimitChoiceIndex(const float FramesPerSecond)
+{
+	if (!FMath::IsFinite(FramesPerSecond))
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 Index = 0; Index < GetFrameRateLimitChoiceCount(); ++Index)
+	{
+		if (FMath::IsNearlyEqual(FramesPerSecond, GetFrameRateLimitChoice(Index)))
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+float UShooterGameUserSettings::NormalizeFrameRateLimit(const float FramesPerSecond)
+{
+	const int32 Index = FindFrameRateLimitChoiceIndex(FramesPerSecond);
+	return Index == INDEX_NONE
+		? ShooterGameUserSettingsConstants::DefaultFrameRateLimit
+		: GetFrameRateLimitChoice(Index);
+}
+
+float UShooterGameUserSettings::GetDefaultFrameRateLimit()
+{
+	return ShooterGameUserSettingsConstants::DefaultFrameRateLimit;
+}
+
+float UShooterGameUserSettings::GetMinMouseSensitivity()
+{
+	return ShooterGameUserSettingsConstants::MinMouseSensitivity;
+}
+
+float UShooterGameUserSettings::GetMaxMouseSensitivity()
+{
+	return ShooterGameUserSettingsConstants::MaxMouseSensitivity;
+}
+
+float UShooterGameUserSettings::GetMinAudioVolume()
+{
+	return ShooterGameUserSettingsConstants::MinAudioVolume;
+}
+
+float UShooterGameUserSettings::GetMaxAudioVolume()
+{
+	return ShooterGameUserSettingsConstants::MaxAudioVolume;
 }
 
 UShooterGameUserSettings* UShooterGameUserSettings::Get()
@@ -45,25 +116,27 @@ void UShooterGameUserSettings::SetToDefaults()
 	CrosshairThickness = -0.5f;
 	CrosshairGap = -0.25f;
 	CrosshairOutlineThickness = 0.f;
-	MouseHorizontalSensitivity = 1.0f;
-	MouseVerticalSensitivity = 1.0f;
-	AimSensitivityMultiplier = 1.0f;
+	MouseHorizontalSensitivity = ShooterGameUserSettingsConstants::DefaultMouseSensitivity;
+	MouseVerticalSensitivity = ShooterGameUserSettingsConstants::DefaultMouseSensitivity;
+	AimSensitivityMultiplier = ShooterGameUserSettingsConstants::DefaultMouseSensitivity;
 	bInvertVerticalLook = false;
 
-	MasterVolume = 1.0f;
-	MusicVolume = 1.0f;
-	SoundEffectsVolume = 1.0f;
-	UserInterfaceVolume = 1.0f;
-	VoiceVolume = 1.0f;
+	MasterVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	MusicVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	SoundEffectsVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	UserInterfaceVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	VoiceVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
 	bMasterAudioMuted = false;
 	bVoiceChatEnabled = true;
+	VoiceChatMicrophoneVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	VoiceChatOutputVolume = ShooterGameUserSettingsConstants::DefaultAudioVolume;
+	KeyBindingOverrides.Reset();
 	Language = EShooterOptionsLanguage::Korean;
-	ExperienceProfile = EShooterExperienceProfile::Balanced120;
-	PerformanceTargetFPS = 120.0f;
-	SetScreenResolution(FIntPoint(ShooterGameUserSettings::MaxResolutionWidth, ShooterGameUserSettings::MaxResolutionHeight));
-	SetFrameRateLimit(ShooterGameUserSettings::MaxFrameRateLimit);
+	SetScreenResolution(GetMaxSupportedResolution());
+	SetFrameRateLimit(GetDefaultFrameRateLimit());
 	OnAudioSettingsChanged.Broadcast();
 	OnCrosshairSettingsChanged.Broadcast();
+	OnInputBindingsChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::ValidateSettings()
@@ -72,42 +145,36 @@ void UShooterGameUserSettings::ValidateSettings()
 
 	MouseHorizontalSensitivity = FMath::Clamp(
 		MouseHorizontalSensitivity,
-		ShooterGameUserSettings::MinMouseSensitivity,
-		ShooterGameUserSettings::MaxMouseSensitivity);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 	MouseVerticalSensitivity = FMath::Clamp(
 		MouseVerticalSensitivity,
-		ShooterGameUserSettings::MinMouseSensitivity,
-		ShooterGameUserSettings::MaxMouseSensitivity);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 	AimSensitivityMultiplier = FMath::Clamp(
 		AimSensitivityMultiplier,
-		ShooterGameUserSettings::MinAimSensitivityMultiplier,
-		ShooterGameUserSettings::MaxAimSensitivityMultiplier);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 
-	MasterVolume = FMath::Clamp(MasterVolume, 0.0f, 1.0f);
-	MusicVolume = FMath::Clamp(MusicVolume, 0.0f, 1.0f);
-	SoundEffectsVolume = FMath::Clamp(SoundEffectsVolume, 0.0f, 1.0f);
-	UserInterfaceVolume = FMath::Clamp(UserInterfaceVolume, 0.0f, 1.0f);
-	VoiceVolume = FMath::Clamp(VoiceVolume, 0.0f, 1.0f);
-	PerformanceTargetFPS = FMath::Clamp(PerformanceTargetFPS, 30.0f, ShooterGameUserSettings::MaxFrameRateLimit);
+	MasterVolume = FMath::Clamp(MasterVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	MusicVolume = FMath::Clamp(MusicVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	SoundEffectsVolume = FMath::Clamp(SoundEffectsVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	UserInterfaceVolume = FMath::Clamp(UserInterfaceVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	VoiceVolume = FMath::Clamp(VoiceVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	VoiceChatMicrophoneVolume = FMath::Clamp(VoiceChatMicrophoneVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
+	VoiceChatOutputVolume = FMath::Clamp(VoiceChatOutputVolume, ShooterGameUserSettingsConstants::MinAudioVolume, ShooterGameUserSettingsConstants::MaxAudioVolume);
 
 	const FIntPoint CurrentResolution = GetScreenResolution();
+	const FIntPoint MaxResolution = GetMaxSupportedResolution();
 	if (CurrentResolution.X <= 0 || CurrentResolution.Y <= 0
-		|| CurrentResolution.X > ShooterGameUserSettings::MaxResolutionWidth
-		|| CurrentResolution.Y > ShooterGameUserSettings::MaxResolutionHeight)
+		|| CurrentResolution.X > MaxResolution.X
+		|| CurrentResolution.Y > MaxResolution.Y)
 	{
-		SetScreenResolution(FIntPoint(
-			ShooterGameUserSettings::MaxResolutionWidth,
-			ShooterGameUserSettings::MaxResolutionHeight));
+		SetScreenResolution(MaxResolution);
 	}
 
 	const float CurrentFrameRateLimit = GetFrameRateLimit();
-	SetFrameRateLimit(
-		!FMath::IsFinite(CurrentFrameRateLimit) || CurrentFrameRateLimit <= 0.0f
-			? ShooterGameUserSettings::MaxFrameRateLimit
-			: FMath::Clamp(
-				CurrentFrameRateLimit,
-				ShooterGameUserSettings::MinFrameRateLimit,
-				ShooterGameUserSettings::MaxFrameRateLimit));
+	SetFrameRateLimit(NormalizeFrameRateLimit(CurrentFrameRateLimit));
 
 	CrosshairThickness = FMath::Clamp(CrosshairThickness, -1.0f, 0.0f);
 	CrosshairGap = FMath::Clamp(CrosshairGap, -1.0f, 0.0f);
@@ -119,12 +186,7 @@ void UShooterGameUserSettings::ApplyNonResolutionSettings()
 {
 	const float CurrentFrameRateLimit = GetFrameRateLimit();
 	const float EffectiveFrameRateLimit =
-		!FMath::IsFinite(CurrentFrameRateLimit) || CurrentFrameRateLimit <= 0.0f
-			? ShooterGameUserSettings::MaxFrameRateLimit
-			: FMath::Clamp(
-				CurrentFrameRateLimit,
-				ShooterGameUserSettings::MinFrameRateLimit,
-				ShooterGameUserSettings::MaxFrameRateLimit);
+		NormalizeFrameRateLimit(CurrentFrameRateLimit);
 
 	if (!FMath::IsNearlyEqual(CurrentFrameRateLimit, EffectiveFrameRateLimit))
 	{
@@ -196,24 +258,24 @@ void UShooterGameUserSettings::SetMouseHorizontalSensitivity(const float Sensiti
 {
 	MouseHorizontalSensitivity = FMath::Clamp(
 		Sensitivity,
-		ShooterGameUserSettings::MinMouseSensitivity,
-		ShooterGameUserSettings::MaxMouseSensitivity);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 }
 
 void UShooterGameUserSettings::SetMouseVerticalSensitivity(const float Sensitivity)
 {
 	MouseVerticalSensitivity = FMath::Clamp(
 		Sensitivity,
-		ShooterGameUserSettings::MinMouseSensitivity,
-		ShooterGameUserSettings::MaxMouseSensitivity);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 }
 
 void UShooterGameUserSettings::SetAimSensitivityMultiplier(const float Multiplier)
 {
 	AimSensitivityMultiplier = FMath::Clamp(
 		Multiplier,
-		ShooterGameUserSettings::MinAimSensitivityMultiplier,
-		ShooterGameUserSettings::MaxAimSensitivityMultiplier);
+		ShooterGameUserSettingsConstants::MinMouseSensitivity,
+		ShooterGameUserSettingsConstants::MaxMouseSensitivity);
 }
 
 void UShooterGameUserSettings::SetInvertVerticalLookEnabled(const bool bEnabled)
@@ -345,8 +407,8 @@ void UShooterGameUserSettings::SetAudioVolume(
 
 	const float ClampedVolume = FMath::Clamp(
 		Volume,
-		ShooterGameUserSettings::MinAudioVolume,
-		ShooterGameUserSettings::MaxAudioVolume);
+		ShooterGameUserSettingsConstants::MinAudioVolume,
+		ShooterGameUserSettingsConstants::MaxAudioVolume);
 	if (FMath::IsNearlyEqual(*TargetVolume, ClampedVolume))
 	{
 		return;
@@ -376,6 +438,75 @@ void UShooterGameUserSettings::SetVoiceChatEnabled(const bool bEnabled)
 
 	bVoiceChatEnabled = bEnabled;
 	OnAudioSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetVoiceChatMicrophoneVolume(const float Volume)
+{
+	const float Clamped = FMath::Clamp(
+		Volume,
+		ShooterGameUserSettingsConstants::MinAudioVolume,
+		ShooterGameUserSettingsConstants::MaxAudioVolume);
+	if (FMath::IsNearlyEqual(VoiceChatMicrophoneVolume, Clamped))
+	{
+		return;
+	}
+
+	VoiceChatMicrophoneVolume = Clamped;
+	OnAudioSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetVoiceChatOutputVolume(const float Volume)
+{
+	const float Clamped = FMath::Clamp(
+		Volume,
+		ShooterGameUserSettingsConstants::MinAudioVolume,
+		ShooterGameUserSettingsConstants::MaxAudioVolume);
+	if (FMath::IsNearlyEqual(VoiceChatOutputVolume, Clamped))
+	{
+		return;
+	}
+
+	VoiceChatOutputVolume = Clamped;
+	OnAudioSettingsChanged.Broadcast();
+}
+
+FName UShooterGameUserSettings::GetKeyBindingOverride(const FName BindingId) const
+{
+	if (const FName* Found = KeyBindingOverrides.Find(BindingId))
+	{
+		return *Found;
+	}
+	return NAME_None;
+}
+
+void UShooterGameUserSettings::SetKeyBindingOverride(const FName BindingId, const FName KeyName)
+{
+	if (BindingId.IsNone())
+	{
+		return;
+	}
+
+	if (KeyName.IsNone())
+	{
+		KeyBindingOverrides.Remove(BindingId);
+	}
+	else
+	{
+		KeyBindingOverrides.Add(BindingId, KeyName);
+	}
+
+	OnInputBindingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::ResetKeyBindingOverrides()
+{
+	if (KeyBindingOverrides.IsEmpty())
+	{
+		return;
+	}
+
+	KeyBindingOverrides.Reset();
+	OnInputBindingsChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::SetLanguage(const EShooterOptionsLanguage NewLanguage)

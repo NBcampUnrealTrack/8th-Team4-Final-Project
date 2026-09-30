@@ -6,6 +6,9 @@
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Customization/AppearanceLocalPlayerSubsystem.h"
+#include "Engine/GameInstance.h"
+#include "Session/SessionSubSystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 ACustomizationStudioController::ACustomizationStudioController()
 {
@@ -19,6 +22,8 @@ void ACustomizationStudioController::BeginPlay()
  if(Studio){SetViewTarget(Studio);if(Studio->Config){ActiveClass=FName(*Studio->Config->ClassId);Studio->ClassConfigs.FindOrAdd(ActiveClass)=Studio->Config;}}else Status=TEXT("커스터마이징 프리뷰 액터가 없습니다.");
  RefreshAccount();
  Screen=CreateWidget<UCustomizationStudioWidget>(this,WidgetClass);if(Screen){Screen->AddToViewport(100);FInputModeUIOnly Mode;Mode.SetWidgetToFocus(Screen->TakeWidget());Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);SetInputMode(Mode);}
+ // 진입 트랜지션
+ if(auto* Transition=GetGameInstance()?GetGameInstance()->GetSubsystem<UScreenTransitionSubsystem>():nullptr)Transition->EndTransition();
 }
 void ACustomizationStudioController::Tick(float Delta){Super::Tick(Delta);if(!IsLocalController())return;AccountPoll+=Delta;if(AccountPoll>=1){AccountPoll=0;RefreshAccount();}}
 void ACustomizationStudioController::EndPlay(const EEndPlayReason::Type Reason){if(Screen)Screen->RemoveFromParent();Super::EndPlay(Reason);}
@@ -87,6 +92,29 @@ void ACustomizationStudioController::SelectBody(const FString& Type)
  Changed();
 }
 void ACustomizationStudioController::ResetAppearance(){ColorEditPart=INDEX_NONE;Draft=DefaultAppearance();Changed();}
+
+void ACustomizationStudioController::RequestReturnToFrontend()
+{
+ auto* GI= GetGameInstance();
+ auto* Sessions=GI?GI->GetSubsystem<USessionSubSystem>():nullptr;
+ auto* Transition=GI?GI->GetSubsystem<UScreenTransitionSubsystem>():nullptr;
+ 
+ if(!Sessions||(Transition&&Transition->IsTransitionActive()))
+ {
+  return;
+ }
+ 
+ const FSimpleDelegate Request=FSimpleDelegate::CreateWeakLambda(Sessions,[Sessions]()
+ {
+  Sessions->LeaveRoomAndReturnToFrontend();
+ });
+ 
+ if(!Transition||!Transition->BeginTransition(Request))
+ {
+  Request.ExecuteIfBound();
+ }
+}
+
 void ACustomizationStudioController::LoadAppearance()
 {
  ColorEditPart=INDEX_NONE;

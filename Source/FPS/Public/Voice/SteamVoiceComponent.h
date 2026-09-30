@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -40,14 +40,19 @@ public:
 	void StopCapture();
 	bool IsCapturingVoice() const { return bCapturingVoice; }
 
-	void PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData);
+	void PlayCompressedVoicePacket(
+		APlayerState* SpeakerPlayerState,
+		const TArray<uint8>& CompressedVoiceData,
+		float SenderMicrophoneVolume = 1.0f);
 	void StopPlayback();
+	void SetOutputVolume(float Volume);
 
 private:
 	bool DecompressVoicePacket(
 		APlayerState* SpeakerPlayerState,
 		const TArray<uint8>& CompressedVoiceData,
 		TArray<uint8>& OutPcmVoiceData);
+	static void ApplyPcmGain(TArray<uint8>& PcmVoiceData, float Gain);
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	void PollVoiceCapture();
@@ -70,4 +75,5 @@ private:
 	FTimerHandle VoiceCaptureTimerHandle;
 	bool bCapturingVoice = false;
 	int32 CachedVoiceSampleRate = 0;
+	float VoiceOutputVolume = 1.0f;
 };

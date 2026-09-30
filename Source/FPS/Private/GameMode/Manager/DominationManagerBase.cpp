@@ -1,4 +1,4 @@
-#include "GameMode/Manager/DominationManagerBase.h"
+﻿#include "GameMode/Manager/DominationManagerBase.h"
 
 #include "Engine/World.h"
 #include "GameMode/DominationGameMode.h"
@@ -25,6 +25,10 @@ bool UDominationManagerBase::InitializeManager(
 
 void UDominationManagerBase::Shutdown()
 {
+	if (FTimerManager* TimerManager = GetTimerManager())
+	{
+		TimerManager->ClearAllTimersForObject(this);
+	}
 	OwnerGameMode.Reset();
 }
 

@@ -116,9 +116,8 @@ void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
 
 void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 {
-	if (!Avatar)
+	if (!ensureMsgf(Avatar, TEXT("[ShooterPlayerState] %s: Avatar 가 없습니다"), *GetName()))
 	{
-		UE_LOG(LogShooterPlayerState, Error, TEXT("[ShooterPlayerState] %s: Avatar 가 없습니다"), *GetName());
 		return;
 	}
 
@@ -179,10 +178,9 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 void AShooterPlayerState::ServerRespawnReset()
 {
-	if (!HasAuthority())
+	if (!ensureMsgf(HasAuthority(),
+		TEXT("[ShooterPlayerState] %s: 권한이 없는 곳에서 리스폰 초기화를 하려 했습니다"), *GetName()))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] %s: 권한이 없는 곳에서 리스폰 초기화를 하려 했습니다"), *GetName());
 		return;
 	}
 
@@ -295,7 +293,7 @@ void AShooterPlayerState::OnRep_VoiceTalking()
 
 void AShooterPlayerState::ServerAddKill(const int32 Amount)
 {
-	if (!HasAuthority() || Amount == 0)
+	if (!ensure(HasAuthority()) || Amount == 0)
 	{
 		return;
 	}
@@ -307,7 +305,7 @@ void AShooterPlayerState::ServerAddKill(const int32 Amount)
 
 void AShooterPlayerState::ServerAddDeath(const int32 Amount)
 {
-	if (!HasAuthority() || Amount == 0)
+	if (!ensure(HasAuthority()) || Amount == 0)
 	{
 		return;
 	}
@@ -347,20 +345,18 @@ void AShooterPlayerState::ServerGrantStartupAbilities()
 {
 	const TSoftObjectPtr<URogueAbilitySet>& SetPtr = GetDefault<URogueGASSettings>()->StartupAbilitySet;
 
-	if (SetPtr.IsNull())
+	if (!ensureMsgf(!SetPtr.IsNull(),
+		TEXT("[ShooterPlayerState] StartupAbilitySet이 지정되지 않았습니다. "
+		     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set을 확인하세요.")))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] StartupAbilitySet이 지정되지 않았습니다. "
-			     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set을 확인하세요."));
 		return;
 	}
 
 	const URogueAbilitySet* AbilitySet = SetPtr.LoadSynchronous();
-	if (!AbilitySet)
+	if (!ensureMsgf(AbilitySet,
+		TEXT("[ShooterPlayerState] StartupAbilitySet 을 로드하지 못했습니다 (%s). "
+		     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요"), *SetPtr.ToString()))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] StartupAbilitySet 을 로드하지 못했습니다 (%s). "
-			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요"), *SetPtr.ToString());
 		return;
 	}
 
@@ -369,12 +365,7 @@ void AShooterPlayerState::ServerGrantStartupAbilities()
 
 void AShooterPlayerState::ServerResetVitals()
 {
-	if (!VitalSet)
-	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] %s: VitalSet 이 없습니다"), *GetName());
-		return;
-	}
+	check(VitalSet);
 
 	// 라운드 한정 GE 제거
 	if (AbilitySystemComponent)

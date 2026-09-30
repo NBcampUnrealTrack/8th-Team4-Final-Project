@@ -1,6 +1,5 @@
-#include "Training/CQB/CQBTrainingCombatComponent.h"
+﻿#include "Training/CQB/CQBTrainingCombatComponent.h"
 
-#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GAS/Damage/RogueDamageSubsystem.h"
@@ -416,11 +415,6 @@ void UCQBTrainingCombatComponent::FireOneShot(const FVector& Start, const FVecto
         FMath::Max(0.0f, Config->CombatSettings.GunshotNoiseMaxRange),
         TEXT("CQB_AI_Gunshot"));
 
-    if (Config->CombatSettings.bDrawDebugShots)
-    {
-        DrawDebugLine(World, Start, End, bHit ? FColor::Green : FColor::Red,
-            false, 0.75f, 0, 1.2f);
-    }
 }
 
 void UCQBTrainingCombatComponent::ApplyShotDamage(const FHitResult& HitResult)

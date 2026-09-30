@@ -13,6 +13,7 @@ void ABaseTeamPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 
 	DOREPLIFETIME(ABaseTeamPlayerState, Team);
 	DOREPLIFETIME(ABaseTeamPlayerState, bIsAlive);
+	DOREPLIFETIME(ABaseTeamPlayerState, bSpottedByEnemy);
 }
 
 void ABaseTeamPlayerState::CopyProperties(APlayerState* PlayerState)
@@ -53,6 +54,11 @@ bool ABaseTeamPlayerState::IsAlive() const
 	return bIsAlive;
 }
 
+bool ABaseTeamPlayerState::IsSpottedByEnemy() const
+{
+	return bSpottedByEnemy;
+}
+
 void ABaseTeamPlayerState::SetTeam(const EGameTeam NewTeam)
 {
 	if (!HasAuthority() || Team == NewTeam)
@@ -75,6 +81,26 @@ void ABaseTeamPlayerState::SetAlive(const bool bNewIsAlive)
 
 	bIsAlive = bNewIsAlive;
 	OnRep_IsAlive();
+
+	// 죽는 순간 다음 판정 주기를 기다리지 않고 적 맵에서 바로 지운다.
+	if (!bIsAlive)
+	{
+		SetSpottedByEnemy(false);
+	}
+
+	ForceNetUpdate();
+}
+
+void ABaseTeamPlayerState::SetSpottedByEnemy(const bool bNewIsSpotted)
+{
+	if (!HasAuthority() || bSpottedByEnemy == bNewIsSpotted)
+	{
+		return;
+	}
+
+	bSpottedByEnemy = bNewIsSpotted;
+	OnRep_SpottedByEnemy();
+	// PlayerState NetUpdateFrequency(10)를 기다리지 않고 바로 보낸다.
 	ForceNetUpdate();
 }
 
@@ -86,4 +112,9 @@ void ABaseTeamPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
 void ABaseTeamPlayerState::OnRep_IsAlive()
 {
 	OnPlayerAliveStateChanged.Broadcast(bIsAlive);
+}
+
+void ABaseTeamPlayerState::OnRep_SpottedByEnemy()
+{
+	OnSpottedByEnemyChanged.Broadcast(bSpottedByEnemy);
 }

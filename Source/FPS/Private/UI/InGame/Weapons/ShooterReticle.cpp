@@ -1,4 +1,4 @@
-// ShooterReticle.cpp
+﻿// ShooterReticle.cpp
 #include "UI/InGame/Weapons/ShooterReticle.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
@@ -128,8 +128,37 @@ void UShooterReticle::NativeOnInitialized()
 
 }
 
+void UShooterReticle::NativeConstruct()
+{
+	Super::NativeConstruct();
+	PromoteSniperScopeToViewportLayer();
+}
+
+void UShooterReticle::PromoteSniperScopeToViewportLayer()
+{
+	if (!WBP_SniperScope || WBP_SniperScope->IsInViewport())
+	{
+		return;
+	}
+
+	// Scope는 Reticle의 자식으로 그리면 전체화면 검은 마스크가 Main HUD까지 덮는다.
+	// 같은 위젯 인스턴스를 부모에서 분리해 Root HUD보다 한 단계 아래 Viewport 레이어로 옮긴다.
+	// Scope 자체의 기존 Blueprint Visibility/ADS 로직은 그대로 유지된다.
+	WBP_SniperScope->RemoveFromParent();
+	WBP_SniperScope->AddToViewport(SniperScopeViewportZOrder);
+}
+
+void UShooterReticle::RemoveSniperScopeFromViewportLayer()
+{
+	if (WBP_SniperScope && WBP_SniperScope->IsInViewport())
+	{
+		WBP_SniperScope->RemoveFromParent();
+	}
+}
+
 void UShooterReticle::NativeDestruct()
 {
+	RemoveSniperScopeFromViewportLayer();
 	// 델리게이트 해제
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{

@@ -31,12 +31,14 @@ UAbilitySystemComponent* ARogueDeployableActor::GetAbilitySystemComponent() cons
 
 float ARogueDeployableActor::GetHealth() const
 {
-	return VitalSet ? VitalSet->GetHealth() : 0.f;
+	check(VitalSet);
+	return VitalSet->GetHealth();
 }
 
 float ARogueDeployableActor::GetMaxHealth() const
 {
-	return VitalSet ? VitalSet->GetMaxHealth() : 0.f;
+	check(VitalSet);
+	return VitalSet->GetMaxHealth();
 }
 
 void ARogueDeployableActor::BeginPlay()

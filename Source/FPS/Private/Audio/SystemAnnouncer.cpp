@@ -2,6 +2,8 @@
 
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Sound/SoundBase.h"
@@ -27,7 +29,22 @@ void ASystemAnnouncer::BeginPlay()
 
 	if (!IsValid(VoiceSoundClass))
 	{
-		VoiceSoundClass = GetDefault<UShooterAudioSettings>()->VoiceSoundClass.LoadSynchronous();
+		const TSoftObjectPtr<USoundClass> Reference = GetDefault<UShooterAudioSettings>()->VoiceSoundClass;
+		VoiceSoundClass = Reference.Get();
+		if (!VoiceSoundClass && !Reference.IsNull())
+		{
+			bVoiceSoundClassLoading = true;
+			VoiceSoundClassLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+				Reference.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this, [this, Reference]()
+				{
+					if (bShuttingDown) return;
+					VoiceSoundClass = Reference.Get();
+					bVoiceSoundClassLoading = false;
+					VoiceSoundClassLoadHandle.Reset();
+					PlayNextAnnouncement();
+				}));
+			if (!VoiceSoundClassLoadHandle.IsValid()) bVoiceSoundClassLoading = false;
+		}
 	}
 
 	PlayNextAnnouncement();
@@ -36,6 +53,12 @@ void ASystemAnnouncer::BeginPlay()
 void ASystemAnnouncer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bShuttingDown = true;
+	if (VoiceSoundClassLoadHandle.IsValid())
+	{
+		VoiceSoundClassLoadHandle->CancelHandle();
+		VoiceSoundClassLoadHandle.Reset();
+	}
+	bVoiceSoundClassLoading = false;
 	ClearLocalAnnouncements();
 	LastSentTimes.Reset();
 	Super::EndPlay(EndPlayReason);
@@ -66,6 +89,14 @@ bool ASystemAnnouncer::Announce(const FName AnnouncementId)
 	LastSentTimes.Add(AnnouncementId, Now);
 	MulticastAnnounce(AnnouncementId);
 	return true;
+}
+
+void ASystemAnnouncer::AnnounceLocal(const FName AnnouncementId)
+{
+	if (GetNetMode() != NM_DedicatedServer && !bShuttingDown)
+	{
+		QueueAnnouncement(AnnouncementId);
+	}
 }
 
 void ASystemAnnouncer::StopAnnouncements()
@@ -127,6 +158,7 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId, const float
 		}
 	}
 
+	ensureMsgf(MaxQueuedAnnouncements > 0, TEXT("SystemAnnouncer MaxQueuedAnnouncements must be > 0"));
 	if (PendingAnnouncements.Num() >= FMath::Clamp(MaxQueuedAnnouncements, 1, 32))
 	{
 		int32 LowestPriorityIndex = 0;
@@ -143,7 +175,7 @@ void ASystemAnnouncer::QueueAnnouncement(const FName AnnouncementId, const float
 		{
 			return;
 		}
-		PendingAnnouncements.RemoveAt(LowestPriorityIndex);
+		PendingAnnouncements.RemoveAtSwap(LowestPriorityIndex, 1, EAllowShrinking::No);
 	}
 
 	FQueuedAnnouncement Entry;
@@ -176,7 +208,7 @@ void ASystemAnnouncer::CancelAnnouncement(const FName AnnouncementId)
 
 void ASystemAnnouncer::PlayNextAnnouncement()
 {
-	if (bShuttingDown || !CurrentAnnouncementId.IsNone() || GetNetMode() == NM_DedicatedServer)
+	if (bShuttingDown || bVoiceSoundClassLoading || !CurrentAnnouncementId.IsNone() || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
@@ -206,7 +238,7 @@ void ASystemAnnouncer::PlayNextAnnouncement()
 		}
 
 		const FName NextId = PendingAnnouncements[NextIndex].Id;
-		PendingAnnouncements.RemoveAt(NextIndex);
+		PendingAnnouncements.RemoveAtSwap(NextIndex, 1, EAllowShrinking::No);
 		if (TryPlayAnnouncement(NextId, Announcements.FindChecked(NextId)))
 		{
 			return;

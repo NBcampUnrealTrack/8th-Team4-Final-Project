@@ -1,4 +1,4 @@
-#include "Training/CQB/CQBTrainingAIController.h"
+﻿#include "Training/CQB/CQBTrainingAIController.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
@@ -73,6 +73,7 @@ ACQBTrainingAIController::ACQBTrainingAIController()
 
 void ACQBTrainingAIController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearAllTimersForObject(this);
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(DeathShutdownTimer);
