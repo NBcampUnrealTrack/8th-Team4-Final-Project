@@ -14,7 +14,7 @@ class UWidgetAnimation;
 /**
  * 첫 실행 인트로와 온라인 상태 확인
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterStartupScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

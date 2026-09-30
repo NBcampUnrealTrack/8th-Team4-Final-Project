@@ -15,6 +15,7 @@
 #include "Animation/WidgetAnimation.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAugmentSelectScreen, Log, All);
 
@@ -76,6 +77,8 @@ void UShooterAugmentSelectScreen::NativeOnActivated()
 
 void UShooterAugmentSelectScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(ShooterAugmentSelectScreen_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	
 	if (CachedCards.IsEmpty() || Layout.GetNumCards() != CachedCards.Num())

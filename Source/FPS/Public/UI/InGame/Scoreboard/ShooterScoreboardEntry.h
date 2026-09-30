@@ -34,7 +34,7 @@ struct FShooterScoreboardRowData
 	bool bIsAlive = true;
 };
 
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterScoreboardEntry : public UUserWidget
 {
 	GENERATED_BODY()

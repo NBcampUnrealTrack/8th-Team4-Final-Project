@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -41,6 +41,14 @@ protected:
 		meta = (EditCondition = "bAttachToTarget", EditConditionHides))
 	FName AttachSocket = NAME_None;
 
+	// 켜면 현재 무기의 WeaponSocket 에 부착
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx")
+	bool bAttachToWeapon = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx",
+		meta = (EditCondition = "bAttachToWeapon", EditConditionHides))
+	FName WeaponSocket = TEXT("Muzzle");
+
 private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UParticleSystemComponent>> SpawnedParticles;
@@ -53,6 +61,7 @@ private:
 	TWeakObjectPtr<USkeletalMeshComponent> OverlayMesh;
 
 	void StopSpawnedParticles();
+	void SpawnOnWeapon(AActor* Target);
 	void ApplyOverlay(AActor* Target);
 	void ClearOverlay();
 };

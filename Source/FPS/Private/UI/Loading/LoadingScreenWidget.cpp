@@ -15,6 +15,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
 #include "UI/ShooterUISettings.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 void ULoadingScreenWidget::NativeOnInitialized()
 {
@@ -278,6 +279,8 @@ void ULoadingScreenWidget::ExecuteCompletionExitDelegate()
 
 void ULoadingScreenWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(LoadingScreenWidget_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	// 값이 바뀐 프레임에만 그린다. Tick 은 시간 신호일 뿐이다

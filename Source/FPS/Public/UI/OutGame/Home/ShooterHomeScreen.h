@@ -14,7 +14,7 @@ class UWorld;
 /**
  * 프론트엔드 첫 화면
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterHomeScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

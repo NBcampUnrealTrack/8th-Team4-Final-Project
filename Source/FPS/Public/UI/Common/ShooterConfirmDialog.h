@@ -10,7 +10,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnConfirmDialogClosed);
 class UCommonButtonBase;
 class UCommonTextBlock;
 
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterConfirmDialog : public UShooterActivatableWidget{
 	GENERATED_BODY()
 	

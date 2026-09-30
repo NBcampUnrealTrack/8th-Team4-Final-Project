@@ -9,7 +9,7 @@ class UTextBlock;
 class UWidgetAnimation;
 
 // 매치 승패 연출. 모드를 모르고 호출부가 판정한 승패와 점수만 받는다
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterMatchOutcomeScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

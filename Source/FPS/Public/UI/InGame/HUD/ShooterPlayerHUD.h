@@ -22,7 +22,7 @@ class UMaterialInstanceDynamic;
  * Panel_Status - WBP_ShooterHealthBar
  * Panel_Weapon - WBP_ShooterWeaponStatus
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterPlayerHUD : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

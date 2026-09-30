@@ -5,15 +5,17 @@
 #include "CommonUserWidget.h"
 #include "ShooterGauge.generated.h"
 
+class FActiveTimerHandle;
 class UImage;
 class UMaterialInstanceDynamic;
 class UTexture2D;
+enum class EActiveTimerReturnType : uint8;
 
 /**
  * 엔진 UProgressBar을 사용하지 않는다.
  * 채워지는 Bar, Health, Shield , Cooldown 등에서 사용
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterGauge : public UCommonUserWidget
 {
 	GENERATED_BODY()
@@ -26,7 +28,8 @@ public:
 	void SetProgressImmediate(float InProgress);
 	
 protected:
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 	
 	virtual void SynchronizeProperties() override;
 	
@@ -53,8 +56,13 @@ protected:
 	
 	float DisplayProgress = 1.f;
 	float TargetProgress = 1.f;
-	
-	// 머터리얼에 값을 한 번이라도 넘겼는가 확인
-	// MID를 못 얻은 상태에서 SetProgressImmediate가 불리면 재시도를 안 하는 것을 막는 플래그
-	bool bParameterApplied = false;
+
+private:
+	// 목표에 닿을 때까지만 도는 보간 루프
+	void EnsureUpdateScheduled();
+	void StopUpdates();
+	EActiveTimerReturnType HandleUpdateTimer(double InCurrentTime, float InDeltaTime);
+	void ApplyDisplayProgress();
+
+	TWeakPtr<FActiveTimerHandle> UpdateTimerHandle;
 };

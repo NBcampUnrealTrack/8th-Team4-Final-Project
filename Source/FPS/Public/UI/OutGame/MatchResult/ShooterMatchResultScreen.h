@@ -17,7 +17,7 @@ DECLARE_MULTICAST_DELEGATE(FOnMatchResultCloseRequested);
 /**
  * 매치 결과 화면. 로비 위에 덮인다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterMatchResultScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

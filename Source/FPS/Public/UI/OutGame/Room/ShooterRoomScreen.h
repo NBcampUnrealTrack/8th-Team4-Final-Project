@@ -24,7 +24,7 @@ class UTextBlock;
 /**
  * 사설 방 화면
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterRoomScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()

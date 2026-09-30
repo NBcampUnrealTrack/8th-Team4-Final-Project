@@ -8,7 +8,7 @@
 class UWidgetAnimation;
 
 // 트랜지션 애니메이션 위젯
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UScreenTransitionWidget : public UUserWidget
 {
 	GENERATED_BODY()

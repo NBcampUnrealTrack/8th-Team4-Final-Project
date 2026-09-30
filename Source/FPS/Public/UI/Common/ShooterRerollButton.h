@@ -13,7 +13,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnRerollButtonClicked, int32 /*SlotIndex*/)
  * 증강 카드 슬롯 하나마다 있는 리롤 버튼
  * 잔여 횟수 0이면 비활성화
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterRerollButton : public UCommonButtonBase
 {
 	GENERATED_BODY()

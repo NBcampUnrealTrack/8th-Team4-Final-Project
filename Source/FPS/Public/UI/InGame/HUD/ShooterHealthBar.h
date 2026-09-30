@@ -24,7 +24,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnLowHealthStateChanged, bool /*bIsLow*/);
  * 체력 / 보호막 표시하는 HUD의 자식
  * 체력 델리게이트가 없으므로 ASC 직접 구독 
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterHealthBar : public UShooterAttributeWidget
 {
 	GENERATED_BODY()

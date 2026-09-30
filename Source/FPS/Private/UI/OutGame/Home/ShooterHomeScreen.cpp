@@ -10,6 +10,7 @@
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterHomeScreen, Log, All);
 
@@ -78,10 +79,33 @@ void UShooterHomeScreen::HandleCustomizeClicked()
 
 	UGameInstance* GameInstance = GetGameInstance();
 	USessionSubSystem* Sessions = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
-	if (!Sessions || !Sessions->LeaveRoomAndOpenLocalMap(CustomizationDestinationMap))
+	UScreenTransitionSubsystem* Transition = GameInstance ? GameInstance->GetSubsystem<UScreenTransitionSubsystem>() : nullptr;
+	if (!Sessions || (Transition && Transition->IsTransitionActive()))
 	{
-		UE_LOG(LogShooterHomeScreen, Warning,
-			TEXT("Customization entry requires one local player and no pending room transition."));
+		return;
+	}
+
+	// 다 덮은 뒤 이동
+	const FSimpleDelegate Request = FSimpleDelegate::CreateWeakLambda(
+		Sessions,
+		[Sessions, Transition, Destination = CustomizationDestinationMap]()
+		{
+			if (Sessions->LeaveRoomAndOpenLocalMap(Destination))
+			{
+				return;
+			}
+
+			UE_LOG(LogShooterHomeScreen, Warning,
+				TEXT("Customization entry requires one local player and no pending room transition."));
+			if (Transition)
+			{
+				Transition->EndTransition();
+			}
+		});
+
+	if (!Transition || !Transition->BeginTransition(Request))
+	{
+		Request.ExecuteIfBound();
 	}
 }
 

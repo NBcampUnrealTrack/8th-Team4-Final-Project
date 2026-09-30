@@ -4,6 +4,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Augment/AugmentInventoryComponent.h"
+#include "Augment/RogueAugmentStatResolver.h"
 #include "Augment/AugmentTypes.h"
 #include "Data/WeaponDamageData.h"
 #include "GAS/Damage/RogueDamageTypes.h"
@@ -53,6 +54,7 @@ namespace
 		FGameplayEffectAttributeCaptureDefinition SourceEffectiveRangeBonusDef;
 		FGameplayEffectAttributeCaptureDefinition SourcePenetrationMultiplierDef;
 		FGameplayEffectAttributeCaptureDefinition SourceLifestealRateDef;
+		FGameplayEffectAttributeCaptureDefinition SourceLostHealthBonusRateDef;
 
 		// Augment / 방어 측
 		FGameplayEffectAttributeCaptureDefinition TargetHeadshotDamageTakenRateDef;
@@ -89,6 +91,8 @@ namespace
 				MakeDef(URogueAugmentAttributeSet::GetPenetrationMultiplierAttribute(),  ECaptureSource::Source);
 			SourceLifestealRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetLifestealRateAttribute(),          ECaptureSource::Source);
+			SourceLostHealthBonusRateDef =
+				MakeDef(URogueAugmentAttributeSet::GetLostHealthBonusRateAttribute(),    ECaptureSource::Source);
 
 			TargetHeadshotDamageTakenRateDef =
 				MakeDef(URogueAugmentAttributeSet::GetHeadshotDamageTakenRateAttribute(), ECaptureSource::Target);
@@ -148,6 +152,10 @@ namespace
 		float HeadBonusRateSum = 0.f;
 		float HeadFlat         = 0.f;
 		float LifestealRate	   = 0.f; // 공격 측만 적용. 방어 측은 흡혈 없음
+		float RandomScale      = 1.f; // 무작위 배율. 증감률 합산과 별도로 곱함
+		float HeadRandomScale  = 1.f;
+		bool  bForceHeadshot   = false; // 공격 측만 의미 있음
+		float SelfDamageRate   = 0.f;   // 공격 측만 적용
 	};
 
 	// 공격 / 방어 조건부 규칙 결과 누산
@@ -275,6 +283,19 @@ namespace
 			return false;
 		}
 
+		// 탄창의 N 번째 발마다가 아닌 경우
+		if (Rule.bUseShotIndexRange && Rule.ShotIndexInterval > 0
+			&& (RC.Ctx->ShotIndexInMagazine + 1) % Rule.ShotIndexInterval != 0)
+		{
+			return false;
+		}
+
+		// 발동 확률. 다른 조건을 모두 통과한 뒤에 굴림
+		if (Rule.bUseActivationChance && !URogueAugmentStatResolver::RollChance(Rule.ActivationChance))
+		{
+			return false;
+		}
+
 		// 켜져있는 조건을 모두 통과하면
 		return true;
 	}
@@ -305,20 +326,35 @@ namespace
 			// Side 는 위에서 이미 걸렀다. 남은 선택은 몸통 몫이냐 헤드 몫이냐뿐
 			FRogueRuleTotals& Bucket = (Side == EAugmentDamageRuleSide::Dealt) ? Totals.Dealt : Totals.Taken;
 
+			// 거리 단계가 있으면 단계 수만큼, 없으면 1배
+			const float Steps = (Rule.bUseDistanceRange && Rule.DamageBonusDistanceStep > 0.f)
+				? FMath::FloorToFloat(RC.Ctx->HitDistanceMeters / Rule.DamageBonusDistanceStep)
+				: 1.f;
+
 			// 규칙끼리 합산. 하한은 배율로 환산할 때
 			if (Rule.bAppliesToHeadshotBonusOnly)
 			{
-				Bucket.HeadBonusRateSum += Rule.DamageBonusRate;
+				Bucket.HeadBonusRateSum += Rule.DamageBonusRate * Steps;
 				Bucket.HeadFlat         += Rule.FlatDamageBonus;
 			}
 			else
 			{
-				Bucket.BonusRateSum += Rule.DamageBonusRate;
+				Bucket.BonusRateSum += Rule.DamageBonusRate * Steps;
 				Bucket.Flat         += Rule.FlatDamageBonus;
 			}
 
 			// 흡혈은 공격 측만 적용
 			Bucket.LifestealRate += FMath::Max(0.f, Rule.LifestealRate);
+
+			// 무작위 배율은 규칙마다 굴려서 곱함
+			if (Rule.bUseRandomMultiplier)
+			{
+				const float Roll = URogueAugmentStatResolver::RollRange(Rule.RandomMultiplierMin, Rule.RandomMultiplierMax);
+				(Rule.bAppliesToHeadshotBonusOnly ? Bucket.HeadRandomScale : Bucket.RandomScale) *= Roll;
+			}
+
+			Bucket.bForceHeadshot |= Rule.bForceHeadshot;
+			Bucket.SelfDamageRate += FMath::Max(0.f, Rule.SelfDamageRate);
 		}
 	}
 
@@ -510,17 +546,29 @@ namespace
 	// 1~3단계 진입
 	FRogueDamageAccumulator ResolveIncomingDamage(const FRogueDamageEval&            E,
 	                                              const FRogueGameplayEffectContext* Ctx,
-	                                              const FGameplayEffectSpec&         Spec)
+	                                              const FGameplayEffectSpec&         Spec,
+	                                              const bool                         bForceHeadshot)
 	{
 		if (Ctx && !Ctx->HitGroups.IsEmpty())
 		{
 			// 미등록 무기는 FindEntry 가 경고를 남긴다. 그 경우 아래 SetByCaller 로 폴백한다.
 			if (const FWeaponDamageEntry* Entry = UWeaponDamageData::FindEntry(Ctx->WeaponTag))
 			{
+				// 헤드샷 강제면 모든 부위를 머리로
+				TArray<FRogueHitGroup> HeadGroups;
+				if (bForceHeadshot)
+				{
+					HeadGroups = Ctx->HitGroups;
+					for (FRogueHitGroup& Group : HeadGroups)
+					{
+						Group.HitZoneTag = RogueTags::Hit_Zone_Head;
+					}
+				}
+
 				return CalculateWeaponDamage(
 					*Entry,
 					Ctx->HitDistanceMeters,
-					Ctx->HitGroups,
+					bForceHeadshot ? TConstArrayView<FRogueHitGroup>(HeadGroups) : TConstArrayView<FRogueHitGroup>(Ctx->HitGroups),
 					E.Read(E.Capture.SourceEffectiveRangeBonusDef,   0.f),
 					E.Read(E.Capture.SourcePenetrationMultiplierDef, 1.f));
 			}
@@ -549,6 +597,15 @@ namespace
 
 		// 전체 피해량 배율
 		Acc.Scale(FMath::Max(0.f, E.Read(MultiplierDef, 1.f)));
+
+		// 잃은 체력 비례 무기 피해 증가
+		if (Source.Tag != RogueTags::Damage_Source_Skill)
+		{
+			Acc.Scale(1.f + URogueAugmentStatResolver::CalcLostHealthBonus(
+				E.Read(E.Capture.SourceHealthDef, 0.f),
+				E.Read(E.Capture.SourceMaxHealthDef, 0.f),
+				E.Read(E.Capture.SourceLostHealthBonusRateDef, 0.f)));
+		}
 
 		// 상점 기본 대미지 증폭
 		const float ShopAmplification = FMath::Clamp(
@@ -580,6 +637,9 @@ namespace
 
 		Acc.ScaleHeadshot(ResolveRuleScale(Totals.HeadBonusRateSum, MinScale));
 		Acc.AddHeadshotFlat(Totals.HeadFlat);
+
+		Acc.Scale(Totals.RandomScale);
+		Acc.ScaleHeadshot(Totals.HeadRandomScale);
 	}
 
 	// 5. 공격 측 조건부 증강
@@ -707,6 +767,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(C.SourceEffectiveRangeBonusDef);
 	RelevantAttributesToCapture.Add(C.SourcePenetrationMultiplierDef);
 	RelevantAttributesToCapture.Add(C.SourceLifestealRateDef);
+	RelevantAttributesToCapture.Add(C.SourceLostHealthBonusRateDef);
 
 	RelevantAttributesToCapture.Add(C.TargetHeadshotDamageTakenRateDef);
 	RelevantAttributesToCapture.Add(C.TargetDamageReductionRateDef);
@@ -726,25 +787,24 @@ void UExecCalc_Damage::Execute_Implementation(
 
 	// 커스텀 컨텍스트가 설정이 안되어 있으면 증강 데이터가 들어오지 않음
 	const FRogueGameplayEffectContext* Ctx = FRogueGameplayEffectContext::ExtractFrom(Spec.GetContext());
-	if (!Ctx)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[RogueDamage] 커스텀 EffectContext 가 없습니다. "
-			     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요. "
-			     "출처 구분 없이 무기 피해로 처리합니다."));
-	}
+	ensureMsgf(Ctx,
+		TEXT("[RogueDamage] 커스텀 EffectContext 가 없습니다. "
+		     "DefaultGame.ini 의 AbilitySystemGlobalsClassName 등록을 확인하세요. "
+		     "출처 구분 없이 무기 피해로 처리합니다."));
 
 	const FRogueDamageSource Source = ResolveSource(Ctx);
 
+	// 조건부 규칙 판정을 먼저. 헤드샷 강제 여부도 여기서 정해짐
+	const FRogueRuleContext      RC     = MakeRuleContext(E, Ctx);
+	const FRogueConditionalTotals Totals = GatherConditionalTotals(E, RC, Source);
+	const bool bForcedHeadshot = Totals.Dealt.bForceHeadshot && Ctx && !Ctx->bHeadshot && !Ctx->HitGroups.IsEmpty();
+
 	// 1~3단계. 거리 감쇠 -> 관통력 증강 -> 부위 대미지
-	FRogueDamageAccumulator Accumulator = ResolveIncomingDamage(E, Ctx, Spec);
+	FRogueDamageAccumulator Accumulator = ResolveIncomingDamage(E, Ctx, Spec, bForcedHeadshot);
 	if (Accumulator.Total() <= 0.f)
 	{
 		return;
 	}
-
-	const FRogueRuleContext      RC     = MakeRuleContext(E, Ctx);
-	const FRogueConditionalTotals Totals = GatherConditionalTotals(E, RC, Source);
 
 	// 4~5단계. 공격 측 상시 -> 조건부
 	ApplyOffenseStats(E, Source, Accumulator);
@@ -778,5 +838,14 @@ void UExecCalc_Damage::Execute_Implementation(
 			FRogueGameplayEffectContext::ExtractMutableFrom(MutableHandle))
 	{
 		MutableCtx->LifestealRate = ResolveLifestealRate(E, Source, Totals);
+
+		// 자해 비율. 서브시스템이 준 피해에 곱해 가해자에게 적용
+		MutableCtx->SelfDamageRate = Source.bIsOffensive ? Totals.Dealt.SelfDamageRate : 0.f;
+
+		// 강제 헤드샷을 헤드샷 이벤트, 사망 처리에 알림
+		if (bForcedHeadshot)
+		{
+			MutableCtx->bHeadshot = true;
+		}
 	}
 }

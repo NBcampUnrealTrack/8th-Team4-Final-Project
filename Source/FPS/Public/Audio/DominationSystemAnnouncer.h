@@ -13,7 +13,9 @@ namespace DominationAnnouncementIds
 	inline const FName CaptureStarted(TEXT("Domination.CaptureStarted"));
 	inline const FName CaptureCompleted(TEXT("Domination.CaptureCompleted"));
 	inline const FName SandstormWarning(TEXT("Domination.SandstormWarning"));
-
+	inline const FName MatchStarted(TEXT("Domination.MatchStarted"));
+	inline const FName Victory(TEXT("Domination.Victory"));
+	inline const FName Defeat(TEXT("Domination.Defeat"));
 	// 거점 기믹 확보 안내. 각 클라이언트가 자기 팀 기준(Ally/Enemy)으로 골라 로컬 재생한다.
 	inline const FName GimmickReconSecuredAlly(TEXT("Domination.Gimmick.ReconSecured.Ally"));
 	inline const FName GimmickReconSecuredEnemy(TEXT("Domination.Gimmick.ReconSecured.Enemy"));
@@ -32,6 +34,10 @@ class FPS_API ADominationSystemAnnouncer : public ASystemAnnouncer
 public:
 	ADominationSystemAnnouncer();
 	virtual void Tick(float DeltaSeconds) override;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 #if !UE_BUILD_SHIPPING
 	void SetSandstormPreviewIntensity(float Intensity);
@@ -60,15 +66,20 @@ private:
 	UFUNCTION()
 	void HandleMatchFlowStateChanged();
 
+	UFUNCTION()
+	void HandleMatchStateChanged();
+
 	void BindSandstormState();
 	void UpdateSandstormAudio();
 	void StopStormLoop();
+	void TryAnnounceMatchOutcome();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> StormAudioComponent;
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	double LastWarningPhaseEndServerTime = 0.0;
+	bool bMatchOutcomeAnnounced = false;
 
 #if !UE_BUILD_SHIPPING
 	float PreviewIntensity = -1.0f;

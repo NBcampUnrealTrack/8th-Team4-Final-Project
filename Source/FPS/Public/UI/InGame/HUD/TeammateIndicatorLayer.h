@@ -17,7 +17,7 @@ class ADataJack;
  * 아군 오버헤드 인디케이터 컨테이너
  * 로컬 팀 인원만큼 Entry 만들어서 관리
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UTeammateIndicatorLayer : public UCommonUserWidget
 {
 	GENERATED_BODY()

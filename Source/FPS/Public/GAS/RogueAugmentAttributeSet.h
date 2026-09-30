@@ -22,6 +22,9 @@ public:
 	// 다중 증강 중첩 시 수치 폭발 방지
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
+	// 메타 어트리뷰트 처리
+	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
+
 protected:
 	// 공격 관련
 	UFUNCTION() void OnRep_DamageMultiplier(const FGameplayAttributeData& OldValue);
@@ -56,6 +59,8 @@ protected:
 	UFUNCTION() void OnRep_SprintSpeedMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_JumpHeightMultiplier(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ExtraJumpCount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_LostHealthBonusRate(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_HighAmmoFireRateBonus(const FGameplayAttributeData& OldValue);
 
 	// 스킬 관련
 	UFUNCTION() void OnRep_CooldownReductionRate(const FGameplayAttributeData& OldValue);
@@ -192,11 +197,26 @@ public:
 	FGameplayAttributeData ExtraJumpCount;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,ExtraJumpCount)
 
+	// 잃은 체력 단계당 무기 피해, 연사, 이동 증가율 (광전사의 영혼)
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_LostHealthBonusRate, Category = "Rogue|Augment|Movement")
+	FGameplayAttributeData LostHealthBonusRate;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,LostHealthBonusRate)
+
+	// 장착 무기 탄창이 절반 이상일 때 연사 증가율 (든든한 탄창)
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HighAmmoFireRateBonus, Category = "Rogue|Augment|Weapon")
+	FGameplayAttributeData HighAmmoFireRateBonus;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,HighAmmoFireRateBonus)
+
 	// 스킬 관련 --------------------------------------------------
 	// 액티브 증강 쿨타임 감소 비율
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CooldownReductionRate, Category = "Rogue|Augment|Skill")
 	FGameplayAttributeData CooldownReductionRate;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownReductionRate)
+
+	// 메타: 남은 액티브 쿨타임을 이 비율만큼 즉시 감소 (냉각 장치)
+	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Augment|Skill")
+	FGameplayAttributeData CooldownRefundRate;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueAugmentAttributeSet,CooldownRefundRate)
 
 	// 상점 관련 --------------------------------------------------
 	// 크레딧 획득 배율
