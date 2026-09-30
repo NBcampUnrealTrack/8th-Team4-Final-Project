@@ -120,6 +120,11 @@ protected:
 		meta = (Categories = "GameplayCue"))
 	FGameplayTag ActivationCueTag;
 
+	// 시전 확정 시 실행할 음성 GameplayCue. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag VoiceCueTag;
+
 	// 켜면 입력 즉시 발동하지 않고 손에 든다. 좌/우클릭으로 사용, 같은 키로 취소
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
 	bool bHoldToUse = false;
