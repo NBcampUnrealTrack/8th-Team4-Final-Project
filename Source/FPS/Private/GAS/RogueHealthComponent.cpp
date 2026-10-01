@@ -222,16 +222,18 @@ void URogueHealthComponent::PlayPainSoundIfDue()
 		return;
 	}
 
+	// 고통음은 맞은 플레이어 본인만 듣는다. 플레이어가 조종하지 않는 아바타(훈련장 더미 등)는 들을 사람이
+	// 없고, 소유 연결이 없는 액터의 Client RPC는 서버에서 실행돼 리슨서버 호스트에게 들리므로 스킵한다.
+	const APawn* AvatarPawn = AbilitySystemComponent ? Cast<APawn>(AbilitySystemComponent->GetAvatarActor()) : nullptr;
+	if (!IsValid(AvatarPawn) || !AvatarPawn->IsPlayerControlled())
+	{
+		return;
+	}
+
 	LastPainSoundTime = Now;
 
-	// 플레이어는 이 컴포넌트가 PlayerState에 붙어 있어 Owner 위치가 캐릭터가 아니다(월드 원점 근처).
-	// 실제로 맞은 몸(ASC 아바타)에서 소리가 나야 한다.
-	const AActor* Avatar = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
-	const FVector SoundLocation = IsValid(Avatar) ? Avatar->GetActorLocation() : Owner->GetActorLocation();
-
-	// 재생할 배리에이션은 서버가 한 번만 골라서 모든 클라이언트가 같은 사운드를 듣게 한다.
 	const int32 SoundIndex = FMath::RandHelper(Pool.Num());
-	Multicast_PlayPainSound(CombatClass, SoundIndex, SoundLocation);
+	Client_PlayPainSound(CombatClass, SoundIndex);
 }
 
 EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
@@ -250,8 +252,8 @@ EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
 	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
 }
 
-void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
-	const EDominationCombatClass CombatClass, const int32 SoundIndex, const FVector Location)
+void URogueHealthComponent::Client_PlayPainSound_Implementation(
+	const EDominationCombatClass CombatClass, const int32 SoundIndex)
 {
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
 	if (!AudioSettings)
@@ -267,7 +269,8 @@ void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
 
 	if (USoundBase* Sound = Pool[SoundIndex].LoadSynchronous())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location);
+		// 듣는 사람이 맞은 본인뿐이므로 위치 감쇠 없이 2D로 재생한다.
+		UGameplayStatics::PlaySound2D(this, Sound);
 	}
 }
 
