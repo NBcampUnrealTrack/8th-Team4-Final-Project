@@ -77,8 +77,9 @@ private:
 	// 소유자의 EDominationCombatClass를 조회한다(비-Domination 모드/미선택이면 Unselected 폴백).
 	EDominationCombatClass ResolveOwnerCombatClass() const;
 
-	UFUNCTION(NetMulticast, Unreliable)
-	void Multicast_PlayPainSound(EDominationCombatClass CombatClass, int32 SoundIndex, FVector Location);
+	// 고통음은 맞은 본인에게만 들려야 하므로 소유 클라이언트에만 보낸다(남에게는 안 들림).
+	UFUNCTION(Client, Unreliable)
+	void Client_PlayPainSound(EDominationCombatClass CombatClass, int32 SoundIndex);
 
 	// 사망 태그 부여와 아바타 통보를 묶은 서버/클라이언트 공통 경로
 	void ApplyDeathStateLocally(bool bDead);

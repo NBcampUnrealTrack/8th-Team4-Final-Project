@@ -15,6 +15,7 @@ class AShooterPlayerState;
 class UImage;
 class UPanelWidget;
 class UShooterButtonBase;
+class UShooterChatInputBox;
 class UShooterConfirmDialog;
 class UShooterRoomMenuScreen;
 class UShooterOptionsScreen;
@@ -35,8 +36,11 @@ protected:
 	virtual void NativeOnDeactivated() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 	virtual bool NativeOnHandleBackAction() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
+	// 인게임 UTeamMatchUIInitComponent::OpenChat과 같은 방식으로 입력창을 Modal에 Push한다.
+	void OpenChat();
 	void Refresh();
 	void BindToLobbyGameState(ALobbyGameState* LobbyGameState);
 	void UnbindFromLobbyGameState();
@@ -152,6 +156,16 @@ private:
 	TObjectPtr<UTextBlock> Text_TeamBReady;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_UnassignedCount;
+
+	// 대기방 채팅 입력창. 인게임 TeamMatchUIInitComponent의 ChatInputBoxClass와 같은 WBP를 지정한다.
+	// 채팅 로그는 WBP_ShooterChatLog를 화면에 직접 배치하면 스스로 PC에 구독한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Chat")
+	TSubclassOf<UShooterChatInputBox> ChatInputBoxClass;
+
+	// 입력창 WBP는 인게임 HUD 배치 기준으로 위치가 잡혀 있어 대기방 채팅 로그와 어긋난다.
+	// WBP를 건드리면 인게임도 같이 바뀌므로, 대기방에서 Push할 때만 이만큼 옮긴다(px, +Y가 아래).
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Chat")
+	FVector2D ChatInputScreenOffset = FVector2D::ZeroVector;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UShooterRoomPlayerSlot> PlayerSlotWidgetClass;

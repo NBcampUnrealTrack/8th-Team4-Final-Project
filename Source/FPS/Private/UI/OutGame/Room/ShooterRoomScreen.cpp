@@ -17,6 +17,7 @@
 #include "TimerManager.h"
 #include "UI/Common/ShooterConfirmDialog.h"
 #include "UI/Foundation/ShooterButtonBase.h"
+#include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/OutGame/Room/ShooterRoomMenuScreen.h"
 #include "UI/OutGame/Room/ShooterRoomPlayerSlot.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
@@ -57,6 +58,51 @@ void UShooterRoomScreen::NativeOnInitialized()
 	Btn_Start->OnClicked().AddUObject(this, &ThisClass::HandleStartClicked);
 	Btn_Leave->OnClicked().AddUObject(this, &ThisClass::HandleLeaveClicked);
 	Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
+
+	// 방장은 NativeGetDesiredFocusTarget이 nullptr이라, 채팅 입력창이 Pop된 뒤 포커스가 돌아올 곳이
+	// 화면 자신뿐이다. 포커스가 화면 밖으로 새면 Enter 프리뷰를 못 받아 채팅을 다시 못 연다.
+	SetIsFocusable(true);
+}
+
+FReply UShooterRoomScreen::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// 대기방은 Menu 입력 모드라 Enhanced Input의 OpenChatAction이 PC까지 오지 않는다.
+	// 인게임처럼 Enter로 채팅을 열 수 있게 여기서 가로챈다.
+	if (InKeyEvent.GetKey() == EKeys::Enter && ChatInputBoxClass)
+	{
+		OpenChat();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+void UShooterRoomScreen::OpenChat()
+{
+	AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+	if (!IsValid(PlayerController) || PlayerController->IsChatInputOpen())
+	{
+		return;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (!IsValid(UIManager))
+	{
+		return;
+	}
+
+	UShooterChatInputBox* ChatInput =
+		Cast<UShooterChatInputBox>(UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ChatInputBoxClass));
+	if (!IsValid(ChatInput))
+	{
+		return;
+	}
+
+	ChatInput->SetRenderTranslation(ChatInputScreenOffset);
+	PlayerController->BeginChatInput(ChatInput);
 }
 
 void UShooterRoomScreen::NativeOnActivated()

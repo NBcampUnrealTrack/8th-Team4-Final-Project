@@ -259,6 +259,10 @@ public:
 	// 채팅 입력창이 Tab을 감지하면 호출한다. 입력 중이던 텍스트는 유지한 채 채널만 토글한다.
 	void HandleChatChannelSwitchRequested();
 
+	// UI.Layer.Modal에 막 Push된 입력창을 열린 채팅으로 등록한다. 인게임은 Input_OpenChat이,
+	// Enhanced Input이 오지 않는 대기방(Menu 입력 모드)은 UShooterRoomScreen이 Enter를 받아 호출한다.
+	void BeginChatInput(UShooterChatInputBox* Widget);
+
 	// 귓속말 자동완성에서 이름을 확정하는 즉시(전송 전) 호출한다. 채널을 바로 Whisper로 잠그고
 	// 최근 귓말 큐를 갱신해, 그 뒤로는 "/w 이름" 없이 메시지만 쳐도 이 사람에게 간다.
 	void RegisterWhisperTarget(const FString& PlayerName);
@@ -331,11 +335,11 @@ protected:
 	UFUNCTION(Client, Reliable)
 	void ClientNotifySurrenderVoteStartResult(ESurrenderVoteStartResult Result);
 
-	// 레이트리밋/길이 재검증 후 GameState::ForEachChatRecipient로 팀/전체 필터링해 전달한다.
+	// 레이트리밋/길이 재검증 후 ShooterChatRouting::ForEachChatRecipient로 팀/전체 필터링해 전달한다.
 	UFUNCTION(Server, Reliable)
 	void ServerSendChatMessage(const FString& MessageText, EChatChannel Channel);
 
-	// "/w 닉네임 메시지" 명령으로 전송. GameState::FindChatRecipientByName으로 대상을 찾아
+	// "/w 닉네임 메시지" 명령으로 전송. ShooterChatRouting::FindChatRecipientByName으로 대상을 찾아
 	// 그 사람에게만 전달하고, 보낸 사람에게는 "-> 닉네임" 형태로 에코해 자기가 보낸 걸 확인시켜준다.
 	UFUNCTION(Server, Reliable)
 	void ServerSendWhisperMessage(const FString& TargetName, const FString& MessageText);
@@ -343,7 +347,7 @@ protected:
 	UFUNCTION(Client, Reliable)
 	void ClientReceiveChatMessage(const FChatMessage& Message);
 
-	// 레이트리밋 재검증 후 GameState::ForEachChatRecipient(Team)로 같은 팀에게만 전달한다.
+	// 레이트리밋 재검증 후 ShooterChatRouting::ForEachChatRecipient(Team)로 같은 팀에게만 전달한다.
 	// 핑도 팀 전용이라 채팅의 팀 라우팅 로직을 그대로 재사용한다.
 	UFUNCTION(Server, Reliable)
 	void ServerSendPing(FVector_NetQuantize Location, EShooterPingType Type);

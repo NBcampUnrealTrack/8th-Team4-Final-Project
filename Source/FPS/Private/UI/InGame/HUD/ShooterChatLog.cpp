@@ -19,8 +19,11 @@ void UShooterChatLog::NativeConstruct()
 	BoundPlayerController = PlayerController;
 	PlayerController->OnChatMessageReceived.AddUniqueDynamic(this, &ThisClass::HandleChatMessageReceived);
 
-	// 활동이 생기기 전까지는 배경+내역을 아예 숨겨둔다.
-	SetVisibility(ESlateVisibility::Collapsed);
+	// 활동이 생기기 전까지는 배경+내역을 아예 숨겨둔다. 상시 표시 모드는 WBP에 지정된 Visibility를 그대로 둔다.
+	if (bAutoHide)
+	{
+		SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 void UShooterChatLog::NativeDestruct()
@@ -71,6 +74,11 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 	if (ScrollBox_Entries)
 	{
 		ScrollBox_Entries->ScrollToEnd();
+	}
+
+	if (!bAutoHide)
+	{
+		return;
 	}
 
 	// 최초 예약 등록
@@ -124,7 +132,8 @@ void UShooterChatLog::RemoveOldestEntry()
 	// 남은 줄이 있으면 만료 예약
 	ExpiryTimerHandle.Invalidate();
 
-	if (ActiveEntries.Num() > 0)
+	// 상시 표시 모드에선 MaxVisibleEntries 초과분 정리로만 불리므로 만료 예약을 걸지 않는다.
+	if (bAutoHide && ActiveEntries.Num() > 0)
 	{
 		GetWorld()->GetTimerManager().SetTimer(
 			ExpiryTimerHandle,
