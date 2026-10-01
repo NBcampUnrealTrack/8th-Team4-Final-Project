@@ -56,7 +56,6 @@ namespace ShooterVitalBarParams
 		});
 	}
 
-	// 이름이 틀리면 Set*ParameterValue 가 조용히 무시한다
 	void ReportMissing(const UMaterialInstanceDynamic& MID, const UObject& Owner, TConstArrayView<FName> Scalars, TConstArrayView<FName> Vectors)
 	{
 		TArray<FMaterialParameterInfo> ScalarInfos;
