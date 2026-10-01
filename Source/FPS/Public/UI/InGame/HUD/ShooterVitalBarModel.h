@@ -40,7 +40,7 @@ struct FShooterVitalBarSettings
 	GENERATED_BODY()
 
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar", meta = (ClampMin = "1.0"))
-	float SegmentValue = 20.f;
+	float SegmentValue = 10.f;
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar", meta = (ClampMin = "0.0"))
 	float HoldSeconds = 0.35f;
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar", meta = (ClampMin = "1.0"))
@@ -83,6 +83,8 @@ struct FPS_API FShooterVitalBarModel
 	FShooterVitalBarLayout GetLayout(const FShooterVitalBarSettings& Settings) const;
 
 	float GetTargetD() const;
+	float GetMaxHealth() const;
+	float GetMaxShield() const;
 	const FShooterVitalTrack& GetHealthTrack() const;
 	const FShooterVitalTrack& GetShieldTrack() const;
 

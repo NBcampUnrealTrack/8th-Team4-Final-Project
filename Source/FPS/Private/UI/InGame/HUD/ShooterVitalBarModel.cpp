@@ -162,6 +162,16 @@ float FShooterVitalBarModel::GetTargetD() const
 	return MaxHealth + MaxShield;
 }
 
+float FShooterVitalBarModel::GetMaxHealth() const
+{
+	return MaxHealth;
+}
+
+float FShooterVitalBarModel::GetMaxShield() const
+{
+	return MaxShield;
+}
+
 const FShooterVitalTrack& FShooterVitalBarModel::GetHealthTrack() const
 {
 	return Health;

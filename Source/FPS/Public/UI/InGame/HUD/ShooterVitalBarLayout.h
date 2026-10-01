@@ -14,7 +14,7 @@ struct FShooterVitalBarLayoutInput
 	float ShieldTrail = 0.f;
 	float HealthFlash = 0.f;
 	float ShieldFlash = 0.f;
-	float SegmentValue = 20.f;
+	float SegmentValue = 10.f;
 };
 
 // 머티리얼에 넘기는 Parameter값

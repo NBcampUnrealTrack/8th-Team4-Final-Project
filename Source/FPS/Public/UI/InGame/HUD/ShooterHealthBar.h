@@ -82,7 +82,6 @@ protected:
 	// 쉴드 용량이 있을 때만 보이는 장식
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_ShieldDeco;
-	// WBP_ShooterGauge
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterGauge> Gauge_Stamina;
 	
@@ -91,7 +90,6 @@ protected:
 	TObjectPtr<UWidgetAnimation> Anim_HealthHit;
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_ShieldHit;
-	// Gauge_Stamina 불투명도 0 → 1. 가득 차면 역재생
 	UPROPERTY(Transient, meta = (BindWidgetAnim))
 	TObjectPtr<UWidgetAnimation> Anim_StaminaShow;
 	
