@@ -21,7 +21,7 @@ void UAnimNotify_Footstep::Notify(
 		: nullptr;
 	if (IsValid(FootstepComponent))
 	{
-		FootstepComponent->PlayFootstep(MeshComp, FootSocketName);
+		FootstepComponent->PlayFootstep(MeshComp, FootSocketName, VolumeMultiplier, PitchMultiplier);
 	}
 }
 
