@@ -5,6 +5,8 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/ShooterAnimInstance.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -25,8 +27,8 @@ bool UGA_MeleeAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle
 		return false;
 	}
 
-	// 근접무기는 탄약이 없으므로(bUsesAmmo=false) 재장전 여부만 확인한다.
-	return !Weapon->IsReloading();
+	// Rejected input must not restart either attack montage.
+	return Weapon->CanFireNow(bIsHeavyAttack);
 }
 
 void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -66,16 +68,26 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		Weapon->SetEffectiveTraceRange(FinalMeleeRangeMeters * 100.f);
 	}
 
+	const float RecoverySeconds = AttackMontage
+		? AttackMontage->GetPlayLength() / FMath::Max(FMath::Abs(AttackMontage->RateScale), KINDA_SMALL_NUMBER)
+		: 0.f;
+	if (!Weapon->FireMelee(bIsHeavyAttack, RecoverySeconds))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	if (AttackMontage && ActorInfo)
 	{
 		UAnimInstance* BodyAnimInstance = ActorInfo->GetAnimInstance();
-		if (BodyAnimInstance)
+		if (UShooterAnimInstance* BodyShooterAnim = Cast<UShooterAnimInstance>(BodyAnimInstance))
 		{
-			BodyAnimInstance->Montage_Play(AttackMontage);
+			// The body requires its own skeleton/slot montage from WeaponData.
+			BodyShooterAnim->PlayFireMontageForCurrentWeapon();
 		}
 
 		// GAS caches CharacterMesh0, not the separate owner-visible first-person arms.
-		// Preserve the existing body path and explicitly play on Mesh1P as well.
+		// The ability's authored montage and recovery remain specific to these arms.
 		AActor* Avatar = GetAvatarActorFromActorInfo();
 		if (IsValid(Avatar) && Avatar->Implements<UPlayerInterface>())
 		{
@@ -88,12 +100,7 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		}
 	}
 
-	const bool bAttacked = Weapon->FireMelee(bIsHeavyAttack);
-
-	if (bAttacked)
-	{
-		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
-	}
+	SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
 }

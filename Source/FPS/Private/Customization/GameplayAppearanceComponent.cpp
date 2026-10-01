@@ -15,6 +15,13 @@
 #include "GroomAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
+#include "Combat/RogueDeathPresentation.h"
+#include "Weapon/WeaponBase.h"
+
+USkeletalMeshComponent* UGameplayAppearanceComponent::GetReadyBody() const
+{
+    return AppliedRevision && IsValid(Body) && Body->GetSkeletalMeshAsset() ? Body.Get() : nullptr;
+}
 
 namespace
 {
@@ -216,6 +223,8 @@ void UGameplayAppearanceComponent::StartUpdate()
             for (int32 Slot = 0; Slot < Materials.Num(); ++Slot) Targets[Index]->SetMaterial(Slot, Materials[Slot]);
         }
         FollowPose(Self->Body, Driver);
+        if (auto* Pose = Cast<UAppearancePoseAnimInstance>(Self->Body->GetAnimInstance()))
+            Pose->bPreserveWeaponHandRelationship = true;
         FollowPose(Self->Outfit, Self->Body, false);
         Self->BindingSurface->SetSkeletalMesh(SourceFace);
         // Run the selected original face's post-process once, then copy the evaluated
@@ -264,7 +273,11 @@ void UGameplayAppearanceComponent::StartUpdate()
         for (auto* Target : Targets) Target->SetVisibility(true);
         Self->Live = Self->Pending; Self->Pending = nullptr;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
+        if (AWeaponBase* Weapon = Character->GetCurrentWeapon_Implementation())
+            Weapon->RefreshThirdPersonAttachment();
         Self->SetComponentTickEnabled(true);
+        // An asynchronous Mutable update can finish after the character has died.
+        RogueDeathPresentation::RefreshRagdollFollowers(*Character);
         Character->RefreshTeamOutline();
     });
     Pending->UpdateSkeletalMeshAsyncResult(Callback, true, true);
