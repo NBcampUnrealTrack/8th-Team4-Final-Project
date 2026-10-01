@@ -22,7 +22,6 @@ class UShooterKeyBindingProxy;
 class UVerticalBox;
 struct FShooterInputBindingEntry;
 
-
 /**
  * 옵션 UI에서 표시할 창 모드.
  * 엔진의 EWindowMode::Type을 Blueprint에서 다루기 쉬운 형태로 노출한다.
@@ -64,7 +63,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnShooterSettingsChanged);
  * 일반 옵션은 즉시 적용하고 SaveOptions/닫기에서 저장한다.
  * 해상도와 창 모드는 확인한 값만 설정 객체에 반영한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterOptionsScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
@@ -131,6 +130,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Video")
 	void SetResolutionScalePercent(float Percent);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Video")
+	float GetScreenBrightness() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Video")
+	void SetScreenBrightness(float Brightness);
 
 	UFUNCTION(BlueprintPure, Category = "UI|Options|Video")
 	bool IsVSyncEnabled() const;
@@ -289,11 +294,10 @@ private:
 	void RebuildKeyBindings();
 	FText BuildInputBindingDisplayName(const FShooterInputBindingEntry& Entry) const;
 	bool TryParseNumber(const FText& Text, float& OutValue) const;
-	void CommitAudioPercent(const FText& Text, ETextCommit::Type CommitMethod, EShooterAudioChannel Channel, FName OptionName, FName TextName);
-	void CommitVoiceChatPercent(const FText& Text, ETextCommit::Type CommitMethod, bool bMicrophone, FName OptionName, FName TextName);
-	void HandleAudioVolumeChangedInternal(float Value, EShooterAudioChannel Channel, FName OptionName, FName TextName);
-	void HandleVoiceChatVolumeChangedInternal(float Value, bool bMicrophone, FName OptionName, FName TextName);
-
+	void CommitAudioPercent(const FText& Text, ETextCommit::Type CommitMethod, EShooterAudioChannel Channel, FName OptionName);
+	void CommitVoiceChatPercent(const FText& Text, ETextCommit::Type CommitMethod, bool bMicrophone, FName OptionName);
+	void HandleAudioVolumeChangedInternal(float Value, EShooterAudioChannel Channel, FName OptionName);
+	void HandleVoiceChatVolumeChangedInternal(float Value, bool bMicrophone, FName OptionName);
 
 	UFUNCTION() void HandleSideGraphics();
 	UFUNCTION() void HandleSideDisplay();
@@ -337,7 +341,6 @@ private:
 	UFUNCTION() void HandleShadingPrev();
 	UFUNCTION() void HandleShadingNext();
 
-
 	UFUNCTION() void HandleVSyncToggle();
 	UFUNCTION() void HandleDynamicResolutionToggle();
 	UFUNCTION() void HandleInvertYToggle();
@@ -347,6 +350,9 @@ private:
 	UFUNCTION() void HandleResetKeyBindings();
 
 	UFUNCTION() void HandleResolutionScaleChanged(float Value);
+	UFUNCTION() void HandleResolutionScaleCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleScreenBrightnessChanged(float Value);
+	UFUNCTION() void HandleScreenBrightnessCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleHorizontalSensitivityChanged(float Value);
 	UFUNCTION() void HandleVerticalSensitivityChanged(float Value);
 	UFUNCTION() void HandleAimSensitivityChanged(float Value);
@@ -445,12 +451,25 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideToggleStyle"))
 	FButtonStyle ToggleOffStyle;
 
-	// 선택 칸 표시줄 색.
+	// 런타임 상태 색은 WBP 기본값에서 함께 조정한다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
-	FLinearColor SegmentActiveColor = FLinearColor(0.030f, 0.900f, 0.820f, 1.00f);
+	FLinearColor RowNormalColor = FLinearColor(0.026f, 0.032f, 0.042f, 0.40f);
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
-	FLinearColor SegmentInactiveColor = FLinearColor(0.130f, 0.210f, 0.215f, 0.72f);
+	FLinearColor RowActiveColor = FLinearColor(0.065f, 0.125f, 0.132f, 0.55f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor TabNormalColor = FLinearColor(0.028f, 0.035f, 0.045f, 0.35f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor TabActiveColor = FLinearColor(0.090f, 0.165f, 0.175f, 0.70f);
+
+	// 선택 칸 표시줄 색.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor SegmentActiveColor = FLinearColor(0.300f, 0.680f, 0.650f, 1.00f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
+	FLinearColor SegmentInactiveColor = FLinearColor(0.160f, 0.195f, 0.210f, 0.45f);
 
 	// 슬라이더 9개에 한 번만 적용한다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
