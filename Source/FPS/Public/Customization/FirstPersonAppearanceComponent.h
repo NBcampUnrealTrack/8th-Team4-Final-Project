@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Components/SkinnedMeshComponent.h"
+#include "UObject/SoftObjectPath.h"
 #include "FirstPersonAppearanceComponent.generated.h"
 
 class USkeletalMesh;
@@ -18,6 +19,7 @@ public:
     UFirstPersonAppearanceComponent();
     void RefreshFromPlayerState();
     void SetPresentationVisible(bool bVisible);
+    void AppendPreloadAssetPaths(FName ClassId, TArray<FSoftObjectPath>& OutPaths) const;
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;

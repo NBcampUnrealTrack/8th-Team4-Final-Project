@@ -55,11 +55,11 @@ public:
 
 	bool IsLoadingScreenVisible() const;
 
-	// 도미네이션 전용. travel 시작에 켜고 세션 종료에 끈다
+	// 맵 이동마다 시작하고 실제 준비 완료 또는 취소 시 종료한다
 	void BeginTravelProgress();
 	void NotifyPreloadComplete();
 
-	// 취소·해제·타임아웃. 게이트만 풀고 90% 는 열지 않는다
+	// 취소는 완료로 취급하지 않는다. 화면 제거는 호출자가 명시적으로 처리한다
 	void AbandonPreloadWait();
 
 	void NotifyWorldLoaded();
@@ -67,7 +67,7 @@ public:
 
 	bool IsTravelProgressActive() const;
 
-	// 더 기다릴 대상이 있나. 도미네이션이 아니면 항상 참
+	// 맵 이동 중에는 선로드·월드·플레이어 준비가 모두 완료되어야 한다
 	bool CanFinishLoading() const;
 
 	// 로비가 살아 있을 때 캐시해 두는 표시값
@@ -86,8 +86,8 @@ private:
 	void ApplyProgress(float Progress);
 
 	// 계층 게이트. 앞 단계가 열려야 다음 단계가 화면에 반영된다
-	float ComputeDominationProgress() const;
-	void ApplyDominationProgress();
+	float ComputeTravelProgress() const;
+	void ApplyTravelProgress();
 
 	bool TickEstimatedTravelProgress(float DeltaTime);
 	void StopEstimatedTravelTicker();
@@ -95,10 +95,8 @@ private:
 	// 뷰포트 조작 전 위젯 월드 재바인딩
 	void RebindLoadingWidgetToCurrentWorld();
 
-	// 선로드 완료 게이트
-	void DeferFinishUntilPreloadEnd();
-	void ClearPreloadFinishTimeout();
-	bool HandlePreloadFinishTimeout(float DeltaTime);
+	// 실제 준비 이벤트가 모두 도착하면 보류된 정상 완료를 실행한다.
+	void TryFinishDeferredLoading();
 
 	UGameViewportClient* GetGameViewportClient() const;
 
@@ -110,7 +108,7 @@ private:
 	TSharedPtr<SWidget> LoadingScreenSlateWidget;
 
 	UPROPERTY(Transient)
-	TObjectPtr<ABaseRoundGameState> BoundRoundGameState;
+	TWeakObjectPtr<ABaseRoundGameState> BoundRoundGameState;
 
 	bool bTravelProgressActive = false;
 
@@ -119,7 +117,7 @@ private:
 	bool bWorldLoaded = false;
 	bool bMatchReady = false;
 
-	// 취소·해제·타임아웃. 
+	// 취소된 이동의 늦은 완료 이벤트를 무시한다.
 	bool bPreloadWaitAbandoned = false;
 
 	// UX 용 추정치
@@ -130,9 +128,8 @@ private:
 	// 완료 대기를 위젯에 맡긴 상태. 즉시 Hide 가 항상 이긴다
 	bool bCompletionExitInFlight = false;
 
-	// 선로드가 끝날 때까지 미뤄 둔 완료
-	bool bFinishDeferredUntilPreloadEnd = false;
-	FTSTicker::FDelegateHandle PreloadFinishTimeoutHandle;
+	// 실제 준비가 끝날 때까지 미뤄 둔 완료
+	bool bFinishDeferredUntilReady = false;
 
 	UPROPERTY(Transient)
 	FShooterLoadingContext PendingContext;

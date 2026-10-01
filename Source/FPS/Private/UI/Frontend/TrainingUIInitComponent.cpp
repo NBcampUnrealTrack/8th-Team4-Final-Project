@@ -80,7 +80,7 @@ void UTrainingUIInitComponent::CompleteLocalLoading()
 {
     if (AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(GetOwner()))
     {
-        LocalController->HideLoadingScreen();
+        LocalController->FinishLoadingScreen();
     }
 }
 
