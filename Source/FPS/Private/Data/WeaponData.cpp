@@ -72,6 +72,15 @@ UAnimMontage* UWeaponData::FindEquipMontage(const FGameplayTag WeaponTag, const 
 	return Data ? Data->EquipMontage.Get() : nullptr;
 }
 
+UAnimMontage* UWeaponData::FindReloadMontage(FGameplayTag WeaponTag, bool bFirstPerson, EDominationCombatClass CombatClass) const
+{
+	if (!bFirstPerson)
+		if (const auto* Class = ClassAnimationOverrides.Find(CombatClass))
+			if (const auto* M = Class->ThirdPersonReloadMontages.Find(WeaponTag); M && IsValid(*M)) return M->Get();
+	const auto* Data = FindWeaponMontages(WeaponTag, bFirstPerson);
+	return Data ? Data->ReloadMontage.Get() : nullptr;
+}
+
 float UWeaponData::GetSwitchAnimationRate(const FGameplayTag WeaponTag)
 {
 	// Draw presentation and equip readiness share this modest speed-up.

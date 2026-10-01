@@ -51,8 +51,17 @@ struct FWeaponMontageData
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage> ReloadMontage = nullptr;
 
+	// The matching magazine/bolt action for this view's weapon mesh.
+	// Played on the same duration as ReloadMontage, not at an independent rate.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> WeaponReloadMontage = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UAnimMontage> FireMontage = nullptr;
+
+	// Optional weapon action for observers that do not run the owner gameplay relay.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> WeaponFireMontage = nullptr;
 };
 
 USTRUCT(BlueprintType)
@@ -66,9 +75,12 @@ struct FCombatClassWeaponAnims
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
 	TMap<FGameplayTag, FPlayerAnims> ThirdPersonAnims;
 
-	// Draw is fitted to the class body; reload/fire keep their existing routing.
+	// Third-person actions fitted to each class body; first-person and fire routing stay shared.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
 	TMap<FGameplayTag, TObjectPtr<UAnimMontage>> ThirdPersonEquipMontages;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ThirdPerson")
+	TMap<FGameplayTag, TObjectPtr<UAnimMontage>> ThirdPersonReloadMontages;
 };
 
 UCLASS(BlueprintType)
@@ -85,6 +97,8 @@ public:
 	UAnimMontage* FindEquipMontage(FGameplayTag WeaponTag, bool bFirstPerson,
 		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 	float GetEquipDuration(FGameplayTag WeaponTag) const;
+	UAnimMontage* FindReloadMontage(FGameplayTag WeaponTag, bool bFirstPerson,
+		EDominationCombatClass CombatClass = EDominationCombatClass::Unselected) const;
 
 	// Draw presentation must use the same rate as the equip readiness timer.
 	UFUNCTION(BlueprintPure, Category = "FPS|WeaponData")

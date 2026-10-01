@@ -73,6 +73,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
+	DOREPLIFETIME(AWeaponBase, EffectiveReloadDuration);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
 	DOREPLIFETIME(AWeaponBase, bInfiniteAmmo);
 }
@@ -89,7 +90,9 @@ void AWeaponBase::BeginPlay()
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
 	EffectiveMagazineSize = MagazineSize;
-	EffectiveReloadDuration = ReloadDuration;
+	// Initial replication can precede BeginPlay on observers. Do not replace the
+	// server's duration with the weapon BP's fallback (notably 1.4s for pistols).
+	if (HasAuthority()) EffectiveReloadDuration = ReloadDuration;
 	EffectivePelletCount = PelletCountPerShot;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
@@ -669,25 +672,32 @@ void AWeaponBase::PlayFireEffects(
 
 void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscanImpactEffectData>& ImpactEffects)
 {
+	// One shot may carry many shotgun pellet impacts; audio is not a per-impact effect.
+	if (!ImpactEffects.IsEmpty())
+	{
+		if (Effects) Effects->PlayFireSound();
+	}
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
 
 	// The predicting owner and authority play rifle/knife animation through the ability.
 	// Simulated observers receive fire effects, but do not execute that ability.
-	// Shotgun/sniper character actions already have their own presentation relay.
+	// Sniper's gameplay-event relay is owner-local; remote proxies also need the
+	// character action, not just muzzle/impact effects, to operate the bolt.
 	const bool bKnifeAttack = GetWeaponTag() == RogueTags::Weapon_Type_Knife;
+	const bool bSniperAttack = GetWeaponTag() == RogueTags::Weapon_Type_Sniper;
 	if (OwningPawn && OwningPawn->GetLocalRole() == ROLE_SimulatedProxy
-		&& (bKnifeAttack || GetWeaponTag() == RogueTags::Weapon_Type_Rifle))
+		&& (bKnifeAttack || bSniperAttack || GetWeaponTag() == RogueTags::Weapon_Type_Rifle))
 	{
 		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
 		UShooterAnimInstance* Anim = Character && Character->GetMesh()
 			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
 		const ADominationPlayerState* State = Character ? Character->GetPlayerState<ADominationPlayerState>() : nullptr;
-		if (Anim && (bKnifeAttack || (State && State->GetCombatClass() == EDominationCombatClass::Trooper))
+		if (Anim && (bKnifeAttack || bSniperAttack || (State && State->GetCombatClass() == EDominationCombatClass::Trooper))
 			&& Character->GetCombatComponent()
 			&& Character->GetCombatComponent()->GetCurrentWeapon() == this)
 		{
-			Anim->PlayFireMontageForCurrentWeapon();
+			Anim->PlayFireMontageForCurrentWeapon(true);
 		}
 	}
 

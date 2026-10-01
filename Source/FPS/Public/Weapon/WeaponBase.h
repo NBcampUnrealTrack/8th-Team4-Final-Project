@@ -458,7 +458,7 @@ protected:
 	float ReloadDuration = 2.1f;
 
 	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")

@@ -3,6 +3,7 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 
 #include "GAS/RogueAbilitySet.h"
+#include "Abilities/GA_MeleeAttack.h"
 #include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRogueAbility, Log, Log);
@@ -24,6 +25,15 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 	ReplicationMode = EGameplayEffectReplicationMode::Mixed;
 
 	SetIsReplicatedByDefault(true);
+}
+
+void URogueAbilitySystemComponent::InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor)
+{
+	if (GetAvatarActor() != InAvatarActor)
+	{
+		HeldMeleeInputs.Reset();
+	}
+	Super::InitAbilityActorInfo(InOwnerActor, InAvatarActor);
 }
 
 void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
@@ -52,6 +62,12 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 			}
 
 			++MatchedSpecCount;
+
+			if (Spec.Ability && Spec.Ability->IsA<UGA_MeleeAttack>())
+			{
+				if (HeldMeleeInputs.Contains(InputTag)) continue;
+				HeldMeleeInputs.Add(InputTag);
+			}
 
 			if (Spec.IsActive())
 			{
@@ -135,6 +151,7 @@ void URogueAbilitySystemComponent::ReportInputResult(
 
 void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
 {
+	HeldMeleeInputs.Remove(InputTag);
 	if (!ensure(InputTag.IsValid()))
 	{
 		return;
