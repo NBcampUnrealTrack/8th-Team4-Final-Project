@@ -19,6 +19,27 @@
 #include "UI/InGame/Weapons/ShooterWeaponDisplaySet.h"
 #include "Weapon/WeaponBase.h"
 
+namespace
+{
+	// Q/E/V 슬롯 태그를 0~2 로
+	int32 FindActiveSlotIndex(const FGameplayTag& SlotTag)
+	{
+		static const FName SlotNames[] = {
+			TEXT("InputTag.Ability.Slot1"), TEXT("InputTag.Ability.Slot2"), TEXT("InputTag.Ability.Slot3")
+		};
+
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(SlotNames); ++Index)
+		{
+			if (SlotTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(SlotNames[Index], false)))
+			{
+				return Index;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+}
+
 void UShooterScoreboard::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
@@ -418,6 +439,15 @@ TArray<FShooterAugmentDisplay> UShooterScoreboard::ResolveAugments(APlayerState*
 		if (const FAugmentLevelData* LevelData = Definition->GetLevelData())
 		{
 			Display.Description = LevelData->Description;
+		}
+
+		if (Definition->AugmentCategory == EAugmentCategory::Active)
+		{
+			// 항목 슬롯 우선, 없으면 정의의 슬롯
+			const FGameplayTag SlotTag = Entry.ActiveInputSlot.IsValid()
+				? Entry.ActiveInputSlot
+				: Definition->GetActiveInputSlotTag();
+			Display.ActiveSlotIndex = FindActiveSlotIndex(SlotTag);
 		}
 	}
 

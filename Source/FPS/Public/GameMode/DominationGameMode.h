@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/Types/DominationTypes.h"
-#include "Augment/AugmentTypes.h"
 #include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 
@@ -30,14 +29,6 @@ DECLARE_MULTICAST_DELEGATE_FourParams(
 	EGameTeam,
 	int32,
 	bool);
-
-struct FDominationReconnectSnapshot
-{
-	EGameTeam Team = EGameTeam::None;
-	EDominationCombatClass CombatClass = EDominationCombatClass::Unselected;
-	FAugmentInventoryReconnectSnapshot AugmentInventory;
-	float ExpireServerTime = 0.0f;
-};
 
 /**
  * Domination의 점령 라운드는 점수 단위이며, 점령마다 Pawn과 라운드 자원을
@@ -68,8 +59,6 @@ public:
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
 	UDominationLoadoutManager* GetLoadoutManager() const;
-	void NotifyClientInitialCombatAssetsReady(
-		ADominationPlayerController* PlayerController, FGuid Generation, bool bSucceeded);
 
 	// 서버의 다른 시스템도 사건 ID로 공용 방송기를 사용할 수 있다.
 	UFUNCTION(BlueprintPure, Category = "Domination|Announcer")
@@ -102,7 +91,6 @@ public:
 	FOnDominationRoundCompleted OnRoundCompleted;
 
 protected:
-	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	virtual EPlayerParticipationState ResolveParticipationStateForNewPlayer(APlayerController* NewPlayer) const override;
 	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
@@ -110,7 +98,6 @@ protected:
 	virtual void HandleSurrenderApproved(EGameTeam SurrenderingTeam) override;
 
 private:
-	void HandleCombatAssetsReady(EDominationCombatClass CombatClass, bool bSucceeded);
 	bool HasValidCombatClassConfiguration() const;
 	bool AreAugmentDraftDependenciesReady() const;
 	void HandleAugmentDraftDependenciesReady();
@@ -127,10 +114,6 @@ private:
 	bool TryJoinPlayerInProgress(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
-	FString GetReconnectKey(const AShooterPlayerState* PlayerState) const;
-	void CaptureReconnectSnapshot(const ADominationPlayerState* PlayerState);
-	bool RestoreReconnectSnapshot(ADominationPlayerState* PlayerState);
-	void PurgeExpiredReconnectSnapshots();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "8"))
 	int32 MinimumPlayersToStart = 2;
@@ -193,13 +176,6 @@ private:
 
 	// 최초 증강을 모두 끝내야 같은 시점부터 중앙 거점 전환 시간을 받는다.
 	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingInitialAugmentPlayers;
-	// 난입자는 누락된 보상을 모두 고른 뒤에만 전투 Pawn을 받는다.
-	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingLateJoinAugmentPlayers;
-	TMap<FString, FDominationReconnectSnapshot> ReconnectSnapshots;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Domination|Reconnect", meta = (ClampMin = "1.0", Units = "s"))
-	float ReconnectGracePeriod = 90.0f;
-	TSet<TWeakObjectPtr<APlayerController>> PendingCombatAssetRespawns;
 	bool bInitialObjectiveTransitionStarted = false;
 
 	FTimerHandle MatchEndTimerHandle;

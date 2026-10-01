@@ -2,8 +2,6 @@
 
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
-#include "Engine/AssetManager.h"
-#include "Engine/StreamableManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Sound/SoundBase.h"
@@ -29,22 +27,7 @@ void ASystemAnnouncer::BeginPlay()
 
 	if (!IsValid(VoiceSoundClass))
 	{
-		const TSoftObjectPtr<USoundClass> Reference = GetDefault<UShooterAudioSettings>()->VoiceSoundClass;
-		VoiceSoundClass = Reference.Get();
-		if (!VoiceSoundClass && !Reference.IsNull())
-		{
-			bVoiceSoundClassLoading = true;
-			VoiceSoundClassLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-				Reference.ToSoftObjectPath(), FStreamableDelegate::CreateWeakLambda(this, [this, Reference]()
-				{
-					if (bShuttingDown) return;
-					VoiceSoundClass = Reference.Get();
-					bVoiceSoundClassLoading = false;
-					VoiceSoundClassLoadHandle.Reset();
-					PlayNextAnnouncement();
-				}));
-			if (!VoiceSoundClassLoadHandle.IsValid()) bVoiceSoundClassLoading = false;
-		}
+		VoiceSoundClass = GetDefault<UShooterAudioSettings>()->VoiceSoundClass.LoadSynchronous();
 	}
 
 	PlayNextAnnouncement();
@@ -53,12 +36,6 @@ void ASystemAnnouncer::BeginPlay()
 void ASystemAnnouncer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	bShuttingDown = true;
-	if (VoiceSoundClassLoadHandle.IsValid())
-	{
-		VoiceSoundClassLoadHandle->CancelHandle();
-		VoiceSoundClassLoadHandle.Reset();
-	}
-	bVoiceSoundClassLoading = false;
 	ClearLocalAnnouncements();
 	LastSentTimes.Reset();
 	Super::EndPlay(EndPlayReason);
@@ -208,7 +185,7 @@ void ASystemAnnouncer::CancelAnnouncement(const FName AnnouncementId)
 
 void ASystemAnnouncer::PlayNextAnnouncement()
 {
-	if (bShuttingDown || bVoiceSoundClassLoading || !CurrentAnnouncementId.IsNone() || GetNetMode() == NM_DedicatedServer)
+	if (bShuttingDown || !CurrentAnnouncementId.IsNone() || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}

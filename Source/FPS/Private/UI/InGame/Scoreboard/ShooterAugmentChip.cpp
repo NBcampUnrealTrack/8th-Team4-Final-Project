@@ -70,7 +70,7 @@ void UShooterAugmentChip::SetEmpty()
 
 	if (Image_Icon)
 	{
-		// Collapsed가 아니라 Hidden. 5칸 고정이라 칸이 줄면 행마다 폭이 달라짐
+		// Collapsed가 아니라 Hidden. 8칸 고정이라 칸이 줄면 행마다 폭이 달라짐
 		Image_Icon->SetVisibility(ESlateVisibility::Hidden);
 	}
 	

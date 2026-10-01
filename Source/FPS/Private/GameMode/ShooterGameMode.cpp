@@ -168,7 +168,7 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 	if (APawn* ExistingPawn = PlayerController->GetPawn())
 	{
 		PlayerController->UnPossess();
-		ExistingPawn->Destroy();
+		ExistingPawn->SetLifeSpan(CorpseLifeSpanSeconds);
 	}
 
 	ASpectatorPawn* SpectatorPawn = SpawnSpectatorPawnFor(PlayerController, SpawnTransform);

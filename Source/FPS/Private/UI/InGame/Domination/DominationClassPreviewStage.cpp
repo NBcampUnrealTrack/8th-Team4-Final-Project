@@ -3,8 +3,6 @@
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
-#include "Engine/AssetManager.h"
-#include "Engine/StreamableManager.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -98,13 +96,6 @@ void ADominationClassPreviewStage::BeginPlay()
 
 void ADominationClassPreviewStage::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	++PreviewLoadGeneration;
-	if (PreviewLoadHandle.IsValid())
-	{
-		PreviewLoadHandle->CancelHandle();
-		PreviewLoadHandle.Reset();
-	}
-
 	DestroyPreviewPawn();
 
 	Super::EndPlay(EndPlayReason);
@@ -112,53 +103,22 @@ void ADominationClassPreviewStage::EndPlay(const EEndPlayReason::Type EndPlayRea
 
 void ADominationClassPreviewStage::SetPreviewClass(const EDominationCombatClass CombatClass)
 {
-	if (CombatClass == RequestedPreviewClass)
+	if (CombatClass == CurrentPreviewClass)
 	{
 		return;
 	}
 
-	const uint32 RequestGeneration = ++PreviewLoadGeneration;
-	if (PreviewLoadHandle.IsValid())
-	{
-		PreviewLoadHandle->CancelHandle();
-		PreviewLoadHandle.Reset();
-	}
-	RequestedPreviewClass = CombatClass;
 	DestroyPreviewPawn();
-	RegisterPreviewComponents();
 
-	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
-	const FDominationCombatClassDefinition* Definition = ClassSettings->FindDefinition(CombatClass);
-	if (!Definition || Definition->PawnClass.IsNull())
-	{
-		return;
-	}
+	CurrentPreviewClass = EDominationCombatClass::Unselected;
 
-	const TSoftClassPtr<AShooterCharacter> PawnClass = Definition->PawnClass;
-	if (UClass* LoadedClass = PawnClass.Get())
-	{
-		SpawnPreviewPawn(LoadedClass);
-		return;
-	}
-
-	// 선택한 캐릭터만 비동기로 준비하며 프리뷰 완료를 게임 시작 조건으로 쓰지 않는다.
-	PreviewLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-		PawnClass.ToSoftObjectPath(),
-		FStreamableDelegate::CreateWeakLambda(this, [this, PawnClass, RequestGeneration]()
-		{
-			if (RequestGeneration != PreviewLoadGeneration)
-			{
-				return;
-			}
-			SpawnPreviewPawn(PawnClass.Get());
-			PreviewLoadHandle.Reset();
-		}));
-}
-
-void ADominationClassPreviewStage::SpawnPreviewPawn(UClass* PawnClass)
-{
 	UWorld* World = GetWorld();
-	if (!IsValid(World) || !IsValid(PawnClass))
+	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
+	UClass* PawnClass = IsValid(ClassSettings)
+		? ClassSettings->ResolvePawnClass(CombatClass)
+		: nullptr;
+
+	if (!IsValid(World) || PawnClass == nullptr)
 	{
 		return;
 	}
@@ -203,6 +163,8 @@ void ADominationClassPreviewStage::SpawnPreviewPawn(UClass* PawnClass)
 	}
 
 	RegisterPreviewComponents();
+
+	CurrentPreviewClass = CombatClass;
 
 	PlayChangeEffect();
 }

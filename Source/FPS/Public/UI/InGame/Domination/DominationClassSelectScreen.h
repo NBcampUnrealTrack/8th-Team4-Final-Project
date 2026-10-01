@@ -67,7 +67,6 @@ private:
 	void StartHoverUpdates();
 	void UpdateHoverAnimation();
 	void HandleLockInClicked();
-	void RequestClassPresentationAssets();
 	void BuildIconCache();
 	void RebuildClassCards();
 	void ClearClassCards();
@@ -162,9 +161,6 @@ private:
 	TArray<FDominationPlayerSlotEntry> SlotEntries;
 	UPROPERTY(Transient)
 	TObjectPtr<ADominationClassPreviewStage> PreviewStage;
-
-	TSharedPtr<struct FStreamableHandle> PresentationLoadHandle;
-	uint32 PresentationLoadGeneration = 0;
 
 	FDominationCardHoverController CardHoverController;
 

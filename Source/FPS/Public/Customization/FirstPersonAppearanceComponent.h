@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Components/SkinnedMeshComponent.h"
+#include "UObject/SoftObjectPath.h"
 #include "FirstPersonAppearanceComponent.generated.h"
 
 class USkeletalMesh;
@@ -9,7 +10,6 @@ class USkeletalMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 struct FCustomizationAppearance;
-struct FStreamableHandle;
 
 UCLASS(ClassGroup=(Customization))
 class FPS_API UFirstPersonAppearanceComponent : public UActorComponent
@@ -19,13 +19,13 @@ public:
     UFirstPersonAppearanceComponent();
     void RefreshFromPlayerState();
     void SetPresentationVisible(bool bVisible);
+    void AppendPreloadAssetPaths(FName ClassId, TArray<FSoftObjectPath>& OutPaths) const;
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
     virtual void TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function) override;
 private:
     void Restore();
-    void CancelVisualLoad();
     void UpdateColors(const FCustomizationAppearance* Appearance);
     void UpdateVisibility();
     UPROPERTY(EditDefaultsOnly, Category="Appearance") TMap<FName, TSoftObjectPtr<USkeletalMesh>> ClassVisuals;
@@ -33,9 +33,6 @@ private:
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Driver;
     UPROPERTY(Transient) TObjectPtr<USkeletalMesh> AppliedMesh;
     UPROPERTY(Transient) TObjectPtr<USkeletalMesh> AppliedVisual;
-    TSharedPtr<FStreamableHandle> VisualLoadHandle;
-    FSoftObjectPath RequestedVisualPath;
-    bool bEndingPlay = false;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Skin;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Top;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Gloves;

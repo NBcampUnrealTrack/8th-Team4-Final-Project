@@ -4,11 +4,8 @@
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
-#include "Engine/AssetManager.h"
-#include "Engine/StreamableManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogFirstPersonAppearance, Log, All);
+#include "Misc/PackageName.h"
 
 namespace
 {
@@ -85,6 +82,16 @@ UFirstPersonAppearanceComponent::UFirstPersonAppearanceComponent()
         TEXT("/Game/FPS/Customizable/Character/FirstPerson/Vanguard/SKM_FP_Vanguard_ClothedArms.SKM_FP_Vanguard_ClothedArms"))));
 }
 
+void UFirstPersonAppearanceComponent::AppendPreloadAssetPaths(const FName ClassId, TArray<FSoftObjectPath>& OutPaths) const
+{
+    const TSoftObjectPtr<USkeletalMesh>* Selection = ClassVisuals.Find(ClassId);
+    if (!Selection || Selection->IsNull()) return;
+    const FSoftObjectPath Path = Selection->ToSoftObjectPath();
+    // 선택 외형이 없으면 기존 팔 메시로 동작한다.
+    if (FPackageName::DoesPackageExist(Path.GetLongPackageName())) OutPaths.AddUnique(Path);
+    else UE_LOG(LogTemp, Verbose, TEXT("[Preload] Optional first-person mesh unavailable: %s"), *Path.ToString());
+}
+
 void UFirstPersonAppearanceComponent::BeginPlay()
 {
     Super::BeginPlay();
@@ -94,8 +101,6 @@ void UFirstPersonAppearanceComponent::BeginPlay()
 
 void UFirstPersonAppearanceComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
-    bEndingPlay = true;
-    CancelVisualLoad();
     Restore();
     Super::EndPlay(Reason);
 }
@@ -103,13 +108,7 @@ void UFirstPersonAppearanceComponent::EndPlay(const EEndPlayReason::Type Reason)
 void UFirstPersonAppearanceComponent::TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function)
 {
     Super::TickComponent(Delta, Tick, Function);
-    UpdateVisibility();
-}
-
-void UFirstPersonAppearanceComponent::CancelVisualLoad()
-{
-    if (VisualLoadHandle.IsValid()) { VisualLoadHandle->CancelHandle(); VisualLoadHandle.Reset(); }
-    RequestedVisualPath.Reset();
+    RefreshFromPlayerState();
 }
 
 void UFirstPersonAppearanceComponent::Restore()
@@ -175,37 +174,14 @@ void UFirstPersonAppearanceComponent::UpdateColors(const FCustomizationAppearanc
 
 void UFirstPersonAppearanceComponent::RefreshFromPlayerState()
 {
-    if (bEndingPlay) return;
     auto* Character = Cast<AShooterCharacter>(GetOwner());
     if (!Character || GetNetMode() == NM_DedicatedServer || !Character->IsPlayerControlled()
-        || !Character->IsLocallyControlled()) { CancelVisualLoad(); Restore(); return; }
+        || !Character->IsLocallyControlled()) { Restore(); return; }
     const FName ClassId = ResolveClass(Character);
     auto* Selection = ClassVisuals.Find(ClassId);
     auto* Current = Character->GetMesh1P_Implementation();
-    if (!Selection || Selection->IsNull() || !Current || !Current->GetSkeletalMeshAsset())
-    { CancelVisualLoad(); Restore(); return; }
-    USkeletalMesh* Asset = Selection->Get();
-    if (!Asset)
-    {
-        const FSoftObjectPath Path = Selection->ToSoftObjectPath();
-        if (RequestedVisualPath == Path) return;
-        CancelVisualLoad();
-        RequestedVisualPath = Path;
-        const TSoftObjectPtr<USkeletalMesh> MeshReference = *Selection;
-        VisualLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-            Path, FStreamableDelegate::CreateWeakLambda(this, [this, Path, MeshReference]()
-            {
-                if (bEndingPlay || RequestedVisualPath != Path) return;
-                if (MeshReference.Get()) RefreshFromPlayerState();
-                else UE_LOG(LogFirstPersonAppearance, Warning, TEXT("First-person appearance could not be loaded: %s"), *Path.ToString());
-                if (RequestedVisualPath == Path) VisualLoadHandle.Reset();
-            }));
-        if (!VisualLoadHandle.IsValid())
-        {
-            UE_LOG(LogFirstPersonAppearance, Warning, TEXT("First-person appearance load could not be started: %s"), *Path.ToString());
-        }
-        return;
-    }
+    if (!Selection || Selection->IsNull() || !Current || !Current->GetSkeletalMeshAsset()) { Restore(); return; }
+    USkeletalMesh* Asset = Selection->LoadSynchronous();
     if (Driver != Current || AppliedMesh != Current->GetSkeletalMeshAsset() || AppliedVisual != Asset || !IsValid(Visual))
     {
         Restore();

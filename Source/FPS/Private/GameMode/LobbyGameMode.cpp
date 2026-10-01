@@ -10,6 +10,8 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "Travel/ShooterTravelSettings.h"
+#include "UObject/UObjectGlobals.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLobbyGameMode, Log, All);
 
@@ -18,6 +20,31 @@ ALobbyGameMode::ALobbyGameMode()
 	GameStateClass = ALobbyGameState::StaticClass();
 	PlayerControllerClass = AShooterPlayerController::StaticClass();
 	PlayerStateClass = AShooterPlayerState::StaticClass();
+}
+
+void ALobbyGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->NotifyLobbyReady(GetWorld());
+		}
+	}
+}
+
+void ALobbyGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ALobbyGameMode::InitGameState()
@@ -49,6 +76,10 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	AssignHostPlayerIfNeeded(NewPlayer);
+	if (bStartRoomGamePending && !bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster changed while preparing travel."));
+	}
 	NotifyLobbyPlayerListChanged();
 }
 
@@ -56,10 +87,21 @@ void ALobbyGameMode::PostSeamlessTravel()
 {
 	Super::PostSeamlessTravel();
 	RebuildLobbyStateAfterSeamlessTravel();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->NotifyLobbyReady(GetWorld());
+		}
+	}
 }
 
 void ALobbyGameMode::Logout(AController* Exiting)
 {
+	if (bStartRoomGamePending && !bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(TEXT("A player left while preparing travel."));
+	}
 	const APlayerState* ExitingPlayerState = Exiting ? Exiting->PlayerState : nullptr;
 	Super::Logout(Exiting);
 	ReassignHostPlayerIfNeeded(ExitingPlayerState);
@@ -123,6 +165,12 @@ bool ALobbyGameMode::RequestStartRoomGame(
 		return false;
 	}
 
+	if (SessionSubsystem->IsRoomOperationInProgress())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: a room operation is still in progress."));
+		return false;
+	}
+
 	const ELobbyMatchMode SelectedMatchMode = GetSelectedMatchMode();
 	const FString SelectedMapName = GetMapNameForMatchMode(SelectedMatchMode);
 	const FString SelectedMatchType = GetMatchTypeForMatchMode(SelectedMatchMode);
@@ -142,12 +190,23 @@ bool ALobbyGameMode::RequestStartRoomGame(
 		return false;
 	}
 
+	if (!CaptureMatchTravelParticipants())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: the travel roster is invalid."));
+		return false;
+	}
+
 	PendingGameMapPath = ResolveMapPathFromName(SelectedMapName);
+	MatchTravelRequestId = MatchTravelRequestId == MAX_int32 ? 1 : MatchTravelRequestId + 1;
 	bStartRoomGamePending = true;
 	NotifyLobbyPlayerListChanged();
 	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStartRoomGameComplete);
+	// 이 제한은 온라인 세션 응답에만 적용하며 에셋 로딩 시간에는 적용하지 않는다.
+	GetWorldTimerManager().SetTimer(
+		SessionStartResponseTimer, this, &ThisClass::HandleSessionStartResponseTimeout,
+		FMath::Max(1.0f, GetDefault<UShooterTravelSettings>()->OnlineSessionStartTimeout), false);
 	SessionSubsystem->StartRoomGameWithSettings(SelectedMapName, SelectedMatchType);
 	return true;
 }
@@ -749,61 +808,219 @@ FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);
 }
 
-void ALobbyGameMode::TravelToPendingGameMap()
+bool ALobbyGameMode::CaptureMatchTravelParticipants()
 {
+	MatchTravelParticipants.Reset();
 	UWorld* World = GetWorld();
-	if (!World || World->GetNetMode() == NM_Client || bTravelingToGameMap)
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(Iterator->Get());
+		const AShooterPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<AShooterPlayerState>() : nullptr;
+		if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
+		{
+			MatchTravelParticipants.Reset();
+			return false;
+		}
+		MatchTravelParticipants.Add(PlayerController, PlayerState->GetTeam());
+	}
+	return MatchTravelParticipants.Num() >= MinimumPlayersToStart;
+}
+
+bool ALobbyGameMode::IsMatchTravelRosterValid() const
+{
+	const UWorld* World = GetWorld();
+	if (!IsValid(World) || !CanStartRoomGame())
+	{
+		return false;
+	}
+
+	int32 PlayerCount = 0;
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(Iterator->Get());
+		const EGameTeam* OriginalTeam = MatchTravelParticipants.Find(PlayerController);
+		const AShooterPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<AShooterPlayerState>() : nullptr;
+		if (!OriginalTeam || !IsValid(PlayerState) || PlayerState->GetTeam() != *OriginalTeam)
+		{
+			return false;
+		}
+		++PlayerCount;
+	}
+	return PlayerCount == MatchTravelParticipants.Num();
+}
+
+void ALobbyGameMode::BeginMatchTravelPreparation()
+{
+	if (!bStartRoomGamePending || !IsMatchTravelRosterValid())
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster or readiness changed before preparation."));
+		return;
+	}
+
+	bPreparingMatchTravel = true;
+	PendingMatchTravelPlayers.Reset();
+	TArray<TWeakObjectPtr<AShooterPlayerController>> Participants;
+	MatchTravelParticipants.GenerateKeyArray(Participants);
+	for (const TWeakObjectPtr<AShooterPlayerController>& Participant : Participants)
+	{
+		PendingMatchTravelPlayers.Add(Participant);
+	}
+
+	UE_LOG(LogLobbyGameMode, Log, TEXT("Match travel preparation started. Request=%d Players=%d Map=%s"),
+		MatchTravelRequestId, Participants.Num(), *PendingGameMapPath);
+
+	// 마지막 완료 응답까지 로비 월드와 연결을 유지한다.
+	for (const TWeakObjectPtr<AShooterPlayerController>& Participant : Participants)
+	{
+		if (!bPreparingMatchTravel)
+		{
+			break;
+		}
+		if (AShooterPlayerController* PlayerController = Participant.Get())
+		{
+			PlayerController->ClientPrepareMatchTravel(PendingGameMapPath, MatchTravelRequestId);
+		}
+		else
+		{
+			CancelMatchTravelPreparation(TEXT("A travel participant is no longer valid."));
+			break;
+		}
+	}
+}
+
+void ALobbyGameMode::NotifyMatchTravelPrepared(
+	AShooterPlayerController* PlayerController, const int32 RequestId, const bool bSuccess)
+{
+	if (!bPreparingMatchTravel || RequestId != MatchTravelRequestId
+		|| !PendingMatchTravelPlayers.Contains(PlayerController))
 	{
 		return;
 	}
 
-	bTravelingToGameMap = true;
-
-	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	if (!bSuccess)
 	{
-		if (AShooterPlayerController* ShooterPlayerController =
-			Cast<AShooterPlayerController>(Iterator->Get()))
-		{
-			ShooterPlayerController->ClientShowLoadingScreen(0.2f);
-		}
+		UE_LOG(LogLobbyGameMode, Error, TEXT("Match travel preparation failed for %s. Request=%d"),
+			*GetNameSafe(PlayerController), RequestId);
+		CancelMatchTravelPreparation(TEXT("A participant could not preload the required assets."));
+		return;
 	}
 
+	PendingMatchTravelPlayers.Remove(PlayerController);
+	UE_LOG(LogLobbyGameMode, Log, TEXT("Match travel participant prepared. Request=%d Player=%s Remaining=%d"),
+		RequestId, *GetNameSafe(PlayerController), PendingMatchTravelPlayers.Num());
+	if (PendingMatchTravelPlayers.IsEmpty())
+	{
+		TravelToPendingGameMap();
+	}
+}
+
+void ALobbyGameMode::CancelPendingMatchTravel(const FString& Reason)
+{
+	if (bStartRoomGamePending || bPreparingMatchTravel || bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(*Reason);
+	}
+}
+
+void ALobbyGameMode::HandleSessionStartResponseTimeout()
+{
+	if (bStartRoomGamePending && !bPreparingMatchTravel)
+	{
+		CancelMatchTravelPreparation(TEXT("The online session start response timed out."));
+	}
+}
+
+void ALobbyGameMode::CancelMatchTravelPreparation(const TCHAR* Reason)
+{
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
+	bPreparingMatchTravel = false;
+	bStartRoomGamePending = false;
+	bTravelingToGameMap = false;
+	PendingMatchTravelPlayers.Reset();
+	UE_LOG(LogLobbyGameMode, Warning, TEXT("Match travel preparation canceled. Request=%d Reason=%s"),
+		MatchTravelRequestId, Reason);
+
+	for (const TPair<TWeakObjectPtr<AShooterPlayerController>, EGameTeam>& Participant : MatchTravelParticipants)
+	{
+		if (AShooterPlayerController* PlayerController = Participant.Key.Get())
+		{
+			PlayerController->ClientCancelMatchTravelPreparation(MatchTravelRequestId);
+		}
+	}
+	MatchTravelParticipants.Reset();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
+			SessionSubsystem->CancelRoomGameStart();
+		}
+	}
+	NotifyLobbyPlayerListChanged();
+	if (const APlayerState* HostState = HostPlayerState.Get())
+	{
+		if (AShooterPlayerController* HostController = Cast<AShooterPlayerController>(HostState->GetOwningController()))
+		{
+			HostController->ClientNotifyLobbyStartFailed();
+		}
+	}
+}
+
+void ALobbyGameMode::TravelToPendingGameMap()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->GetNetMode() == NM_Client || bTravelingToGameMap)
+	{
+		return;
+	}
+	if (!bPreparingMatchTravel || !PendingMatchTravelPlayers.IsEmpty() || !IsMatchTravelRosterValid())
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster or readiness changed before travel."));
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
 	bUseSeamlessTravel = true;
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ServerTravelRequested Target=%s Players=%d"),
-		*PendingGameMapPath, World->GetNumPlayerControllers());
-	const bool bTravelAccepted = World->ServerTravel(PendingGameMapPath + TEXT("?listen"));
-	UE_LOG(LogTemp, Log, TEXT("[DominationTravel] Stage=ServerTravelAccepted Accepted=%d"), bTravelAccepted);
+	bTravelingToGameMap = true;
+	if (!World->ServerTravel(PendingGameMapPath + TEXT("?listen")))
+	{
+		CancelMatchTravelPreparation(TEXT("ServerTravel could not start."));
+		return;
+	}
+	bPreparingMatchTravel = false;
+	bStartRoomGamePending = false;
+	PendingMatchTravelPlayers.Reset();
 }
 
 void ALobbyGameMode::HandleStartRoomGameComplete(const bool bWasSuccessful)
 {
+	// 세션 시작 응답을 받았으면 시간 제한을 끝내고 에셋 준비 완료를 기다린다.
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
 	UGameInstance* GameInstance = GetGameInstance();
 	USessionSubSystem* SessionSubsystem = GameInstance
-		? GameInstance->GetSubsystem<USessionSubSystem>()
-		: nullptr;
+		? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
 	if (SessionSubsystem)
 	{
-		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(
-			this,
-			&ThisClass::HandleStartRoomGameComplete);
+		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
 	}
-
-	bStartRoomGamePending = false;
-
-	if (bWasSuccessful)
+	if (!bStartRoomGamePending)
 	{
-		TravelToPendingGameMap();
 		return;
 	}
-
-	NotifyLobbyPlayerListChanged();
-
-	if (const APlayerState* HostState = HostPlayerState.Get())
+	if (bWasSuccessful)
 	{
-		if (AShooterPlayerController* HostController =
-			Cast<AShooterPlayerController>(HostState->GetOwningController()))
-		{
-			HostController->ClientNotifyLobbyStartFailed();
-		}
+		BeginMatchTravelPreparation();
+	}
+	else
+	{
+		CancelMatchTravelPreparation(TEXT("The online session could not start."));
 	}
 }

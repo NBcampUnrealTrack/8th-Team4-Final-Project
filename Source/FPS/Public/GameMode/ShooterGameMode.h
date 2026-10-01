@@ -62,5 +62,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
 	float SpectatorTargetRetryInterval = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
+	float CorpseLifeSpanSeconds = 5.0f;
+
 	TMap<TWeakObjectPtr<APlayerController>, FTimerHandle> SpectatorTargetRetryTimers;
 };

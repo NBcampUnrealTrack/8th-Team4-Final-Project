@@ -7,7 +7,6 @@
 class UAudioComponent;
 class USoundBase;
 class USoundClass;
-struct FStreamableHandle;
 
 USTRUCT(BlueprintType)
 struct FPS_API FSystemAnnouncerCue
@@ -102,8 +101,6 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> VoiceAudioComponent;
 
-	TSharedPtr<FStreamableHandle> VoiceSoundClassLoadHandle;
-	bool bVoiceSoundClassLoading = false;
 	TArray<FQueuedAnnouncement> PendingAnnouncements;
 	TMap<FName, double> LastSentTimes;
 	FName CurrentAnnouncementId;

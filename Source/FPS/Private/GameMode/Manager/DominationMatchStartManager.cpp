@@ -38,27 +38,19 @@ bool UDominationMatchStartManager::Initialize(
 
 	DominationGameState->SetDominationPhase(
 		EDominationMatchPhase::WaitingForPlayers);
-	InOwnerGameMode->GetLoadoutManager()->OnCombatAssetsReady.AddUObject(
-		this, &ThisClass::HandleCombatAssetsReady);
 	return true;
 }
 
 void UDominationMatchStartManager::Shutdown()
 {
-	if (ADominationGameMode* GameMode = GetOwnerGameMode())
-	{
-		GameMode->GetLoadoutManager()->OnCombatAssetsReady.RemoveAll(this);
-	}
 	if (FTimerManager* TimerManager = GetTimerManager())
 	{
 		TimerManager->ClearTimer(ClassSelectionTimerHandle);
 	}
 
-	ResetClientCombatAssetPreparation();
 	InitialParticipants.Reset();
 	SpawnRetryCount = 0;
 	bStartSuspended = false;
-	bWaitingForCombatAssets = false;
 	OnInitialPlayersSpawned.Clear();
 	Super::Shutdown();
 }
@@ -96,7 +88,6 @@ void UDominationMatchStartManager::NotifyPlayerLeaving(APlayerController* Player
 		{
 			return !Participant.IsValid() || Participant.Get() == PlayerController;
 		});
-	PendingClientCombatAssets.Remove(Cast<ADominationPlayerController>(PlayerController));
 
 	if (Phase == EDominationMatchPhase::ClassSelecting && HasRequiredParticipants())
 	{
@@ -147,8 +138,6 @@ void UDominationMatchStartManager::RequestCombatClass(
 	{
 		return;
 	}
-
-	GetOwnerGameMode()->GetLoadoutManager()->EnsureCombatAssets(DominationPlayerState->GetCombatClass());
 
 	if (AreAllParticipantsClassSelected())
 	{
@@ -293,11 +282,9 @@ void UDominationMatchStartManager::CleanupInitialSpawns()
 void UDominationMatchStartManager::ResetStartAttempt()
 {
 	GetTimerManager()->ClearTimer(ClassSelectionTimerHandle);
-	ResetClientCombatAssetPreparation();
 	CleanupInitialSpawns();
 	InitialParticipants.Reset();
 	SpawnRetryCount = 0;
-	bWaitingForCombatAssets = false;
 	GetDominationGameState()->SetDominationPhase(EDominationMatchPhase::WaitingForPlayers);
 }
 
@@ -416,11 +403,6 @@ void UDominationMatchStartManager::CompleteClassSelection()
 
 	GetTimerManager()->ClearTimer(ClassSelectionTimerHandle);
 	const EInitialSpawnResult Result = SpawnInitialParticipants();
-	bWaitingForCombatAssets = Result == EInitialSpawnResult::AssetsLoading;
-	if (bWaitingForCombatAssets)
-	{
-		return;
-	}
 	if (Result == EInitialSpawnResult::InvalidConfiguration)
 	{
 		SuspendMatchStart(TEXT("An initial participant's class or loadout is invalid."));
@@ -448,86 +430,6 @@ void UDominationMatchStartManager::CompleteClassSelection()
 	OnInitialPlayersSpawned.Broadcast();
 }
 
-void UDominationMatchStartManager::HandleCombatAssetsReady(EDominationCombatClass, bool)
-{
-	if (bWaitingForCombatAssets)
-	{
-		CompleteClassSelection();
-	}
-}
-
-bool UDominationMatchStartManager::EnsureClientCombatAssets()
-{
-	if (!bClientCombatAssetsRequested)
-	{
-		bClientCombatAssetsRequested = true;
-		ClientCombatAssetGeneration = FGuid::NewGuid();
-		TArray<EDominationCombatClass> CombatClasses;
-		for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
-		{
-			ADominationPlayerController* PlayerController = Participant.Get();
-			CombatClasses.AddUnique(PlayerController->GetPlayerState<ADominationPlayerState>()->GetCombatClass());
-			if (!PlayerController->IsLocalController())
-			{
-				PendingClientCombatAssets.Add(Participant);
-			}
-		}
-
-		UE_LOG(LogDominationMatchStart, Log,
-			TEXT("[DominationTravel] Selected roster client preparation: Generation=%s Classes=%d RemoteClients=%d"),
-			*ClientCombatAssetGeneration.ToString(), CombatClasses.Num(), PendingClientCombatAssets.Num());
-		// 참가자 집합을 먼저 확정한 뒤 RPC를 보낸다. 리슨 호스트는 서버 로드 핸들을 공유한다.
-		for (const TWeakObjectPtr<ADominationPlayerController>& Participant : PendingClientCombatAssets)
-		{
-			Participant->ClientPrepareInitialCombatAssets(ClientCombatAssetGeneration, CombatClasses);
-		}
-	}
-	return PendingClientCombatAssets.IsEmpty();
-}
-
-void UDominationMatchStartManager::NotifyClientInitialCombatAssetsReady(
-	ADominationPlayerController* PlayerController, const FGuid Generation, const bool bSucceeded)
-{
-	const ADominationGameState* GameState = GetDominationGameState();
-	if (bStartSuspended || !bClientCombatAssetsRequested || Generation != ClientCombatAssetGeneration
-		|| !IsValid(GameState) || GameState->GetDominationPhase() != EDominationMatchPhase::ClassSelecting
-		|| !IsInitialParticipant(PlayerController) || PendingClientCombatAssets.Remove(PlayerController) == 0)
-	{
-		return;
-	}
-	UE_LOG(LogDominationMatchStart, Log,
-		TEXT("[DominationTravel] Client selected roster acknowledgement: Player=%s Success=%d Remaining=%d"),
-		*GetNameSafe(PlayerController), bSucceeded, PendingClientCombatAssets.Num());
-	if (!bSucceeded)
-	{
-		SuspendMatchStart(TEXT("An initial client could not load the selected combat roster."));
-		return;
-	}
-	if (PendingClientCombatAssets.IsEmpty())
-	{
-		CompleteClassSelection();
-	}
-}
-
-void UDominationMatchStartManager::ResetClientCombatAssetPreparation()
-{
-	const FGuid CancelledGeneration = ClientCombatAssetGeneration;
-	ClientCombatAssetGeneration.Invalidate();
-	bClientCombatAssetsRequested = false;
-	PendingClientCombatAssets.Reset();
-	if (!CancelledGeneration.IsValid())
-	{
-		return;
-	}
-	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
-	{
-		if (Participant.IsValid() && !Participant->IsLocalController())
-		{
-			Participant->ClientCancelInitialCombatAssets(CancelledGeneration);
-		}
-	}
-}
-
 UDominationMatchStartManager::EInitialSpawnResult UDominationMatchStartManager::SpawnInitialParticipants()
 {
 	ADominationGameMode* GameMode = GetOwnerGameMode();
@@ -537,23 +439,6 @@ UDominationMatchStartManager::EInitialSpawnResult UDominationMatchStartManager::
 		|| !LoadoutManager->HasRequiredWeaponRegistryEntries())
 	{
 		return EInitialSpawnResult::InvalidConfiguration;
-	}
-
-	bool bAssetsLoading = false;
-	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
-	{
-		const EDominationCombatAssetStatus Status = LoadoutManager->EnsureCombatAssets(
-			Participant->GetPlayerState<ADominationPlayerState>()->GetCombatClass());
-		if (Status == EDominationCombatAssetStatus::Failed)
-		{
-			return EInitialSpawnResult::InvalidConfiguration;
-		}
-		bAssetsLoading |= Status == EDominationCombatAssetStatus::Loading;
-	}
-	const bool bClientsReady = EnsureClientCombatAssets();
-	if (bAssetsLoading || !bClientsReady)
-	{
-		return EInitialSpawnResult::AssetsLoading;
 	}
 
 	// 모든 인벤토리를 먼저 준비하고, 모든 Pawn이 성공한 뒤 참가 상태를 확정한다.

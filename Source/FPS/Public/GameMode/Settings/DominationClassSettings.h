@@ -9,7 +9,6 @@
 class AShooterCharacter;
 class USoundBase;
 class UTexture2D;
-class UGameplayAppearanceConfig;
 
 /**
  * Domination 전투 클래스 하나의 구성 정보다.
@@ -80,8 +79,4 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Class")
 	TArray<FDominationCombatClassDefinition> CombatClasses;
-
-	// 기존 클래스 행과 독립적으로 보관해 이전 설정 파일에서도 기본 카탈로그를 유지한다.
-	UPROPERTY(Config, EditAnywhere, Category = "Class|Appearance")
-	TMap<FName, TSoftObjectPtr<UGameplayAppearanceConfig>> GameplayAppearanceConfigs;
 };

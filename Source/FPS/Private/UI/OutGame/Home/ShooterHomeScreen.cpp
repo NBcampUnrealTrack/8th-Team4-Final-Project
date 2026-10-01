@@ -10,7 +10,6 @@
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
-#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterHomeScreen, Log, All);
 
@@ -72,41 +71,14 @@ void UShooterHomeScreen::HandleCustomizeClicked()
 {
 	if (CustomizationDestinationMap.IsNull())
 	{
-		UE_LOG(LogShooterHomeScreen, Error,
-			TEXT("CustomizationDestinationMap is not configured."));
+		UE_LOG(LogShooterHomeScreen, Error, TEXT("CustomizationDestinationMap is not configured."));
 		return;
 	}
-
 	UGameInstance* GameInstance = GetGameInstance();
 	USessionSubSystem* Sessions = GameInstance ? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
-	UScreenTransitionSubsystem* Transition = GameInstance ? GameInstance->GetSubsystem<UScreenTransitionSubsystem>() : nullptr;
-	if (!Sessions || (Transition && Transition->IsTransitionActive()))
-	{
-		return;
-	}
-
-	// 다 덮은 뒤 이동
-	const FSimpleDelegate Request = FSimpleDelegate::CreateWeakLambda(
-		Sessions,
-		[Sessions, Transition, Destination = CustomizationDestinationMap]()
-		{
-			if (Sessions->LeaveRoomAndOpenLocalMap(Destination))
-			{
-				return;
-			}
-
-			UE_LOG(LogShooterHomeScreen, Warning,
-				TEXT("Customization entry requires one local player and no pending room transition."));
-			if (Transition)
-			{
-				Transition->EndTransition();
-			}
-		});
-
-	if (!Transition || !Transition->BeginTransition(Request))
-	{
-		Request.ExecuteIfBound();
-	}
+	// 화면 전환과 세션 정리는 공통 이동 경로 한 곳에서 관리한다.
+	if (!Sessions || !Sessions->LeaveRoomAndOpenLocalMap(CustomizationDestinationMap, false))
+		UE_LOG(LogShooterHomeScreen, Warning, TEXT("Customization entry is blocked by an active room transition."));
 }
 
 void UShooterHomeScreen::HandleSettingsClicked()

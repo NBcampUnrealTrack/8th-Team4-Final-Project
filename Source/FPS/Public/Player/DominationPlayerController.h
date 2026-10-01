@@ -8,7 +8,6 @@
 
 class UDominationUIInitComponent;
 class UDominationSandstormComponent;
-struct FStreamableHandle;
 
 UCLASS()
 class FPS_API ADominationPlayerController : public AShooterPlayerController, public IRogueCombatClassSelector
@@ -20,12 +19,6 @@ public:
 	virtual bool CanProcessGameplayInput() const override;
 	virtual void PreClientTravel(const FString& PendingURL, ETravelType TravelType, bool bIsSeamlessTravel) override;
 	virtual void NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest) override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	UFUNCTION(Client, Reliable)
-	void ClientPrepareInitialCombatAssets(FGuid Generation, const TArray<EDominationCombatClass>& CombatClasses);
-	UFUNCTION(Client, Reliable)
-	void ClientCancelInitialCombatAssets(FGuid Generation);
 
 	UFUNCTION(BlueprintCallable, Category = "Domination|Class")
 	virtual void SelectCombatClass(EDominationCombatClass RequestedClass) override;
@@ -46,16 +39,6 @@ private:
 	void ServerSelectCombatClass(EDominationCombatClass RequestedClass);
 	UFUNCTION(Server, Reliable)
 	void ServerSetPreviewCombatClass(EDominationCombatClass RequestedClass);
-	UFUNCTION(Server, Reliable)
-	void ServerInitialCombatAssetsReady(FGuid Generation, bool bSucceeded);
-
-	void HandleInitialCombatAssetsLoaded(FGuid Generation);
-	void ResetInitialCombatAssetLoad();
-	FGuid InitialCombatAssetGeneration;
-	TArray<EDominationCombatClass> InitialCombatClasses;
-	TSharedPtr<FStreamableHandle> InitialCombatAssetHandle;
-	double InitialCombatAssetStartTime = 0.0;
-	bool bInitialCombatAssetResultSent = false;
 
 	void Input_ToggleAugmentSelect();
 	
