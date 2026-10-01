@@ -9,6 +9,7 @@
 #include "DominationAnnouncementBanner.generated.h"
 
 class ADominationGameState;
+class ADominationPointGimmick;
 class UTextBlock;
 class UWidgetAnimation;
 
@@ -32,9 +33,14 @@ private:
 	UFUNCTION()
 	void HandleCaptureStateChanged(FDominationCaptureState CaptureState);
 
+	UFUNCTION()
+	void HandleGimmickSecured(ADominationPointGimmick* Gimmick, EGameTeam SecuringTeam, bool bTakeover);
+
 	void EvaluateGameState();
 	void PresentAnnouncement(const FDominationAnnouncement& Announcement);
+	void ShowBanner();
 	void HandleDisplayExpired();
+	EDominationCaptureRelation GetLocalRelation(EGameTeam EventTeam) const;
 
 	static FDominationAnnouncementSnapshot BuildSnapshot(const ADominationGameState& GameState);
 
@@ -60,8 +66,21 @@ private:
 	FText CaptureCompletedAllyText;
 	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
 	FText CaptureCompletedEnemyText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText ReconPrefixText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText RelayPrefixText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText GimmickSecuredAllyText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText GimmickSecuredEnemyText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText RelayTakeoverAllyText;
+	UPROPERTY(EditDefaultsOnly, Category = "Announcement|Text")
+	FText RelayTakeoverEnemyText;
 
 	FDominationAnnouncementDetector Detector;
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
+	TArray<TWeakObjectPtr<ADominationPointGimmick>> BoundGimmicks;
 	FTimerHandle DisplayTimer;
 };

@@ -399,4 +399,25 @@ struct FAugmentPendingReward
     // 시드와 로그용
     UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
     int32 RoundNumber = 0;
+
+    // 매치 전체 보상 이력의 순번. 0은 연습 모드 등의 개별 보상이다.
+    UPROPERTY(BlueprintReadWrite, Category = "Rogue|Augment")
+    int32 RewardSequence = 0;
+};
+
+// 서버가 재접속 플레이어에게 현재 증강 선택 상태를 그대로 돌려주기 위한 최소 스냅샷.
+USTRUCT()
+struct FAugmentInventoryReconnectSnapshot
+{
+    GENERATED_BODY()
+
+    TArray<FAugmentInventoryEntry> Entries;
+    TArray<FAugmentPendingReward> PendingRewards;
+    TArray<FAugmentInventoryEntry> Offers;
+    TArray<TArray<FAugmentInventoryEntry>> SlotReserves;
+    TArray<int32> SlotRerollsRemaining;
+    TArray<FPrimaryAssetId> SeenDefinitions;
+    int32 LastDraftSeed = 0;
+    float SelectionDeadline = 0.0f;
+    int32 LastProcessedRewardSequence = 0;
 };

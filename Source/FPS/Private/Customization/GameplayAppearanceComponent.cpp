@@ -14,16 +14,16 @@
 #include "GroomBindingAsset.h"
 #include "GroomAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Combat/RogueDeathPresentation.h"
-#include "Weapon/WeaponBase.h"
-
-USkeletalMeshComponent* UGameplayAppearanceComponent::GetReadyBody() const
-{
-    return AppliedRevision && IsValid(Body) && Body->GetSkeletalMeshAsset() ? Body.Get() : nullptr;
-}
+#include "Misc/PackageName.h"
 
 namespace
 {
+FSoftObjectPath GameplayAppearancePath(const FName ClassId)
+{
+    const FString PackagePath = TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_Gameplay") + ClassId.ToString();
+    return FSoftObjectPath(PackagePath + TEXT(".") + FPackageName::GetShortName(PackagePath));
+}
+
 void FollowPose(USkeletalMeshComponent* Target, USkeletalMeshComponent* Source, bool PreserveReferencePose = true)
 {
     Target->SetAnimInstanceClass(UAppearancePoseAnimInstance::StaticClass());
@@ -38,6 +38,15 @@ UGameplayAppearanceComponent::UGameplayAppearanceComponent()
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = false;
     PrimaryComponentTick.TickInterval = .1f;
+}
+
+void UGameplayAppearanceComponent::AppendPreloadAssetPaths(const FName ClassId, TArray<FSoftObjectPath>& OutPaths) const
+{
+    if (ClassId.IsNone()) return;
+    const FSoftObjectPath Path = GameplayAppearancePath(ClassId);
+    // 외형 카탈로그가 없는 클래스는 기존 기본 외형을 사용한다.
+    if (FPackageName::DoesPackageExist(Path.GetLongPackageName())) OutPaths.AddUnique(Path);
+    else UE_LOG(LogTemp, Verbose, TEXT("[Preload] Optional appearance catalog unavailable: %s"), *Path.ToString());
 }
 
 FName UGameplayAppearanceComponent::ResolveClassId() const
@@ -139,8 +148,8 @@ void UGameplayAppearanceComponent::StartUpdate()
     bQueued = false;
     if (!Config)
     {
-        const FString Path = TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_Gameplay") + Desired.ClassId.ToString();
-        Config = LoadObject<UGameplayAppearanceConfig>(nullptr, *Path);
+        const FSoftObjectPath Path = GameplayAppearancePath(Desired.ClassId);
+        Config = LoadObject<UGameplayAppearanceConfig>(nullptr, *Path.ToString());
         Studio = Config ? Config->StudioConfig.LoadSynchronous() : nullptr;
     }
     if (!Config || !Studio || !Studio->CustomizableObject) { Failure = TEXT("Gameplay appearance catalog missing"); return; }
@@ -207,8 +216,6 @@ void UGameplayAppearanceComponent::StartUpdate()
             for (int32 Slot = 0; Slot < Materials.Num(); ++Slot) Targets[Index]->SetMaterial(Slot, Materials[Slot]);
         }
         FollowPose(Self->Body, Driver);
-        if (auto* Pose = Cast<UAppearancePoseAnimInstance>(Self->Body->GetAnimInstance()))
-            Pose->bPreserveWeaponHandRelationship = true;
         FollowPose(Self->Outfit, Self->Body, false);
         Self->BindingSurface->SetSkeletalMesh(SourceFace);
         // Run the selected original face's post-process once, then copy the evaluated
@@ -257,11 +264,7 @@ void UGameplayAppearanceComponent::StartUpdate()
         for (auto* Target : Targets) Target->SetVisibility(true);
         Self->Live = Self->Pending; Self->Pending = nullptr;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
-        if (AWeaponBase* Weapon = Character->GetCurrentWeapon_Implementation())
-            Weapon->RefreshThirdPersonAttachment();
         Self->SetComponentTickEnabled(true);
-        // An asynchronous Mutable update can finish after the character has died.
-        RogueDeathPresentation::RefreshRagdollFollowers(*Character);
         Character->RefreshTeamOutline();
     });
     Pending->UpdateSkeletalMeshAsyncResult(Callback, true, true);

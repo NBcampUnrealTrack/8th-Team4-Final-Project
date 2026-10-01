@@ -1,7 +1,8 @@
 ﻿// ShooterLobbyScreen.cpp
 #include "UI/OutGame/ShooterLobbyScreen.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
-#include "Kismet/GameplayStatics.h"
+#include "Engine/GameInstance.h"
+#include "Session/SessionSubSystem.h"
 #include "CommonButtonBase.h"
 
 
@@ -19,5 +20,7 @@ void UShooterLobbyScreen::HandlePlayClicked(){
 	}
 
 	
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TempDestinationMap);
+	USessionSubSystem* Sessions = GetGameInstance() ? GetGameInstance()->GetSubsystem<USessionSubSystem>() : nullptr;
+	if (!Sessions || !Sessions->LeaveRoomAndOpenLocalMap(TempDestinationMap))
+		UE_LOG(LogTemp, Warning, TEXT("[Lobby] A room transition is already active"));
 }

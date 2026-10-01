@@ -1,9 +1,11 @@
 // DominationAnnouncementBanner.cpp
 #include "UI/InGame/HUD/DominationAnnouncementBanner.h"
 
+#include "Actor/DominationPointGimmick.h"
 #include "Animation/WidgetAnimation.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameMode/State/DominationGameState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/ShooterUISettings.h"
@@ -12,11 +14,17 @@ UDominationAnnouncementBanner::UDominationAnnouncementBanner(const FObjectInitia
 	: Super(ObjectInitializer)
 {
 	MatchStartText = NSLOCTEXT("DominationBanner", "MatchStart", "MATCH START");
-	ObjectivePrefixText = NSLOCTEXT("DominationBanner", "ObjectivePrefix", "OBJECTIVE");
+	ObjectivePrefixText = NSLOCTEXT("DominationBanner", "ObjectivePrefix", "SITE");
 	CaptureStartedAllyText = NSLOCTEXT("DominationBanner", "CaptureStartedAlly", "CAPTURING");
 	CaptureStartedEnemyText = NSLOCTEXT("DominationBanner", "CaptureStartedEnemy", "CAPTURING");
 	CaptureCompletedAllyText = NSLOCTEXT("DominationBanner", "CaptureCompletedAlly", "SECURED");
 	CaptureCompletedEnemyText = NSLOCTEXT("DominationBanner", "CaptureCompletedEnemy", "LOST");
+	ReconPrefixText = NSLOCTEXT("DominationBanner", "ReconPrefix", "RECON");
+	RelayPrefixText = NSLOCTEXT("DominationBanner", "RelayPrefix", "RELAY");
+	GimmickSecuredAllyText = NSLOCTEXT("DominationBanner", "GimmickSecuredAlly", "ONLINE");
+	GimmickSecuredEnemyText = NSLOCTEXT("DominationBanner", "GimmickSecuredEnemy", "ONLINE");
+	RelayTakeoverAllyText = NSLOCTEXT("DominationBanner", "RelayTakeoverAlly", "HIJACKED");
+	RelayTakeoverEnemyText = NSLOCTEXT("DominationBanner", "RelayTakeoverEnemy", "LOST");
 }
 
 void UDominationAnnouncementBanner::NativeConstruct()
@@ -34,6 +42,13 @@ void UDominationAnnouncementBanner::NativeConstruct()
 	GameState->OnObjectiveFlowStateChanged.AddUniqueDynamic(this, &ThisClass::HandleObjectiveFlowStateChanged);
 	GameState->OnCaptureStateChanged.AddUniqueDynamic(this, &ThisClass::HandleCaptureStateChanged);
 
+	// 기믹은 배치형/항상 로드/항상 Relevant이기 때문에 생성 시 한 번만 구독
+	for (TActorIterator<ADominationPointGimmick> It(GetWorld()); It; ++It)
+	{
+		It->OnGimmickSecured.AddUniqueDynamic(this, &ThisClass::HandleGimmickSecured);
+		BoundGimmicks.Add(*It);
+	}
+
 	if (const TOptional<FDominationAnnouncement> Announcement = Detector.Initialize(BuildSnapshot(*GameState)))
 	{
 		PresentAnnouncement(*Announcement);
@@ -48,6 +63,15 @@ void UDominationAnnouncementBanner::NativeDestruct()
 		GameState->OnCaptureStateChanged.RemoveDynamic(this, &ThisClass::HandleCaptureStateChanged);
 	}
 	BoundGameState.Reset();
+
+	for (const TWeakObjectPtr<ADominationPointGimmick>& Gimmick : BoundGimmicks)
+	{
+		if (Gimmick.IsValid())
+		{
+			Gimmick->OnGimmickSecured.RemoveDynamic(this, &ThisClass::HandleGimmickSecured);
+		}
+	}
+	BoundGimmicks.Reset();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -104,10 +128,7 @@ void UDominationAnnouncementBanner::PresentAnnouncement(const FDominationAnnounc
 	}
 	else
 	{
-		const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
-		const EGameTeam LocalTeam = LocalPlayerState ? LocalPlayerState->GetTeam() : EGameTeam::None;
-		const EDominationCaptureRelation Relation =
-			DominationRules::GetCaptureRelation(Announcement.EventTeam, LocalTeam);
+		const EDominationCaptureRelation Relation = GetLocalRelation(Announcement.EventTeam);
 		if (Relation == EDominationCaptureRelation::Neutral)
 		{
 			// 팀을 모르면 생략
@@ -130,9 +151,50 @@ void UDominationAnnouncementBanner::PresentAnnouncement(const FDominationAnnounc
 		Text_Result->SetVisibility(ESlateVisibility::HitTestInvisible);
 	}
 
+	ShowBanner();
+}
+
+void UDominationAnnouncementBanner::HandleGimmickSecured(
+	ADominationPointGimmick* Gimmick,
+	const EGameTeam SecuringTeam,
+	const bool bTakeover)
+{
+	const ADominationGameState* GameState = BoundGameState.Get();
+	// 기믹은 CaptureEnabled 동안만 켜진다. 아니면 이미 지난 알림
+	if (!IsValid(Gimmick) || !GameState || !GameState->IsObjectiveCaptureEnabled())
+	{
+		return;
+	}
+
+	const EDominationCaptureRelation Relation = GetLocalRelation(SecuringTeam);
+	if (Relation == EDominationCaptureRelation::Neutral)
+	{
+		return;
+	}
+
+	const bool bAlly = Relation == EDominationCaptureRelation::Ally;
+	const bool bRelay = Gimmick->GetGimmickType() == EDominationGimmickType::RespawnRelay;
+	const FLinearColor RelationColor = bAlly
+		? UShooterUISettings::GetAllyColor()
+		: UShooterUISettings::GetEnemyColor();
+
+	Text_Prefix->SetText(bRelay ? RelayPrefixText : ReconPrefixText);
+	Text_Point->SetText(UEnum::GetDisplayValueAsText(GameState->GetObjectiveFlowState().ActivePointId));
+	Text_Point->SetColorAndOpacity(FSlateColor(RelationColor));
+	Text_Point->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Text_Result->SetText(bTakeover
+		? (bAlly ? RelayTakeoverAllyText : RelayTakeoverEnemyText)
+		: (bAlly ? GimmickSecuredAllyText : GimmickSecuredEnemyText));
+	Text_Result->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+	ShowBanner();
+}
+
+void UDominationAnnouncementBanner::ShowBanner()
+{
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
-	// 재생 중이어도 처음부터	
+	// 재생 중이어도 처음부터
 	PlayAnimation(Anim_Show, 0.0f);
 
 	const float DisplaySeconds = FMath::Max(0.1f, Anim_Show->GetEndTime());
@@ -144,4 +206,11 @@ void UDominationAnnouncementBanner::HandleDisplayExpired()
 {
 	StopAnimation(Anim_Show);
 	SetVisibility(ESlateVisibility::Collapsed);
+}
+
+EDominationCaptureRelation UDominationAnnouncementBanner::GetLocalRelation(const EGameTeam EventTeam) const
+{
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const EGameTeam LocalTeam = LocalPlayerState ? LocalPlayerState->GetTeam() : EGameTeam::None;
+	return DominationRules::GetCaptureRelation(EventTeam, LocalTeam);
 }

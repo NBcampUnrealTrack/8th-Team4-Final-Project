@@ -468,7 +468,65 @@ void UAugmentInventoryComponent::PopPendingReward()
 		return;
 	}
 
+	const int32 RewardSequence = PendingRewards.First().RewardSequence;
 	PendingRewards.PopFront();
+	if (RewardSequence > 0)
+	{
+		LastProcessedRewardSequence = FMath::Max(LastProcessedRewardSequence, RewardSequence);
+	}
+}
+
+void UAugmentInventoryComponent::CaptureReconnectSnapshot(
+	FAugmentInventoryReconnectSnapshot& OutSnapshot) const
+{
+	OutSnapshot.Entries = Entries;
+	OutSnapshot.PendingRewards.Reset();
+	for (const FAugmentPendingReward& Reward : PendingRewards)
+	{
+		OutSnapshot.PendingRewards.Add(Reward);
+	}
+	OutSnapshot.Offers = Offers;
+	OutSnapshot.SlotReserves = SlotReserves;
+	OutSnapshot.SlotRerollsRemaining = SlotRerollsRemaining;
+	OutSnapshot.SeenDefinitions = SeenDefinitions.Array();
+	OutSnapshot.LastDraftSeed = LastDraftSeed;
+	OutSnapshot.SelectionDeadline = SelectionDeadline;
+	OutSnapshot.LastProcessedRewardSequence = LastProcessedRewardSequence;
+}
+
+bool UAugmentInventoryComponent::RestoreReconnectSnapshot(
+	const FAugmentInventoryReconnectSnapshot& Snapshot, FText& OutFailure)
+{
+	if (!ReplaceLoadout(Snapshot.Entries, OutFailure))
+	{
+		return false;
+	}
+
+	PendingRewards.Reset();
+	for (const FAugmentPendingReward& Reward : Snapshot.PendingRewards)
+	{
+		PendingRewards.Add(Reward);
+	}
+	Offers = Snapshot.Offers;
+	SlotReserves = Snapshot.SlotReserves;
+	SlotRerollsRemaining = Snapshot.SlotRerollsRemaining;
+	SeenDefinitions.Reset();
+	for (const FPrimaryAssetId& DefinitionId : Snapshot.SeenDefinitions)
+	{
+		SeenDefinitions.Add(DefinitionId);
+	}
+	LastDraftSeed = Snapshot.LastDraftSeed;
+	LastProcessedRewardSequence = Snapshot.LastProcessedRewardSequence;
+	bOfferSelectionEnabled = !Offers.IsEmpty();
+	ClearSelectionTimeout();
+	if (!Offers.IsEmpty())
+	{
+		const float Remaining = Snapshot.SelectionDeadline - GetWorld()->GetTimeSeconds();
+		StartSelectionTimeout(FMath::Max(0.1f, Remaining));
+	}
+	OnOffersChanged.Broadcast();
+	GetOwner()->ForceNetUpdate();
+	return true;
 }
 
 void UAugmentInventoryComponent::StartSelectionTimeout(const float Seconds)
@@ -527,6 +585,7 @@ void UAugmentInventoryComponent::RemoveAllAugments()
 	// 등장 이력과 대기열은 매치 수명
 	SeenDefinitions.Reset();
 	PendingRewards.Reset();
+	LastProcessedRewardSequence = 0;
 	ClearSelectionTimeout();
 
 	OnInventoryChanged.Broadcast();

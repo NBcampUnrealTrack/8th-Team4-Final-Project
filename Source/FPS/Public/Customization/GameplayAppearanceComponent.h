@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Customization/ReplicatedAppearance.h"
+#include "UObject/SoftObjectPath.h"
 #include "GameplayAppearanceComponent.generated.h"
 
 class UGameplayAppearanceConfig;
@@ -19,6 +20,7 @@ public:
     UGameplayAppearanceComponent();
     void RefreshFromPlayerState();
     void RequestAppearance(const FReplicatedAppearance& Data);
+    void AppendPreloadAssetPaths(FName ClassId, TArray<FSoftObjectPath>& OutPaths) const;
     uint32 GetAppliedRevision() const { return AppliedRevision; }
     USkeletalMeshComponent* GetReadyBody() const;
     const FString& GetFailure() const { return Failure; }

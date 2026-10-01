@@ -75,6 +75,8 @@ void UAugmentDraftManager::Shutdown()
 	BoundRegistry.Reset();
 	OwnerGameMode.Reset();
 	bDraftEnabled = false;
+	RewardLedger.Reset();
+	NextRewardSequence = 1;
 	OnDependenciesReady.Clear();
 	OnPlayerDraftQueueDrained.Clear();
 }
@@ -108,9 +110,29 @@ void UAugmentDraftManager::CancelDraft()
 void UAugmentDraftManager::GrantToAll(
     const EAugmentRewardPool Pool, const int32 RoundNumber, const FGameplayTag ActiveSlot)
 {
+    if (!bDraftEnabled)
+    {
+        return;
+    }
+
+    EAugmentTier TeamATier = EAugmentTier::Common;
+    EAugmentTier TeamBTier = EAugmentTier::Common;
+    ResolveRewardTiers(RoundNumber, MakeRoundSeed(RoundNumber), TeamATier, TeamBTier);
+
+    FRewardLedgerEntry& Entry = RewardLedger.AddDefaulted_GetRef();
+    Entry.Sequence = NextRewardSequence++;
+    Entry.Pool = Pool;
+    Entry.ActiveSlot = ActiveSlot;
+    Entry.TeamATier = TeamATier;
+    Entry.TeamBTier = TeamBTier;
+    Entry.RoundNumber = RoundNumber;
+
     TArray<AShooterPlayerState*> Recipients;
     GetCurrentPlayerStates(Recipients);
-    GrantToParticipants(Recipients, Pool, RoundNumber, ActiveSlot);
+    for (AShooterPlayerState* Recipient : Recipients)
+    {
+        GrantLedgerEntryToPlayer(Entry, Recipient);
+    }
 }
 
 void UAugmentDraftManager::GrantToPlayer(
@@ -125,6 +147,24 @@ void UAugmentDraftManager::GrantToPlayer(
     TArray<AShooterPlayerState*> Recipients;
     Recipients.Add(Recipient);
     GrantToParticipants(Recipients, Pool, RoundNumber, ActiveSlot);
+}
+
+void UAugmentDraftManager::EnqueueMissingRewards(AShooterPlayerState* Recipient)
+{
+    UAugmentInventoryComponent* Inventory = GetInventory(Recipient);
+    if (!IsValid(Inventory))
+    {
+        return;
+    }
+
+    const int32 LastProcessed = Inventory->GetLastProcessedRewardSequence();
+    for (const FRewardLedgerEntry& Entry : RewardLedger)
+    {
+        if (Entry.Sequence > LastProcessed)
+        {
+            GrantLedgerEntryToPlayer(Entry, Recipient);
+        }
+    }
 }
 
 void UAugmentDraftManager::ReleasePlayer(AShooterPlayerState* LeavingPlayer)
@@ -194,6 +234,24 @@ void UAugmentDraftManager::GrantToParticipants(
 		*UEnum::GetValueAsString(TeamATier),
 		*UEnum::GetValueAsString(TeamBTier),
 		*ActiveSlot.ToString());
+}
+
+void UAugmentDraftManager::GrantLedgerEntryToPlayer(
+	const FRewardLedgerEntry& Entry, AShooterPlayerState* Recipient) const
+{
+	UAugmentInventoryComponent* Inventory = GetInventory(Recipient);
+	if (!IsValid(Inventory))
+	{
+		return;
+	}
+
+	FAugmentPendingReward Reward;
+	Reward.Pool = Entry.Pool;
+	Reward.ActiveSlot = Entry.ActiveSlot;
+	Reward.RoundNumber = Entry.RoundNumber;
+	Reward.RewardSequence = Entry.Sequence;
+	Reward.Tier = Recipient->GetTeam() == EGameTeam::TeamA ? Entry.TeamATier : Entry.TeamBTier;
+	Inventory->PushPendingReward(Reward);
 }
 
 // 플레이어의 대기열에서 다음 보상을 제시
@@ -297,6 +355,8 @@ void UAugmentDraftManager::ResetForNewMatch()
 		ResetPlayerForNewMatch(PlayerState);
 	}
 
+	RewardLedger.Reset();
+	NextRewardSequence = 1;
 	RegenerateMatchSeed();
 }
 
