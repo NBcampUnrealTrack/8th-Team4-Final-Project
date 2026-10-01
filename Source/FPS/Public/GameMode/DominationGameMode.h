@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "Augment/AugmentTypes.h"
 #include "TimerManager.h"
 #include "DominationGameMode.generated.h"
 
@@ -29,6 +30,14 @@ DECLARE_MULTICAST_DELEGATE_FourParams(
 	EGameTeam,
 	int32,
 	bool);
+
+struct FDominationReconnectSnapshot
+{
+	EGameTeam Team = EGameTeam::None;
+	EDominationCombatClass CombatClass = EDominationCombatClass::Unselected;
+	FAugmentInventoryReconnectSnapshot AugmentInventory;
+	float ExpireServerTime = 0.0f;
+};
 
 /**
  * Domination의 점령 라운드는 점수 단위이며, 점령마다 Pawn과 라운드 자원을
@@ -118,6 +127,10 @@ private:
 	bool TryJoinPlayerInProgress(
 		ADominationPlayerController* PlayerController,
 		EDominationCombatClass RequestedClass);
+	FString GetReconnectKey(const AShooterPlayerState* PlayerState) const;
+	void CaptureReconnectSnapshot(const ADominationPlayerState* PlayerState);
+	bool RestoreReconnectSnapshot(ADominationPlayerState* PlayerState);
+	void PurgeExpiredReconnectSnapshots();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "2", ClampMax = "8"))
 	int32 MinimumPlayersToStart = 2;
@@ -180,6 +193,12 @@ private:
 
 	// 최초 증강을 모두 끝내야 같은 시점부터 중앙 거점 전환 시간을 받는다.
 	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingInitialAugmentPlayers;
+	// 난입자는 누락된 보상을 모두 고른 뒤에만 전투 Pawn을 받는다.
+	TSet<TWeakObjectPtr<AShooterPlayerState>> PendingLateJoinAugmentPlayers;
+	TMap<FString, FDominationReconnectSnapshot> ReconnectSnapshots;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Reconnect", meta = (ClampMin = "1.0", Units = "s"))
+	float ReconnectGracePeriod = 90.0f;
 	TSet<TWeakObjectPtr<APlayerController>> PendingCombatAssetRespawns;
 	bool bInitialObjectiveTransitionStarted = false;
 

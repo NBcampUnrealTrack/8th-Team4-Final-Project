@@ -41,6 +41,8 @@ public:
 	// Individual join/start rewards must not grant another reward to everyone already playing.
 	void GrantToPlayer(AShooterPlayerState* Recipient, EAugmentRewardPool Pool,
 		int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
+	// 이미 진행된 전역 보상만 한 플레이어의 기존 큐 뒤에 붙인다.
+	void EnqueueMissingRewards(AShooterPlayerState* Recipient);
 	void ReleasePlayer(AShooterPlayerState* LeavingPlayer);
 
 	// 후보가 없는 항목은 건너뛰고 다음 보상을 제시, 제시할 것이 없으면 false
@@ -59,8 +61,19 @@ public:
 	FOnAugmentDraftQueueDrained OnPlayerDraftQueueDrained;
 
 private:
+	struct FRewardLedgerEntry
+	{
+		int32 Sequence = 0;
+		EAugmentRewardPool Pool = EAugmentRewardPool::Passive;
+		FGameplayTag ActiveSlot;
+		EAugmentTier TeamATier = EAugmentTier::Common;
+		EAugmentTier TeamBTier = EAugmentTier::Common;
+		int32 RoundNumber = 0;
+	};
+
 	void GrantToParticipants(const TArray<AShooterPlayerState*>& Recipients,
 		EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot);
+	void GrantLedgerEntryToPlayer(const FRewardLedgerEntry& Entry, AShooterPlayerState* Recipient) const;
 
 	UFUNCTION()
 	void HandleRegistryReady();
@@ -111,4 +124,6 @@ private:
 	// Initialize 에서 받은 제시 설정
 	int32 OfferCount = 0;
 	float SelectionTimeout = 0.f;
+	TArray<FRewardLedgerEntry> RewardLedger;
+	int32 NextRewardSequence = 1;
 };

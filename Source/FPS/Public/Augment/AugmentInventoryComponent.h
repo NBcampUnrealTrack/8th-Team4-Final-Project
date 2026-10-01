@@ -93,6 +93,12 @@ public:
 	// 첫 항목을 버린다. 서버 전용
 	void PopPendingReward();
 
+	// Late Join은 이 순번 다음부터의 매치 보상만 받는다.
+	int32 GetLastProcessedRewardSequence() const { return LastProcessedRewardSequence; }
+	bool HasPendingRewards() const { return !PendingRewards.IsEmpty(); }
+	void CaptureReconnectSnapshot(FAugmentInventoryReconnectSnapshot& OutSnapshot) const;
+	bool RestoreReconnectSnapshot(const FAugmentInventoryReconnectSnapshot& Snapshot, FText& OutFailure);
+
 	// 선택 마감 시각(서버 월드 시간). 0 이면 제한 없음
 	// 클라이언트는 GameState 의 GetServerWorldTimeSeconds 와 비교해 남은 시간을 구한다
 	UFUNCTION(BlueprintPure, Category = "Rogue|Augment")
@@ -190,6 +196,9 @@ private:
 
 	// 적립된 증강 보상 후보. 서버 전용
 	TRingBuffer<FAugmentPendingReward> PendingRewards;
+
+	// 처리 완료한 마지막 매치 보상. 큐/후보 자체는 기존 상태가 담당한다.
+	int32 LastProcessedRewardSequence = 0;
 
 	UPROPERTY(Replicated)
 	float SelectionDeadline = 0.f;

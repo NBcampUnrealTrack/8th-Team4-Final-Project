@@ -2,6 +2,7 @@
 
 #include "Actor/DominationCapturePoint.h"
 #include "Augment/AugmentDraftProfile.h"
+#include "Augment/AugmentInventoryComponent.h"
 #include "Audio/DominationSystemAnnouncer.h"
 #include "Character/ShooterCharacter.h"
 #include "GameMode/Manager/DominationAnnouncerManager.h"
@@ -196,6 +197,10 @@ void ADominationGameMode::Logout(AController* Exiting)
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
+	if (const ADominationPlayerState* DominationPlayerState = Cast<ADominationPlayerState>(ExitingPlayerState))
+	{
+		CaptureReconnectSnapshot(DominationPlayerState);
+	}
 	if (IsValid(ExitingPlayerState)
 		&& PendingInitialAugmentPlayers.Remove(ExitingPlayerState) > 0)
 	{
@@ -255,6 +260,10 @@ void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* Player
 		&& IsValid(DominationGameState)
 		&& DominationGameState->GetDominationPhase() != EDominationMatchPhase::WaitingForPlayers)
 	{
+		if (PlayerState->HasSelectedCombatClass())
+		{
+			TryJoinPlayerInProgress(DominationPlayerController, PlayerState->GetCombatClass());
+		}
 		DominationPlayerController->ClientFinishLoadingScreen();
 		return;
 	}
@@ -579,7 +588,9 @@ bool ADominationGameMode::TryJoinPlayerInProgress(
 			!= EPlayerParticipationState::WaitingForNextSpawn
 		|| !IsValid(LoadoutManager)
 		|| !IsValid(RespawnManager)
-		|| !PlayerState->TryConfirmCombatClass(RequestedClass))
+		|| (PlayerState->HasSelectedCombatClass()
+			? PlayerState->GetCombatClass() != RequestedClass
+			: !PlayerState->TryConfirmCombatClass(RequestedClass)))
 	{
 		return false;
 	}
@@ -590,6 +601,21 @@ bool ADominationGameMode::TryJoinPlayerInProgress(
 			TEXT("Failed to initialize the Domination class inventory for join-in-progress player %s."),
 			*GetNameSafe(PlayerState));
 		return false;
+	}
+
+	if (bEnableAugmentDraft && IsValid(AugmentDraftManager))
+	{
+		PendingLateJoinAugmentPlayers.Add(PlayerState);
+		AugmentDraftManager->EnqueueMissingRewards(PlayerState);
+		if (AugmentDraftManager->ServeNextReward(PlayerState))
+		{
+			UE_LOG(LogDominationGameMode, Log,
+				TEXT("Late join player %s is selecting missed augments before spawn."),
+				*GetNameSafe(PlayerState));
+			return true;
+		}
+		// 보상이 없으면 즉시 QueueDrained 콜백이 왔을 수 있으므로, 아래 예약도 안전하다.
+		PendingLateJoinAugmentPlayers.Remove(PlayerState);
 	}
 
 	RespawnManager->ScheduleRespawn(PlayerController);
@@ -714,6 +740,18 @@ void ADominationGameMode::HandleAugmentDraftQueueDrained(
 {
 	if (!HasAuthority() || !IsValid(PlayerState))
 	{
+		return;
+	}
+
+	if (PendingLateJoinAugmentPlayers.Remove(PlayerState) > 0)
+	{
+		if (ADominationPlayerController* Controller = Cast<ADominationPlayerController>(PlayerState->GetOwner()))
+		{
+			RespawnManager->ScheduleRespawn(Controller);
+			UE_LOG(LogDominationGameMode, Log,
+				TEXT("Late join augment catch-up completed for %s. Spawn scheduled."),
+				*GetNameSafe(PlayerState));
+		}
 		return;
 	}
 
@@ -918,16 +956,27 @@ AActor* ADominationGameMode::ChoosePlayerStart_Implementation(AController* Playe
 void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
 	// BaseTeamGameMode의 Super 경로는 즉시 Pawn을 생성하므로 팀 배정만 수행한다.
-	if (!InitializeTeamPlayer(NewPlayer))
+	ADominationPlayerState* DominationPlayerState = IsValid(NewPlayer)
+		? NewPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
+	const bool bIsReconnect = RestoreReconnectSnapshot(DominationPlayerState);
+	if (!bIsReconnect && !InitializeTeamPlayer(NewPlayer))
 	{
 		return;
+	}
+	if (bIsReconnect)
+	{
+		// 복원한 팀은 유지하되, TeamPlayerManager의 로스터에는 새 Controller를 다시 등록한다.
+		InitializeTeamPlayer(NewPlayer);
 	}
 
 	const EPlayerParticipationState NewPlayerParticipationState = ResolveParticipationStateForNewPlayer(NewPlayer);
 	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
 		PlayerState->SetParticipationState(NewPlayerParticipationState);
-		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
+		if (!bIsReconnect)
+		{
+			AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
+		}
 	}
 
 	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
@@ -941,6 +990,76 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 			PlayerState->SetAlive(false);
 		}
 	}
+}
+
+FString ADominationGameMode::GetReconnectKey(const AShooterPlayerState* PlayerState) const
+{
+	if (!IsValid(PlayerState))
+	{
+		return FString();
+	}
+
+	const TSharedPtr<const FUniqueNetId> NetId = PlayerState->GetUniqueId().GetUniqueNetId();
+	return NetId.IsValid() ? NetId->ToString() : FString();
+}
+
+void ADominationGameMode::PurgeExpiredReconnectSnapshots()
+{
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	for (auto It = ReconnectSnapshots.CreateIterator(); It; ++It)
+	{
+		if (It.Value().ExpireServerTime <= Now)
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+void ADominationGameMode::CaptureReconnectSnapshot(const ADominationPlayerState* PlayerState)
+{
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	const FString Key = GetReconnectKey(PlayerState);
+	if (Key.IsEmpty() || !IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
+	{
+		return;
+	}
+
+	UAugmentInventoryComponent* Inventory = PlayerState->GetAugmentInventory();
+	if (!IsValid(Inventory))
+	{
+		return;
+	}
+
+	PurgeExpiredReconnectSnapshots();
+	FDominationReconnectSnapshot& Snapshot = ReconnectSnapshots.FindOrAdd(Key);
+	Snapshot.Team = PlayerState->GetTeam();
+	Snapshot.CombatClass = PlayerState->GetCombatClass();
+	Snapshot.ExpireServerTime = GetWorld()->GetTimeSeconds() + ReconnectGracePeriod;
+	Inventory->CaptureReconnectSnapshot(Snapshot.AugmentInventory);
+}
+
+bool ADominationGameMode::RestoreReconnectSnapshot(ADominationPlayerState* PlayerState)
+{
+	PurgeExpiredReconnectSnapshots();
+	const FString Key = GetReconnectKey(PlayerState);
+	FDominationReconnectSnapshot* Snapshot = Key.IsEmpty() ? nullptr : ReconnectSnapshots.Find(Key);
+	if (!IsValid(PlayerState) || !Snapshot)
+	{
+		return false;
+	}
+
+	PlayerState->SetTeam(Snapshot->Team);
+	PlayerState->RestoreCombatClassForReconnect(Snapshot->CombatClass);
+	FText Failure;
+	if (!PlayerState->GetAugmentInventory()->RestoreReconnectSnapshot(Snapshot->AugmentInventory, Failure))
+	{
+		UE_LOG(LogDominationGameMode, Warning, TEXT("Reconnect augment restore failed for %s: %s"),
+			*GetNameSafe(PlayerState), *Failure.ToString());
+		return false;
+	}
+	ReconnectSnapshots.Remove(Key);
+	return true;
 }
 
 EPlayerParticipationState ADominationGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const

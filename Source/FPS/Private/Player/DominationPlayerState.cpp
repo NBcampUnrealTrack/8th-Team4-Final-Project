@@ -107,6 +107,20 @@ bool ADominationPlayerState::TryChangeCombatClass(const EDominationCombatClass R
     return true;
 }
 
+void ADominationPlayerState::RestoreCombatClassForReconnect(const EDominationCombatClass RestoredClass)
+{
+	if (!HasAuthority() || RestoredClass == EDominationCombatClass::Unselected)
+	{
+		return;
+	}
+
+	CombatClass = RestoredClass;
+	PreviewCombatClass = EDominationCombatClass::Unselected;
+	OnRep_CombatClass();
+	OnRep_PreviewCombatClass();
+	ForceNetUpdate();
+}
+
 bool ADominationPlayerState::TrySetPreviewCombatClass(const EDominationCombatClass RequestedClass)
 {
 	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
