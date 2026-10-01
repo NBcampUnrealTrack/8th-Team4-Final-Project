@@ -50,6 +50,45 @@ namespace
 			return TEXT("Unknown");
 		}
 	}
+
+	// Steam OSS 는 문자열 설정을 ANSI_TO_TCHAR 로 읽어 UTF-8 바이트가 0xFF80 이상으로 퍼진다. 그 모양일 때만 되돌린다
+	FString RestoreSteamUtf8(const FString& Value)
+	{
+		TArray<uint8> Bytes;
+		Bytes.Reserve(Value.Len());
+		bool bHasSpreadByte = false;
+		for (const TCHAR Ch : Value)
+		{
+			if (Ch < 0x80)
+			{
+				Bytes.Add(static_cast<uint8>(Ch));
+			}
+			else if (Ch >= 0xFF80)
+			{
+				Bytes.Add(static_cast<uint8>(Ch & 0xFF));
+				bHasSpreadByte = true;
+			}
+			else
+			{
+				// 정상 유니코드 (NULL OSS 등)
+				return Value;
+			}
+		}
+
+		if (!bHasSpreadByte)
+		{
+			return Value;
+		}
+
+		const FString Restored = FString::ConstructFromPtrSize(
+			reinterpret_cast<const UTF8CHAR*>(Bytes.GetData()), Bytes.Num());
+
+		// 유효한 UTF-8 이 아니었으면 원본 유지
+		const auto ReEncoded = StringCast<UTF8CHAR>(*Restored, Restored.Len());
+		const bool bValidUtf8 = ReEncoded.Length() == Bytes.Num()
+			&& FMemory::Memcmp(ReEncoded.Get(), Bytes.GetData(), Bytes.Num()) == 0;
+		return bValidUtf8 ? Restored : Value;
+	}
 }
 
 USessionSubSystem::USessionSubSystem()
@@ -474,6 +513,7 @@ TArray<FRoomInfo> USessionSubSystem::BuildRoomInfoList() const
 		RoomInfo.CurrentPlayers = FMath::Max(0, RoomInfo.MaxPlayers - Result.Session.NumOpenPublicConnections);
 
 		Result.Session.SessionSettings.Get(SessionSettingKeys::RoomName, RoomInfo.RoomName);
+		RoomInfo.RoomName = RestoreSteamUtf8(RoomInfo.RoomName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MapName, RoomInfo.MapName);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::MatchType, RoomInfo.MatchType);
 		Result.Session.SessionSettings.Get(SessionSettingKeys::Joinable, RoomInfo.bIsJoinable);
