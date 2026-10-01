@@ -36,7 +36,12 @@ protected:
 
 	void HandlePanelInactivityTimeout();
 
-	UPROPERTY(EditDefaultsOnly, Category = "Chat", meta = (ClampMin = "1"))
+	// false면 엔트리 만료(EntryLifetimeSeconds)와 패널 자동 숨김을 모두 끄고 MaxVisibleEntries만큼
+	// 내역을 계속 쌓아둔다. 대기방(WBP_RoomScreen)에 배치한 인스턴스에서 끈다.
+	UPROPERTY(EditAnywhere, Category = "Chat")
+	bool bAutoHide = true;
+
+	UPROPERTY(EditAnywhere, Category = "Chat", meta = (ClampMin = "1"))
 	int32 MaxVisibleEntries = 8;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Chat", meta = (ClampMin = "0.1"))

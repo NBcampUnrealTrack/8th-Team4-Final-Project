@@ -1,6 +1,7 @@
 // ShooterChatInputBox.cpp
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 
+#include "Chat/ShooterChatRouting.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
@@ -8,7 +9,7 @@
 #include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
-#include "GameMode/State/BaseTeamGameState.h"
+#include "GameFramework/GameStateBase.h"
 #include "Player/ShooterPlayerController.h"
 #include "TimerManager.h"
 #include "UI/InGame/HUD/ShooterChatSuggestionEntry.h"
@@ -170,14 +171,14 @@ void UShooterChatInputBox::RefreshWhisperSuggestions(const FString& TypedPrefix)
 		return;
 	}
 
-	const ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
-	if (!TeamGameState)
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!GameState)
 	{
 		return;
 	}
 
 	const FString OwnName = GetOwningPlayerState() ? GetOwningPlayerState()->GetPlayerName() : FString();
-	CurrentSuggestions = TeamGameState->GetPlayerNamesMatchingPrefix(TypedPrefix, OwnName);
+	CurrentSuggestions = ShooterChatRouting::GetPlayerNamesMatchingPrefix(GameState, TypedPrefix, OwnName);
 	if (CurrentSuggestions.IsEmpty())
 	{
 		return;

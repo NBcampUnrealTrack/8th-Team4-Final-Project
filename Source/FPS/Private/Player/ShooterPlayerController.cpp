@@ -52,6 +52,9 @@
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
+#include "Chat/ShooterChatRouting.h"
+#include "Tags/UITags.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
@@ -1295,8 +1298,9 @@ void AShooterPlayerController::ServerSendChatMessage_Implementation(const FStrin
 		return;
 	}
 
-	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
-	if (!IsValid(TeamGameState))
+	// 인게임(ABaseTeamGameState)과 대기방(ALobbyGameState)에서 모두 써야 해서 베이스 타입으로 받는다.
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
 	{
 		return;
 	}
@@ -1306,7 +1310,7 @@ void AShooterPlayerController::ServerSendChatMessage_Implementation(const FStrin
 	Message.MessageText = Trimmed;
 	Message.Channel = Channel;
 
-	TeamGameState->ForEachChatRecipient(PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
+	ShooterChatRouting::ForEachChatRecipient(GameState, PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
 	{
 		Recipient->ClientReceiveChatMessage(Message);
 	});
@@ -1338,13 +1342,13 @@ void AShooterPlayerController::ServerSendWhisperMessage_Implementation(const FSt
 		return;
 	}
 
-	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
-	if (!IsValid(TeamGameState))
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
 	{
 		return;
 	}
 
-	AShooterPlayerController* TargetController = TeamGameState->FindChatRecipientByName(TargetName);
+	AShooterPlayerController* TargetController = ShooterChatRouting::FindChatRecipientByName(GameState, TargetName);
 	if (!TargetController)
 	{
 		// MVP: 닉네임을 못 찾아도 별도 에러 메시지는 없다. 채팅창은 이미 닫힌 뒤라 조용히 무시.
@@ -1409,7 +1413,7 @@ void AShooterPlayerController::ServerSendPing_Implementation(const FVector_NetQu
 	Ping.Type = Type;
 
 	// 핑도 팀 전용이라 채팅의 Team 채널 라우팅(같은 팀 전원, 본인 포함)을 그대로 재사용한다.
-	TeamGameState->ForEachChatRecipient(PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
+	ShooterChatRouting::ForEachChatRecipient(TeamGameState, PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
 	{
 		Recipient->ClientReceivePing(Ping);
 	});
@@ -2125,8 +2129,12 @@ void AShooterPlayerController::Input_OpenChat()
 		return;
 	}
 
-	UShooterChatInputBox* Widget = UIInitComponent->OpenChat();
-	if (!Widget)
+	BeginChatInput(UIInitComponent->OpenChat());
+}
+
+void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
+{
+	if (!IsLocalController() || bIsChatInputOpen || !IsValid(Widget))
 	{
 		return;
 	}
@@ -2143,12 +2151,24 @@ void AShooterPlayerController::CloseChatInput()
 		return;
 	}
 
+	UShooterChatInputBox* Widget = ChatInputWidget.Get();
 	bIsChatInputOpen = false;
 	ChatInputWidget.Reset();
 
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
 		UIInitComponent->CloseChat();
+		return;
+	}
+
+	// 대기방에는 UTeamMatchUIInitComponent가 없다. UShooterRoomScreen이 Modal에 Push한 입력창을 직접 뺀다.
+	UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (IsValid(UIManager) && IsValid(Widget))
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Widget);
 	}
 }
 
