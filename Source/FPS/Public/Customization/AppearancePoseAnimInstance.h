@@ -11,6 +11,7 @@ class FPS_API UAppearancePoseAnimInstance : public UAnimInstance
 public:
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> PoseSource;
     UPROPERTY(Transient) bool bPreserveReferencePose = true;
+    UPROPERTY(Transient) bool bPreserveWeaponHandRelationship = false;
 protected:
     virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
     virtual void DestroyAnimInstanceProxy(FAnimInstanceProxy* Proxy) override;

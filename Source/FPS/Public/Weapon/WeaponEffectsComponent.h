@@ -17,6 +17,7 @@ public:
 	UWeaponEffectsComponent();
 
 	void PlayFireCameraShake() const;
+	void PlayFireSound() const;
 	void PlayEmptyClipSound();
 
 protected:
@@ -26,6 +27,9 @@ protected:
 	void Multicast_PlayEmptyClipSound();
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundBase> FireSound;
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EmptyClipSound;
 
