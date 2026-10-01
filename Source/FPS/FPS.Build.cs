@@ -11,6 +11,7 @@ public class FPS : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"NetCore",
 			"InputCore",
 			"EnhancedInput",
 			"GameplayAbilities",

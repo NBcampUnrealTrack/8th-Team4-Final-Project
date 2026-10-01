@@ -222,27 +222,38 @@ void URogueHealthComponent::PlayPainSoundIfDue()
 		return;
 	}
 
+	// 고통음은 맞은 플레이어 본인만 듣는다. 플레이어가 조종하지 않는 아바타(훈련장 더미 등)는 들을 사람이
+	// 없고, 소유 연결이 없는 액터의 Client RPC는 서버에서 실행돼 리슨서버 호스트에게 들리므로 스킵한다.
+	const APawn* AvatarPawn = AbilitySystemComponent ? Cast<APawn>(AbilitySystemComponent->GetAvatarActor()) : nullptr;
+	if (!IsValid(AvatarPawn) || !AvatarPawn->IsPlayerControlled())
+	{
+		return;
+	}
+
 	LastPainSoundTime = Now;
 
-	// 재생할 배리에이션은 서버가 한 번만 골라서 모든 클라이언트가 같은 사운드를 듣게 한다.
 	const int32 SoundIndex = FMath::RandHelper(Pool.Num());
-	Multicast_PlayPainSound(CombatClass, SoundIndex, Owner->GetActorLocation());
+	Client_PlayPainSound(CombatClass, SoundIndex);
 }
 
 EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
 {
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn))
+	// 플레이어는 PlayerState에, 훈련장 캐릭터 등은 Pawn 자신에 이 컴포넌트가 붙는다. 둘 다 처리해야
+	// 클래스별 고통음 풀을 찾는다 - Pawn만 보면 플레이어는 항상 Unselected(빈 Default 풀)가 되어 무음.
+	const ADominationPlayerState* PlayerState = Cast<ADominationPlayerState>(GetOwner());
+	if (!IsValid(PlayerState))
 	{
-		return EDominationCombatClass::Unselected;
+		if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
+		}
 	}
 
-	const ADominationPlayerState* PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
 	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
 }
 
-void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
-	const EDominationCombatClass CombatClass, const int32 SoundIndex, const FVector Location)
+void URogueHealthComponent::Client_PlayPainSound_Implementation(
+	const EDominationCombatClass CombatClass, const int32 SoundIndex)
 {
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
 	if (!AudioSettings)
@@ -258,7 +269,8 @@ void URogueHealthComponent::Multicast_PlayPainSound_Implementation(
 
 	if (USoundBase* Sound = Pool[SoundIndex].LoadSynchronous())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location);
+		// 듣는 사람이 맞은 본인뿐이므로 위치 감쇠 없이 2D로 재생한다.
+		UGameplayStatics::PlaySound2D(this, Sound);
 	}
 }
 

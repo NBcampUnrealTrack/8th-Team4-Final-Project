@@ -23,6 +23,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
+#include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Perception/AISense_Hearing.h"
@@ -44,7 +45,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UShooterMovementComponent>(
 		  ACharacter::CharacterMovementComponentName))
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetRootComponent());
@@ -82,6 +84,7 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	StandingCameraRelativeLocation = FirstPersonCamera->GetRelativeLocation();
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
@@ -93,6 +96,32 @@ void AShooterCharacter::BeginPlay()
 	if (HasAuthority())
 	{
 		InitializeDefaultWeaponLoadout();
+	}
+}
+
+void AShooterCharacter::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!bInterpolatingCrouchCamera || !IsLocallyControlled())
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	const FVector TargetLocation = SpringArm->GetComponentTransform().TransformPosition(StandingCameraRelativeLocation);
+	const FVector NewLocation = FMath::VInterpTo(
+		FirstPersonCamera->GetComponentLocation(),
+		TargetLocation,
+		DeltaSeconds,
+		12.0f);
+	FirstPersonCamera->SetWorldLocation(NewLocation);
+
+	if (NewLocation.Equals(TargetLocation, 0.1f))
+	{
+		FirstPersonCamera->SetWorldLocation(TargetLocation);
+		bInterpolatingCrouchCamera = false;
+		SetActorTickEnabled(false);
 	}
 }
 
@@ -124,6 +153,7 @@ void AShooterCharacter::UnPossessed()
 {
     Super::UnPossessed();
     FirstPersonAppearance->RefreshFromPlayerState();
+    UpdateTagSubscriptions();
 }
 
 void AShooterCharacter::OnRep_Controller()
@@ -473,6 +503,13 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 {
 	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
 
+	if (IsLocallyControlled())
+	{
+		FirstPersonCamera->AddWorldOffset(FVector::UpVector * ScaledHalfHeightAdjust);
+		bInterpolatingCrouchCamera = true;
+		SetActorTickEnabled(true);
+	}
+
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
 	{
 		AbilitySystem->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching, 1);
@@ -482,6 +519,13 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+
+	if (IsLocallyControlled())
+	{
+		FirstPersonCamera->AddWorldOffset(-FVector::UpVector * ScaledHalfHeightAdjust);
+		bInterpolatingCrouchCamera = true;
+		SetActorTickEnabled(true);
+	}
 
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
 	{
@@ -582,6 +626,13 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	}
 	bDeathStateApplied = true;
 
+	if (HasAuthority())
+	{
+		ReplicatedDeathReaction = Reaction;
+		bReplicatedDeath = true;
+		ForceNetUpdate();
+	}
+
 	// Keep player-only visibility here; share only the established physical death presentation.
 	Mesh1P->SetHiddenInGame(true, true);
 	GetMesh()->SetOwnerNoSee(false);
@@ -593,6 +644,22 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	Settings.ImpulseBone = DeathImpulseBoneName;
 	Settings.HeadshotImpulseBone = HeadshotDeathImpulseBoneName;
 	RogueDeathPresentation::StartRagdoll(*this, Reaction, Settings);
+}
+
+void AShooterCharacter::OnRep_ReplicatedDeath()
+{
+	if (bReplicatedDeath)
+	{
+		IRogueDamageableTarget::Execute_PlayDeathReaction(this, ReplicatedDeathReaction);
+	}
+}
+
+void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(AShooterCharacter, ReplicatedDeathReaction);
+	DOREPLIFETIME(AShooterCharacter, bReplicatedDeath);
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const

@@ -5,6 +5,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/PackageName.h"
 
 namespace
 {
@@ -79,6 +80,16 @@ UFirstPersonAppearanceComponent::UFirstPersonAppearanceComponent()
         TEXT("/Game/FPS/Customizable/Character/FirstPerson/Ranger/SKM_FP_Ranger_ClothedArms.SKM_FP_Ranger_ClothedArms"))));
     ClassVisuals.Add(TEXT("Vanguard"), TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(
         TEXT("/Game/FPS/Customizable/Character/FirstPerson/Vanguard/SKM_FP_Vanguard_ClothedArms.SKM_FP_Vanguard_ClothedArms"))));
+}
+
+void UFirstPersonAppearanceComponent::AppendPreloadAssetPaths(const FName ClassId, TArray<FSoftObjectPath>& OutPaths) const
+{
+    const TSoftObjectPtr<USkeletalMesh>* Selection = ClassVisuals.Find(ClassId);
+    if (!Selection || Selection->IsNull()) return;
+    const FSoftObjectPath Path = Selection->ToSoftObjectPath();
+    // 선택 외형이 없으면 기존 팔 메시로 동작한다.
+    if (FPackageName::DoesPackageExist(Path.GetLongPackageName())) OutPaths.AddUnique(Path);
+    else UE_LOG(LogTemp, Verbose, TEXT("[Preload] Optional first-person mesh unavailable: %s"), *Path.ToString());
 }
 
 void UFirstPersonAppearanceComponent::BeginPlay()

@@ -14,7 +14,13 @@
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "WorldPartition/WorldPartitionSubsystem.h"
+#include "Engine/GameViewportClient.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UnrealClient.h"
 #include "GameFramework/InputSettings.h"
+#include "Input/CommonUIActionRouterBase.h"
+#include "UI/Foundation/ShooterActionRouter.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
@@ -36,6 +42,7 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Preload/DominationPreloadSubsystem.h"
 #include "Session/SessionSubSystem.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
@@ -47,6 +54,9 @@
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
+#include "Chat/ShooterChatRouting.h"
+#include "Tags/UITags.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
@@ -106,6 +116,7 @@ void AShooterPlayerController::BeginPlay()
 
 	InitializeAudioSettings();
 	InitializeRuntimeInputMappings();
+	BindApplicationActivation();
 
 	if (GetTeamMatchUIInitComponent())
 	{
@@ -115,6 +126,7 @@ void AShooterPlayerController::BeginPlay()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
@@ -142,6 +154,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 
 		ShutdownAudioSettings();
+		UnbindApplicationActivation();
 		HideSpectatorWidget();
 
 		if (GetTeamMatchUIInitComponent())
@@ -150,6 +163,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 		ShutdownRuntimeInputMappings();
 		StopMatchLoadReadyCheck();
+		StopMatchTravelPreparationCheck();
 
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 		{
@@ -166,6 +180,60 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+// 창이 다시 활성화되면 CommonUI 입력 설정을 강제로 재적용
+void AShooterPlayerController::BindApplicationActivation()
+{
+	if (!FSlateApplication::IsInitialized() || ApplicationActivationHandle.IsValid())
+	{
+		return;
+	}
+
+	ApplicationActivationHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(
+		this, &AShooterPlayerController::HandleApplicationActivationChanged);
+}
+
+void AShooterPlayerController::UnbindApplicationActivation()
+{
+	if (ApplicationActivationHandle.IsValid() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(ApplicationActivationHandle);
+	}
+	ApplicationActivationHandle.Reset();
+}
+
+void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
+{
+	if (!bIsActive || !IsLocalController())
+	{
+		return;
+	}
+
+	// 활성화 이벤트 직후에는 창 포커스와 뷰포트 상태가 아직 정리되지 않았을 수 있어 다음 틱에 적용한다.
+	GetWorldTimerManager().SetTimerForNextTick(this, &AShooterPlayerController::ReapplyCommonUIInputConfig);
+}
+
+void AShooterPlayerController::ReapplyCommonUIInputConfig()
+{
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!LocalPlayer)
+	{
+		return;
+	}
+
+	// 여러개의 창을 활용하기 위한 처리
+	const UGameViewportClient* ViewportClient = LocalPlayer->ViewportClient;
+	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
+	if (!Viewport || !Viewport->IsForegroundWindow())
+	{
+		return;
+	}
+	
+	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
+	{
+		Router->RecalculateActiveInputConfig();
+	}
 }
 
 void AShooterPlayerController::InitializeAudioSettings()
@@ -297,6 +365,8 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	// 이 플래그는 World 단위의 1회성 상태다. 로비에서 한 번 소비한 값을
 	// 다음 인게임 World까지 들고 가지 않도록 최종 목적지마다 재무장한다.
 	bNotifiedLoadedIntoMatch = false;
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
@@ -1234,8 +1304,9 @@ void AShooterPlayerController::ServerSendChatMessage_Implementation(const FStrin
 		return;
 	}
 
-	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
-	if (!IsValid(TeamGameState))
+	// 인게임(ABaseTeamGameState)과 대기방(ALobbyGameState)에서 모두 써야 해서 베이스 타입으로 받는다.
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
 	{
 		return;
 	}
@@ -1245,7 +1316,7 @@ void AShooterPlayerController::ServerSendChatMessage_Implementation(const FStrin
 	Message.MessageText = Trimmed;
 	Message.Channel = Channel;
 
-	TeamGameState->ForEachChatRecipient(PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
+	ShooterChatRouting::ForEachChatRecipient(GameState, PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
 	{
 		Recipient->ClientReceiveChatMessage(Message);
 	});
@@ -1277,13 +1348,13 @@ void AShooterPlayerController::ServerSendWhisperMessage_Implementation(const FSt
 		return;
 	}
 
-	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
-	if (!IsValid(TeamGameState))
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
 	{
 		return;
 	}
 
-	AShooterPlayerController* TargetController = TeamGameState->FindChatRecipientByName(TargetName);
+	AShooterPlayerController* TargetController = ShooterChatRouting::FindChatRecipientByName(GameState, TargetName);
 	if (!TargetController)
 	{
 		// MVP: 닉네임을 못 찾아도 별도 에러 메시지는 없다. 채팅창은 이미 닫힌 뒤라 조용히 무시.
@@ -1348,7 +1419,7 @@ void AShooterPlayerController::ServerSendPing_Implementation(const FVector_NetQu
 	Ping.Type = Type;
 
 	// 핑도 팀 전용이라 채팅의 Team 채널 라우팅(같은 팀 전원, 본인 포함)을 그대로 재사용한다.
-	TeamGameState->ForEachChatRecipient(PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
+	ShooterChatRouting::ForEachChatRecipient(TeamGameState, PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
 	{
 		Recipient->ClientReceivePing(Ping);
 	});
@@ -1425,6 +1496,99 @@ void AShooterPlayerController::ServerCycleSpectatorTarget_Implementation()
 	}
 }
 
+void AShooterPlayerController::ClientPrepareMatchTravel_Implementation(
+	const FString& DestinationMap, const int32 RequestId)
+{
+	if (!IsLocalController() || RequestId <= 0)
+	{
+		return;
+	}
+
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = RequestId;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->BeginTravelConnectionGrace(DestinationMap);
+		}
+	}
+	ShowLoadingScreen(0.2f);
+
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		ServerNotifyMatchTravelPrepared(RequestId, false);
+		return;
+	}
+	PreloadSubsystem->PrepareForMap(DestinationMap);
+	GetWorldTimerManager().SetTimer(MatchTravelPreparationCheckTimer, this,
+		&ThisClass::CheckMatchTravelPreparation, 0.2f, true);
+	CheckMatchTravelPreparation();
+}
+
+void AShooterPlayerController::CheckMatchTravelPreparation()
+{
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (MatchTravelPreparationRequestId <= 0)
+	{
+		StopMatchTravelPreparationCheck();
+		return;
+	}
+	if (IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& !PreloadSubsystem->IsPreloadReady())
+	{
+		return;
+	}
+
+	const bool bSuccess = IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& PreloadSubsystem->IsPreloadReady();
+	const int32 RequestId = MatchTravelPreparationRequestId;
+	StopMatchTravelPreparationCheck();
+	ServerNotifyMatchTravelPrepared(RequestId, bSuccess);
+}
+
+void AShooterPlayerController::StopMatchTravelPreparationCheck()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MatchTravelPreparationCheckTimer);
+	}
+}
+
+void AShooterPlayerController::ClientCancelMatchTravelPreparation_Implementation(const int32 RequestId)
+{
+	if (RequestId != MatchTravelPreparationRequestId)
+	{
+		return;
+	}
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UDominationPreloadSubsystem* PreloadSubsystem = GameInstance->GetSubsystem<UDominationPreloadSubsystem>())
+		{
+			PreloadSubsystem->ReleasePreload();
+		}
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->EndTravelConnectionGrace();
+		}
+	}
+	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ServerNotifyMatchTravelPrepared_Implementation(
+	const int32 RequestId, const bool bSuccess)
+{
+	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+	{
+		LobbyGameMode->NotifyMatchTravelPrepared(this, RequestId, bSuccess);
+	}
+}
+
 void AShooterPlayerController::StartMatchLoadReadyCheck()
 {
 	if (!IsLocalController() || bNotifiedLoadedIntoMatch)
@@ -1480,10 +1644,30 @@ void AShooterPlayerController::CheckMatchLoadReady()
 		return;
 	}
 
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		return;
+	}
+	PreloadSubsystem->EnsurePreloadStarted(World);
+	if (!PreloadSubsystem->IsPreloadReady() || !World->HasBegunPlay())
+	{
+		return;
+	}
+
+	// 현재 요청된 WP 셀의 배치까지 기다린다. 클래스 선택 뒤 생성될 Pawn은 이 조건에 넣지 않는다.
+	if (World->GetWorldPartition())
+	{
+		UWorldPartitionSubsystem* Partition = World->GetSubsystem<UWorldPartitionSubsystem>();
+		if (!Partition || !Partition->IsAllStreamingCompleted()) return;
+	}
+
 	SetLoadingProgress(0.9f);
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 		LoadingScreenSubsystem->NotifyMatchLoadReady();
 	}
 
@@ -2064,8 +2248,12 @@ void AShooterPlayerController::Input_OpenChat()
 		return;
 	}
 
-	UShooterChatInputBox* Widget = UIInitComponent->OpenChat();
-	if (!Widget)
+	BeginChatInput(UIInitComponent->OpenChat());
+}
+
+void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
+{
+	if (!IsLocalController() || bIsChatInputOpen || !IsValid(Widget))
 	{
 		return;
 	}
@@ -2082,12 +2270,24 @@ void AShooterPlayerController::CloseChatInput()
 		return;
 	}
 
+	UShooterChatInputBox* Widget = ChatInputWidget.Get();
 	bIsChatInputOpen = false;
 	ChatInputWidget.Reset();
 
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{
 		UIInitComponent->CloseChat();
+		return;
+	}
+
+	// 대기방에는 UTeamMatchUIInitComponent가 없다. UShooterRoomScreen이 Modal에 Push한 입력창을 직접 뺀다.
+	UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (IsValid(UIManager) && IsValid(Widget))
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Widget);
 	}
 }
 
