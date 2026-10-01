@@ -135,7 +135,11 @@ void UShooterWeaponStatus::RebuildFromWeapon(AWeaponBase* NewWeapon)
 	{
 		Text_ReserveAmmo->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
-	
+	if (IsValid(Border_Slash))
+	{
+		Border_Slash->SetVisibility(NewWeapon->UsesAmmo() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	CachedAmmo = INDEX_NONE;
 	CachedMaxAmmo = INDEX_NONE;
 	CachedReserveAmmo = INDEX_NONE;

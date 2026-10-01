@@ -72,9 +72,11 @@ protected:
 	TObjectPtr<UImage> Image_WeaponIcon;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Ammo;
-	// Ammo / MaxAmmo 사이의 / <-이거
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Panel;
+	// Ammo / MaxAmmo 사이의 / <-이거
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Slash;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Frame;
 	UPROPERTY(meta = (BindWidgetOptional))
