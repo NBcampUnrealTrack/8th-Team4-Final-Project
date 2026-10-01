@@ -14,6 +14,7 @@
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "WorldPartition/WorldPartitionSubsystem.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
 #include "UnrealClient.h"
@@ -41,6 +42,7 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Preload/DominationPreloadSubsystem.h"
 #include "Session/SessionSubSystem.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
@@ -121,6 +123,7 @@ void AShooterPlayerController::BeginPlay()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
@@ -157,6 +160,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 		ShutdownRuntimeInputMappings();
 		StopMatchLoadReadyCheck();
+		StopMatchTravelPreparationCheck();
 
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 		{
@@ -358,6 +362,8 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	// 이 플래그는 World 단위의 1회성 상태다. 로비에서 한 번 소비한 값을
 	// 다음 인게임 World까지 들고 가지 않도록 최종 목적지마다 재무장한다.
 	bNotifiedLoadedIntoMatch = false;
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
@@ -1486,6 +1492,99 @@ void AShooterPlayerController::ServerCycleSpectatorTarget_Implementation()
 	}
 }
 
+void AShooterPlayerController::ClientPrepareMatchTravel_Implementation(
+	const FString& DestinationMap, const int32 RequestId)
+{
+	if (!IsLocalController() || RequestId <= 0)
+	{
+		return;
+	}
+
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = RequestId;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->BeginTravelConnectionGrace(DestinationMap);
+		}
+	}
+	ShowLoadingScreen(0.2f);
+
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		ServerNotifyMatchTravelPrepared(RequestId, false);
+		return;
+	}
+	PreloadSubsystem->PrepareForMap(DestinationMap);
+	GetWorldTimerManager().SetTimer(MatchTravelPreparationCheckTimer, this,
+		&ThisClass::CheckMatchTravelPreparation, 0.2f, true);
+	CheckMatchTravelPreparation();
+}
+
+void AShooterPlayerController::CheckMatchTravelPreparation()
+{
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (MatchTravelPreparationRequestId <= 0)
+	{
+		StopMatchTravelPreparationCheck();
+		return;
+	}
+	if (IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& !PreloadSubsystem->IsPreloadReady())
+	{
+		return;
+	}
+
+	const bool bSuccess = IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& PreloadSubsystem->IsPreloadReady();
+	const int32 RequestId = MatchTravelPreparationRequestId;
+	StopMatchTravelPreparationCheck();
+	ServerNotifyMatchTravelPrepared(RequestId, bSuccess);
+}
+
+void AShooterPlayerController::StopMatchTravelPreparationCheck()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MatchTravelPreparationCheckTimer);
+	}
+}
+
+void AShooterPlayerController::ClientCancelMatchTravelPreparation_Implementation(const int32 RequestId)
+{
+	if (RequestId != MatchTravelPreparationRequestId)
+	{
+		return;
+	}
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UDominationPreloadSubsystem* PreloadSubsystem = GameInstance->GetSubsystem<UDominationPreloadSubsystem>())
+		{
+			PreloadSubsystem->ReleasePreload();
+		}
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->EndTravelConnectionGrace();
+		}
+	}
+	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ServerNotifyMatchTravelPrepared_Implementation(
+	const int32 RequestId, const bool bSuccess)
+{
+	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+	{
+		LobbyGameMode->NotifyMatchTravelPrepared(this, RequestId, bSuccess);
+	}
+}
+
 void AShooterPlayerController::StartMatchLoadReadyCheck()
 {
 	if (!IsLocalController() || bNotifiedLoadedIntoMatch)
@@ -1541,10 +1640,30 @@ void AShooterPlayerController::CheckMatchLoadReady()
 		return;
 	}
 
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		return;
+	}
+	PreloadSubsystem->EnsurePreloadStarted(World);
+	if (!PreloadSubsystem->IsPreloadReady() || !World->HasBegunPlay())
+	{
+		return;
+	}
+
+	// 현재 요청된 WP 셀의 배치까지 기다린다. 클래스 선택 뒤 생성될 Pawn은 이 조건에 넣지 않는다.
+	if (World->GetWorldPartition())
+	{
+		UWorldPartitionSubsystem* Partition = World->GetSubsystem<UWorldPartitionSubsystem>();
+		if (!Partition || !Partition->IsAllStreamingCompleted()) return;
+	}
+
 	SetLoadingProgress(0.9f);
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 		LoadingScreenSubsystem->NotifyMatchLoadReady();
 	}
 

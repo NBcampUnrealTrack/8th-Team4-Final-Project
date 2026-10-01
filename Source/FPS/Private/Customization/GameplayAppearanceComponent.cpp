@@ -14,9 +14,16 @@
 #include "GroomBindingAsset.h"
 #include "GroomAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Misc/PackageName.h"
 
 namespace
 {
+FSoftObjectPath GameplayAppearancePath(const FName ClassId)
+{
+    const FString PackagePath = TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_Gameplay") + ClassId.ToString();
+    return FSoftObjectPath(PackagePath + TEXT(".") + FPackageName::GetShortName(PackagePath));
+}
+
 void FollowPose(USkeletalMeshComponent* Target, USkeletalMeshComponent* Source, bool PreserveReferencePose = true)
 {
     Target->SetAnimInstanceClass(UAppearancePoseAnimInstance::StaticClass());
@@ -31,6 +38,15 @@ UGameplayAppearanceComponent::UGameplayAppearanceComponent()
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = false;
     PrimaryComponentTick.TickInterval = .1f;
+}
+
+void UGameplayAppearanceComponent::AppendPreloadAssetPaths(const FName ClassId, TArray<FSoftObjectPath>& OutPaths) const
+{
+    if (ClassId.IsNone()) return;
+    const FSoftObjectPath Path = GameplayAppearancePath(ClassId);
+    // 외형 카탈로그가 없는 클래스는 기존 기본 외형을 사용한다.
+    if (FPackageName::DoesPackageExist(Path.GetLongPackageName())) OutPaths.AddUnique(Path);
+    else UE_LOG(LogTemp, Verbose, TEXT("[Preload] Optional appearance catalog unavailable: %s"), *Path.ToString());
 }
 
 FName UGameplayAppearanceComponent::ResolveClassId() const
@@ -132,8 +148,8 @@ void UGameplayAppearanceComponent::StartUpdate()
     bQueued = false;
     if (!Config)
     {
-        const FString Path = TEXT("/Game/FPS/Customizable/Character/Gameplay/DA_Gameplay") + Desired.ClassId.ToString();
-        Config = LoadObject<UGameplayAppearanceConfig>(nullptr, *Path);
+        const FSoftObjectPath Path = GameplayAppearancePath(Desired.ClassId);
+        Config = LoadObject<UGameplayAppearanceConfig>(nullptr, *Path.ToString());
         Studio = Config ? Config->StudioConfig.LoadSynchronous() : nullptr;
     }
     if (!Config || !Studio || !Studio->CustomizableObject) { Failure = TEXT("Gameplay appearance catalog missing"); return; }

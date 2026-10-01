@@ -186,6 +186,15 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientFinishLoadingScreen();
 
+	UFUNCTION(Client, Reliable)
+	void ClientPrepareMatchTravel(const FString& DestinationMap, int32 RequestId);
+
+	UFUNCTION(Client, Reliable)
+	void ClientCancelMatchTravelPreparation(int32 RequestId);
+
+	UFUNCTION(Server, Reliable)
+	void ServerNotifyMatchTravelPrepared(int32 RequestId, bool bSuccess);
+
 	// 서버가 히트를 확정한 직후 공격자 본인에게만 알려 크로스헤어 히트마커(시각+효과음)를 재생.
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill, bool bPlaySound);
@@ -401,6 +410,8 @@ private:
 		int32 MappingIndex);
 	static bool IsRebindableKey(const FKey& Key);
 
+	void CheckMatchTravelPreparation();
+	void StopMatchTravelPreparationCheck();
 	void StartMatchLoadReadyCheck();
 	void StopMatchLoadReadyCheck();
 	void CheckMatchLoadReady();
@@ -457,6 +468,8 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_SurrenderVoteState)
 	FSurrenderVoteState SurrenderVoteState;
 
+	FTimerHandle MatchTravelPreparationCheckTimer;
+	int32 MatchTravelPreparationRequestId = 0;
 	FTimerHandle MatchLoadReadyCheckTimerHandle;
 	bool bNotifiedLoadedIntoMatch = false;
 

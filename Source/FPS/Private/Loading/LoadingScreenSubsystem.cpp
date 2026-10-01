@@ -4,8 +4,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
-#include "Engine/Engine.h"
-#include "Framework/Application/SlateApplication.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
@@ -17,7 +16,7 @@ namespace
 	constexpr float MapEnteredProgress = 0.7f;
 	constexpr float ReadyGateProgressRange = 0.25f;
 
-	// 도미네이션 로딩 임계값
+	// 맵 이동의 실제 완료 단계
 	constexpr float TravelStartProgress     = 0.20f;
 	constexpr float EstimatedTravelMax      = 0.85f;
 	constexpr float PreloadCompleteProgress = 0.90f;
@@ -32,21 +31,11 @@ namespace
 	constexpr float EstimatedTravelSlowRate    = 0.010f;
 
 	constexpr int32 LoadingScreenZOrder = 10000;
-
-	// Task 0 Step 5.5 실측으로 조정하는 출발점
-	constexpr float PreloadFinishWaitSeconds = 5.0f;
 }
 
 void ULoadingScreenSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	
-	// Unreal 기본 로딩 비활성화
-	if (GEngine)
-	{
-		GEngine->RegisterBeginStreamingPauseRenderingDelegate(nullptr);
-		GEngine->RegisterEndStreamingPauseRenderingDelegate(nullptr);
-	}
 }
 
 void ULoadingScreenSubsystem::Deinitialize()
@@ -81,10 +70,6 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 					GetGameInstance(),
 					WidgetClass);
 		}
-		else
-		{
-			RebindLoadingWidgetToCurrentWorld();
-		}
 
 		UGameViewportClient* ViewportClient = GetGameViewportClient();
 
@@ -101,8 +86,9 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 		}
 	}
 
-	if (ActiveLoadingWidget)
+	if (IsValid(ActiveLoadingWidget))
 	{
+		RebindLoadingWidgetToCurrentWorld();
 		ActiveLoadingWidget->ApplyLoadingContext(PendingContext);
 	}
 
@@ -140,7 +126,7 @@ void ULoadingScreenSubsystem::ApplyProgress(const float Progress)
 	}
 }
 
-float ULoadingScreenSubsystem::ComputeDominationProgress() const
+float ULoadingScreenSubsystem::ComputeTravelProgress() const
 {
 	// 계층 게이트. 앞 단계가 열리지 않았으면 뒤 단계는 화면에 반영하지 않는다
 	if (!bPreloadComplete)
@@ -161,36 +147,66 @@ float ULoadingScreenSubsystem::ComputeDominationProgress() const
 	return MatchReadyProgress;
 }
 
-void ULoadingScreenSubsystem::ApplyDominationProgress()
+void ULoadingScreenSubsystem::ApplyTravelProgress()
 {
-	ApplyProgress(ComputeDominationProgress());
+	ApplyProgress(ComputeTravelProgress());
 }
 
 void ULoadingScreenSubsystem::BeginTravelProgress()
 {
-	if (bTravelProgressActive)
+	if (bTravelProgressActive && !bPreloadWaitAbandoned && !bCompletionExitInFlight)
 	{
 		return;
 	}
 
-	// Hide 를 거치지 않은 경로가 있어도 여기서 깨끗해진다
+	// 이전 표시값과 종료 애니메이션은 새 이동에 넘기지 않는다.
+	const bool bRestartVisibleSession = IsLoadingScreenVisible()
+		&& (CurrentProgress > TravelStartProgress || bCompletionExitInFlight || bPreloadWaitAbandoned);
+	const FShooterLoadingContext LoadingContext = PendingContext;
+	const TSubclassOf<ULoadingScreenWidget> WidgetClass = IsValid(ActiveLoadingWidget)
+		? ActiveLoadingWidget->GetClass()
+		: nullptr;
+	if (bRestartVisibleSession)
+	{
+		HideLoadingScreen();
+		PendingContext = LoadingContext;
+	}
+	else
+	{
+		StopEstimatedTravelTicker();
+	}
+
+	bCompletionExitInFlight = false;
+	bFinishDeferredUntilReady = false;
 	bPreloadComplete = false;
 	bWorldLoaded = false;
 	bMatchReady = false;
 	bPreloadWaitAbandoned = false;
-
 	bTravelProgressActive = true;
 	EstimatedTravelProgress = TravelStartProgress;
+	CurrentProgress = 0.0f;
+	ApplyTravelProgress();
 
-	ApplyDominationProgress();
+	if (bRestartVisibleSession)
+	{
+		UGameInstance* GameInstance = GetGameInstance();
+		ShowLoadingScreen(GameInstance ? GameInstance->GetFirstLocalPlayerController() : nullptr,
+			WidgetClass, TravelStartProgress);
+	}
 
-	// 월드 타이머를 쓰지 않는다. travel 중 월드가 바뀐다
+	// 월드가 바뀌어도 추정 표시를 유지한다. 이 값으로 완료를 판단하지 않는다.
 	EstimatedTravelTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateUObject(this, &ThisClass::TickEstimatedTravelProgress));
 }
 
 bool ULoadingScreenSubsystem::TickEstimatedTravelProgress(const float DeltaTime)
 {
+	if (!bTravelProgressActive || bPreloadWaitAbandoned)
+	{
+		EstimatedTravelTickerHandle.Reset();
+		return false;
+	}
+
 	float Rate;
 	if (EstimatedTravelProgress < EstimatedTravelFastUntil)
 	{
@@ -209,7 +225,7 @@ bool ULoadingScreenSubsystem::TickEstimatedTravelProgress(const float DeltaTime)
 		EstimatedTravelProgress + Rate * DeltaTime,
 		EstimatedTravelMax);
 
-	ApplyDominationProgress();
+	ApplyTravelProgress();
 
 	if (EstimatedTravelProgress >= EstimatedTravelMax)
 	{
@@ -231,65 +247,53 @@ void ULoadingScreenSubsystem::StopEstimatedTravelTicker()
 
 void ULoadingScreenSubsystem::NotifyPreloadComplete()
 {
-	if (!bTravelProgressActive || bPreloadComplete)
-	{
-		return;
-	}
-
-	bPreloadComplete = true;
-
-	// 90% 상한해제
-	StopEstimatedTravelTicker();
-	ApplyDominationProgress();
-
-	// 미뤄 둔 완료를 이제 실행한다. 게이트가 풀렸으므로 통과한다
-	if (bFinishDeferredUntilPreloadEnd)
-	{
-		bFinishDeferredUntilPreloadEnd = false;
-		ClearPreloadFinishTimeout();
-		FinishLoadingScreen();
-	}
-}
-
-void ULoadingScreenSubsystem::AbandonPreloadWait()
-{
 	if (!bTravelProgressActive || bPreloadWaitAbandoned || bPreloadComplete)
 	{
 		return;
 	}
 
-	bPreloadWaitAbandoned = true;
-
-	// 미뤄 둔 완료를 이제 실행한다. 게이트가 풀렸으므로 통과한다
-	if (bFinishDeferredUntilPreloadEnd)
-	{
-		bFinishDeferredUntilPreloadEnd = false;
-		ClearPreloadFinishTimeout();
-		FinishLoadingScreen();
-	}
+	bPreloadComplete = true;
+	StopEstimatedTravelTicker();
+	ApplyTravelProgress();
+	TryFinishDeferredLoading();
 }
 
-void ULoadingScreenSubsystem::NotifyWorldLoaded()
+void ULoadingScreenSubsystem::AbandonPreloadWait()
 {
-	if (!bTravelProgressActive || bWorldLoaded)
+	if (!bTravelProgressActive || bPreloadWaitAbandoned)
 	{
 		return;
 	}
 
-	// 순서가 어긋나도 저장한다. 반영은 게이트가 정한다
+	// 취소된 선로드는 준비 완료가 아니다. 실패 경로에서 화면을 직접 걷는다.
+	bPreloadWaitAbandoned = true;
+	bFinishDeferredUntilReady = false;
+	StopEstimatedTravelTicker();
+}
+
+void ULoadingScreenSubsystem::NotifyWorldLoaded()
+{
+	if (!bTravelProgressActive || bPreloadWaitAbandoned || bWorldLoaded)
+	{
+		return;
+	}
+
+	// 순서가 어긋나도 저장한다. 반영은 게이트가 정한다.
 	bWorldLoaded = true;
-	ApplyDominationProgress();
+	ApplyTravelProgress();
+	TryFinishDeferredLoading();
 }
 
 void ULoadingScreenSubsystem::NotifyMatchLoadReady()
 {
-	if (!bTravelProgressActive || bMatchReady)
+	if (!bTravelProgressActive || bPreloadWaitAbandoned || bMatchReady)
 	{
 		return;
 	}
 
 	bMatchReady = true;
-	ApplyDominationProgress();
+	ApplyTravelProgress();
+	TryFinishDeferredLoading();
 }
 
 bool ULoadingScreenSubsystem::IsTravelProgressActive() const
@@ -299,7 +303,8 @@ bool ULoadingScreenSubsystem::IsTravelProgressActive() const
 
 bool ULoadingScreenSubsystem::CanFinishLoading() const
 {
-	return !bTravelProgressActive || bPreloadComplete || bPreloadWaitAbandoned;
+	return !bTravelProgressActive
+		|| (!bPreloadWaitAbandoned && bPreloadComplete && bWorldLoaded && bMatchReady);
 }
 
 void ULoadingScreenSubsystem::HideLoadingScreen()
@@ -342,13 +347,12 @@ void ULoadingScreenSubsystem::HideLoadingScreen()
 	bPreloadWaitAbandoned = false;
 	EstimatedTravelProgress = 0.0f;
 
-	bFinishDeferredUntilPreloadEnd = false;
-	ClearPreloadFinishTimeout();
+	bFinishDeferredUntilReady = false;
 }
 
 void ULoadingScreenSubsystem::BindToRoundGameState(ABaseRoundGameState* RoundGameState)
 {
-	if (BoundRoundGameState == RoundGameState)
+	if (BoundRoundGameState.Get() == RoundGameState)
 	{
 		return;
 	}
@@ -361,18 +365,18 @@ void ULoadingScreenSubsystem::BindToRoundGameState(ABaseRoundGameState* RoundGam
 	}
 
 	BoundRoundGameState = RoundGameState;
-	BoundRoundGameState->OnRoundStateChanged.AddUniqueDynamic(this, &ThisClass::HandleRoundStateChanged);
+	RoundGameState->OnRoundStateChanged.AddUniqueDynamic(this, &ThisClass::HandleRoundStateChanged);
 	SyncWithRoundGameState();
 }
 
 void ULoadingScreenSubsystem::UnbindFromRoundGameState()
 {
-	if (IsValid(BoundRoundGameState))
+	if (ABaseRoundGameState* RoundGameState = BoundRoundGameState.Get())
 	{
-		BoundRoundGameState->OnRoundStateChanged.RemoveDynamic(this, &ThisClass::HandleRoundStateChanged);
+		RoundGameState->OnRoundStateChanged.RemoveDynamic(this, &ThisClass::HandleRoundStateChanged);
 	}
 
-	BoundRoundGameState = nullptr;
+	BoundRoundGameState.Reset();
 }
 
 bool ULoadingScreenSubsystem::IsLoadingScreenVisible() const
@@ -387,16 +391,17 @@ void ULoadingScreenSubsystem::HandleRoundStateChanged()
 
 void ULoadingScreenSubsystem::SyncWithRoundGameState()
 {
-	if (!IsValid(BoundRoundGameState))
+	const ABaseRoundGameState* RoundGameState = BoundRoundGameState.Get();
+	if (!IsValid(RoundGameState))
 	{
 		return;
 	}
 
-	const EGameFlowPhase Phase = BoundRoundGameState->GetGameFlowPhase();
+	const EGameFlowPhase Phase = RoundGameState->GetGameFlowPhase();
 	if (Phase == EGameFlowPhase::WaitingForPlayers
 		|| Phase == EGameFlowPhase::WaitingForPlayersReady)
 	{
-		const float FlowProgress = MapEnteredProgress + BoundRoundGameState->GetLoadingProgress() * ReadyGateProgressRange;
+		const float FlowProgress = MapEnteredProgress + RoundGameState->GetLoadingProgress() * ReadyGateProgressRange;
 		SetLoadingProgress(FMath::Max(CurrentProgress, FlowProgress));
 		return;
 	}
@@ -422,11 +427,15 @@ void ULoadingScreenSubsystem::RebindLoadingWidgetToCurrentWorld()
 		return;
 	}
 
-	// 캐시된 월드가 떠난 월드면 뷰포트를 못 찾음
-	ActiveLoadingWidget->SetPlayerContext(
-		FLocalPlayerContext(
-			GameInstance->GetFirstGamePlayer(),
-			GameInstance->GetWorld()));
+	ULocalPlayer* LocalPlayer = GameInstance->GetFirstGamePlayer();
+	UWorld* CurrentWorld = GameInstance->GetWorld();
+	if (!IsValid(LocalPlayer) || !IsValid(CurrentWorld))
+	{
+		return;
+	}
+
+	// 같은 위젯이 맵 이동을 넘겨도 오디오와 뷰포트는 현재 월드를 사용한다.
+	ActiveLoadingWidget->SetPlayerContext(FLocalPlayerContext(LocalPlayer, CurrentWorld));
 }
 
 UGameViewportClient* ULoadingScreenSubsystem::GetGameViewportClient() const
@@ -447,13 +456,20 @@ void ULoadingScreenSubsystem::ClearPendingLoadingContext()
 
 void ULoadingScreenSubsystem::FinishLoadingScreen()
 {
-	// 선로드가 끝나기 전에는 100% 로 가지 않음
+	// 실제 준비 세 단계가 끝나기 전에는 정상 완료를 표시하지 않는다.
 	if (!CanFinishLoading())
 	{
-		DeferFinishUntilPreloadEnd();
+		if (!bPreloadWaitAbandoned && !bFinishDeferredUntilReady)
+		{
+			bFinishDeferredUntilReady = true;
+			UE_LOG(LogLoadingScreen, Log,
+				TEXT("[Loading] Finish deferred. Preload=%d World=%d Ready=%d"),
+				bPreloadComplete, bWorldLoaded, bMatchReady);
+		}
 		return;
 	}
 
+	bFinishDeferredUntilReady = false;
 	ApplyProgress(1.0f);
 
 	if (!ActiveLoadingWidget)
@@ -484,41 +500,11 @@ void ULoadingScreenSubsystem::FinishLoadingScreen()
 	ActiveLoadingWidget->BeginCompletionExit(OnFinished);
 }
 
-void ULoadingScreenSubsystem::DeferFinishUntilPreloadEnd()
+void ULoadingScreenSubsystem::TryFinishDeferredLoading()
 {
-	// 이미 기다리는 중이면 마감 시각을 다시 늘리지 않는다
-	if (bFinishDeferredUntilPreloadEnd)
+	if (bFinishDeferredUntilReady && CanFinishLoading())
 	{
-		return;
+		bFinishDeferredUntilReady = false;
+		FinishLoadingScreen();
 	}
-
-	bFinishDeferredUntilPreloadEnd = true;
-	UE_LOG(LogLoadingScreen, Log, TEXT("[Loading] Finish deferred until pawn preload completes"));
-
-	PreloadFinishTimeoutHandle = FTSTicker::GetCoreTicker().AddTicker(
-		FTickerDelegate::CreateUObject(this, &ThisClass::HandlePreloadFinishTimeout),
-		PreloadFinishWaitSeconds);
-}
-
-void ULoadingScreenSubsystem::ClearPreloadFinishTimeout()
-{
-	if (PreloadFinishTimeoutHandle.IsValid())
-	{
-		FTSTicker::RemoveTicker(PreloadFinishTimeoutHandle);
-		PreloadFinishTimeoutHandle.Reset();
-	}
-}
-
-bool ULoadingScreenSubsystem::HandlePreloadFinishTimeout(float DeltaTime)
-{
-	// 이미 끝난 핸들을 다시 지우지 않게 먼저 비움
-	PreloadFinishTimeoutHandle.Reset();
-
-	UE_LOG(LogLoadingScreen, Warning,
-		TEXT("[Loading] Pawn preload did not finish within %.1fs - finishing anyway"),
-		PreloadFinishWaitSeconds);
-
-	// 완료가 아니다. 90% 를 열지 않음
-	AbandonPreloadWait();
-	return false;
 }
