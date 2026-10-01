@@ -28,7 +28,7 @@ public:
 	// 새 로딩 세션
 	void ResetLoadingSession();
 
-	// 로딩 컨텍스트의 Thumbnail을 비동기 로드
+	// 배경 텍스처를 비동기 로드 (컨텍스트 Thumbnail, 없으면 UISettings LoadingBackground)
 	void RequestPreviewTexture(const TSoftObjectPtr<UTexture2D>& InThumbnail);
 	void ApplyLoadingContext(const FShooterLoadingContext& InContext);
 

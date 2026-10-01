@@ -33,7 +33,7 @@ struct FShooterLoadingContext
  * 90% MetaHuman PreLoad
  * 95% World
  * 99% Player Ready
- * 뒷 배경은 Room ModeSelect의 Thumbnail에서 가져온다
+ * 뒷 배경은 Room ModeSelect의 Thumbnail에서 가져오고, 없으면 UISettings LoadingBackground
  * 모두 로딩되어도 Loading Display가 100% 아니면 끝나지않는다.
 */
 
@@ -133,6 +133,10 @@ private:
 
 	UPROPERTY(Transient)
 	FShooterLoadingContext PendingContext;
+
+	// 시작 시 붙잡아 둔다. 첫 로딩에서 비동기 대기 없이 바로 그리기 위해
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> LoadingBackground;
 
 	float CurrentProgress = 0.0f;
 };
