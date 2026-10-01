@@ -7,6 +7,7 @@
 #include "GameMode/State/DominationGameState.h"
 #include "TimerManager.h"
 
+
 ADominationZoneWall::ADominationZoneWall()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -153,7 +154,8 @@ void ADominationZoneWall::SetIgnoredByPawn(APawn* Pawn, const bool bIgnore)
 		return;
 	}
 
-	MovementComponent->IgnoreActorWhenMoving(this, bIgnore);
+	// 액터 전체를 무시하면 같은 액터의 DetectionZone 오버랩까지 끊겨 무시가 켜졌다 꺼지는 깜빡임이 생기므로 WallZone 컴포넌트만 무시한다.
+	MovementComponent->IgnoreComponentWhenMoving(WallZone, bIgnore);
 	if (bIgnore)
 	{
 		IgnoringPawns.AddUnique(Pawn);
@@ -172,7 +174,7 @@ void ADominationZoneWall::ClearIgnoringActors()
 		{
 			if (UPrimitiveComponent* MovementComponent = Cast<UPrimitiveComponent>(Pawn->GetRootComponent()))
 			{
-				MovementComponent->IgnoreActorWhenMoving(this, false);
+				MovementComponent->IgnoreComponentWhenMoving(WallZone, false);
 			}
 		}
 	}
