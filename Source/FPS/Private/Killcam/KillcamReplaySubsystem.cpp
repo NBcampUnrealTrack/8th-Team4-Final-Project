@@ -57,13 +57,8 @@ void UKillcamReplaySubsystem::SetUpForWorld(UWorld* World)
 {
 	if (!IsSupportedWorld(World))
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Setup rejected World=%s NetMode=%d GameWorld=%d Replay=%d"),
-			*GetNameSafe(World), IsValid(World) ? static_cast<int32>(World->GetNetMode()) : -1,
-			IsValid(World) && World->IsGameWorld(), IsValid(World) && World->IsPlayingReplay());
 		return;
 	}
-	UE_LOG(LogKillcam, Log, TEXT("[KillcamTrace] Setup accepted World=%s NetMode=%d"),
-		*GetNameSafe(World), static_cast<int32>(World->GetNetMode()));
 
 	if (SourceWorld.Get() != World)
 	{
@@ -200,10 +195,6 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 		|| !IsValid(EliminationEvent.KillerPlayerState)
 		|| EliminationEvent.KillerPlayerState == EliminationEvent.VictimPlayerState)
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Elimination ignored Playing=%d PC=%s LocalVictim=%d Killer=%s Victim=%s"),
-			bPlaying, *GetNameSafe(PlayerController),
-			IsValid(PlayerController) && PlayerController->GetPlayerState<AShooterPlayerState>() == EliminationEvent.VictimPlayerState,
-			*GetNameSafe(EliminationEvent.KillerPlayerState), *GetNameSafe(EliminationEvent.VictimPlayerState));
 		return;
 	}
 
@@ -217,8 +208,6 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	APawn* VictimPawn = EliminationEvent.VictimPlayerState->GetPawn();
 	if (!IsValid(RecordingDriver) || !RecordingDriver->IsRecording() || !IsValid(KillerPawn) || !IsValid(VictimPawn))
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Elimination rejected Recording=%d KillerPawn=%s VictimPawn=%s"),
-			IsValid(RecordingDriver) && RecordingDriver->IsRecording(), *GetNameSafe(KillerPawn), *GetNameSafe(VictimPawn));
 		return;
 	}
 
@@ -228,12 +217,8 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
 	if (!KillerActorGuid.IsValid() || !VictimActorGuid.IsValid())
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Replay GUID rejected KillerValid=%d VictimValid=%d"),
-			KillerActorGuid.IsValid(), VictimActorGuid.IsValid());
 		return;
 	}
-	UE_LOG(LogKillcam, Log, TEXT("[KillcamTrace] Elimination accepted DemoTime=%.2f. Playback scheduled in %.2fs"),
-		DeathDemoTime, PostDeathRecordDuration);
 
 	World->GetTimerManager().SetTimer(
 		PostDeathTimerHandle,
@@ -326,9 +311,6 @@ void UKillcamReplaySubsystem::StartPlayback()
 	}
 	if (!IsValid(GameInstance) || !DuplicateCollection || !IsValid(RecordingDriver) || !RecordingDriver->IsRecording())
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Playback rejected GI=%d Duplicate=%d Recording=%d"),
-			IsValid(GameInstance), DuplicateCollection != nullptr,
-			IsValid(RecordingDriver) && RecordingDriver->IsRecording());
 		return;
 	}
 
@@ -357,7 +339,6 @@ void UKillcamReplaySubsystem::StartPlayback()
 	Options.Add(TEXT("LevelPrefixOverride=1"));
 	if (!GameInstance->PlayReplay(TEXT("_Killcam"), nullptr, Options))
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] PlayReplay failed."));
 		DuplicateCollection->SetIsVisible(false);
 		RetrySetup();
 		return;
@@ -366,13 +347,11 @@ void UKillcamReplaySubsystem::StartPlayback()
 	UDemoNetDriver* PlaybackDriver = World->GetDemoNetDriver();
 	if (!IsValid(PlaybackDriver))
 	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamTrace] Playback driver was not created."));
 		RetrySetup();
 		return;
 	}
 
 	bPlaying = true;
-	UE_LOG(LogKillcam, Log, TEXT("[KillcamTrace] Playback started StartTime=%.2f"), PlaybackStartTime);
 	DuplicateCollection->SetDemoNetDriver(PlaybackDriver);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(KillerActorGuid);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(VictimActorGuid);
@@ -383,7 +362,6 @@ void UKillcamReplaySubsystem::StartPlayback()
 
 void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful)
 {
-	UE_LOG(LogKillcam, Log, TEXT("[KillcamTrace] Playback ready Success=%d"), bWasSuccessful);
 	if (!bWasSuccessful)
 	{
 		StopPlayback();
