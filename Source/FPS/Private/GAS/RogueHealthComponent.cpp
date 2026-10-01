@@ -224,20 +224,29 @@ void URogueHealthComponent::PlayPainSoundIfDue()
 
 	LastPainSoundTime = Now;
 
+	// 플레이어는 이 컴포넌트가 PlayerState에 붙어 있어 Owner 위치가 캐릭터가 아니다(월드 원점 근처).
+	// 실제로 맞은 몸(ASC 아바타)에서 소리가 나야 한다.
+	const AActor* Avatar = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
+	const FVector SoundLocation = IsValid(Avatar) ? Avatar->GetActorLocation() : Owner->GetActorLocation();
+
 	// 재생할 배리에이션은 서버가 한 번만 골라서 모든 클라이언트가 같은 사운드를 듣게 한다.
 	const int32 SoundIndex = FMath::RandHelper(Pool.Num());
-	Multicast_PlayPainSound(CombatClass, SoundIndex, Owner->GetActorLocation());
+	Multicast_PlayPainSound(CombatClass, SoundIndex, SoundLocation);
 }
 
 EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
 {
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn))
+	// 플레이어는 PlayerState에, 훈련장 캐릭터 등은 Pawn 자신에 이 컴포넌트가 붙는다. 둘 다 처리해야
+	// 클래스별 고통음 풀을 찾는다 - Pawn만 보면 플레이어는 항상 Unselected(빈 Default 풀)가 되어 무음.
+	const ADominationPlayerState* PlayerState = Cast<ADominationPlayerState>(GetOwner());
+	if (!IsValid(PlayerState))
 	{
-		return EDominationCombatClass::Unselected;
+		if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
+		}
 	}
 
-	const ADominationPlayerState* PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
 	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
 }
 
