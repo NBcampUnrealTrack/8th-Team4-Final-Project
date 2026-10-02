@@ -54,6 +54,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EmptyClipSound;
 
+	// Separate from the shared sound asset so each weapon can have its own range.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundAttenuation> FireAttenuation;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundAttenuation> ActionAttenuation;
+
 	// 무기를 꺼낼 때(무기 교체/리스폰/유틸리티 해제 후 재장착) 본인에게만 재생할 사운드.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EquipSound;

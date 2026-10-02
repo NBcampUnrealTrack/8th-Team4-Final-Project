@@ -9,7 +9,6 @@
 #include "Weapon/WeaponBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Tags/GameplayTags.h"
-#include "Sound/SoundAttenuation.h"
 
 UWeaponEffectsComponent::UWeaponEffectsComponent()
 {
