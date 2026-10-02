@@ -225,6 +225,22 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	return true;
 }
 
+void AWeaponBase::PlayEquipSound()
+{
+	if (Effects)
+	{
+		Effects->PlayEquipSound();
+	}
+}
+
+void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
+{
+	if (Effects)
+	{
+		Effects->PlayMeleeAttackSound(bHeavyAttack);
+	}
+}
+
 void AWeaponBase::NotifyPrimaryInputReleased()
 {
 	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
