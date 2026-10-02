@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
+#include "UI/OutGame/ShooterOutGameSubsystem.h"
 #include "UI/ShooterUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLoadingScreen, Log, All);
@@ -109,6 +110,11 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 	if (!bWasAlreadyVisible && IsLoadingScreenVisible() && ActiveLoadingWidget)
 	{
 		ActiveLoadingWidget->BeginEnterAnimation();
+
+		if (UShooterOutGameSubsystem* OutGame = GetGameInstance()->GetSubsystem<UShooterOutGameSubsystem>())
+		{
+			OutGame->SetMusicState(EShooterOutGameMusicState::None);
+		}
 	}
 
 	SyncWithRoundGameState();
