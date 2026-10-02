@@ -5,7 +5,6 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/BaseTeamPlayerState.h"
-#include "Player/DominationPlayerState.h"
 #include "Sound/SoundBase.h"
 
 bool URogueVoiceCueNotify::OnExecute_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) const
@@ -18,15 +17,11 @@ bool URogueVoiceCueNotify::OnExecute_Implementation(AActor* Target, const FGamep
 	}
 
 	const APawn* CasterPawn = Cast<APawn>(Caster);
-
-	const ADominationPlayerState* CasterClassState = CasterPawn ? CasterPawn->GetPlayerState<ADominationPlayerState>() : nullptr;
-	const FRogueClassVoice* ClassVoice = CasterClassState ? ClassVoices.Find(CasterClassState->GetCombatClass()) : nullptr;
-
 	if (CasterPawn && CasterPawn->IsLocallyControlled())
 	{
-		if (USoundBase* Voice = ClassVoice ? ClassVoice->SelfVoice.Get() : SelfVoice.Get())
+		if (SelfVoice)
 		{
-			UGameplayStatics::SpawnSound2D(World, Voice);
+			UGameplayStatics::SpawnSound2D(World, SelfVoice);
 		}
 		return true;
 	}
@@ -39,9 +34,7 @@ bool URogueVoiceCueNotify::OnExecute_Implementation(AActor* Target, const FGamep
 		&& ViewerState->GetTeam() != EGameTeam::None
 		&& ViewerState->GetTeam() == CasterState->GetTeam();
 
-	if (USoundBase* Voice = ClassVoice
-		? (bAlly ? ClassVoice->AllyVoice : ClassVoice->EnemyVoice).Get()
-		: (bAlly ? AllyVoice : EnemyVoice).Get())
+	if (USoundBase* Voice = bAlly ? AllyVoice : EnemyVoice)
 	{
 		UGameplayStatics::SpawnSoundAttached(Voice, Caster->GetRootComponent());
 	}

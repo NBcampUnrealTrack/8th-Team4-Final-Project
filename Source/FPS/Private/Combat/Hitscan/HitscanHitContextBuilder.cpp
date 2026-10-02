@@ -76,9 +76,6 @@ void FHitscanHitContextBuilder::AccumulateImpactSamples(
 			Accumulator.HitContext.DistanceMeters = FMath::Max(
 				0.0f,
 				FVector::Distance(Request.DamageDistanceOrigin, Impact.ImpactPoint) / 100.0f);
-
-			Accumulator.HitContext.ShotDirection = Impact.ShotDirection;
-			Accumulator.HitContext.HitBoneName = Impact.BoneName;
 		}
 
 		const FGameplayTag HitZoneTag = Impact.HitZoneTag;

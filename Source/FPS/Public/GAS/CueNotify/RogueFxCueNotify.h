@@ -39,10 +39,6 @@ struct FRogueFxCueEntry
 	// 켜면 CueParameters 의 RawMagnitude(반경)에 비례해 크기 조정
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx")
 	bool bScaleByRadius = false;
-
-	// 켜면 CueParameters 의 Normal 회전을 무시
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx")
-	bool bIgnoreCueNormal = false;
 };
 
 // 순간 이펙트를 재생하는 Burst 큐

@@ -4,7 +4,6 @@
 #include "Customization/GameplayAppearanceComponent.h"
 
 #include "Augment/AugmentInventoryComponent.h"
-#include "Augment/Actor/RogueDeployableActor.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Economy/CreditWalletComponent.h"
@@ -233,7 +232,6 @@ void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
 	Super::OnRep_Team(PreviousTeam);
 
 	AShooterCharacter::RefreshTeamOutlineForAll(GetWorld());
-	ARogueDeployableActor::RefreshTeamOutlineForAll(GetWorld());
 
 	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
 	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신
