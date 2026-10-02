@@ -698,6 +698,7 @@ void UCombatComponent::BeginEquipCycle(AWeaponBase* Weapon)
 	}
 
 	SetCyclingState(true);
+	Weapon->PlayEquipSound();
 
 	const float EquipDuration = ResolveEquipDuration(Weapon);
 	UE_LOG(
