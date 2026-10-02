@@ -50,8 +50,8 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:
-	// 팀 윤곽선 초기화
-	void RefreshTeamOutline();
+	// 이벤트는 새 외형/무기까지 갱신하고, 거리 타이머는 결과가 같으면 메시 순회를 생략한다.
+	void RefreshTeamOutline(bool bForceRefresh = true);
 
 	// 모든 플레이어 캐릭터의 팀 윤곽선 초기화
 	static void RefreshTeamOutlineForAll(UWorld* World);
@@ -166,6 +166,8 @@ protected:
     TObjectPtr<UFirstPersonAppearanceComponent> FirstPersonAppearance;
 
 private:
+	int32 CachedTeamOutlineState = INDEX_NONE;
+
 	// 달리기 태그 - 이동 갱신마다 CMC 상태와 비교
 	UFUNCTION()
 	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
@@ -185,6 +187,7 @@ private:
 	// 스태미너 - 0 이면 달리기 차단
 	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
 	void UpdateSprintBlocked(float Stamina);
+	void PlayExhaustedBreathSound() const;
 
 	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
 	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);

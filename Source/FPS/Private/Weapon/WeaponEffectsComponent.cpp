@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundAttenuation.h"
+#include "Sound/SoundBase.h"
 #include "Weapon/WeaponBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Tags/GameplayTags.h"
@@ -115,6 +116,10 @@ void UWeaponEffectsComponent::PlayMeleeAttackSound(const bool bHeavyAttack)
 
 void UWeaponEffectsComponent::Multicast_PlayMeleeAttackSound_Implementation(const bool bHeavyAttack)
 {
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
 	// 공격한 본인은 PlayMeleeAttackSound에서 이미 로컬 재생했으므로 중복 재생하지 않는다.
 	if (IsOwnerLocallyControlled())
 	{

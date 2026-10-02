@@ -40,6 +40,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sandstorm|Timing", meta = (ClampMin = "0.01", Units = "s"))
 	float FadeOutDuration = 3.0f;
 
+	// FadeIn부터 FadeOut 종료까지 적용한다. 0이면 폭풍 중 적 윤곽선을 모두 숨긴다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sandstorm|Outline",
+		meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "50.0", Units = "m",
+			ToolTip = "Maximum enemy outline distance during FadeIn, Peak and FadeOut. Applies to characters, attached weapons and enemy deployables, including revealed enemies. Allies are unchanged. 0 hides all enemy outlines."))
+	float EnemyOutlineVisibleDistanceMeters = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, AdvancedDisplay, Category = "Sandstorm|Outline",
+		meta = (ClampMin = "0.02", ClampMax = "0.25", Units = "s",
+			ToolTip = "Local distance refresh interval, only while a storm is active. Lower values respond faster to movement; no new per-frame Tick is used."))
+	float EnemyOutlineUpdateInterval = 0.05f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sandstorm|Visual")
 	TSoftObjectPtr<UNiagaraSystem> NiagaraSystem;
 
