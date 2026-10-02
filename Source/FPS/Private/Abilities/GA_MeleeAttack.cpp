@@ -27,6 +27,16 @@ bool UGA_MeleeAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle
 		return false;
 	}
 
+	// 근접무기는 탄약이 없으므로(bUsesAmmo=false) 재장전 여부만 확인한다.
+	if (Weapon->IsReloading())
+	{
+		return false;
+	}
+
+	// Primary 입력은 AR 연사용으로 Triggered(누르고 있는 동안 매 프레임) 바인딩이라 칼도 매 프레임
+	// 활성화를 재시도한다. 쿨다운 중에도 활성화되면 몽타주가 매 프레임 처음부터 다시 재생돼
+	// 버튼을 뗄 때서야 휘두르는 것처럼 보이므로, GA_RangedAttack과 같이 CanFireNow()로 게이트한다.
+	// 이렇게 하면 꾹 누르고 있는 동안 RPM 간격마다 연속으로 휘두른다.
 	// Rejected input must not restart either attack montage.
 	return Weapon->CanFireNow(bIsHeavyAttack);
 }
