@@ -477,6 +477,14 @@ void AWeaponBase::RefreshThirdPersonAttachment() const
     USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
+        // A missing socket otherwise resolves to the mesh origin (the feet).
+        // Hide this presentation until the correct mesh/socket is available.
+        if (!CharacterMesh3P->DoesSocketExist(GripSocketName3P))
+        {
+            Mesh3P->SetVisibility(false, true);
+            return;
+        }
+        Mesh3P->SetVisibility(!IsHidden(), true);
         if (const auto* Appearance = OwnerActor->FindComponentByClass<UGameplayAppearanceComponent>())
         {
             USkeletalMeshComponent* Body = Appearance->GetReadyBody();

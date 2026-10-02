@@ -7,6 +7,7 @@
 class AWeaponBase;
 class UCameraShakeBase;
 class USoundBase;
+class USoundAttenuation;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UWeaponEffectsComponent : public UActorComponent
@@ -32,6 +33,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EmptyClipSound;
+
+	// Separate from the shared sound asset so each weapon can have its own range.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundAttenuation> FireAttenuation;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundAttenuation> ActionAttenuation;
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Camera")
 	TSubclassOf<UCameraShakeBase> FireCameraShake;

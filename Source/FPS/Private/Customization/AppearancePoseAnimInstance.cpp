@@ -49,6 +49,13 @@ public:
                     AppearanceGrip::BuildHandBasis(Source->GetRefSkeleton(), Target->GetRefSkeleton(), TEXT("hand_l"), LeftBasis);
             }
         }
+        // CopyPose maps every named bone, including bones skipped by the source
+        // LOD. Those component transforms may be left over from an earlier pose.
+        // Snapshot the evaluated set on the game thread; never read it in Evaluate.
+        SourceEvaluated.Init(false, SourceRefs.Num());
+        if (Pose->PoseSource)
+            for (const FBoneIndexType Bone : Pose->PoseSource->RequiredBones)
+                if (SourceEvaluated.IsValidIndex(Bone)) SourceEvaluated[Bone] = true;
         bSolveHands = bRetarget && Pose->bPreserveWeaponHandRelationship && bValidHandBasis &&
             Pose->PoseSource && !Pose->PoseSource->IsAnySimulatingPhysics() &&
             !Instance->GetSkelMeshComponent()->IsAnySimulatingPhysics();
@@ -64,6 +71,18 @@ public:
     virtual bool Evaluate(FPoseContext& Output) override
     {
         Copy.Evaluate_AnyThread(Output);
+        for (FCompactPoseBoneIndex Bone : Output.Pose.ForEachBoneIndex())
+        {
+            const int32 MeshBone = Output.Pose.GetBoneContainer().MakeMeshPoseIndex(Bone).GetInt();
+            if (!SourceIndices.IsValidIndex(MeshBone)) continue;
+            const int32 SourceBone = SourceIndices[MeshBone];
+            if (SourceEvaluated.IsValidIndex(SourceBone) && !SourceEvaluated[SourceBone])
+            {
+                // Rebuild omitted children locally from their moving parent rather
+                // than copying stale world/component positions (stretched gloves).
+                Output.Pose[Bone] = bRetarget ? SourceRefs[SourceBone] : TargetRefs[MeshBone];
+            }
+        }
         if (bRetarget)
             for (FCompactPoseBoneIndex Bone : Output.Pose.ForEachBoneIndex())
             {
@@ -119,6 +138,7 @@ private:
     FAnimNode_CopyPoseFromMesh Copy;
     TWeakObjectPtr<USkeletalMesh> CachedSource, CachedTarget;
     TArray<int32> SourceIndices;
+    TBitArray<> SourceEvaluated;
     TArray<FTransform> SourceRefs, TargetRefs;
     bool bRetarget = true;
     bool bValidHandBasis = false, bSolveHands = false;

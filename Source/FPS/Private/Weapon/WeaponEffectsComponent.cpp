@@ -8,6 +8,7 @@
 #include "Weapon/WeaponBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Tags/GameplayTags.h"
+#include "Sound/SoundAttenuation.h"
 
 UWeaponEffectsComponent::UWeaponEffectsComponent()
 {
@@ -42,7 +43,8 @@ void UWeaponEffectsComponent::PlayFireSound() const
 	if (!FireSound || !Weapon || GetNetMode() == NM_DedicatedServer
 		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife || !Weapon->GetMesh3P()) return;
 	// A single world-space emitter serves owner and observers alike.
-	UGameplayStatics::SpawnSoundAttached(FireSound, Weapon->GetMesh3P());
+	UGameplayStatics::SpawnSoundAttached(FireSound, Weapon->GetMesh3P(), NAME_None,
+		FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, FireAttenuation);
 }
 
 void UWeaponEffectsComponent::PlayEmptyClipSound()
@@ -68,5 +70,5 @@ void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 		NAME_None,
 		FVector::ZeroVector,
 		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset);
+		EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
 }
