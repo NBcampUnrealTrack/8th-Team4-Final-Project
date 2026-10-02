@@ -157,10 +157,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool TryPlayEmptyClipSound();
 
-	// 장착음 재생(서버 전용, 멀티캐스트). CombatComponent가 장착 사이클을 시작할 때 호출한다.
+	// 기존 WeaponBase.cpp 구현에 대응하는 선언. 재생 시점은 호출자가 결정한다.
 	void PlayEquipSound();
-
-	// 근접 공격음 재생. GA_MeleeAttack이 공격 승인 시 예측 클라이언트/서버 양쪽에서 호출한다.
 	void PlayMeleeAttackSound(bool bHeavyAttack);
 
 	// 발사 입력(InputTag.Ability.Primary)이 떼어졌을 때 컨트롤러가 호출한다. 탄창이 빈 상태에서

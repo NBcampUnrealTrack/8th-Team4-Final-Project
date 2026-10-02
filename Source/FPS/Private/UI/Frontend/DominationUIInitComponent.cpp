@@ -325,7 +325,7 @@ void UDominationUIInitComponent::UpdateSandstormWarning()
         || GameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded
         || GameState->GetSandstormState().Phase != EDominationSandstormPhase::Warning)
     {
-        ClearSandstormWarning();
+        ClearSandstormWarning(true);
         return;
     }
 
@@ -333,7 +333,7 @@ void UDominationUIInitComponent::UpdateSandstormWarning()
     const float Remaining = State.GetTimeRemaining(GameState->GetServerWorldTimeSeconds());
     if (Remaining <= 0.0f)
     {
-        ClearSandstormWarning();
+        ClearSandstormWarning(true);
         return;
     }
     if (SandstormWarningWidget && SandstormWarningWidget->GetClass() != Settings->WarningWidgetClass.Get())
@@ -357,7 +357,7 @@ void UDominationUIInitComponent::UpdateSandstormWarning()
         &ThisClass::UpdateSandstormWarning, FMath::Max(0.01f, NextChange), false);
 }
 
-void UDominationUIInitComponent::ClearSandstormWarning()
+void UDominationUIInitComponent::ClearSandstormWarning(const bool bPlayExit)
 {
     if (UWorld* World = GetWorld())
     {
@@ -365,7 +365,14 @@ void UDominationUIInitComponent::ClearSandstormWarning()
     }
     if (SandstormWarningWidget)
     {
-        SandstormWarningWidget->RemoveFromParent();
+        if (bPlayExit)
+        {
+            SandstormWarningWidget->PlayExitAndRemove();
+        }
+        else
+        {
+            SandstormWarningWidget->RemoveFromParent();
+        }
         SandstormWarningWidget = nullptr;
     }
 }

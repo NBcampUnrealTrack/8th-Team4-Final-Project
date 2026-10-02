@@ -1,18 +1,45 @@
 #include "UI/InGame/Domination/DominationClassPreviewStage.h"
 
+#include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "ContentStreaming.h"
+#include "Customization/AppearanceLocalPlayerSubsystem.h"
+#include "Customization/GameplayAppearanceComponent.h"
+#include "Customization/ReplicatedAppearance.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
+#include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
 
 namespace
 {
+	// Mutable 비동기 생성 완료를 0.1초 간격으로 최대 15초까지 기다린다.
+	constexpr float AppearancePollInterval = 0.1f;
+	constexpr int32 AppearanceMaxPolls = 150;
+
+	// 스트리밍 뷰 갱신 주기. 등록 유지 시간을 주기보다 길게 잡아 공백이 없게 한다.
+	constexpr float StreamingViewInterval = 1.0f;
+	constexpr float StreamingViewDuration = 1.5f;
+
+	FName ToAppearanceClassId(const EDominationCombatClass CombatClass)
+	{
+		switch (CombatClass)
+		{
+		case EDominationCombatClass::Ranger: return TEXT("Ranger");
+		case EDominationCombatClass::Trooper: return TEXT("Trooper");
+		case EDominationCombatClass::Vanguard: return TEXT("Vanguard");
+		default: return NAME_None;
+		}
+	}
+
 	// 레벨 조명이 프리뷰에 새지 않도록 Channel 1만 남긴다.
 	void ApplyPreviewLightingChannels(AActor* Actor)
 	{
@@ -30,6 +57,22 @@ namespace
 		}
 	}
 
+	void ForcePreviewAnimRefresh(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+
+		TArray<USkinnedMeshComponent*> Meshes;
+		Actor->GetComponents<USkinnedMeshComponent>(Meshes);
+
+		for (USkinnedMeshComponent* Mesh : Meshes)
+		{
+			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		}
+	}
+
 	// bAutoActive 다시 키기
 	void RestartEffect(UNiagaraComponent* Effect)
 	{
@@ -40,6 +83,35 @@ namespace
 
 		Effect->Deactivate();
 		Effect->Activate(/*bReset=*/true);
+	}
+
+	void CollectPawnWeapons(AShooterCharacter* Pawn, TArray<AWeaponBase*>& OutWeapons)
+	{
+		UCombatComponent* Combat = IsValid(Pawn) ? Pawn->GetCombatComponent() : nullptr;
+		if (!IsValid(Combat))
+		{
+			return;
+		}
+
+		// 화면에 보이지 않는 무기도 복제 차단과 정리를 위해 모두 수집
+		static const EWeaponSlot PreviewSlots[] = {
+			EWeaponSlot::Primary,
+			EWeaponSlot::Secondary,
+			EWeaponSlot::Melee };
+
+		for (const EWeaponSlot Slot : PreviewSlots)
+		{
+			if (AWeaponBase* Weapon = Combat->GetWeaponInSlot(Slot))
+			{
+				OutWeapons.AddUnique(Weapon);
+			}
+		}
+
+		// CurrentWeapon이 세 슬롯 어디에도 없는 경우
+		if (AWeaponBase* CurrentWeapon = Combat->GetCurrentWeapon())
+		{
+			OutWeapons.AddUnique(CurrentWeapon);
+		}
 	}
 }
 
@@ -92,11 +164,32 @@ void ADominationClassPreviewStage::BeginPlay()
 	// 클래스 변경/확정 VFX도 프리뷰 캡처 대상에 포함한다.
 	SceneCapture->ShowOnlyComponent(ChangeEffect);
 	SceneCapture->ShowOnlyComponent(LockInEffect);
+
+	// 카드 전환 때마다 Mutable 생성을 기다리지 않도록 세 클래스를 미리 만들어 둔다.
+	SpawnPreviewPawns();
+
+	KeepPreviewTexturesStreamed();
+	GetWorldTimerManager().SetTimer(
+		StreamingTimerHandle,
+		this,
+		&ThisClass::KeepPreviewTexturesStreamed,
+		StreamingViewInterval,
+		/*bLoop=*/true);
+}
+
+void ADominationClassPreviewStage::KeepPreviewTexturesStreamed()
+{
+	// SceneCapture는 스트리밍 뷰가 아니라 먼 스테이지의 텍스처가 최저 Mip에 머문다. 캡처 위치를 뷰로 알린다.
+	IStreamingManager::Get().AddViewLocation(
+		SceneCapture->GetComponentLocation(),
+		/*BoostFactor=*/1.0f,
+		/*bOverrideLocation=*/false,
+		StreamingViewDuration);
 }
 
 void ADominationClassPreviewStage::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	DestroyPreviewPawn();
+	DestroyPreviewPawns();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -108,10 +201,71 @@ void ADominationClassPreviewStage::SetPreviewClass(const EDominationCombatClass 
 		return;
 	}
 
-	DestroyPreviewPawn();
+	GetWorldTimerManager().ClearTimer(InspectTimerHandle);
 
-	CurrentPreviewClass = EDominationCombatClass::Unselected;
+	CurrentPreviewClass = CombatClass;
+	PreviewPawn = PreviewPawns.FindRef(CombatClass);
 
+	// 외형이 완성되기 전엔 캡처에서 빼 둔다. PollAppearanceApplied가 완성 시점에 띄운다.
+	if (PendingAppearanceClasses.Contains(CombatClass))
+	{
+		RegisterPreviewComponents();
+		return;
+	}
+
+	ShowCurrentPreview();
+}
+
+void ADominationClassPreviewStage::ShowCurrentPreview()
+{
+	RegisterPreviewComponents();
+
+	PlayChangeEffect();
+	// 첫 애님 업데이트에서 ShooterAnimInstance가 장착 몽타주로 덮어쓰므로 한 틱 뒤에 재생
+	GetWorldTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			ScheduleInspect(PlayPreviewMontage(DrawMontages));
+		}));
+}
+
+void ADominationClassPreviewStage::SpawnPreviewPawns()
+{
+	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
+	if (!IsValid(ClassSettings))
+	{
+		return;
+	}
+
+	for (const FDominationCombatClassDefinition& Definition : ClassSettings->CombatClasses)
+	{
+		AShooterCharacter* Pawn = SpawnPreviewPawn(Definition.CombatClass);
+		if (!IsValid(Pawn))
+		{
+			continue;
+		}
+
+		PreviewPawns.Add(Definition.CombatClass, Pawn);
+		if (RequestSavedAppearance(Definition.CombatClass, Pawn))
+		{
+			PendingAppearanceClasses.Add(Definition.CombatClass);
+		}
+	}
+
+	if (!PendingAppearanceClasses.IsEmpty())
+	{
+		AppearancePollsRemaining = AppearanceMaxPolls;
+		GetWorldTimerManager().SetTimer(
+			AppearanceTimerHandle,
+			this,
+			&ThisClass::PollAppearanceApplied,
+			AppearancePollInterval,
+			/*bLoop=*/true);
+	}
+}
+
+AShooterCharacter* ADominationClassPreviewStage::SpawnPreviewPawn(const EDominationCombatClass CombatClass)
+{
 	UWorld* World = GetWorld();
 	const UDominationClassSettings* ClassSettings = GetDefault<UDominationClassSettings>();
 	UClass* PawnClass = IsValid(ClassSettings)
@@ -120,53 +274,52 @@ void ADominationClassPreviewStage::SetPreviewClass(const EDominationCombatClass 
 
 	if (!IsValid(World) || PawnClass == nullptr)
 	{
-		return;
+		return nullptr;
 	}
 
 	const FTransform StageTransform = GetActorTransform();
 
 	// 프리뷰 Pawn이 네트워크에 복제되기 전에 설정할 수 있도록 Deferred Spawn한다.
-	PreviewPawn = World->SpawnActorDeferred<AShooterCharacter>(
+	AShooterCharacter* Pawn = World->SpawnActorDeferred<AShooterCharacter>(
 		PawnClass,
 		StageTransform,
 		/*Owner=*/nullptr,
 		/*Instigator=*/nullptr,
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-	if (!IsValid(PreviewPawn))
+	if (!IsValid(Pawn))
 	{
-		return;
+		return nullptr;
 	}
 
-	PreviewPawn->SetReplicates(false);
-	PreviewPawn->SetActorEnableCollision(false);
+	Pawn->SetReplicates(false);
+	Pawn->SetActorEnableCollision(false);
 
 	// BeginPlay를 실행
-	PreviewPawn->FinishSpawning(StageTransform);
+	Pawn->FinishSpawning(StageTransform);
 
 	// BeginPlay가 GravityScale에 배수를 곱하므로 그 뒤에 실행
 	// 컴포넌트를 Deactivate하지는 않는다. AnimBP가 멈춰 T-포즈로 떨어짐
-	if (UCharacterMovementComponent* Movement = PreviewPawn->GetCharacterMovement())
+	if (UCharacterMovementComponent* Movement = Pawn->GetCharacterMovement())
 	{
 		Movement->GravityScale = 0.0f;
 		Movement->SetMovementMode(MOVE_None);
 	}
 
-	CollectPreviewWeapons();
+	TArray<AWeaponBase*> Weapons;
+	CollectPawnWeapons(Pawn, Weapons);
 
 	// 무기는 Pawn의 bReplicates를 물려받지 않는 별개 액터다. 각자 끊어야 한다.
-	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
+	for (AWeaponBase* Weapon : Weapons)
 	{
-		if (AWeaponBase* Weapon = WeaponPtr.Get())
-		{
-			Weapon->SetReplicates(false);
-		}
+		Weapon->SetReplicates(false);
+		ApplyPreviewLightingChannels(Weapon);
+		PreviewWeapons.AddUnique(Weapon);
 	}
 
-	RegisterPreviewComponents();
+	ApplyPreviewLightingChannels(Pawn);
+	ForcePreviewAnimRefresh(Pawn);
 
-	CurrentPreviewClass = CombatClass;
-
-	PlayChangeEffect();
+	return Pawn;
 }
 
 void ADominationClassPreviewStage::PlayChangeEffect()
@@ -179,39 +332,113 @@ void ADominationClassPreviewStage::PlayLockInEffect()
 	RestartEffect(LockInEffect);
 }
 
-void ADominationClassPreviewStage::CollectPreviewWeapons()
+float ADominationClassPreviewStage::PlayPreviewMontage(
+	const TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>>& Montages) const
 {
-	PreviewWeapons.Reset();
+	const TObjectPtr<UAnimMontage>* Montage = Montages.Find(CurrentPreviewClass);
+	if (!Montage || !IsValid(*Montage) || !IsValid(PreviewPawn))
+	{
+		return 0.0f;
+	}
 
-	if (!IsValid(PreviewPawn))
+	return PreviewPawn->PlayAnimMontage(*Montage);
+}
+
+void ADominationClassPreviewStage::ScheduleInspect(const float MontageDuration)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !InspectMontages.Contains(CurrentPreviewClass))
 	{
 		return;
 	}
 
-	UCombatComponent* Combat = PreviewPawn->GetCombatComponent();
-	if (!IsValid(Combat))
+	// 재생 중인 몽타주가 끝난 뒤부터 재생해야함
+	const float Delay = MontageDuration
+		+ FMath::FRandRange(InspectDelayRange.X, InspectDelayRange.Y);
+
+	World->GetTimerManager().SetTimer(
+		InspectTimerHandle,
+		this,
+		&ThisClass::PlayInspect,
+		FMath::Max(Delay, 0.1f),
+		/*bLoop=*/false);
+}
+
+void ADominationClassPreviewStage::PlayInspect()
+{
+	ScheduleInspect(PlayPreviewMontage(InspectMontages));
+}
+
+bool ADominationClassPreviewStage::RequestSavedAppearance(
+	const EDominationCombatClass CombatClass, AShooterCharacter* Pawn)
+{
+	// 프리뷰 Pawn은 PlayerState가 없어 스스로 외형을 읽지 못해 로컬 저장본을 직접 넣음
+	const APlayerController* OwningPlayer = Cast<APlayerController>(GetOwner());
+	ULocalPlayer* LocalPlayer = IsValid(OwningPlayer) ? OwningPlayer->GetLocalPlayer() : nullptr;
+	UAppearanceLocalPlayerSubsystem* Storage = LocalPlayer
+		? LocalPlayer->GetSubsystem<UAppearanceLocalPlayerSubsystem>()
+		: nullptr;
+	
+	UGameplayAppearanceComponent* Appearance = Pawn->FindComponentByClass<UGameplayAppearanceComponent>();
+	if (!Storage || !IsValid(Appearance))
 	{
-		return;
+		return false;
 	}
 
-	// 화면에 보이지 않는 무기도 복제 차단과 정리를 위해 모두 수집
-	static const EWeaponSlot PreviewSlots[] = {
-		EWeaponSlot::Primary,
-		EWeaponSlot::Secondary,
-		EWeaponSlot::Melee };
-
-	for (const EWeaponSlot Slot : PreviewSlots)
+	FReplicatedAppearance Data;
+	Data.ClassId = ToAppearanceClassId(CombatClass);
+	if (Data.ClassId.IsNone()
+		|| Storage->LoadSavedAppearance(Data.ClassId, Data.Appearance) != ECustomizationLoadResult::Loaded)
 	{
-		if (AWeaponBase* Weapon = Combat->GetWeaponInSlot(Slot))
+		return false;
+	}
+	Data.Revision = 1;
+
+	Appearance->RequestAppearance(Data);
+	// 카탈로그 누락 등은 동기로 실패한다. 기다리지 않고 기본 외형으로 보여준다.
+	return Appearance->GetFailure().IsEmpty();
+}
+
+void ADominationClassPreviewStage::PollAppearanceApplied()
+{
+	const bool bTimedOut = --AppearancePollsRemaining <= 0;
+	bool bCurrentFinished = false;
+
+	for (auto It = PendingAppearanceClasses.CreateIterator(); It; ++It)
+	{
+		AShooterCharacter* Pawn = PreviewPawns.FindRef(*It);
+		const UGameplayAppearanceComponent* Appearance = IsValid(Pawn)
+			? Pawn->FindComponentByClass<UGameplayAppearanceComponent>()
+			: nullptr;
+		const bool bApplied = IsValid(Appearance) && Appearance->GetAppliedRevision() != 0;
+		const bool bFailed = !IsValid(Appearance) || !Appearance->GetFailure().IsEmpty();
+		if (!bApplied && !bFailed && !bTimedOut)
 		{
-			PreviewWeapons.AddUnique(Weapon);
+			continue;
 		}
+
+		if (bApplied)
+		{
+			// 생성된 메시가 새로 붙었다. 조명 채널을 다시 건다.
+			ApplyPreviewLightingChannels(Pawn);
+		}
+		else if (bFailed && IsValid(Appearance))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ClassPreview] Appearance failed: %s"), *Appearance->GetFailure());
+		}
+
+		bCurrentFinished |= *It == CurrentPreviewClass;
+		It.RemoveCurrent();
 	}
 
-	// CurrentWeapon이 세 슬롯 어디에도 없는 경우
-	if (AWeaponBase* CurrentWeapon = Combat->GetCurrentWeapon())
+	if (PendingAppearanceClasses.IsEmpty())
 	{
-		PreviewWeapons.AddUnique(CurrentWeapon);
+		GetWorldTimerManager().ClearTimer(AppearanceTimerHandle);
+	}
+
+	if (bCurrentFinished)
+	{
+		ShowCurrentPreview();
 	}
 }
 
@@ -219,15 +446,16 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 {
 	SceneCapture->ClearShowOnlyComponents();
 
-	if (IsValid(PreviewPawn))
+	// 다른 클래스 Pawn과 외형 생성 중인 Pawn은 ShowOnly에 넣지 않아 캡처되지 않는다.
+	if (IsValid(PreviewPawn) && !PendingAppearanceClasses.Contains(CurrentPreviewClass))
 	{
 		SceneCapture->ShowOnlyActorComponents(PreviewPawn);
 		ApplyPreviewLightingChannels(PreviewPawn);
-	}
+		ForcePreviewAnimRefresh(PreviewPawn);
 
-	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
-	{
-		if (AWeaponBase* Weapon = WeaponPtr.Get())
+		TArray<AWeaponBase*> Weapons;
+		CollectPawnWeapons(PreviewPawn, Weapons);
+		for (AWeaponBase* Weapon : Weapons)
 		{
 			SceneCapture->ShowOnlyActorComponents(Weapon);
 			ApplyPreviewLightingChannels(Weapon);
@@ -244,8 +472,14 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 	}
 }
 
-void ADominationClassPreviewStage::DestroyPreviewPawn()
+void ADominationClassPreviewStage::DestroyPreviewPawns()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InspectTimerHandle);
+		World->GetTimerManager().ClearTimer(AppearanceTimerHandle);
+	}
+
 	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
 	{
 		if (AWeaponBase* Weapon = WeaponPtr.Get())
@@ -255,11 +489,16 @@ void ADominationClassPreviewStage::DestroyPreviewPawn()
 	}
 	PreviewWeapons.Reset();
 
-	if (IsValid(PreviewPawn))
+	for (const TPair<EDominationCombatClass, TObjectPtr<AShooterCharacter>>& Pair : PreviewPawns)
 	{
-		PreviewPawn->Destroy();
+		if (IsValid(Pair.Value))
+		{
+			Pair.Value->Destroy();
+		}
 	}
+	PreviewPawns.Reset();
 	PreviewPawn = nullptr;
+	PendingAppearanceClasses.Reset();
 }
 
 UMaterialInstanceDynamic* ADominationClassPreviewStage::GetPreviewMaterial() const

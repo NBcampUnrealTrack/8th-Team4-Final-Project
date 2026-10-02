@@ -34,14 +34,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_Bar;
-
 	// 피격 조각
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_DamageBurst;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	FShooterVitalBarSettings Settings;
-
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	FShooterVitalBarBurstSettings BurstSettings;
 

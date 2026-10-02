@@ -93,6 +93,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Loading")
 	TArray<FText> LoadingTips;
 
+	// 로딩 컨텍스트에 썸네일이 없을 때 쓰는 배경 (트레이닝 등 Room 을 거치지 않는 경로)
+	UPROPERTY(Config, EditAnywhere, Category = "Loading")
+	TSoftObjectPtr<UTexture2D> LoadingBackground;
+
 	// travel 을 넘어 화면을 덮는 전환 위젯
 	UPROPERTY(Config, EditAnywhere, Category = "Transition")
 	TSoftClassPtr<UScreenTransitionWidget> ScreenTransitionWidgetClass;

@@ -13,7 +13,11 @@
 #include "Combat/CombatComponent.h"
 #include "Combat/LagCompensationComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/DominationSandstormComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueVitalAttributeSet.h"
@@ -23,10 +27,14 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Perception/AISense_Hearing.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Sound/SoundConcurrency.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -92,6 +100,7 @@ void AShooterCharacter::BeginPlay()
 	}
 
 	OnCharacterMovementUpdated.AddDynamic(this, &AShooterCharacter::HandleCharacterMovementUpdated);
+	RefreshTeamOutline();
 
 	if (HasAuthority())
 	{
@@ -179,13 +188,42 @@ void AShooterCharacter::OnRep_PlayerState()
 	}
 }
 
-void AShooterCharacter::RefreshTeamOutline()
+void AShooterCharacter::RefreshTeamOutline(const bool bForceRefresh)
 {
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
+	const UGameInstance* GameInstance = GetGameInstance();
+	const APlayerController* ViewerController = IsValid(GameInstance)
+		? GameInstance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
+	const ABaseTeamPlayerState* ViewerPlayerState = IsValid(ViewerController) && ViewerController->IsLocalController()
+		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const ABaseTeamPlayerState* OwnerPlayerState = GetPlayerState<ABaseTeamPlayerState>();
+	bool bOutlineVisible = IsValid(ViewerPlayerState) && IsValid(OwnerPlayerState)
+		&& ViewerPlayerState != OwnerPlayerState
+		&& ViewerPlayerState->GetTeam() != EGameTeam::None
+		&& OwnerPlayerState->GetTeam() != EGameTeam::None;
+
+	int32 StencilValue = TeamOutlineStencilAlly;
+	if (bOutlineVisible && ViewerPlayerState->GetTeam() != OwnerPlayerState->GetTeam())
+	{
+		const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
+		const bool bRevealed = IsValid(AbilitySystem)
+			&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_Revealed);
+		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
+
+		const UDominationSandstormComponent* Sandstorm = ViewerController->FindComponentByClass<UDominationSandstormComponent>();
+		bOutlineVisible = !IsValid(Sandstorm) || Sandstorm->IsEnemyOutlineInRange(*this);
+	}
+
+	const int32 OutlineState = bOutlineVisible ? StencilValue : 0;
+	if (!bForceRefresh && CachedTeamOutlineState == OutlineState)
+	{
+		return;
+	}
 	USkeletalMeshComponent* Mesh3P = GetMesh();
 	if (!ensure(IsValid(Mesh3P)))
 	{
@@ -195,48 +233,22 @@ void AShooterCharacter::RefreshTeamOutline()
 	TArray<USceneComponent*> OutlineTargets;
 	Mesh3P->GetChildrenComponents(true, OutlineTargets);
 	OutlineTargets.Add(Mesh3P);
-
-	const UWorld* World = GetWorld();
-	const APlayerController* ViewerController = IsValid(World) ? World->GetFirstPlayerController() : nullptr;
-	const ABaseTeamPlayerState* ViewerPlayerState = IsValid(ViewerController)
-		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
-		: nullptr;
-	const ABaseTeamPlayerState* OwnerPlayerState = GetPlayerState<ABaseTeamPlayerState>();
-
-	if (!IsValid(ViewerPlayerState)
-		|| !IsValid(OwnerPlayerState)
-		|| ViewerPlayerState == OwnerPlayerState
-		|| ViewerPlayerState->GetTeam() == EGameTeam::None
-		|| OwnerPlayerState->GetTeam() == EGameTeam::None)
-	{
-		for (USceneComponent* Target : OutlineTargets)
-		{
-			if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
-			{
-				Primitive->SetRenderCustomDepth(false);
-			}
-		}
-		return;
-	}
-
-	int32 StencilValue = TeamOutlineStencilAlly;
-	if (ViewerPlayerState->GetTeam() != OwnerPlayerState->GetTeam())
-	{
-		const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent();
-		const bool bRevealed = IsValid(AbilitySystem)
-			&& AbilitySystem->HasMatchingGameplayTag(RogueTags::State_Combat_Revealed);
-
-		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
-	}
-
 	for (USceneComponent* Target : OutlineTargets)
 	{
 		if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Target))
 		{
-			Primitive->SetCustomDepthStencilValue(StencilValue);
-			Primitive->SetRenderCustomDepth(!Primitive->ComponentHasTag(TEXT("AppearanceNoOutline")));
+			const bool bRenderOutline = bOutlineVisible && !Primitive->ComponentHasTag(TEXT("AppearanceNoOutline"));
+			if (Primitive->CustomDepthStencilValue != StencilValue)
+			{
+				Primitive->SetCustomDepthStencilValue(StencilValue);
+			}
+			if (Primitive->bRenderCustomDepth != bRenderOutline)
+			{
+				Primitive->SetRenderCustomDepth(bRenderOutline);
+			}
 		}
 	}
+	CachedTeamOutlineState = OutlineState;
 }
 
 void AShooterCharacter::RefreshTeamOutlineForAll(UWorld* World)
@@ -404,7 +416,38 @@ void AShooterCharacter::UpdateSprintBlocked(const float Stamina)
 {
 	if (UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(GetCharacterMovement()))
 	{
+		if (Stamina <= 0.f && ShooterMovement->IsSprinting() && IsLocallyControlled())
+		{
+			PlayExhaustedBreathSound();
+		}
+
 		ShooterMovement->SetSprintBlocked(Stamina <= 0.f);
+	}
+}
+
+void AShooterCharacter::PlayExhaustedBreathSound() const
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const ADominationPlayerState* DominationState = GetPlayerState<ADominationPlayerState>();
+	const EDominationCombatClass CombatClass = IsValid(DominationState)
+		? DominationState->GetCombatClass()
+		: EDominationCombatClass::Unselected;
+
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolveExhaustedBreathSoundPool(CombatClass);
+	if (Pool.IsEmpty())
+	{
+		return;
+	}
+
+	if (USoundBase* Sound = Pool[FMath::RandHelper(Pool.Num())].LoadSynchronous())
+	{
+		UGameplayStatics::PlaySound2D(this, Sound, 1.f, 1.f, 0.f,
+			AudioSettings->ExhaustedBreathConcurrency.LoadSynchronous());
 	}
 }
 

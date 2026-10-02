@@ -9,6 +9,7 @@
 
 class AShooterCharacter;
 class AWeaponBase;
+class UAnimMontage;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UNiagaraComponent;
@@ -47,16 +48,34 @@ protected:
 	// 끄면 클래스가 바뀔 때만 한 번 캡처한다. 대기 애니메이션은 멈춘 것처럼 보인다.
 	UPROPERTY(EditDefaultsOnly, Category = "Preview")
 	bool bCaptureEveryFrame = true;
+
+	// 클래스가 바뀔 때 한 번 재생
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>> DrawMontages;
+	// 대기 중 간간이 재생
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>> InspectMontages;
+	// 이전 몽타주가 끝난 뒤 다음 Inspect까지 대기(초)
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	FVector2D InspectDelayRange = FVector2D(4.0f, 8.0f);
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> RenderTarget;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> PreviewMID;
 
 private:
-	void CollectPreviewWeapons();
+	void SpawnPreviewPawns();
+	AShooterCharacter* SpawnPreviewPawn(EDominationCombatClass CombatClass);
+	bool RequestSavedAppearance(EDominationCombatClass CombatClass, AShooterCharacter* Pawn);
+	void PollAppearanceApplied();
+	void ShowCurrentPreview();
 	void RegisterPreviewComponents();
-	void DestroyPreviewPawn();
+	void DestroyPreviewPawns();
+	void KeepPreviewTexturesStreamed();
 	void PlayChangeEffect();
+	float PlayPreviewMontage(const TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>>& Montages) const;
+	void ScheduleInspect(float MontageDuration);
+	void PlayInspect();
 
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<USceneCaptureComponent2D> SceneCapture;
@@ -66,9 +85,20 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<UNiagaraComponent> LockInEffect;
 
+	// 클래스마다 한 번만 스폰해 두고 전환은 캡처 대상만 바꾼다.
+	UPROPERTY(Transient)
+	TMap<EDominationCombatClass, TObjectPtr<AShooterCharacter>> PreviewPawns;
+	// 지금 보여주는 클래스의 Pawn
 	UPROPERTY(Transient)
 	TObjectPtr<AShooterCharacter> PreviewPawn;
+	// 정리용. 모든 프리뷰 Pawn의 무기
 	TArray<TWeakObjectPtr<AWeaponBase>> PreviewWeapons;
+	// 외형 생성이 끝나지 않아 아직 캡처하지 않는 클래스
+	TSet<EDominationCombatClass> PendingAppearanceClasses;
+	FTimerHandle InspectTimerHandle;
+	FTimerHandle AppearanceTimerHandle;
+	FTimerHandle StreamingTimerHandle;
+	int32 AppearancePollsRemaining = 0;
 
 	EDominationCombatClass CurrentPreviewClass = EDominationCombatClass::Unselected;
 };

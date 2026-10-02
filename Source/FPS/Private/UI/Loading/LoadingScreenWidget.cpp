@@ -53,7 +53,10 @@ void ULoadingScreenWidget::ApplyLoadingContext(const FShooterLoadingContext& InC
 		Img_ModeRule->SetVisibility(ModeVisibility);
 	}
 
-	RequestPreviewTexture(InContext.Thumbnail);
+	const TSoftObjectPtr<UTexture2D>& Background = InContext.Thumbnail.IsNull()
+		? GetDefault<UShooterUISettings>()->LoadingBackground
+		: InContext.Thumbnail;
+	RequestPreviewTexture(Background);
 }
 
 void ULoadingScreenWidget::RequestPreviewTexture(const TSoftObjectPtr<UTexture2D>& InThumbnail)
@@ -68,6 +71,14 @@ void ULoadingScreenWidget::RequestPreviewTexture(const TSoftObjectPtr<UTexture2D
 	{
 		PreviewHandle->CancelHandle();
 		PreviewHandle.Reset();
+	}
+
+	// 이미 메모리에 있으면 콜백을 기다리지 않는다
+	if (UTexture2D* LoadedTexture = InThumbnail.Get())
+	{
+		PendingThumbnail.Reset();
+		ApplyPreviewTexture(LoadedTexture);
+		return;
 	}
 
 	const FSoftObjectPath RequestedThumbnail = InThumbnail.ToSoftObjectPath();

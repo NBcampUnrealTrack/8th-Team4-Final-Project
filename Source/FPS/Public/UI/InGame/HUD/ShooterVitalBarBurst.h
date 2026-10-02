@@ -13,19 +13,15 @@ struct FShooterVitalBarBurstSettings
 	// 조각 칸 (HP 값)
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar|Burst", meta = (ClampMin = "1.0"))
 	float CellValue = 5.f;
-
 	// 조각 하나 수명
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar|Burst", meta = (ClampMin = "0.01"))
 	float ChunkSeconds = 0.18f;
-
 	// 이웃 조각 시간차
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar|Burst", meta = (ClampMin = "0.0"))
 	float StaggerSeconds = 0.065f;
-
 	// 피해 한 번의 시간차 합 상한
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar|Burst", meta = (ClampMin = "0.0"))
 	float MaxSpreadSeconds = 0.3f;
-
 	// 조각 이미지 세로 배율
 	UPROPERTY(EditDefaultsOnly, Category = "VitalBar|Burst", meta = (ClampMin = "1.0"))
 	float QuadHeightScale = 4.f;

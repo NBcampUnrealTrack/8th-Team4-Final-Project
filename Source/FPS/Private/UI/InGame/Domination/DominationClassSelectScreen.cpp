@@ -552,6 +552,8 @@ void UDominationClassSelectScreen::SpawnPreviewStage()
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	// 스테이지가 로컬 커스터마이징 저장본을 읽을 LocalPlayer
+	SpawnParams.Owner = GetOwningPlayer();
 
 	PreviewStage = World->SpawnActor<ADominationClassPreviewStage>(
 		PreviewStageClass,
