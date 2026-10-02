@@ -63,6 +63,17 @@ void ADominationZoneWall::BeginPlay()
 		World->GameStateSetEvent.AddUObject(this, &ThisClass::HandleGameStateSet);
 	}
 	RefreshFromCurrentGameState();
+
+	// 반영되지 않는 경우를 대비해 BeginPlay 이후 여러 시점에 현재 상태를 메시에 재적용
+	for (const float Delay : { 0.1f, 1.0f, 3.0f })
+	{
+		FTimerHandle ReapplyTimer;
+		GetWorldTimerManager().SetTimer(ReapplyTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			WallMesh->SetHiddenInGame(!bWallActive);
+			WallMesh->SetRelativeScale3D(bWallActive ? WallVisibleScale : FVector::ZeroVector);
+		}), Delay, false);
+	}
 }
 
 void ADominationZoneWall::EndPlay(const EEndPlayReason::Type EndPlayReason)
