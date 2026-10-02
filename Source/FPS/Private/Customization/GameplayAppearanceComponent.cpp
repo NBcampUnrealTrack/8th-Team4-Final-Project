@@ -3,10 +3,12 @@
 #include "Customization/CustomizationStudioActor.h"
 #include "Customization/AppearanceParameters.h"
 #include "Customization/AppearancePoseAnimInstance.h"
+#include "Customization/AppearanceBoneDependencyComponent.h"
 #include "Character/ShooterCharacter.h"
 #include "Player/ShooterPlayerState.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/LODSyncComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "MuCO/CustomizableObject.h"
 #include "MuCO/CustomizableObjectInstance.h"
@@ -15,6 +17,13 @@
 #include "GroomAsset.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
+#include "Combat/RogueDeathPresentation.h"
+#include "Weapon/WeaponBase.h"
+
+USkeletalMeshComponent* UGameplayAppearanceComponent::GetReadyBody() const
+{
+    return AppliedRevision && IsValid(Body) && Body->GetSkeletalMeshAsset() ? Body.Get() : nullptr;
+}
 
 namespace
 {
@@ -69,7 +78,36 @@ FName UGameplayAppearanceComponent::ResolveClassId() const
 void UGameplayAppearanceComponent::BeginPlay()
 {
     Super::BeginPlay();
+    InitializeAuthoredBoneDependencies();
     RefreshFromPlayerState();
+}
+
+void UGameplayAppearanceComponent::InitializeAuthoredBoneDependencies()
+{
+    if (GetNetMode() == NM_DedicatedServer) return;
+    auto* Character = Cast<AShooterCharacter>(GetOwner());
+    auto* Driver = Character ? Character->GetMesh() : nullptr;
+    if (!Driver) return;
+
+    TArray<USkeletalMeshComponent*> Parts;
+    TArray<USkeletalMeshComponent*> Followers;
+    Character->GetComponents(Parts);
+    for (auto* Part : Parts)
+    {
+        if (Part == Driver || Part == Character->GetMesh1P_Implementation()
+            || Part->ComponentHasTag(TEXT("FirstPersonAppearance"))) continue;
+        if (Part->GetSkeletalMeshAsset() && Part->LeaderPoseComponent.Get() == Driver)
+            Followers.Add(Part);
+    }
+    if (Followers.IsEmpty()) return;
+
+    // Low may reduce the body's evaluated bones while authored clothing still
+    // renders LOD0. Protect the default appearance too, before any replicated
+    // customization arrives. Keep its pose ownership and geometry LOD unchanged.
+    DriverBoneDependency = NewObject<UAppearanceBoneDependencyComponent>(Character, TEXT("AppearanceDriverBoneDependency"));
+    Character->AddInstanceComponent(DriverBoneDependency);
+    DriverBoneDependency->RegisterComponent();
+    DriverBoneDependency->Configure(Driver, Followers);
 }
 
 void UGameplayAppearanceComponent::RefreshFromPlayerState()
@@ -101,7 +139,9 @@ void UGameplayAppearanceComponent::EnsureVisualComponents()
     TArray<USkeletalMeshComponent*> Meshes;
     Character->GetComponents(Meshes);
     for (auto* Mesh : Meshes)
-        if (Mesh != Character->GetMesh1P_Implementation() && !Mesh->ComponentHasTag(TEXT("FirstPersonAppearance"))) AuthoredVisuals.Add(Mesh);
+        if (Mesh != Character->GetMesh1P_Implementation()
+            && !Mesh->IsA<UAppearanceBoneDependencyComponent>()
+            && !Mesh->ComponentHasTag(TEXT("FirstPersonAppearance"))) AuthoredVisuals.Add(Mesh);
     TArray<UGroomComponent*> OldGrooms;
     Character->GetComponents(OldGrooms);
     for (auto* Groom : OldGrooms) AuthoredVisuals.Add(Groom);
@@ -141,6 +181,63 @@ void UGameplayAppearanceComponent::EnsureVisualComponents()
         Groom->RegisterComponent();
         Grooms.Add(Groom);
     }
+}
+
+void UGameplayAppearanceComponent::RefreshLODSynchronization()
+{
+    auto* Character = CastChecked<AShooterCharacter>(GetOwner());
+    auto* Driver = Character->GetMesh();
+    auto* Sync = Character->FindComponentByClass<ULODSyncComponent>();
+    if (!Sync)
+    {
+        Sync = NewObject<ULODSyncComponent>(Character, TEXT("AppearanceLODSync"));
+        Character->AddInstanceComponent(Sync);
+        Sync->RegisterComponent();
+    }
+    // The original MetaHuman components no longer render after customization.
+    // Retain their authored mappings but let the generated visible parts drive LOD.
+    for (auto& Entry : Sync->ComponentsToSync)
+        if (Entry.SyncOption == ESyncOption::Drive) Entry.SyncOption = ESyncOption::Passive;
+    auto Register = [&](FName Name, ESyncOption Option, const FLODMappingData* Mapping)
+    {
+        Sync->ComponentsToSync.RemoveAll([Name](const FComponentSync& Entry) { return Entry.Name == Name; });
+        Sync->ComponentsToSync.Emplace(Name, Option);
+        if (Mapping) Sync->CustomLODMapping.Add(Name, *Mapping);
+        else Sync->CustomLODMapping.Remove(Name);
+    };
+    // MetaHuman face has eight LODs and standard body has four. One-LOD
+    // generated parts clamp automatically. Preserve the authored body mapping.
+    FLODMappingData BodyMap;
+    BodyMap.Mapping = {0, 0, 1, 1, 2, 2, 3, 3};
+    if (const auto* Existing = Sync->CustomLODMapping.Find(Driver->GetFName())) BodyMap = *Existing;
+    else if (const auto* AuthoredBodyMap = Sync->CustomLODMapping.Find(TEXT("Body"))) BodyMap = *AuthoredBodyMap;
+    Register(Driver->GetFName(), ESyncOption::Passive, &BodyMap);
+    Register(Body->GetFName(), ESyncOption::Drive, &BodyMap);
+    Register(Outfit->GetFName(), ESyncOption::Passive, &BodyMap);
+    Register(BindingSurface->GetFName(), ESyncOption::Passive, nullptr);
+    Register(Face->GetFName(), ESyncOption::Drive, nullptr);
+    for (UGroomComponent* Groom : Grooms)
+    {
+        FLODMappingData GroomMap;
+        const auto* Existing = Sync->CustomLODMapping.Find(Groom->ComponentTags[0]);
+        if (Existing) GroomMap = *Existing;
+        Register(Groom->GetFName(), ESyncOption::Passive, Existing ? &GroomMap : nullptr);
+    }
+    Sync->RefreshSyncComponents();
+    Sync->UpdateLOD();
+    auto MakeDependency = [&](FName Name)
+    {
+        auto* Component = NewObject<UAppearanceBoneDependencyComponent>(Character, Name);
+        Character->AddInstanceComponent(Component);
+        Component->RegisterComponent();
+        return Component;
+    };
+    if (!DriverBoneDependency) DriverBoneDependency = MakeDependency(TEXT("AppearanceDriverBoneDependency"));
+    if (!BodyBoneDependency) BodyBoneDependency = MakeDependency(TEXT("AppearanceBodyBoneDependency"));
+    // Outfit may have only LOD0 while the body has four LODs. Request its bones
+    // without locking either geometry or the face/grooms to LOD0.
+    DriverBoneDependency->Configure(Driver, {Body, Outfit});
+    BodyBoneDependency->Configure(Body, {Outfit});
 }
 
 void UGameplayAppearanceComponent::StartUpdate()
@@ -216,6 +313,8 @@ void UGameplayAppearanceComponent::StartUpdate()
             for (int32 Slot = 0; Slot < Materials.Num(); ++Slot) Targets[Index]->SetMaterial(Slot, Materials[Slot]);
         }
         FollowPose(Self->Body, Driver);
+        if (auto* Pose = Cast<UAppearancePoseAnimInstance>(Self->Body->GetAnimInstance()))
+            Pose->bPreserveWeaponHandRelationship = true;
         FollowPose(Self->Outfit, Self->Body, false);
         Self->BindingSurface->SetSkeletalMesh(SourceFace);
         // Run the selected original face's post-process once, then copy the evaluated
@@ -261,10 +360,15 @@ void UGameplayAppearanceComponent::StartUpdate()
             Authored->ComponentTags.AddUnique(TEXT("AppearanceNoOutline"));
             Authored->SetRenderCustomDepth(false);
         }
+        Self->RefreshLODSynchronization();
         for (auto* Target : Targets) Target->SetVisibility(true);
         Self->Live = Self->Pending; Self->Pending = nullptr;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
+        if (AWeaponBase* Weapon = Character->GetCurrentWeapon_Implementation())
+            Weapon->RefreshThirdPersonAttachment();
         Self->SetComponentTickEnabled(true);
+        // An asynchronous Mutable update can finish after the character has died.
+        RogueDeathPresentation::RefreshRagdollFollowers(*Character);
         Character->RefreshTeamOutline();
     });
     Pending->UpdateSkeletalMeshAsyncResult(Callback, true, true);

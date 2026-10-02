@@ -1,6 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
+#include "Customization/GameplayAppearanceComponent.h"
+#include "Customization/AppearanceGrip.h"
+#include "Engine/SkeletalMesh.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Combat/CombatComponent.h"
@@ -70,6 +73,7 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
+	DOREPLIFETIME(AWeaponBase, EffectiveReloadDuration);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
 	DOREPLIFETIME(AWeaponBase, bInfiniteAmmo);
 }
@@ -86,7 +90,9 @@ void AWeaponBase::BeginPlay()
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
 	EffectiveMagazineSize = MagazineSize;
-	EffectiveReloadDuration = ReloadDuration;
+	// Initial replication can precede BeginPlay on observers. Do not replace the
+	// server's duration with the weapon BP's fallback (notably 1.4s for pistols).
+	if (HasAuthority()) EffectiveReloadDuration = ReloadDuration;
 	EffectivePelletCount = PelletCountPerShot;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
@@ -217,6 +223,22 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	}
 
 	return true;
+}
+
+void AWeaponBase::PlayEquipSound()
+{
+	if (Effects)
+	{
+		Effects->PlayEquipSound();
+	}
+}
+
+void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
+{
+	if (Effects)
+	{
+		Effects->PlayMeleeAttackSound(bHeavyAttack);
+	}
 }
 
 void AWeaponBase::NotifyPrimaryInputReleased()
@@ -450,7 +472,6 @@ void AWeaponBase::AttachToOwnerMeshes() const
 	}
 
 	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
-	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 
 	if (IsValid(CharacterMesh1P) && IsValid(Mesh1P))
 	{
@@ -462,8 +483,43 @@ void AWeaponBase::AttachToOwnerMeshes() const
 		Mesh1P->SetRelativeRotation(GripOffsetRotation1P);
 	}
 
+    RefreshThirdPersonAttachment();
+}
+
+void AWeaponBase::RefreshThirdPersonAttachment() const
+{
+    AActor* OwnerActor = GetOwner();
+    if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass())) return;
+    USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
+        // A missing socket otherwise resolves to the mesh origin (the feet).
+        // Hide this presentation until the correct mesh/socket is available.
+        if (!CharacterMesh3P->DoesSocketExist(GripSocketName3P))
+        {
+            Mesh3P->SetVisibility(false, true);
+            return;
+        }
+        Mesh3P->SetVisibility(!IsHidden(), true);
+        if (const auto* Appearance = OwnerActor->FindComponentByClass<UGameplayAppearanceComponent>())
+        {
+            USkeletalMeshComponent* Body = Appearance->GetReadyBody();
+            FTransform Basis;
+            const FName GripBone = CharacterMesh3P->GetSocketBoneName(GripSocketName3P);
+            if (Body && CharacterMesh3P->GetSkeletalMeshAsset() &&
+                CharacterMesh3P->DoesSocketExist(GripSocketName3P) &&
+                AppearanceGrip::BuildGripBoneBasis(CharacterMesh3P->GetSkeletalMeshAsset()->GetRefSkeleton(),
+                    Body->GetSkeletalMeshAsset()->GetRefSkeleton(), GripBone, Basis))
+            {
+                const FTransform Relative = FTransform(GripOffsetRotation3P, GripOffsetLocation3P) *
+                    CharacterMesh3P->GetSocketTransform(GripSocketName3P, RTS_ParentBoneSpace) * Basis;
+                Mesh3P->AttachToComponent(Body, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripBone);
+                Mesh3P->SetRelativeLocationAndRotation(Relative.GetLocation(), Relative.GetRotation());
+                Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+                Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+                return;
+            }
+        }
 		Mesh3P->AttachToComponent(
 			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
 
@@ -481,7 +537,7 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	return FireMelee(bHeavyAttack);
 }
 
-bool AWeaponBase::FireMelee(bool bHeavyAttack)
+bool AWeaponBase::FireMelee(bool bHeavyAttack, float AnimationRecoverySeconds)
 {
 	// ClientFireServerTime을 0으로 넘기면 FLagCompensationRewindScope가 아예 생성되지 않아
 	// (LagCompensationRewindScope.cpp의 <= 0.0f 가드) 부위별 정밀 히트박스가 계속 NoCollision
@@ -490,7 +546,13 @@ bool AWeaponBase::FireMelee(bool bHeavyAttack)
 	// 없으므로 현재 서버 시간을 넘겨 "지금 시점"으로 리와인드시켜 정밀 히트박스를 활성화한다.
 	const UWorld* World = GetWorld();
 	const float CurrentServerTime = World ? World->GetTimeSeconds() : 0.0f;
-	return FireInternal(bHeavyAttack, CurrentServerTime);
+	if (!FireInternal(bHeavyAttack, CurrentServerTime)) return false;
+	// Shared by light/heavy attacks, including authority without an animation tick.
+	if (FMath::IsFinite(AnimationRecoverySeconds))
+	{
+		LastFireInterval = FMath::Max(LastFireInterval, AnimationRecoverySeconds);
+	}
+	return true;
 }
 
 bool AWeaponBase::FireRanged(float ClientFireServerTime)
@@ -634,24 +696,32 @@ void AWeaponBase::PlayFireEffects(
 
 void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscanImpactEffectData>& ImpactEffects)
 {
+	// One shot may carry many shotgun pellet impacts; audio is not a per-impact effect.
+	if (!ImpactEffects.IsEmpty())
+	{
+		if (Effects) Effects->PlayFireSound();
+	}
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
 	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
 
-	// The predicting owner and authority play rifle recoil through the ability.
+	// The predicting owner and authority play rifle/knife animation through the ability.
 	// Simulated observers receive fire effects, but do not execute that ability.
-	// Shotgun/sniper character actions already have their own presentation relay.
+	// Sniper's gameplay-event relay is owner-local; remote proxies also need the
+	// character action, not just muzzle/impact effects, to operate the bolt.
+	const bool bKnifeAttack = GetWeaponTag() == RogueTags::Weapon_Type_Knife;
+	const bool bSniperAttack = GetWeaponTag() == RogueTags::Weapon_Type_Sniper;
 	if (OwningPawn && OwningPawn->GetLocalRole() == ROLE_SimulatedProxy
-		&& GetWeaponTag() == RogueTags::Weapon_Type_Rifle)
+		&& (bKnifeAttack || bSniperAttack || GetWeaponTag() == RogueTags::Weapon_Type_Rifle))
 	{
 		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
 		UShooterAnimInstance* Anim = Character && Character->GetMesh()
 			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
 		const ADominationPlayerState* State = Character ? Character->GetPlayerState<ADominationPlayerState>() : nullptr;
-		if (Anim && State && State->GetCombatClass() == EDominationCombatClass::Trooper
+		if (Anim && (bKnifeAttack || bSniperAttack || (State && State->GetCombatClass() == EDominationCombatClass::Trooper))
 			&& Character->GetCombatComponent()
 			&& Character->GetCombatComponent()->GetCurrentWeapon() == this)
 		{
-			Anim->PlayFireMontageForCurrentWeapon();
+			Anim->PlayFireMontageForCurrentWeapon(true);
 		}
 	}
 

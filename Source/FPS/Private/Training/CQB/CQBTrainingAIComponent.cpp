@@ -250,6 +250,14 @@ void UCQBTrainingAIComponent::PrepareForDeathCleanup(const float CorpseLifetimeS
     Character->GetComponents(CharacterComponents);
     for (UActorComponent* Component : CharacterComponents)
     {
+        // The corpse still needs its face, groom and other body-attached visual
+        // followers to consume the ragdoll pose. Stopping these freezes hair in
+        // the pre-death pose even though the body continues simulating physics.
+        const USceneComponent* SceneComponent = Cast<USceneComponent>(Component);
+        if (BodyMesh && SceneComponent && SceneComponent->IsAttachedTo(BodyMesh))
+        {
+            continue;
+        }
         if (IsValid(Component) && Component != BodyMesh)
         {
             Component->SetComponentTickEnabled(false);

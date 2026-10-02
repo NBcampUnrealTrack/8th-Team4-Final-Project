@@ -32,6 +32,8 @@ class FPS_API AWeaponBase : public AActor
 	GENERATED_BODY()
 
 public:
+    // Rebind only the third-person presentation after an asynchronous appearance update.
+    void RefreshThirdPersonAttachment() const;
 	AWeaponBase();
 
 	virtual void Tick(float DeltaTime) override;
@@ -48,7 +50,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
 
-	bool FireMelee(bool bHeavyAttack = false);
+	bool FireMelee(bool bHeavyAttack = false, float AnimationRecoverySeconds = 0.f);
 	bool FireRanged(float ClientFireServerTime);
 
 	// 훈련장처럼 탄약 소모가 필요 없는 런타임에서만 켠다.
@@ -154,6 +156,12 @@ public:
 	// 재장전 여부는 호출부(GA_RangedAttack)가 IsEmptyReloadArmed()로 판단한다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool TryPlayEmptyClipSound();
+
+	// 장착음 재생(서버 전용, 멀티캐스트). CombatComponent가 장착 사이클을 시작할 때 호출한다.
+	void PlayEquipSound();
+
+	// 근접 공격음 재생. GA_MeleeAttack이 공격 승인 시 예측 클라이언트/서버 양쪽에서 호출한다.
+	void PlayMeleeAttackSound(bool bHeavyAttack);
 
 	// 발사 입력(InputTag.Ability.Primary)이 떼어졌을 때 컨트롤러가 호출한다. 탄창이 빈 상태에서
 	// 클릭음을 이미 들었다면(bEmptyClipNotified), 다음 발사 입력을 "떼었다 다시 누른 새 입력"으로
@@ -456,7 +464,7 @@ protected:
 	float ReloadDuration = 2.1f;
 
 	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")

@@ -68,9 +68,21 @@ bool ACustomizationStudioController::SelectClass(FName Class)
 bool ACustomizationStudioController::CanEditPart(int32 Part) const
 {
  if(Part<0||Part>10)return false;
+ if(Part==3&&(ActiveClass==TEXT("Ranger")||ActiveClass==TEXT("Vanguard")))return false;
  if(Part==10)return Draft.HairId!=TEXT("Bald");
  if(Part>=8)return true;
  return !Studio||!Studio->Config||Studio->Config->EnabledClothingParts.Contains(FName(*FCustomizationAppearance::Parts()[Part]));
+}
+bool ACustomizationStudioController::CanToggleAttachment() const
+{
+ return !IsColorEditOpen()&&(ActiveClass==TEXT("Ranger")||ActiveClass==TEXT("Vanguard"))
+  &&(!Studio||!Studio->Config||Studio->Config->EnabledClothingParts.Contains(TEXT("Attachment")));
+}
+void ACustomizationStudioController::ToggleAttachment()
+{
+ if(!CanToggleAttachment())return;
+ Draft.bAttachmentVisible=!Draft.bAttachmentVisible;
+ Changed();
 }
 void ACustomizationStudioController::Changed(){bDirty=true;Status=TEXT("저장하지 않은 변경사항");if(Studio)Studio->RequestAppearance(Draft);}
 void ACustomizationStudioController::SelectBody(const FString& Type)

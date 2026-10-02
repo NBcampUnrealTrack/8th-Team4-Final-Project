@@ -13,3 +13,13 @@ const FFootstepSurfaceSound* UFootstepSoundDefinition::ResolveFootstepSound(
 
 	return DefaultSound.Sound ? &DefaultSound : nullptr;
 }
+
+USoundBase* UFootstepSoundDefinition::ResolveJumpSound(const EDominationCombatClass CombatClass) const
+{
+	if (const TObjectPtr<USoundBase>* JumpSound = JumpSounds.Find(CombatClass))
+	{
+		return JumpSound->Get();
+	}
+
+	return DefaultJumpSound;
+}

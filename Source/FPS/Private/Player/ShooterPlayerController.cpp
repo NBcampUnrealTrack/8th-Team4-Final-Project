@@ -2147,18 +2147,27 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 		return;
 	}
 
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	bool bAiming = false;
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
-		FVector2D LookAxisVector = Value.Get<FVector2D>();
+		const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
+		bAiming = CombatComponent && CombatComponent->bAiming;
+	}
 
-		if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
-		{
-			const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
-			const bool bAiming = CombatComponent && CombatComponent->bAiming;
-			LookAxisVector = Settings->ApplyLookSensitivity(LookAxisVector, bAiming);
-		}
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		LookAxisVector = Settings->ApplyLookSensitivity(LookAxisVector, bAiming);
+	}
 
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
 		ShooterCharacter->HandleLookInput(LookAxisVector);
+	}
+	else if (GetPawn<AShooterSpectatorPawn>())
+	{
+		AddYawInput(LookAxisVector.X);
+		AddPitchInput(LookAxisVector.Y);
 	}
 }
 

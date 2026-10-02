@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "FootstepSoundDefinition.generated.h"
 
@@ -32,6 +33,9 @@ class FPS_API UFootstepSoundDefinition : public UDataAsset
 
 public:
 	const FFootstepSurfaceSound* ResolveFootstepSound(TEnumAsByte<EPhysicalSurface> SurfaceType) const;
+	USoundBase* ResolveJumpSound(EDominationCombatClass CombatClass) const;
+	USoundBase* ResolveCrouchSound() const { return CrouchSound; }
+	USoundBase* ResolveStandSound() const { return StandSound; }
 
 private:
 	UPROPERTY(EditDefaultsOnly, Category = "Footstep")
@@ -39,4 +43,16 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Footstep")
 	FFootstepSurfaceSound DefaultSound;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jump")
+	TMap<EDominationCombatClass, TObjectPtr<USoundBase>> JumpSounds;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Jump")
+	TObjectPtr<USoundBase> DefaultJumpSound;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Stance")
+	TObjectPtr<USoundBase> CrouchSound;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Stance")
+	TObjectPtr<USoundBase> StandSound;
 };
