@@ -19,6 +19,11 @@ void UShooterChatLog::NativeConstruct()
 	BoundPlayerController = PlayerController;
 	PlayerController->OnChatMessageReceived.AddUniqueDynamic(this, &ThisClass::HandleChatMessageReceived);
 
+	if (ScrollBox_Entries)
+	{
+		ScrollBox_Entries->OnUserScrolled.AddUniqueDynamic(this, &ThisClass::HandleEntriesUserScrolled);
+	}
+
 	// 활동이 생기기 전까지는 배경+내역을 아예 숨겨둔다. 상시 표시 모드는 WBP에 지정된 Visibility를 그대로 둔다.
 	if (bAutoHide)
 	{
@@ -33,6 +38,11 @@ void UShooterChatLog::NativeDestruct()
 		PlayerController->OnChatMessageReceived.RemoveDynamic(this, &ThisClass::HandleChatMessageReceived);
 	}
 	BoundPlayerController.Reset();
+
+	if (ScrollBox_Entries)
+	{
+		ScrollBox_Entries->OnUserScrolled.RemoveDynamic(this, &ThisClass::HandleEntriesUserScrolled);
+	}
 
 	// 이 위젯이 건 타이머(만료/패널 숨김)를 한 번에 정리한다.
 	if (const UWorld* World = GetWorld())
@@ -71,17 +81,12 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 
 	// 여러 줄짜리 메시지 때문에 내역 전체 높이가 패널 높이를 넘어도, 항상 최신 메시지가
 	// 보이는 맨 아래로 스크롤시킨다 - 넘친 만큼 위쪽(오래된 줄)만 화면 밖으로 밀려난다.
+	// 새 메시지는 위쪽 내역을 보던 중이어도 맨 아래로 돌아온다. 줄바꿈으로 늘어나는 높이는 NativeTick이 따라간다.
 	if (ScrollBox_Entries)
 	{
+		bFollowLatest = true;
+		LastScrollEndOffset = -1.0f;
 		ScrollBox_Entries->ScrollToEnd();
-
-		// 자동 줄바꿈 텍스트는 처음 배치되는 프레임에는 아직 폭을 몰라 한 줄 높이로 계산되고, 실제로
-		// 여러 줄로 접힌 높이는 다음 프레임에야 반영된다. 위 ScrollToEnd는 한 줄 기준으로 소비되므로
-		// 두 번째 줄부터 잘려 보이지 않게, 줄바꿈 높이가 반영된 다음 틱에 한 번 더 맨 아래로 내린다.
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::ScrollEntriesToEnd);
-		}
 	}
 
 	if (!bAutoHide)
@@ -120,11 +125,31 @@ void UShooterChatLog::ShowPanelAndResetInactivityTimer()
 	}
 }
 
-void UShooterChatLog::ScrollEntriesToEnd()
+void UShooterChatLog::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
-	if (ScrollBox_Entries)
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!ScrollBox_Entries || !bFollowLatest)
 	{
+		return;
+	}
+
+	const float EndOffset = ScrollBox_Entries->GetScrollOffsetOfEnd();
+	if (!FMath::IsNearlyEqual(EndOffset, LastScrollEndOffset))
+	{
+		LastScrollEndOffset = EndOffset;
 		ScrollBox_Entries->ScrollToEnd();
+	}
+}
+
+void UShooterChatLog::HandleEntriesUserScrolled(float CurrentOffset)
+{
+	// 맨 아래에서 몇 픽셀 이내면 끝에 붙어 있는 것으로 본다.
+	constexpr float EndTolerance = 2.0f;
+	bFollowLatest = CurrentOffset >= ScrollBox_Entries->GetScrollOffsetOfEnd() - EndTolerance;
+	if (bFollowLatest)
+	{
+		LastScrollEndOffset = -1.0f;
 	}
 }
 

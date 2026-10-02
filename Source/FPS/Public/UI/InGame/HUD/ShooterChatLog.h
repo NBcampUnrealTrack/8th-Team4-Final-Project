@@ -36,8 +36,14 @@ protected:
 
 	void HandlePanelInactivityTimeout();
 
-	// 줄바꿈 높이가 반영된 다음 틱에 내역을 맨 아래로 다시 스크롤한다.
-	void ScrollEntriesToEnd();
+	// 자동 줄바꿈 텍스트는 실제 폭을 알기 전까지 한 줄 높이로 계산되다가 몇 프레임 뒤에야 여러 줄
+	// 높이로 늘어난다(숨겨져 있던 인게임 패널은 보이는 순간부터 배치가 시작돼서 더 늦다). 그래서 특정
+	// 프레임에 한 번 스크롤하는 대신, 맨 아래를 따라가는 중이면 매 틱 끝 오프셋이 바뀔 때마다 다시 내린다.
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	// 사용자가 휠/드래그로 위쪽 내역을 보고 있으면 따라가기를 멈추고, 다시 맨 아래로 내리면 재개한다.
+	UFUNCTION()
+	void HandleEntriesUserScrolled(float CurrentOffset);
 
 	// false면 엔트리 만료(EntryLifetimeSeconds)와 패널 자동 숨김을 모두 끄고 MaxVisibleEntries만큼
 	// 내역을 계속 쌓아둔다. 대기방(WBP_RoomScreen)에 배치한 인스턴스에서 끈다.
@@ -71,6 +77,12 @@ private:
 	TArray<TObjectPtr<UShooterChatEntry>> ActiveEntries;
 
 	TWeakObjectPtr<AShooterPlayerController> BoundPlayerController;
+
+	// true면 내역 높이가 바뀔 때마다 맨 아래(최신 메시지)로 자동 스크롤한다.
+	bool bFollowLatest = true;
+
+	// 마지막으로 맨 아래로 맞췄을 때의 끝 오프셋. 이 값이 바뀌었을 때만 다시 스크롤한다.
+	float LastScrollEndOffset = -1.0f;
 
 	FTimerHandle ExpiryTimerHandle;
 	FTimerHandle PanelHideTimerHandle;
