@@ -19,7 +19,6 @@ class FPS_API URogueAbilitySystemComponent : public UAbilitySystemComponent
 
 public:
 	URogueAbilitySystemComponent();
-	virtual void InitAbilityActorInfo(AActor* InOwnerActor, AActor* InAvatarActor) override;
 
 	// 눌림 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
@@ -49,8 +48,6 @@ public:
 	virtual void OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect) override;
 
 private:
-	// GAS clears Spec.InputPressed on EndAbility; keep physical holds separately.
-	TSet<FGameplayTag> HeldMeleeInputs;
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그
 	void ReportInputResult(const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount);
 

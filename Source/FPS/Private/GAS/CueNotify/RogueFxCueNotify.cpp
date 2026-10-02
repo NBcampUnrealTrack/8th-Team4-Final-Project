@@ -38,6 +38,7 @@ bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplay
 			Scale *= Parameters.RawMagnitude / ReferenceRadius;
 		}
 		const FVector ScaleVector(Scale);
+		const FRotator EntryRotation = Entry.bIgnoreCueNormal ? FRotator::ZeroRotator : Rotation;
 
 		if (Entry.Particle)
 		{
@@ -45,14 +46,14 @@ bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplay
 			{
 				UGameplayStatics::SpawnEmitterAttached(
 					Entry.Particle, AttachTo, AttachSocket,
-					Entry.Offset, Rotation, ScaleVector,
+					Entry.Offset, EntryRotation, ScaleVector,
 					EAttachLocation::KeepRelativeOffset, /*bAutoDestroy*/ true);
 			}
 			else
 			{
 				UGameplayStatics::SpawnEmitterAtLocation(
 					World, Entry.Particle,
-					Parameters.Location + Entry.Offset, Rotation, ScaleVector,
+					Parameters.Location + Entry.Offset, EntryRotation, ScaleVector,
 					/*bAutoDestroy*/ true);
 			}
 		}
@@ -64,14 +65,14 @@ bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplay
 			{
 				Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
 					Entry.Niagara, AttachTo, AttachSocket,
-					Entry.Offset, Rotation, EAttachLocation::KeepRelativeOffset,
+					Entry.Offset, EntryRotation, EAttachLocation::KeepRelativeOffset,
 					/*bAutoDestroy*/ true, /*bAutoActivate*/ true);
 			}
 			else
 			{
 				Spawned = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 					World, Entry.Niagara,
-					Parameters.Location + Entry.Offset, Rotation, ScaleVector,
+					Parameters.Location + Entry.Offset, EntryRotation, ScaleVector,
 					/*bAutoDestroy*/ true, /*bAutoActivate*/ true);
 			}
 

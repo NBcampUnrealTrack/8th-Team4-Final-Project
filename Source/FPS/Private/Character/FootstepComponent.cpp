@@ -7,6 +7,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Perception/AISense_Hearing.h"
+#include "Player/DominationPlayerState.h"
 
 static constexpr float FootstepTraceDistance = 100.0f;
 
@@ -28,7 +29,11 @@ UFootstepComponent::UFootstepComponent()
 	SetIsReplicatedByDefault(true);
 }
 
-void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const FName FootSocketName)
+void UFootstepComponent::PlayFootstep(
+	USkeletalMeshComponent* SourceMesh,
+	const FName FootSocketName,
+	const float VolumeMultiplier,
+	const float PitchMultiplier)
 {
 	if (!IsValid(SourceMesh)
 		|| !IsValid(FootstepSoundDefinition))
@@ -59,21 +64,64 @@ void UFootstepComponent::PlayFootstep(USkeletalMeshComponent* SourceMesh, const 
 
 	if (bLocallyControlled)
 	{
-		PlayFootstepSound(FootstepLocation, SurfaceType);
+		PlayFootstepSound(FootstepLocation, SurfaceType, VolumeMultiplier, PitchMultiplier);
 	}
 
 	if (Owner->HasAuthority())
 	{
 		ReportFootstepNoise(*Owner, FootstepLocation);
-		MulticastPlayFootstep(FootstepLocation, SurfaceType);
+		MulticastPlayFootstep(FootstepLocation, SurfaceType, VolumeMultiplier, PitchMultiplier);
 	}
 	else
 	{
-		ServerPlayFootstep(FootSocketName);
+		ServerPlayFootstep(FootSocketName, VolumeMultiplier, PitchMultiplier);
 	}
 }
 
-void UFootstepComponent::ServerPlayFootstep_Implementation(const FName FootSocketName)
+void UFootstepComponent::PlayJumpSound()
+{
+	if (!IsValid(FootstepSoundDefinition))
+	{
+		return;
+	}
+
+	AActor* Owner = GetOwner();
+	APawn* PawnOwner = Cast<APawn>(Owner);
+	if (!IsValid(Owner) || !IsValid(PawnOwner))
+	{
+		return;
+	}
+
+	const EDominationCombatClass CombatClass = ResolveCombatClass();
+	if (PawnOwner->IsLocallyControlled())
+	{
+		PlayJumpSoundAtOwner(CombatClass);
+	}
+
+	if (Owner->HasAuthority())
+	{
+		MulticastPlayJumpSound(CombatClass);
+	}
+	else
+	{
+		ServerPlayJumpSound();
+	}
+}
+
+void UFootstepComponent::PlayCrouchSound()
+{
+	PlayStanceSound(true);
+}
+
+void UFootstepComponent::PlayStandSound()
+{
+	PlayStanceSound(false);
+}
+
+void UFootstepComponent::ServerPlayFootstep_Implementation(
+	const FName FootSocketName,
+	const float VolumeMultiplier,
+	const float PitchMultiplier)
 {
 	AActor* Owner = GetOwner();
 	if (!IsValid(Owner))
@@ -92,13 +140,15 @@ void UFootstepComponent::ServerPlayFootstep_Implementation(const FName FootSocke
 	if (BuildFootstepData(SourceMesh, FootSocketName, FootstepLocation, SurfaceType))
 	{
 		ReportFootstepNoise(*Owner, FootstepLocation);
-		MulticastPlayFootstep(FootstepLocation, SurfaceType);
+		MulticastPlayFootstep(FootstepLocation, SurfaceType, VolumeMultiplier, PitchMultiplier);
 	}
 }
 
 void UFootstepComponent::MulticastPlayFootstep_Implementation(
 	const FVector_NetQuantize FootstepLocation,
-	const EPhysicalSurface SurfaceType)
+	const EPhysicalSurface SurfaceType,
+	const float VolumeMultiplier,
+	const float PitchMultiplier)
 {
 	if (GetNetMode() == NM_DedicatedServer)
 	{
@@ -111,7 +161,55 @@ void UFootstepComponent::MulticastPlayFootstep_Implementation(
 		return;
 	}
 
-	PlayFootstepSound(FootstepLocation, SurfaceType);
+	PlayFootstepSound(FootstepLocation, SurfaceType, VolumeMultiplier, PitchMultiplier);
+}
+
+void UFootstepComponent::ServerPlayJumpSound_Implementation()
+{
+	if (IsValid(GetOwner()))
+	{
+		MulticastPlayJumpSound(ResolveCombatClass());
+	}
+}
+
+void UFootstepComponent::MulticastPlayJumpSound_Implementation(const EDominationCombatClass CombatClass)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const APawn* PawnOwner = Cast<APawn>(GetOwner());
+	if (IsValid(PawnOwner) && PawnOwner->IsLocallyControlled())
+	{
+		return;
+	}
+
+	PlayJumpSoundAtOwner(CombatClass);
+}
+
+void UFootstepComponent::ServerPlayStanceSound_Implementation(const bool bEnteringCrouch)
+{
+	if (IsValid(GetOwner()))
+	{
+		MulticastPlayStanceSound(bEnteringCrouch);
+	}
+}
+
+void UFootstepComponent::MulticastPlayStanceSound_Implementation(const bool bEnteringCrouch)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const APawn* PawnOwner = Cast<APawn>(GetOwner());
+	if (IsValid(PawnOwner) && PawnOwner->IsLocallyControlled())
+	{
+		return;
+	}
+
+	PlayStanceSoundAtOwner(bEnteringCrouch);
 }
 
 bool UFootstepComponent::BuildFootstepData(
@@ -164,7 +262,9 @@ bool UFootstepComponent::BuildFootstepData(
 
 void UFootstepComponent::PlayFootstepSound(
 	const FVector FootstepLocation,
-	const TEnumAsByte<EPhysicalSurface> SurfaceType) const
+	const TEnumAsByte<EPhysicalSurface> SurfaceType,
+	const float VolumeMultiplier,
+	const float PitchMultiplier) const
 {
 	if (!IsValid(FootstepSoundDefinition))
 	{
@@ -182,6 +282,73 @@ void UFootstepComponent::PlayFootstepSound(
 		this,
 		FootstepSound->Sound,
 		FootstepLocation,
-		FootstepSound->VolumeMultiplier,
-		FootstepSound->PitchMultiplier);
+		FootstepSound->VolumeMultiplier * FMath::Max(0.0f, VolumeMultiplier),
+		FootstepSound->PitchMultiplier * FMath::Max(0.0f, PitchMultiplier));
+}
+
+EDominationCombatClass UFootstepComponent::ResolveCombatClass() const
+{
+	const APawn* PawnOwner = Cast<APawn>(GetOwner());
+	const ADominationPlayerState* PlayerState = IsValid(PawnOwner)
+		? PawnOwner->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
+}
+
+void UFootstepComponent::PlayJumpSoundAtOwner(const EDominationCombatClass CombatClass) const
+{
+	if (!IsValid(FootstepSoundDefinition) || !IsValid(GetOwner()))
+	{
+		return;
+	}
+
+	if (USoundBase* JumpSound = FootstepSoundDefinition->ResolveJumpSound(CombatClass))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, JumpSound, GetOwner()->GetActorLocation());
+	}
+}
+
+void UFootstepComponent::PlayStanceSound(const bool bEnteringCrouch)
+{
+	if (!IsValid(FootstepSoundDefinition))
+	{
+		return;
+	}
+
+	AActor* Owner = GetOwner();
+	APawn* PawnOwner = Cast<APawn>(Owner);
+	if (!IsValid(Owner) || !IsValid(PawnOwner))
+	{
+		return;
+	}
+
+	if (PawnOwner->IsLocallyControlled())
+	{
+		PlayStanceSoundAtOwner(bEnteringCrouch);
+	}
+
+	if (Owner->HasAuthority())
+	{
+		MulticastPlayStanceSound(bEnteringCrouch);
+	}
+	else
+	{
+		ServerPlayStanceSound(bEnteringCrouch);
+	}
+}
+
+void UFootstepComponent::PlayStanceSoundAtOwner(const bool bEnteringCrouch) const
+{
+	if (!IsValid(FootstepSoundDefinition) || !IsValid(GetOwner()))
+	{
+		return;
+	}
+
+	USoundBase* StanceSound = bEnteringCrouch
+		? FootstepSoundDefinition->ResolveCrouchSound()
+		: FootstepSoundDefinition->ResolveStandSound();
+	if (IsValid(StanceSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, StanceSound, GetOwner()->GetActorLocation());
+	}
 }

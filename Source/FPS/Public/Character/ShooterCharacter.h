@@ -59,6 +59,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+	virtual void OnJumped_Implementation() override;
 	virtual void Landed(const FHitResult& Hit) override;
 	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
@@ -184,6 +185,7 @@ private:
 	// 스태미너 - 0 이면 달리기 차단
 	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
 	void UpdateSprintBlocked(float Stamina);
+	void PlayExhaustedBreathSound() const;
 
 	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
 	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);
