@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"
 #include "Internationalization/Internationalization.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Settings/ShooterAudioSettings.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
@@ -19,7 +20,26 @@ namespace ShooterGameUserSettingsConstants
 	constexpr int32 MaxResolutionHeight = 1080;
 	static constexpr float SupportedFrameRateLimits[] = { 60.0f, 80.0f, 100.0f };
 	constexpr float DefaultFrameRateLimit = 60.0f;
+	constexpr int32 DefaultGraphicsQualityLevel = 1;
+	constexpr float MinScreenBrightness = 0.0f;
+	constexpr float MaxScreenBrightness = 100.0f;
+	constexpr float DefaultScreenBrightness = 50.0f;
+	constexpr float MinDisplayGamma = 1.2f;
+	constexpr float MaxDisplayGamma = 3.2f;
 
+	float NormalizeScreenBrightness(const float Brightness)
+	{
+		return FMath::IsFinite(Brightness)
+			? FMath::Clamp(Brightness, MinScreenBrightness, MaxScreenBrightness)
+			: DefaultScreenBrightness;
+	}
+}
+
+UShooterGameUserSettings::UShooterGameUserSettings(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// 부모 생성자의 SetToDefaults는 이 클래스의 재정의 함수를 호출하지 않는다.
+	SetOverallScalabilityLevel(GetDefaultGraphicsQualityLevel());
 }
 
 FIntPoint UShooterGameUserSettings::GetMaxSupportedResolution()
@@ -92,6 +112,26 @@ float UShooterGameUserSettings::GetMaxAudioVolume()
 	return ShooterGameUserSettingsConstants::MaxAudioVolume;
 }
 
+int32 UShooterGameUserSettings::GetDefaultGraphicsQualityLevel()
+{
+	return ShooterGameUserSettingsConstants::DefaultGraphicsQualityLevel;
+}
+
+float UShooterGameUserSettings::GetMinScreenBrightness()
+{
+	return ShooterGameUserSettingsConstants::MinScreenBrightness;
+}
+
+float UShooterGameUserSettings::GetMaxScreenBrightness()
+{
+	return ShooterGameUserSettingsConstants::MaxScreenBrightness;
+}
+
+float UShooterGameUserSettings::GetDefaultScreenBrightness()
+{
+	return ShooterGameUserSettingsConstants::DefaultScreenBrightness;
+}
+
 UShooterGameUserSettings* UShooterGameUserSettings::Get()
 {
 	if (!GEngine)
@@ -110,6 +150,8 @@ UShooterGameUserSettings* UShooterGameUserSettings::Get()
 void UShooterGameUserSettings::SetToDefaults()
 {
 	Super::SetToDefaults();
+	SetOverallScalabilityLevel(GetDefaultGraphicsQualityLevel());
+	ScreenBrightness = GetDefaultScreenBrightness();
 
 	bDynamicCrosshair = true;
 	CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.4f);
@@ -134,14 +176,29 @@ void UShooterGameUserSettings::SetToDefaults()
 	Language = EShooterOptionsLanguage::Korean;
 	SetScreenResolution(GetMaxSupportedResolution());
 	SetFrameRateLimit(GetDefaultFrameRateLimit());
+	ApplyScreenBrightness();
 	OnAudioSettingsChanged.Broadcast();
 	OnCrosshairSettingsChanged.Broadcast();
 	OnInputBindingsChanged.Broadcast();
 }
 
+void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
+{
+	Super::LoadSettings(bForceReload);
+
+	// 저장된 품질은 유지하고, 첫 실행에만 Medium을 기본값으로 사용한다.
+	if (!GConfig || !GConfig->DoesSectionExist(TEXT("ScalabilityGroups"), GGameUserSettingsIni))
+	{
+		SetOverallScalabilityLevel(GetDefaultGraphicsQualityLevel());
+	}
+
+	SetScreenBrightness(ScreenBrightness);
+}
+
 void UShooterGameUserSettings::ValidateSettings()
 {
 	Super::ValidateSettings();
+	ScreenBrightness = ShooterGameUserSettingsConstants::NormalizeScreenBrightness(ScreenBrightness);
 
 	MouseHorizontalSensitivity = FMath::Clamp(
 		MouseHorizontalSensitivity,
@@ -194,12 +251,35 @@ void UShooterGameUserSettings::ApplyNonResolutionSettings()
 	}
 
 	Super::ApplyNonResolutionSettings();
+	ApplyScreenBrightness();
 
 	// 다른 초기화 경로에서 t.MaxFPS가 바뀌어도 옵션의 프레임 제한을 최종값으로 맞춘다.
 	if (IConsoleVariable* MaxFPSCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS")))
 	{
 		MaxFPSCVar->Set(EffectiveFrameRateLimit, ECVF_SetByGameSetting);
 	}
+}
+
+void UShooterGameUserSettings::SetScreenBrightness(const float Brightness)
+{
+	ScreenBrightness = ShooterGameUserSettingsConstants::NormalizeScreenBrightness(Brightness);
+	ApplyScreenBrightness();
+}
+
+void UShooterGameUserSettings::ApplyScreenBrightness() const
+{
+	if (!GEngine || HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
+	{
+		return;
+	}
+
+	const float Alpha = (ScreenBrightness - GetMinScreenBrightness())
+		/ (GetMaxScreenBrightness() - GetMinScreenBrightness());
+	// 밝기 50은 기본 감마 2.2이며 값이 커질수록 화면이 밝아진다.
+	GEngine->DisplayGamma = FMath::Lerp(
+		ShooterGameUserSettingsConstants::MinDisplayGamma,
+		ShooterGameUserSettingsConstants::MaxDisplayGamma,
+		Alpha);
 }
 
 void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)

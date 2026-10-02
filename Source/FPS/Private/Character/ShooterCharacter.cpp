@@ -534,6 +534,16 @@ void AShooterCharacter::Landed(const FHitResult& Hit)
 	}
 }
 
+void AShooterCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayJumpSound();
+	}
+}
+
 void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
@@ -543,6 +553,11 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 		FirstPersonCamera->AddWorldOffset(FVector::UpVector * ScaledHalfHeightAdjust);
 		bInterpolatingCrouchCamera = true;
 		SetActorTickEnabled(true);
+	}
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayCrouchSound();
 	}
 
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
@@ -560,6 +575,11 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 		FirstPersonCamera->AddWorldOffset(-FVector::UpVector * ScaledHalfHeightAdjust);
 		bInterpolatingCrouchCamera = true;
 		SetActorTickEnabled(true);
+	}
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayStandSound();
 	}
 
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())

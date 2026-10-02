@@ -39,10 +39,13 @@ class FPS_API UShooterGameUserSettings : public UGameUserSettings
 	GENERATED_BODY()
 
 public:
+	UShooterGameUserSettings(const FObjectInitializer& ObjectInitializer);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings")
 	static UShooterGameUserSettings* Get();
 
 	virtual void SetToDefaults() override;
+	virtual void LoadSettings(bool bForceReload = false) override;
 	virtual void ValidateSettings() override;
 	virtual void ApplyNonResolutionSettings() override;
 
@@ -57,6 +60,16 @@ public:
 	static float GetMaxMouseSensitivity();
 	static float GetMinAudioVolume();
 	static float GetMaxAudioVolume();
+	static int32 GetDefaultGraphicsQualityLevel();
+	static float GetMinScreenBrightness();
+	static float GetMaxScreenBrightness();
+	static float GetDefaultScreenBrightness();
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Display")
+	float GetScreenBrightness() const { return ScreenBrightness; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Display")
+	void SetScreenBrightness(float Brightness);
 
 	// The local runtime applies audio changes independently of any options widget.
 	FOnShooterAudioSettingsChanged OnAudioSettingsChanged;
@@ -176,6 +189,9 @@ public:
 
 
 protected:
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float ScreenBrightness = GetDefaultScreenBrightness();
+
 	UPROPERTY(Config)
 	bool bDynamicCrosshair = true;
 
@@ -251,4 +267,6 @@ protected:
 	UPROPERTY(Config)
 	EShooterOptionsLanguage Language = EShooterOptionsLanguage::Korean;
 
+private:
+	void ApplyScreenBrightness() const;
 };
