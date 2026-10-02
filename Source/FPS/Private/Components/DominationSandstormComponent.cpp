@@ -33,7 +33,6 @@ void UDominationSandstormComponent::BeginPlay()
 	if (LocalController.IsValid())
 	{
 		FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ThisClass::HandleLevelChanged);
-		FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ThisClass::HandleOutlineLevelAdded);
 		FWorldDelegates::LevelRemovedFromWorld.AddUObject(this, &ThisClass::HandleLevelChanged);
 	}
 }
@@ -105,6 +104,7 @@ void UDominationSandstormComponent::SetPreviewIntensity(const float Intensity)
 	LocalPreviewIntensity = FMath::Clamp(Intensity, -1.0f, 1.0f);
 	if (LocalController.IsValid())
 	{
+		UpdateOutlineDistanceLimit();
 		UpdatePresentation();
 	}
 #endif
@@ -140,6 +140,11 @@ void UDominationSandstormComponent::HandleLevelChanged(ULevel* Level, UWorld* Wo
 
 void UDominationSandstormComponent::HandleSandstormStateChanged(const FDominationSandstormState& State)
 {
+	if (!BoundGameState.IsValid() || BoundGameState->GetWorld() != GetWorld())
+	{
+		StopOutlineDistanceLimit();
+		return;
+	}
 	CurrentState = State;
 	// 설정 OnRep도 같은 이벤트를 보내므로 도착 순서에 의존하지 않는다.
 	SetSettings(BoundGameState->GetSandstormSettings());
@@ -149,7 +154,10 @@ void UDominationSandstormComponent::HandleSandstormStateChanged(const FDominatio
 
 void UDominationSandstormComponent::HandleMatchFlowChanged()
 {
-	HandleSandstormStateChanged(BoundGameState->GetSandstormState());
+	if (BoundGameState.IsValid())
+	{
+		HandleSandstormStateChanged(BoundGameState->GetSandstormState());
+	}
 }
 
 void UDominationSandstormComponent::SetSettings(UDominationSandstormSettings* NewSettings)

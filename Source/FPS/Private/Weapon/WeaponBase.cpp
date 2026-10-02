@@ -501,6 +501,7 @@ void AWeaponBase::RefreshThirdPersonAttachment() const
             return;
         }
         Mesh3P->SetVisibility(!IsHidden(), true);
+        bool bAttachedToAppearance = false;
         if (const auto* Appearance = OwnerActor->FindComponentByClass<UGameplayAppearanceComponent>())
         {
             USkeletalMeshComponent* Body = Appearance->GetReadyBody();
@@ -515,20 +516,29 @@ void AWeaponBase::RefreshThirdPersonAttachment() const
                     CharacterMesh3P->GetSocketTransform(GripSocketName3P, RTS_ParentBoneSpace) * Basis;
                 Mesh3P->AttachToComponent(Body, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripBone);
                 Mesh3P->SetRelativeLocationAndRotation(Relative.GetLocation(), Relative.GetRotation());
-                Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
-                Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
-                return;
+                bAttachedToAppearance = true;
             }
         }
-		Mesh3P->AttachToComponent(
-			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+        if (!bAttachedToAppearance)
+        {
+			Mesh3P->AttachToComponent(
+				CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
 
-		// 무기별 보정값
-		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
-		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
+			// 무기별 보정값
+			Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
+			Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
+        }
 
-		Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
-		Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+		// 새 무기도 팀/발각/폭풍 거리 조건을 적용한다. 비표시 드라이버 메시 값은 복사하지 않는다.
+		if (AShooterCharacter* Character = Cast<AShooterCharacter>(OwnerActor))
+		{
+			Character->RefreshTeamOutline();
+		}
+		else
+		{
+			Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+			Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+		}
 	}
 }
 

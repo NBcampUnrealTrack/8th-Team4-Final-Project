@@ -16,6 +16,7 @@ class UNiagaraComponent;
 class UNiagaraSystem;
 class ULevel;
 class UPostProcessComponent;
+class UWorld;
 struct FStreamableHandle;
 
 USTRUCT()
@@ -71,6 +72,7 @@ private:
 	UFUNCTION()
 	void HandleMatchFlowChanged();
 
+	bool ShouldLimitEnemyOutline() const;
 	void UpdateOutlineDistanceLimit();
 	void StopOutlineDistanceLimit();
 	void TrackOutlineActor(AActor* Actor);
@@ -121,6 +123,7 @@ private:
 	FTimerHandle BindingTimer;
 	FTimerHandle OutlineUpdateTimer;
 	FDelegateHandle OutlineActorSpawnedHandle;
+	FDelegateHandle OutlineLevelAddedHandle;
 	TWeakObjectPtr<UWorld> OutlineTrackingWorld;
 	TArray<TWeakObjectPtr<AActor>> TrackedOutlineActors;
 	bool bOutlineDistanceLimited = false;
