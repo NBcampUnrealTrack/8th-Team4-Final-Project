@@ -26,3 +26,25 @@ const TArray<TSoftObjectPtr<USoundBase>>& UShooterAudioSettings::ResolvePainSoun
 
 	return Pool->IsEmpty() ? PainSounds_Default : *Pool;
 }
+
+const TArray<TSoftObjectPtr<USoundBase>>& UShooterAudioSettings::ResolveExhaustedBreathSoundPool(
+	const EDominationCombatClass CombatClass) const
+{
+	const TArray<TSoftObjectPtr<USoundBase>>* Pool = &ExhaustedBreathSounds_Default;
+	switch (CombatClass)
+	{
+	case EDominationCombatClass::Trooper:
+		Pool = &ExhaustedBreathSounds_Trooper;
+		break;
+	case EDominationCombatClass::Ranger:
+		Pool = &ExhaustedBreathSounds_Ranger;
+		break;
+	case EDominationCombatClass::Vanguard:
+		Pool = &ExhaustedBreathSounds_Vanguard;
+		break;
+	default:
+		break;
+	}
+
+	return Pool->IsEmpty() ? ExhaustedBreathSounds_Default : *Pool;
+}
