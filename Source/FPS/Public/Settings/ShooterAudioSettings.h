@@ -7,6 +7,7 @@
 
 class USoundBase;
 class USoundClass;
+class USoundConcurrency;
 class USoundMix;
 
 /** Assets for the local player's persistent volume modifier (not the project's base mix). */
@@ -101,4 +102,23 @@ public:
 	// PainSounds_Default로 대체한다. 서버(재생할 사운드 인덱스 선택)와 각 클라이언트
 	// (Multicast로 받은 인덱스로 실제 에셋 로드) 양쪽에서 동일 로직을 쓰기 위해 여기 하나로 둔다.
 	const TArray<TSoftObjectPtr<USoundBase>>& ResolvePainSoundPool(EDominationCombatClass CombatClass) const;
+
+	// 스태미너 소진으로 달리기가 끊겼을 때 본인에게만 재생되는 숨 고르는 소리
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Stamina")
+	TArray<TSoftObjectPtr<USoundBase>> ExhaustedBreathSounds_Trooper;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Stamina")
+	TArray<TSoftObjectPtr<USoundBase>> ExhaustedBreathSounds_Ranger;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Stamina")
+	TArray<TSoftObjectPtr<USoundBase>> ExhaustedBreathSounds_Vanguard;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Stamina")
+	TArray<TSoftObjectPtr<USoundBase>> ExhaustedBreathSounds_Default;
+
+	// 숨소리끼리 겹치지 않게 재생 시 넘기는 동시 재생 제한
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Stamina")
+	TSoftObjectPtr<USoundConcurrency> ExhaustedBreathConcurrency;
+
+	const TArray<TSoftObjectPtr<USoundBase>>& ResolveExhaustedBreathSoundPool(EDominationCombatClass CombatClass) const;
 };

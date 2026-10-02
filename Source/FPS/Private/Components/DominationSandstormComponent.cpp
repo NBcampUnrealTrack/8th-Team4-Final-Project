@@ -33,6 +33,7 @@ void UDominationSandstormComponent::BeginPlay()
 	if (LocalController.IsValid())
 	{
 		FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ThisClass::HandleLevelChanged);
+		FWorldDelegates::LevelAddedToWorld.AddUObject(this, &ThisClass::HandleOutlineLevelAdded);
 		FWorldDelegates::LevelRemovedFromWorld.AddUObject(this, &ThisClass::HandleLevelChanged);
 	}
 }
@@ -66,7 +67,11 @@ void UDominationSandstormComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 
 void UDominationSandstormComponent::ResetWorldBinding()
 {
-	GetWorld()->GetTimerManager().ClearTimer(BindingTimer);
+	StopOutlineDistanceLimit();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BindingTimer);
+	}
 	if (BoundGameState.IsValid())
 	{
 		BoundGameState->OnSandstormStateChanged.RemoveAll(this);
@@ -138,6 +143,7 @@ void UDominationSandstormComponent::HandleSandstormStateChanged(const FDominatio
 	CurrentState = State;
 	// 설정 OnRep도 같은 이벤트를 보내므로 도착 순서에 의존하지 않는다.
 	SetSettings(BoundGameState->GetSandstormSettings());
+	UpdateOutlineDistanceLimit();
 	UpdatePresentation();
 }
 

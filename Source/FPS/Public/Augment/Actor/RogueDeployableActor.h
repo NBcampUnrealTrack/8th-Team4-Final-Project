@@ -32,8 +32,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Rogue|Deployable")
 	float GetMaxHealth() const;
 
+	// 로컬 시점 기준 아군/적 윤곽선 갱신
+	void RefreshTeamOutline(bool bForceRefresh = true);
+
+	static void RefreshTeamOutlineForAll(UWorld* World);
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnRep_Owner() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
@@ -61,6 +67,10 @@ protected:
 	float DestroyDelaySeconds = 0.2f;
 
 private:
+	int32 CachedTeamOutlineState = INDEX_NONE;
+
+	void HandleRevealedChanged(const FGameplayTag Tag, int32 NewCount);
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Rogue|Deployable",
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URogueAbilitySystemComponent> AbilitySystemComponent;

@@ -50,6 +50,9 @@ public:
 	void InitializeForWorld();
 	void ResetWorldBinding();
 
+	// 팀/발각 여부는 기존 아웃라인 코드에서 판정하고, 적의 거리 제한만 여기서 공유한다.
+	bool IsEnemyOutlineInRange(const AActor& Target) const;
+
 	UFUNCTION(BlueprintPure, Category = "Sandstorm")
 	float GetStormIntensity() const { return StormIntensity; }
 
@@ -67,6 +70,12 @@ private:
 
 	UFUNCTION()
 	void HandleMatchFlowChanged();
+
+	void UpdateOutlineDistanceLimit();
+	void StopOutlineDistanceLimit();
+	void TrackOutlineActor(AActor* Actor);
+	void HandleOutlineLevelAdded(ULevel* Level, UWorld* World);
+	void RefreshOutlineTargets();
 
 	void BindGameState();
 	void HandleLevelChanged(ULevel* Level, UWorld* World);
@@ -110,6 +119,11 @@ private:
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TSharedPtr<FStreamableHandle> AssetLoadHandle;
 	FTimerHandle BindingTimer;
+	FTimerHandle OutlineUpdateTimer;
+	FDelegateHandle OutlineActorSpawnedHandle;
+	TWeakObjectPtr<UWorld> OutlineTrackingWorld;
+	TArray<TWeakObjectPtr<AActor>> TrackedOutlineActors;
+	bool bOutlineDistanceLimited = false;
 	FDominationSandstormState CurrentState;
 	float StormIntensity = 0.0f;
 	float LastAppliedIntensity = -1.0f;
