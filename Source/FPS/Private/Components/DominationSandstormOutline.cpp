@@ -27,7 +27,7 @@ bool UDominationSandstormComponent::IsEnemyOutlineInRange(const AActor& Target) 
 	}
 
 	// 상태가 설정 에셋보다 먼저 복제되면 기본 거리로 제한한다.
-	const UDominationSandstormSettings* OutlineSettings = Settings
+	const UDominationSandstormSettings* OutlineSettings = IsValid(Settings.Get())
 		? Settings.Get() : GetDefault<UDominationSandstormSettings>();
 	const double RangeCm = static_cast<double>(OutlineSettings->EnemyOutlineVisibleDistanceMeters) * 100.0;
 	if (!FMath::IsFinite(RangeCm) || RangeCm <= 0.0)
@@ -37,8 +37,10 @@ bool UDominationSandstormComponent::IsEnemyOutlineInRange(const AActor& Target) 
 
 	FVector ViewerLocation;
 	const APawn* ViewerPawn = Controller->GetPawn();
-	if (IsValid(ViewerPawn) && !ViewerPawn->IsA<ASpectatorPawn>())
+	if (IsValid(ViewerPawn) && !ViewerPawn->IsA<ASpectatorPawn>()
+		&& Controller->GetViewTarget() == ViewerPawn)
 	{
+		// ADS 배율과 관계없이 실제 플레이어 위치를 기준으로 한다.
 		ViewerLocation = ViewerPawn->GetActorLocation();
 	}
 	else if (IsValid(Controller->PlayerCameraManager))
@@ -54,20 +56,44 @@ bool UDominationSandstormComponent::IsEnemyOutlineInRange(const AActor& Target) 
 	return FVector::DistSquared(ViewerLocation, Target.GetActorLocation()) <= FMath::Square(RangeCm);
 }
 
+bool UDominationSandstormComponent::ShouldLimitEnemyOutline() const
+{
+	const APlayerController* Controller = LocalController.Get();
+	const ADominationGameState* GameState = BoundGameState.Get();
+	if (!IsValid(Controller) || !Controller->IsLocalController() || !IsValid(GameState)
+		|| GameState->GetWorld() != GetWorld()
+		|| GameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded)
+	{
+		return false;
+	}
+
+#if !UE_BUILD_SHIPPING
+	// 미리보기에서도 화면의 폭풍과 동일하게 제한/복구한다.
+	const float Preview = LocalPreviewIntensity >= 0.0f ? LocalPreviewIntensity
+		: (IsValid(Settings.Get()) ? Settings->PreviewIntensity : -1.0f);
+	if (Preview >= 0.0f)
+	{
+		return Preview > UE_SMALL_NUMBER;
+	}
+#endif
+
+	using EPhase = EDominationSandstormPhase;
+	return CurrentState.Phase == EPhase::FadeIn || CurrentState.Phase == EPhase::Peak
+		|| CurrentState.Phase == EPhase::FadeOut;
+}
+
 void UDominationSandstormComponent::UpdateOutlineDistanceLimit()
 {
 	UWorld* World = GetWorld();
-	const ADominationGameState* GameState = BoundGameState.Get();
-	using EPhase = EDominationSandstormPhase;
-	const bool bStormPhase = CurrentState.Phase == EPhase::FadeIn
-		|| CurrentState.Phase == EPhase::Peak || CurrentState.Phase == EPhase::FadeOut;
-	const bool bShouldLimit = IsValid(World) && LocalController.IsValid()
-		&& LocalController->IsLocalController() && IsValid(GameState)
-		&& GameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded && bStormPhase;
-	if (!bShouldLimit)
+	if (!IsValid(World) || !ShouldLimitEnemyOutline())
 	{
 		StopOutlineDistanceLimit();
 		return;
+	}
+
+	if (bOutlineDistanceLimited && OutlineTrackingWorld.Get() != World)
+	{
+		StopOutlineDistanceLimit();
 	}
 
 	if (!bOutlineDistanceLimited)
@@ -76,6 +102,8 @@ void UDominationSandstormComponent::UpdateOutlineDistanceLimit()
 		OutlineTrackingWorld = World;
 		OutlineActorSpawnedHandle = World->AddOnActorSpawnedHandler(
 			FOnActorSpawned::FDelegate::CreateUObject(this, &ThisClass::TrackOutlineActor));
+		OutlineLevelAddedHandle = FWorldDelegates::LevelAddedToWorld.AddUObject(
+			this, &ThisClass::HandleOutlineLevelAdded);
 
 		// 시작 시에만 탐색하고 이후 스폰/스트리밍 이벤트로 목록을 보완한다.
 		for (TActorIterator<AShooterCharacter> It(World); It; ++It)
@@ -88,7 +116,7 @@ void UDominationSandstormComponent::UpdateOutlineDistanceLimit()
 		}
 	}
 
-	const UDominationSandstormSettings* OutlineSettings = Settings
+	const UDominationSandstormSettings* OutlineSettings = IsValid(Settings.Get())
 		? Settings.Get() : GetDefault<UDominationSandstormSettings>();
 	const float ConfiguredInterval = OutlineSettings->EnemyOutlineUpdateInterval;
 	const float Interval = FMath::IsFinite(ConfiguredInterval)
@@ -120,8 +148,13 @@ void UDominationSandstormComponent::StopOutlineDistanceLimit()
 			World->RemoveOnActorSpawnedHandler(OutlineActorSpawnedHandle);
 		}
 	}
+	if (OutlineLevelAddedHandle.IsValid())
+	{
+		FWorldDelegates::LevelAddedToWorld.Remove(OutlineLevelAddedHandle);
+	}
 	OutlineUpdateTimer.Invalidate();
 	OutlineActorSpawnedHandle.Reset();
+	OutlineLevelAddedHandle.Reset();
 	RefreshOutlineTargets();
 	TrackedOutlineActors.Reset();
 	OutlineTrackingWorld.Reset();
@@ -153,6 +186,11 @@ void UDominationSandstormComponent::HandleOutlineLevelAdded(ULevel* Level, UWorl
 void UDominationSandstormComponent::RefreshOutlineTargets()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(DominationSandstorm_Outline);
+	if (bOutlineDistanceLimited && !ShouldLimitEnemyOutline())
+	{
+		StopOutlineDistanceLimit();
+		return;
+	}
 	for (int32 Index = TrackedOutlineActors.Num() - 1; Index >= 0; --Index)
 	{
 		AActor* Actor = TrackedOutlineActors[Index].Get();
@@ -165,14 +203,14 @@ void UDominationSandstormComponent::RefreshOutlineTargets()
 		{
 			continue;
 		}
-		// 거리/팀/발각 결과가 같으면 메시 순회와 렌더 상태 변경을 모두 생략한다.
+		// 거리 타이머는 변경 시에만 적용하고, 종료할 때는 부착물까지 강제로 복구한다.
 		if (AShooterCharacter* Character = Cast<AShooterCharacter>(Actor))
 		{
-			Character->RefreshTeamOutline(false);
+			Character->RefreshTeamOutline(!bOutlineDistanceLimited);
 		}
 		else if (ARogueDeployableActor* Deployable = Cast<ARogueDeployableActor>(Actor))
 		{
-			Deployable->RefreshTeamOutline(false);
+			Deployable->RefreshTeamOutline(!bOutlineDistanceLimited);
 		}
 	}
 }

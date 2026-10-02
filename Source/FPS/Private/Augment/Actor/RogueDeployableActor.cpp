@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "Components/DominationSandstormComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -13,7 +15,6 @@
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
-#include "Kismet/GameplayStatics.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Tags/GameplayTags.h"
 
@@ -113,7 +114,9 @@ void ARogueDeployableActor::RefreshTeamOutline(const bool bForceRefresh)
 		return;
 	}
 
-	const APlayerController* ViewerController = UGameplayStatics::GetPlayerController(this, 0);
+	const UGameInstance* GameInstance = GetGameInstance();
+	const APlayerController* ViewerController = IsValid(GameInstance)
+		? GameInstance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
 	const ABaseTeamPlayerState* ViewerState = IsValid(ViewerController) && ViewerController->IsLocalController()
 		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
 		: nullptr;
@@ -138,7 +141,7 @@ void ARogueDeployableActor::RefreshTeamOutline(const bool bForceRefresh)
 			? DeployableOutlineStencilEnemyRevealed
 			: DeployableOutlineStencilEnemy;
 		const UDominationSandstormComponent* Sandstorm = ViewerController->FindComponentByClass<UDominationSandstormComponent>();
-		bOutlineVisible = !Sandstorm || Sandstorm->IsEnemyOutlineInRange(*this);
+		bOutlineVisible = !IsValid(Sandstorm) || Sandstorm->IsEnemyOutlineInRange(*this);
 	}
 
 	const int32 OutlineState = bOutlineVisible ? StencilValue : 0;

@@ -64,9 +64,14 @@ protected:
 	TObjectPtr<UMaterialInstanceDynamic> PreviewMID;
 
 private:
-	void CollectPreviewWeapons();
+	void SpawnPreviewPawns();
+	AShooterCharacter* SpawnPreviewPawn(EDominationCombatClass CombatClass);
+	bool RequestSavedAppearance(EDominationCombatClass CombatClass, AShooterCharacter* Pawn);
+	void PollAppearanceApplied();
+	void ShowCurrentPreview();
 	void RegisterPreviewComponents();
-	void DestroyPreviewPawn();
+	void DestroyPreviewPawns();
+	void KeepPreviewTexturesStreamed();
 	void PlayChangeEffect();
 	float PlayPreviewMontage(const TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>>& Montages) const;
 	void ScheduleInspect(float MontageDuration);
@@ -80,10 +85,20 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<UNiagaraComponent> LockInEffect;
 
+	// 클래스마다 한 번만 스폰해 두고 전환은 캡처 대상만 바꾼다.
+	UPROPERTY(Transient)
+	TMap<EDominationCombatClass, TObjectPtr<AShooterCharacter>> PreviewPawns;
+	// 지금 보여주는 클래스의 Pawn
 	UPROPERTY(Transient)
 	TObjectPtr<AShooterCharacter> PreviewPawn;
+	// 정리용. 모든 프리뷰 Pawn의 무기
 	TArray<TWeakObjectPtr<AWeaponBase>> PreviewWeapons;
+	// 외형 생성이 끝나지 않아 아직 캡처하지 않는 클래스
+	TSet<EDominationCombatClass> PendingAppearanceClasses;
 	FTimerHandle InspectTimerHandle;
+	FTimerHandle AppearanceTimerHandle;
+	FTimerHandle StreamingTimerHandle;
+	int32 AppearancePollsRemaining = 0;
 
 	EDominationCombatClass CurrentPreviewClass = EDominationCombatClass::Unselected;
 };

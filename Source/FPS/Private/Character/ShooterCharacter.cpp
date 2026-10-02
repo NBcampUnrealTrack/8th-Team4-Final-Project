@@ -14,7 +14,10 @@
 #include "Combat/LagCompensationComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/DominationSandstormComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueVitalAttributeSet.h"
@@ -192,7 +195,9 @@ void AShooterCharacter::RefreshTeamOutline(const bool bForceRefresh)
 		return;
 	}
 
-	const APlayerController* ViewerController = UGameplayStatics::GetPlayerController(this, 0);
+	const UGameInstance* GameInstance = GetGameInstance();
+	const APlayerController* ViewerController = IsValid(GameInstance)
+		? GameInstance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
 	const ABaseTeamPlayerState* ViewerPlayerState = IsValid(ViewerController) && ViewerController->IsLocalController()
 		? ViewerController->GetPlayerState<ABaseTeamPlayerState>()
 		: nullptr;
@@ -211,7 +216,7 @@ void AShooterCharacter::RefreshTeamOutline(const bool bForceRefresh)
 		StencilValue = bRevealed ? TeamOutlineStencilEnemyRevealed : TeamOutlineStencilEnemy;
 
 		const UDominationSandstormComponent* Sandstorm = ViewerController->FindComponentByClass<UDominationSandstormComponent>();
-		bOutlineVisible = !Sandstorm || Sandstorm->IsEnemyOutlineInRange(*this);
+		bOutlineVisible = !IsValid(Sandstorm) || Sandstorm->IsEnemyOutlineInRange(*this);
 	}
 
 	const int32 OutlineState = bOutlineVisible ? StencilValue : 0;
