@@ -11,9 +11,6 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "UI/Frontend/ShooterUIInitComponent.h"
 
-// Temp log
-DEFINE_LOG_CATEGORY_STATIC(LogTempInput, Log, All);
-
 void ABaseRoundPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -78,18 +75,6 @@ bool ABaseRoundPlayerController::IsRoundInputEnabled() const
 bool ABaseRoundPlayerController::CanProcessGameplayInput() const
 {
 	const ABaseTeamPlayerState* TeamPlayerState = GetPlayerState<ABaseTeamPlayerState>();
-	// Temp log
-	const bool bSuper = Super::CanProcessGameplayInput();
-	const bool bPawn = IsValid(GetPawn());
-	const bool bState = IsValid(TeamPlayerState);
-	const bool bAlive = bState && TeamPlayerState->IsAlive();
-	const uint32 Mask = (bSuper ? 1u : 0u) | (bIsRoundInputEnabled ? 2u : 0u) | (bPawn ? 4u : 0u) | (bState ? 8u : 0u) | (bAlive ? 16u : 0u);
-	if (Mask != LastTempInputMask)
-	{
-		LastTempInputMask = Mask;
-		UE_LOG(LogTempInput, Warning, TEXT("[TEMP-INPUT] CanProcessGameplayInput changed: Super=%d RoundInputEnabled=%d Pawn=%d(%s) PlayerState=%d Alive=%d"),
-			bSuper, bIsRoundInputEnabled, bPawn, *GetNameSafe(GetPawn()), bState, bAlive);
-	}
 	return Super::CanProcessGameplayInput()
 		&& bIsRoundInputEnabled
 		&& IsValid(GetPawn())
@@ -166,11 +151,6 @@ UShooterUIInitComponent* ABaseRoundPlayerController::GetUIInitComponent() const
 
 void ABaseRoundPlayerController::ApplyRoundInputEnabled(const bool bEnabled)
 {
-	// Temp log
-	UE_LOG(LogTempInput, Warning, TEXT("[TEMP-INPUT] ApplyRoundInputEnabled(%s) current=%s Controller=%s Local=%d Authority=%d"),
-		bEnabled ? TEXT("true") : TEXT("false"), bIsRoundInputEnabled ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(this), IsLocalController(), HasAuthority());
-
 	if (bIsRoundInputEnabled == bEnabled)
 	{
 		return;

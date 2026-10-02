@@ -226,9 +226,6 @@ void ABaseRoundGameMode::SetRoundParticipantInputEnabled(const bool bEnabled)
 		return;
 	}
 	PlayerManager->GetRoundParticipantControllers(Participants);
-	// Temp log
-	UE_LOG(LogBaseRoundGameMode, Warning, TEXT("[TEMP-INPUT] SetRoundParticipantInputEnabled(%s) Participants=%d AllControllers=%d"),
-		bEnabled ? TEXT("true") : TEXT("false"), Participants.Num(), GetWorld()->GetNumPlayerControllers());
 	for (APlayerController* PlayerController : Participants)
 	{
 		SetPlayerRoundInputEnabled(PlayerController, bEnabled);
@@ -253,10 +250,6 @@ void ABaseRoundGameMode::SetPlayerRoundInputEnabled(
 		return;
 	}
 
-	// Temp log
-	UE_LOG(LogBaseRoundGameMode, Warning, TEXT("[TEMP-INPUT] SetPlayerRoundInputEnabled Controller=%s Enabled=%s Local=%d Pawn=%s"),
-		*GetNameSafe(RoundPlayerController), bEnabled ? TEXT("true") : TEXT("false"),
-		RoundPlayerController->IsLocalController(), *GetNameSafe(RoundPlayerController->GetPawn()));
 	RoundPlayerController->SetRoundInputEnabled(bEnabled);
 }
 

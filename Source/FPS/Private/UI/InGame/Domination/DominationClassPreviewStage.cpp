@@ -189,9 +189,6 @@ void ADominationClassPreviewStage::KeepPreviewTexturesStreamed()
 
 void ADominationClassPreviewStage::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// Temp log
-	UE_LOG(LogTemp, Warning, TEXT("[TEMP-INPUT] ClassPreviewStage EndPlay reason=%d PreviewPawns=%d"),
-		static_cast<int32>(EndPlayReason), PreviewPawns.Num());
 	DestroyPreviewPawns();
 
 	Super::EndPlay(EndPlayReason);
@@ -255,9 +252,6 @@ void ADominationClassPreviewStage::SpawnPreviewPawns()
 		}
 	}
 
-	// Temp log
-	UE_LOG(LogTemp, Warning, TEXT("[TEMP-INPUT] ClassPreviewStage SpawnPreviewPawns Spawned=%d PendingAppearance=%d Owner=%s"),
-		PreviewPawns.Num(), PendingAppearanceClasses.Num(), *GetNameSafe(GetOwner()));
 	if (!PendingAppearanceClasses.IsEmpty())
 	{
 		AppearancePollsRemaining = AppearanceMaxPolls;
