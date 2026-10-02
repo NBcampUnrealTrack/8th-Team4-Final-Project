@@ -102,6 +102,9 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 			}
 		}
 
+		// 몽타주와 같은 승인 지점에서 재생해, 꾹 누르기 연속 공격 시에도 휘두를 때마다 한 번씩 난다.
+		Weapon->PlayMeleeAttackSound(bIsHeavyAttack);
+
 		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
 	}
 
