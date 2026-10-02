@@ -1,5 +1,6 @@
 #include "Actor/DominationZoneWall.h"
 
+#include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
@@ -22,7 +23,17 @@ ADominationZoneWall::ADominationZoneWall()
 	WallZone->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
 	WallZone->SetGenerateOverlapEvents(false);
 	WallZone->SetCanEverAffectNavigation(false);
-	
+
+	// 방향 표시 화살표
+	InsideArrow = CreateDefaultSubobject<UArrowComponent>(TEXT("InsideArrow"));
+	InsideArrow->SetupAttachment(WallZone);
+	InsideArrow->SetArrowColor(FColor::Green);
+	InsideArrow->ArrowSize = 3.0f;
+	InsideArrow->bIsScreenSizeScaled = false;
+	InsideArrow->SetHiddenInGame(true);
+	InsideArrow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InsideArrow->SetGenerateOverlapEvents(false);
+	InsideArrow->SetCanEverAffectNavigation(false);
 
 	// 벽 바깥에 있던 플레이어의 한 방향 통과 허용을 위한 감지 영역
 	DetectionZone = CreateDefaultSubobject<UBoxComponent>(TEXT("DetectionZone"));
