@@ -9,7 +9,6 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Player/ShooterPlayerController.h"
 #include "Settings/ShooterGameUserSettings.h"
-#include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
 static void ConfigureCenteredCanvasSlot(UWidget* Widget)
@@ -266,19 +265,7 @@ float UShooterReticle::GetSpreadDegrees() const
 	}
 
 	const AWeaponBase* Weapon = FindEquippedWeapon();
-	if (!Weapon)
-	{
-		return 0.f;
-	}
-
-	// 스나이퍼 조준선은 실제 탄퍼짐(비ADS 강제 탄퍼짐 포함)과 무관하게 항상 벌어지지 않게 고정한다.
-	// 표시만 고정할 뿐, 실제 탄 분산은 AWeaponBase::GetCurrentSpreadDegrees()가 그대로 적용한다.
-	if (Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
-	{
-		return 0.f;
-	}
-
-	return Weapon->GetCurrentSpreadDegrees();
+	return Weapon ? Weapon->GetCurrentSpreadDegrees() : 0.f;
 }
 
 // 히트마커
