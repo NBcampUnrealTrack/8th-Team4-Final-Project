@@ -157,6 +157,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool TryPlayEmptyClipSound();
 
+	// 장착음 재생(서버 전용, 멀티캐스트). CombatComponent가 장착 사이클을 시작할 때 호출한다.
+	void PlayEquipSound();
+
+	// 근접 공격음 재생. GA_MeleeAttack이 공격 승인 시 예측 클라이언트/서버 양쪽에서 호출한다.
+	void PlayMeleeAttackSound(bool bHeavyAttack);
+
 	// 발사 입력(InputTag.Ability.Primary)이 떼어졌을 때 컨트롤러가 호출한다. 탄창이 빈 상태에서
 	// 클릭음을 이미 들었다면(bEmptyClipNotified), 다음 발사 입력을 "떼었다 다시 누른 새 입력"으로
 	// 인정해 재장전을 무장(arm)한다 - 누르고 있는 동안 자동으로 재장전되지 않게 하기 위함.
