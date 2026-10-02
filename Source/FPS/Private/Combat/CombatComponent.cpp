@@ -53,9 +53,10 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// 스왑 타이머 등 이 컴포넌트가 건 타이머를 한 번에 정리한다.
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(WeaponSwitchTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
 
 	ClearWeaponLoadout();
@@ -65,10 +66,13 @@ void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                      FActorComponentTickFunction* ThisTickFunction)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UCombatComponent::TickComponent);
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	UpdateMovementSpreadMultiplier();
 	UpdateCameraZoom(DeltaTime);
+	BroadcastCrosshairSpreadInputsIfChanged();
 
 	// 스왑 타이머가 완료 콜백(FinishCycling) 없이 사라지면 bIsCycling이 true로 굳어
 	// IsWeaponReady()가 계속 false가 되고 사격/재장전이 영구히 막힌다 - 부활 직후
@@ -173,6 +177,41 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 	}
 
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, InterpSpeed));
+}
+
+void UCombatComponent::BroadcastCrosshairSpreadInputsIfChanged()
+{
+	// 크로스헤어 위젯은 로컬 플레이어의 Pawn에만 붙으므로, 구독자가 없는 대다수(서버/시뮬레이티드 프록시)는
+	// 비교 비용조차 쓰지 않는다.
+	if (!OnCrosshairSpreadInputsChanged.IsBound())
+	{
+		return;
+	}
+
+	AWeaponBase* Weapon = CurrentWeapon.Get();
+	const float SpreadDegrees = IsValid(Weapon) ? Weapon->GetCurrentSpreadDegrees() : 0.f;
+
+	float FieldOfView = LastCrosshairFieldOfView;
+	AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		if (const UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor))
+		{
+			FieldOfView = Camera->FieldOfView;
+		}
+	}
+
+	if (LastCrosshairWeapon.Get() == Weapon
+		&& FMath::IsNearlyEqual(LastCrosshairSpreadDegrees, SpreadDegrees, 0.001f)
+		&& FMath::IsNearlyEqual(LastCrosshairFieldOfView, FieldOfView, 0.01f))
+	{
+		return;
+	}
+
+	LastCrosshairWeapon = Weapon;
+	LastCrosshairSpreadDegrees = SpreadDegrees;
+	LastCrosshairFieldOfView = FieldOfView;
+	OnCrosshairSpreadInputsChanged.Broadcast();
 }
 
 void UCombatComponent::SetInfiniteAmmo(const bool bNewInfiniteAmmo)

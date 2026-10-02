@@ -346,6 +346,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	// 재장전 등 이 무기가 건 타이머를 파괴 시점에 일괄 정리한다.
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;

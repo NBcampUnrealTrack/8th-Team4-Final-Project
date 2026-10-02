@@ -8,14 +8,19 @@
 #include "ShooterReticle.generated.h"
 
 class AWeaponBase;
+class APawn;
+class FViewport;
+class UCombatComponent;
 class UImage;
 class UWidgetAnimation;
 
 /**
  * 크로스헤어 탄퍼짐(Spread)만 표현한다.
  * GetSpreadDegrees()가 장착 무기의 AWeaponBase::GetCurrentSpreadDegrees()를 읽는다.
+ * 폴링하지 않는다 - CombatComponent::OnCrosshairSpreadInputsChanged(무기/탄퍼짐/FOV 변경),
+ * 크로스헤어 설정 변경, 뷰포트 크기 변경 시점에만 4방향 간격을 다시 계산한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterReticle : public UUserWidget
 {
 	GENERATED_BODY()
@@ -56,8 +61,19 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
+
+	// 빙의 대상(리스폰 포함)이 바뀌면 새 Pawn의 CombatComponent로 구독을 옮긴다.
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
+
+	// 이전 CombatComponent 구독을 해제하고 새 CombatComponent(nullptr 가능)를 구독한다.
+	void BindToCombatComponent(UCombatComponent* NewCombat);
+
+	// 현재 탄퍼짐/FOV/뷰포트 기준으로 4방향 크로스헤어 간격을 다시 계산해 적용한다.
+	void RefreshSpreadOffsets();
+
+	void HandleViewportResized(FViewport* Viewport, uint32 Unused);
 
 	// 장착 무기가 없거나 동적 크로스헤어가 꺼져 있으면 0.
 	float GetSpreadDegrees() const;
@@ -176,6 +192,12 @@ protected:
 	float HitMarkerDuration = 0.4f;
 
 private:
+	// OnCrosshairSpreadInputsChanged 구독 해제용으로 현재 구독 중인 CombatComponent를 기억해둔다.
+	TWeakObjectPtr<UCombatComponent> CachedCombat;
+	FDelegateHandle CrosshairSpreadInputsHandle;
+	FDelegateHandle CrosshairSettingsHandle;
+	FDelegateHandle ViewportResizedHandle;
+
 	FTimerHandle HitMarkerTimerHandle;
 	bool bHitMarkerActive = false;
 	ERogueHitMarkerType LastHitMarkerType = ERogueHitMarkerType::Body;
