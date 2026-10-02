@@ -34,10 +34,10 @@ void UShooterChatLog::NativeDestruct()
 	}
 	BoundPlayerController.Reset();
 
+	// 이 위젯이 건 타이머(만료/패널 숨김)를 한 번에 정리한다.
 	if (const UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(ExpiryTimerHandle);
-		World->GetTimerManager().ClearTimer(PanelHideTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
 	ExpiryTimerHandle.Invalidate();
 	PanelHideTimerHandle.Invalidate();
@@ -55,7 +55,7 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 	}
 
 	UShooterChatEntry* EntryWidget = CreateWidget<UShooterChatEntry>(this, EntryWidgetClass);
-	if (EntryWidget == nullptr)
+	if (!ensure(EntryWidget))
 	{
 		return;
 	}
@@ -74,6 +74,14 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 	if (ScrollBox_Entries)
 	{
 		ScrollBox_Entries->ScrollToEnd();
+
+		// 자동 줄바꿈 텍스트는 처음 배치되는 프레임에는 아직 폭을 몰라 한 줄 높이로 계산되고, 실제로
+		// 여러 줄로 접힌 높이는 다음 프레임에야 반영된다. 위 ScrollToEnd는 한 줄 기준으로 소비되므로
+		// 두 번째 줄부터 잘려 보이지 않게, 줄바꿈 높이가 반영된 다음 틱에 한 번 더 맨 아래로 내린다.
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::ScrollEntriesToEnd);
+		}
 	}
 
 	if (!bAutoHide)
@@ -112,6 +120,14 @@ void UShooterChatLog::ShowPanelAndResetInactivityTimer()
 	}
 }
 
+void UShooterChatLog::ScrollEntriesToEnd()
+{
+	if (ScrollBox_Entries)
+	{
+		ScrollBox_Entries->ScrollToEnd();
+	}
+}
+
 void UShooterChatLog::HandlePanelInactivityTimeout()
 {
 	// 엔트리는 지우지 않는다 - 다음 활동이 생기면 남아있던 내역이 그대로 다시 보인다.
@@ -126,11 +142,17 @@ void UShooterChatLog::RemoveOldestEntry()
 		{
 			Oldest->RemoveFromParent();
 		}
-		ActiveEntries.RemoveAt(0);
+		// 채팅은 순서가 중요해서 RemoveAtSwap을 쓸 수 없다. 대신 줄이 하나 빠질 때마다 메모리를
+		// 재할당하지 않도록 축소를 막는다 - 최대 MaxVisibleEntries개라 원소 이동 비용은 무시할 수준이다.
+		ActiveEntries.RemoveAt(0, 1, EAllowShrinking::No);
 	}
 
-	// 남은 줄이 있으면 만료 예약
-	ExpiryTimerHandle.Invalidate();
+	// 남은 줄이 있으면 만료 예약. 초과분 정리(HandleChatMessageReceived)에서 불릴 때는 기존 예약이
+	// 아직 살아 있으므로 Invalidate가 아니라 ClearTimer로 확실히 취소해야 이중 삭제가 안 생긴다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ExpiryTimerHandle);
+	}
 
 	// 상시 표시 모드에선 MaxVisibleEntries 초과분 정리로만 불리므로 만료 예약을 걸지 않는다.
 	if (bAutoHide && ActiveEntries.Num() > 0)

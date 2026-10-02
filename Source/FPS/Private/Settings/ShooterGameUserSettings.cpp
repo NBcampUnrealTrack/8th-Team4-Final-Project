@@ -284,7 +284,14 @@ void UShooterGameUserSettings::ApplyScreenBrightness() const
 
 void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)
 {
+	if (bDynamicCrosshair == bEnabled)
+	{
+		return;
+	}
+
 	bDynamicCrosshair = bEnabled;
+	// UShooterReticle이 Tick 없이 이 이벤트로 크로스헤어 간격을 다시 계산한다.
+	OnCrosshairSettingsChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::SetCrosshairColor(const FLinearColor NewColor)

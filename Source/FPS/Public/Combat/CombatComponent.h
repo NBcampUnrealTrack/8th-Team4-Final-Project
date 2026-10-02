@@ -18,6 +18,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainHUDSuppressionChanged, bool, 
 // 현재 손에 든 무기(CurrentWeapon)가 바뀔 때마다 브로드캐스트된다. UI(ShooterWeaponStatus)가 매 프레임
 // GetCurrentWeapon()을 폴링하는 대신 이 델리게이트를 구독하도록 하기 위함이다. NewWeapon은 nullptr일 수 있다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentWeaponChanged, AWeaponBase*, NewWeapon);
+// 크로스헤어 간격 계산에 쓰이는 값(장착 무기, 탄퍼짐 각도, 카메라 FOV) 중 하나라도 바뀌었을 때만 브로드캐스트된다.
+// UShooterReticle이 NativeTick 폴링 대신 이 델리게이트를 구독한다.
+DECLARE_MULTICAST_DELEGATE(FOnCrosshairSpreadInputsChanged);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UCombatComponent : public UActorComponent
@@ -113,6 +116,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FPS|Combat")
 	FOnCurrentWeaponChanged OnCurrentWeaponChanged;
 
+	// 구독자가 있을 때만(=로컬 크로스헤어 위젯이 붙은 Pawn) 매 틱 값 변화를 비교한다.
+	FOnCrosshairSpreadInputsChanged OnCrosshairSpreadInputsChanged;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
@@ -204,6 +210,13 @@ private:
 	void RefreshFirstPersonADSPresentation() const;
 	// 현재 ADS/무기 설정에 맞춰 로컬 Main HUD suppression 상태를 갱신하고 변경 시 알린다.
 	void RefreshMainHUDSuppressionState();
+	// 크로스헤어 입력값(무기/탄퍼짐/FOV)이 직전 브로드캐스트 이후 바뀌었으면 OnCrosshairSpreadInputsChanged를 알린다.
+	void BroadcastCrosshairSpreadInputsIfChanged();
+
+	// 마지막으로 OnCrosshairSpreadInputsChanged에 실어 보낸 값. 같은 값의 중복 브로드캐스트를 막는다.
+	TWeakObjectPtr<AWeaponBase> LastCrosshairWeapon;
+	float LastCrosshairSpreadDegrees = -1.f;
+	float LastCrosshairFieldOfView = -1.f;
 
 	// BeginPlay 시점에 캐싱해두는 오너 카메라의 평상시(비-ADS) FOV. 무기별 ADS FOV와 보간할 때
 	// 기준값으로 쓴다 - 캐릭터 BP마다 카메라 기본 FOV가 다를 수 있어 하드코딩하지 않는다.

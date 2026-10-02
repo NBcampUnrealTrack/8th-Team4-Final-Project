@@ -135,6 +135,8 @@ float UWeaponAimComponent::GetCurrentSpreadDegrees() const
 
 void UWeaponAimComponent::TickAim(const float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UWeaponAimComponent::TickAim);
+
 	TimeSinceLastShot += DeltaTime;
 
 	TickSpreadDecay(DeltaTime);

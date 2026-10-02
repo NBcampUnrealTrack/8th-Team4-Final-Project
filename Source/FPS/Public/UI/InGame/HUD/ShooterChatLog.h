@@ -36,6 +36,9 @@ protected:
 
 	void HandlePanelInactivityTimeout();
 
+	// 줄바꿈 높이가 반영된 다음 틱에 내역을 맨 아래로 다시 스크롤한다.
+	void ScrollEntriesToEnd();
+
 	// false면 엔트리 만료(EntryLifetimeSeconds)와 패널 자동 숨김을 모두 끄고 MaxVisibleEntries만큼
 	// 내역을 계속 쌓아둔다. 대기방(WBP_RoomScreen)에 배치한 인스턴스에서 끈다.
 	UPROPERTY(EditAnywhere, Category = "Chat")
