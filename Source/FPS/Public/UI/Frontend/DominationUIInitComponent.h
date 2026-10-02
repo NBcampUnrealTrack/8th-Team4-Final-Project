@@ -39,7 +39,7 @@ private:
     UFUNCTION()
     void HandleSandstormStateChanged(const FDominationSandstormState& SandstormState);
     void UpdateSandstormWarning();
-    void ClearSandstormWarning();
+    void ClearSandstormWarning(bool bPlayExit = false);
     UPROPERTY(Transient)
     TObjectPtr<UDominationSandstormWarningWidget> SandstormWarningWidget;
     FTimerHandle SandstormWarningTimer;

@@ -1,5 +1,6 @@
 #include "UI/InGame/Domination/DominationClassPreviewStage.h"
 
+#include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
@@ -9,6 +10,7 @@
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
+#include "TimerManager.h"
 #include "Weapon/WeaponBase.h"
 
 namespace
@@ -27,6 +29,22 @@ namespace
 		for (UPrimitiveComponent* Primitive : Primitives)
 		{
 			Primitive->SetLightingChannels(false, true, false);
+		}
+	}
+
+	void ForcePreviewAnimRefresh(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+
+		TArray<USkinnedMeshComponent*> Meshes;
+		Actor->GetComponents<USkinnedMeshComponent>(Meshes);
+
+		for (USkinnedMeshComponent* Mesh : Meshes)
+		{
+			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 		}
 	}
 
@@ -167,6 +185,12 @@ void ADominationClassPreviewStage::SetPreviewClass(const EDominationCombatClass 
 	CurrentPreviewClass = CombatClass;
 
 	PlayChangeEffect();
+	// 첫 애님 업데이트에서 ShooterAnimInstance가 장착 몽타주로 덮어쓰므로 한 틱 뒤에 재생
+	World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			ScheduleInspect(PlayPreviewMontage(DrawMontages));
+		}));
 }
 
 void ADominationClassPreviewStage::PlayChangeEffect()
@@ -177,6 +201,43 @@ void ADominationClassPreviewStage::PlayChangeEffect()
 void ADominationClassPreviewStage::PlayLockInEffect()
 {
 	RestartEffect(LockInEffect);
+}
+
+float ADominationClassPreviewStage::PlayPreviewMontage(
+	const TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>>& Montages) const
+{
+	const TObjectPtr<UAnimMontage>* Montage = Montages.Find(CurrentPreviewClass);
+	if (!Montage || !IsValid(*Montage) || !IsValid(PreviewPawn))
+	{
+		return 0.0f;
+	}
+
+	return PreviewPawn->PlayAnimMontage(*Montage);
+}
+
+void ADominationClassPreviewStage::ScheduleInspect(const float MontageDuration)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !InspectMontages.Contains(CurrentPreviewClass))
+	{
+		return;
+	}
+
+	// 재생 중인 몽타주가 끝난 뒤부터 재생해야함
+	const float Delay = MontageDuration
+		+ FMath::FRandRange(InspectDelayRange.X, InspectDelayRange.Y);
+
+	World->GetTimerManager().SetTimer(
+		InspectTimerHandle,
+		this,
+		&ThisClass::PlayInspect,
+		FMath::Max(Delay, 0.1f),
+		/*bLoop=*/false);
+}
+
+void ADominationClassPreviewStage::PlayInspect()
+{
+	ScheduleInspect(PlayPreviewMontage(InspectMontages));
 }
 
 void ADominationClassPreviewStage::CollectPreviewWeapons()
@@ -223,6 +284,7 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 	{
 		SceneCapture->ShowOnlyActorComponents(PreviewPawn);
 		ApplyPreviewLightingChannels(PreviewPawn);
+		ForcePreviewAnimRefresh(PreviewPawn);
 	}
 
 	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
@@ -246,6 +308,10 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 
 void ADominationClassPreviewStage::DestroyPreviewPawn()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InspectTimerHandle);	}
+
 	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
 	{
 		if (AWeaponBase* Weapon = WeaponPtr.Get())

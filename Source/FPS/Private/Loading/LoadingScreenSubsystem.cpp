@@ -4,10 +4,13 @@
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/State/BaseRoundGameState.h"
 #include "UI/Loading/LoadingScreenWidget.h"
+#include "UI/OutGame/ShooterOutGameSubsystem.h"
+#include "UI/ShooterUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLoadingScreen, Log, All);
 
@@ -36,6 +39,12 @@ namespace
 void ULoadingScreenSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// 서버는 그리지 않는다
+	if (!IsRunningDedicatedServer())
+	{
+		LoadingBackground = GetDefault<UShooterUISettings>()->LoadingBackground.LoadSynchronous();
+	}
 }
 
 void ULoadingScreenSubsystem::Deinitialize()
@@ -101,6 +110,11 @@ void ULoadingScreenSubsystem::ShowLoadingScreen(
 	if (!bWasAlreadyVisible && IsLoadingScreenVisible() && ActiveLoadingWidget)
 	{
 		ActiveLoadingWidget->BeginEnterAnimation();
+
+		if (UShooterOutGameSubsystem* OutGame = GetGameInstance()->GetSubsystem<UShooterOutGameSubsystem>())
+		{
+			OutGame->SetMusicState(EShooterOutGameMusicState::None);
+		}
 	}
 
 	SyncWithRoundGameState();

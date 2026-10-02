@@ -11,6 +11,7 @@ class UCustomizableObjectInstance;
 class USkeletalMeshComponent;
 class UGroomComponent;
 class UPrimitiveComponent;
+class UAppearanceBoneDependencyComponent;
 
 UCLASS(ClassGroup=(Customization))
 class FPS_API UGameplayAppearanceComponent : public UActorComponent
@@ -29,8 +30,10 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type Reason) override;
     virtual void TickComponent(float Delta, ELevelTick Tick, FActorComponentTickFunction* Function) override;
 private:
+    void InitializeAuthoredBoneDependencies();
     void StartUpdate();
     void EnsureVisualComponents();
+    void RefreshLODSynchronization();
     FName ResolveClassId() const;
     UPROPERTY(Transient) TObjectPtr<UGameplayAppearanceConfig> Config;
     UPROPERTY(Transient) TObjectPtr<UCustomizationStudioConfig> Studio;
@@ -40,6 +43,8 @@ private:
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Face;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Outfit;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> BindingSurface;
+    UPROPERTY(Transient) TObjectPtr<UAppearanceBoneDependencyComponent> DriverBoneDependency;
+    UPROPERTY(Transient) TObjectPtr<UAppearanceBoneDependencyComponent> BodyBoneDependency;
     UPROPERTY(Transient) TArray<TObjectPtr<UGroomComponent>> Grooms;
     UPROPERTY(Transient) TArray<TObjectPtr<UPrimitiveComponent>> AuthoredVisuals;
     FReplicatedAppearance Desired;

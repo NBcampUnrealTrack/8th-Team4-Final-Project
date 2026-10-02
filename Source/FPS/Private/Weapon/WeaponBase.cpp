@@ -225,6 +225,22 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	return true;
 }
 
+void AWeaponBase::PlayEquipSound()
+{
+	if (Effects)
+	{
+		Effects->PlayEquipSound();
+	}
+}
+
+void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
+{
+	if (Effects)
+	{
+		Effects->PlayMeleeAttackSound(bHeavyAttack);
+	}
+}
+
 void AWeaponBase::NotifyPrimaryInputReleased()
 {
 	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
@@ -477,7 +493,14 @@ void AWeaponBase::RefreshThirdPersonAttachment() const
     USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
-        bool bAttachedToAppearance = false;
+        // A missing socket otherwise resolves to the mesh origin (the feet).
+        // Hide this presentation until the correct mesh/socket is available.
+        if (!CharacterMesh3P->DoesSocketExist(GripSocketName3P))
+        {
+            Mesh3P->SetVisibility(false, true);
+            return;
+        }
+        Mesh3P->SetVisibility(!IsHidden(), true);
         if (const auto* Appearance = OwnerActor->FindComponentByClass<UGameplayAppearanceComponent>())
         {
             USkeletalMeshComponent* Body = Appearance->GetReadyBody();
@@ -492,29 +515,20 @@ void AWeaponBase::RefreshThirdPersonAttachment() const
                     CharacterMesh3P->GetSocketTransform(GripSocketName3P, RTS_ParentBoneSpace) * Basis;
                 Mesh3P->AttachToComponent(Body, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripBone);
                 Mesh3P->SetRelativeLocationAndRotation(Relative.GetLocation(), Relative.GetRotation());
-                bAttachedToAppearance = true;
+                Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+                Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+                return;
             }
         }
-        if (!bAttachedToAppearance)
-        {
-			Mesh3P->AttachToComponent(
-				CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+		Mesh3P->AttachToComponent(
+			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
 
-			// 무기별 보정값
-			Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
-			Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
-        }
+		// 무기별 보정값
+		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
+		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
 
-		// 숨겨진 외형 드라이버의 CustomDepth 값을 복사하지 않고 새 부착물까지 다시 판정한다.
-		if (AShooterCharacter* Character = Cast<AShooterCharacter>(OwnerActor))
-		{
-			Character->RefreshTeamOutline();
-		}
-		else
-		{
-			Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
-			Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
-		}
+		Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+		Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
 	}
 }
 

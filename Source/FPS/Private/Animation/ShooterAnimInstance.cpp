@@ -492,7 +492,12 @@ void UShooterAnimInstance::PlayFireMontageForCurrentWeapon(bool bPlayObserverWea
 	}
 
 	Montage_Play(MontageData->FireMontage);
-	if (bPlayObserverWeaponAction && !bFirstPersonAnimation && MontageData->WeaponFireMontage)
+	// The owner's presentation relay animates the 1P gun only. Its hidden 3P
+	// sniper must also advance the bolt now that bolt audio is a 3P-only notify.
+	// Nonlocal authority already uses the relay's 3P branch; do not restart it.
+	const bool bOwnerSniperAction = ShooterCharacter && ShooterCharacter->IsLocallyControlled()
+		&& CurrentWeaponType == RogueTags::Weapon_Type_Sniper;
+	if ((bPlayObserverWeaponAction || bOwnerSniperAction) && !bFirstPersonAnimation && MontageData->WeaponFireMontage)
 	{
 		USkeletalMeshComponent* Gun = CurrentWeapon->GetMesh3P();
 		if (UAnimInstance* WeaponAnim = Gun ? Gun->GetAnimInstance() : nullptr)

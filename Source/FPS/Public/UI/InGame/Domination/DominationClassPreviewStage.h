@@ -9,6 +9,7 @@
 
 class AShooterCharacter;
 class AWeaponBase;
+class UAnimMontage;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UNiagaraComponent;
@@ -47,6 +48,16 @@ protected:
 	// 끄면 클래스가 바뀔 때만 한 번 캡처한다. 대기 애니메이션은 멈춘 것처럼 보인다.
 	UPROPERTY(EditDefaultsOnly, Category = "Preview")
 	bool bCaptureEveryFrame = true;
+
+	// 클래스가 바뀔 때 한 번 재생
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>> DrawMontages;
+	// 대기 중 간간이 재생
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>> InspectMontages;
+	// 이전 몽타주가 끝난 뒤 다음 Inspect까지 대기(초)
+	UPROPERTY(EditDefaultsOnly, Category = "Preview|Anim")
+	FVector2D InspectDelayRange = FVector2D(4.0f, 8.0f);
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> RenderTarget;
 	UPROPERTY(Transient)
@@ -57,6 +68,9 @@ private:
 	void RegisterPreviewComponents();
 	void DestroyPreviewPawn();
 	void PlayChangeEffect();
+	float PlayPreviewMontage(const TMap<EDominationCombatClass, TObjectPtr<UAnimMontage>>& Montages) const;
+	void ScheduleInspect(float MontageDuration);
+	void PlayInspect();
 
 	UPROPERTY(VisibleAnywhere, Category = "Preview")
 	TObjectPtr<USceneCaptureComponent2D> SceneCapture;
@@ -69,6 +83,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AShooterCharacter> PreviewPawn;
 	TArray<TWeakObjectPtr<AWeaponBase>> PreviewWeapons;
+	FTimerHandle InspectTimerHandle;
 
 	EDominationCombatClass CurrentPreviewClass = EDominationCombatClass::Unselected;
 };
