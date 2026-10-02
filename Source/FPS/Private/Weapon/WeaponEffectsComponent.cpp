@@ -7,6 +7,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundAttenuation.h"
 #include "Weapon/WeaponBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Tags/GameplayTags.h"
 
 UWeaponEffectsComponent::UWeaponEffectsComponent()
 {
@@ -35,6 +37,15 @@ void UWeaponEffectsComponent::PlayFireCameraShake() const
 	}
 }
 
+void UWeaponEffectsComponent::PlayFireSound() const
+{
+	const auto* Weapon = GetWeaponOwner();
+	if (!FireSound || !Weapon || GetNetMode() == NM_DedicatedServer
+		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife || !Weapon->GetMesh3P()) return;
+	// A single world-space emitter serves owner and observers alike.
+	UGameplayStatics::SpawnSoundAttached(FireSound, Weapon->GetMesh3P());
+}
+
 void UWeaponEffectsComponent::PlayEmptyClipSound()
 {
 	const AActor* Owner = GetOwner();
@@ -46,14 +57,15 @@ void UWeaponEffectsComponent::PlayEmptyClipSound()
 
 void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 {
-	if (!EmptyClipSound || !GetOwner())
+	const auto* Weapon = GetWeaponOwner();
+	if (!EmptyClipSound || !Weapon || !Weapon->GetMesh3P() || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
 	UGameplayStatics::SpawnSoundAttached(
 		EmptyClipSound,
-		GetOwner()->GetRootComponent(),
+		Weapon->GetMesh3P(),
 		NAME_None,
 		FVector::ZeroVector,
 		FRotator::ZeroRotator,

@@ -32,6 +32,8 @@ class FPS_API AWeaponBase : public AActor
 	GENERATED_BODY()
 
 public:
+    // Rebind only the third-person presentation after an asynchronous appearance update.
+    void RefreshThirdPersonAttachment() const;
 	AWeaponBase();
 
 	virtual void Tick(float DeltaTime) override;
@@ -48,7 +50,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
 
-	bool FireMelee(bool bHeavyAttack = false);
+	bool FireMelee(bool bHeavyAttack = false, float AnimationRecoverySeconds = 0.f);
 	bool FireRanged(float ClientFireServerTime);
 
 	// 훈련장처럼 탄약 소모가 필요 없는 런타임에서만 켠다.
@@ -462,7 +464,7 @@ protected:
 	float ReloadDuration = 2.1f;
 
 	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")

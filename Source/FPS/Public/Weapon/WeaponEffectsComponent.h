@@ -19,6 +19,7 @@ public:
 	UWeaponEffectsComponent();
 
 	void PlayFireCameraShake() const;
+	void PlayFireSound() const;
 	void PlayEmptyClipSound();
 
 	// 무기를 꺼낼(장착 사이클 시작) 때 서버에서 호출한다. 무기를 든 본인에게만 Client RPC로 재생한다.
@@ -47,6 +48,9 @@ protected:
 	USceneComponent* GetSoundAttachComponent() const;
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundBase> FireSound;
+
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EmptyClipSound;
 

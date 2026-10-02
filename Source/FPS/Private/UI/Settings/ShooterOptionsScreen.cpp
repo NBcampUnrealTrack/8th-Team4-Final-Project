@@ -7,6 +7,7 @@
 #include "Components/EditableText.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/InputKeySelector.h"
 #include "Components/PanelSlot.h"
 #include "Components/SizeBox.h"
@@ -173,7 +174,6 @@ void UShooterOptionsScreen::NativeOnActivated()
 	}
 
 	Super::NativeOnActivated();
-	ApplyOptionLanguage();
 	RefreshOptionsUI();
 }
 
@@ -197,8 +197,13 @@ void UShooterOptionsScreen::NativeDestruct()
 
 TArray<FIntPoint> UShooterOptionsScreen::GetSupportedResolutions() const
 {
+	TArray<FIntPoint> ReportedResolutions;
+	UKismetSystemLibrary::GetSupportedFullscreenResolutions(ReportedResolutions);
 	TArray<FIntPoint> Resolutions;
-	UKismetSystemLibrary::GetSupportedFullscreenResolutions(Resolutions);
+	for (const FIntPoint& Resolution : ReportedResolutions)
+	{
+		Resolutions.AddUnique(Resolution);
+	}
 
 	const FIntPoint MaxResolution = UShooterGameUserSettings::GetMaxSupportedResolution();
 	Resolutions.RemoveAll([MaxResolution](const FIntPoint& Resolution)
@@ -457,6 +462,7 @@ void UShooterOptionsScreen::RevertVideoModeInternal(const bool bNotifySettingsCh
 void UShooterOptionsScreen::StartVideoModeConfirmationTimeout()
 {
 	ClearVideoModeConfirmationTimeout();
+	// 일시정지와 무관하게 15초 뒤 한 번만 복구한다. UI를 매 프레임 갱신하지 않는다.
 	VideoModeConfirmationTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateUObject(
 			this,
@@ -485,8 +491,6 @@ bool UShooterOptionsScreen::HandleVideoModeConfirmationTimeout(const float Delta
 
 float UShooterOptionsScreen::GetResolutionScalePercent() const
 {
-	// UE 5.7: GetDefaultResolutionScale() is not const, even though it only queries
-	// the engine default. Keep the settings pointer mutable so the fallback call compiles.
 	UGameUserSettings* Settings = GetGameUserSettings();
 	if (!IsValid(Settings))
 	{
@@ -559,6 +563,21 @@ void UShooterOptionsScreen::SetResolutionScalePercent(const float Percent)
 	Settings->SetResolutionScaleValueEx(FMath::Clamp(Percent, Min, Max));
 	Settings->ApplyNonResolutionSettings();
 	OnSettingsChanged.Broadcast();
+}
+
+float UShooterOptionsScreen::GetScreenBrightness() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return Settings ? Settings->GetScreenBrightness() : UShooterGameUserSettings::GetDefaultScreenBrightness();
+}
+
+void UShooterOptionsScreen::SetScreenBrightness(const float Brightness)
+{
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		Settings->SetScreenBrightness(Brightness);
+		OnSettingsChanged.Broadcast();
+	}
 }
 
 bool UShooterOptionsScreen::IsVSyncEnabled() const
@@ -937,7 +956,6 @@ void UShooterOptionsScreen::SetLanguage(const EShooterOptionsLanguage Language)
 	}
 
 	Settings->SetLanguage(Language);
-	ApplyOptionLanguage();
 	OnSettingsChanged.Broadcast();
 }
 
@@ -971,6 +989,8 @@ void UShooterOptionsScreen::ResetSettingsInternal(const bool bResetProjectSettin
 	{
 		// 프로젝트 감도/오디오 값은 유지하고 엔진 영상/그래픽 값만 초기화한다.
 		Settings->UGameUserSettings::SetToDefaults();
+		Settings->SetOverallScalabilityLevel(UShooterGameUserSettings::GetDefaultGraphicsQualityLevel());
+		Settings->SetScreenBrightness(UShooterGameUserSettings::GetDefaultScreenBrightness());
 	}
 
 	Settings->SetScreenResolution(Resolution);
@@ -992,7 +1012,6 @@ void UShooterOptionsScreen::ResetSettingsInternal(const bool bResetProjectSettin
 	if (bResetProjectSettings)
 	{
 		Settings->ApplyLanguageCulture();
-		ApplyOptionLanguage();
 	}
 
 	OnSettingsChanged.Broadcast();
@@ -1085,7 +1104,6 @@ void UShooterOptionsScreen::BindOptionControls()
 		} \
 	}
 
-
 	BIND_CLICK("Btn_Side_Graphics", HandleSideGraphics);
 	BIND_CLICK("Btn_Side_Display", HandleSideDisplay);
 	BIND_CLICK("Btn_Side_Controls", HandleSideControls);
@@ -1138,6 +1156,7 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_ResetKeyBindings", HandleResetKeyBindings);
 
 	BIND_SLIDER("SLD_ResolutionScale", HandleResolutionScaleChanged);
+	BIND_SLIDER("SLD_ScreenBrightness", HandleScreenBrightnessChanged);
 	BIND_SLIDER("SLD_HorizontalSensitivity", HandleHorizontalSensitivityChanged);
 	BIND_SLIDER("SLD_VerticalSensitivity", HandleVerticalSensitivityChanged);
 	BIND_SLIDER("SLD_AimSensitivity", HandleAimSensitivityChanged);
@@ -1149,6 +1168,8 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_SLIDER("SLD_VoiceChatMicrophoneVolume", HandleVoiceChatMicrophoneVolumeChanged);
 	BIND_SLIDER("SLD_VoiceChatOutputVolume", HandleVoiceChatOutputVolumeChanged);
 
+	BIND_TEXT_COMMIT("TXT_ResolutionScaleValue", HandleResolutionScaleCommitted);
+	BIND_TEXT_COMMIT("TXT_ScreenBrightnessValue", HandleScreenBrightnessCommitted);
 	BIND_TEXT_COMMIT("TXT_HorizontalSensitivityValue", HandleHorizontalSensitivityCommitted);
 	BIND_TEXT_COMMIT("TXT_VerticalSensitivityValue", HandleVerticalSensitivityCommitted);
 	BIND_TEXT_COMMIT("TXT_AimSensitivityValue", HandleAimSensitivityCommitted);
@@ -1244,7 +1265,7 @@ void UShooterOptionsScreen::ApplyOptionStaticStyles()
 	{
 		static const TCHAR* SliderNames[] =
 		{
-			TEXT("SLD_ResolutionScale"), TEXT("SLD_HorizontalSensitivity"), TEXT("SLD_VerticalSensitivity"),
+			TEXT("SLD_ResolutionScale"), TEXT("SLD_ScreenBrightness"), TEXT("SLD_HorizontalSensitivity"), TEXT("SLD_VerticalSensitivity"),
 			TEXT("SLD_AimSensitivity"), TEXT("SLD_MasterVolume"), TEXT("SLD_MusicVolume"),
 			TEXT("SLD_SfxVolume"), TEXT("SLD_UiVolume"), TEXT("SLD_VoiceVolume"),
 			TEXT("SLD_VoiceChatMicrophoneVolume"), TEXT("SLD_VoiceChatOutputVolume"),
@@ -1273,9 +1294,7 @@ void UShooterOptionsScreen::ApplyOptionButtonStateStyle(UButton* Button, const b
 		return;
 	}
 
-	Button->SetBackgroundColor(bActive
-		? FLinearColor(0.025f, 0.330f, 0.315f, 0.78f)
-		: FLinearColor(0.008f, 0.030f, 0.032f, 0.74f));
+	Button->SetBackgroundColor(bActive ? TabActiveColor : TabNormalColor);
 }
 
 void UShooterOptionsScreen::SetOptionText(const FName WidgetName, const FText& Text) const
@@ -1295,7 +1314,6 @@ void UShooterOptionsScreen::SetOptionText(const FName WidgetName, const FText& T
 		EditableText->SetText(Text);
 	}
 }
-
 
 FText UShooterOptionsScreen::Localize(const TCHAR* Korean, const TCHAR* English) const
 {
@@ -1353,6 +1371,7 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_Resolution"), TEXT("해상도"), TEXT("Resolution"));
 	Set(TEXT("TXT_Label_WindowMode"), TEXT("화면 모드"), TEXT("Window Mode"));
 	Set(TEXT("TXT_Label_ResolutionScale"), TEXT("해상도 스케일"), TEXT("Resolution Scale"));
+	Set(TEXT("TXT_Label_ScreenBrightness"), TEXT("화면 밝기"), TEXT("Screen Brightness"));
 	Set(TEXT("TXT_Label_VSync"), TEXT("수직 동기화"), TEXT("VSync"));
 	Set(TEXT("TXT_Label_FrameRate"), TEXT("FPS 제한"), TEXT("Frame Rate Limit"));
 	Set(TEXT("TXT_Label_DynamicResolution"), TEXT("다이내믹 레졸루션"), TEXT("Dynamic Resolution"));
@@ -1376,7 +1395,6 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_KeyBindingsEmpty"), TEXT("변경 가능한 키가 없습니다."), TEXT("No rebindable keys were found."));
 	Set(TEXT("TXT_Btn_ResetKeyBindings"), TEXT("키 설정 초기화"), TEXT("Reset Key Bindings"));
 	Set(TEXT("TXT_Label_Language"), TEXT("언어"), TEXT("Language"));
-
 
 	Set(TEXT("TXT_Btn_Reset"), TEXT("초기화"), TEXT("Reset"));
 	Set(TEXT("TXT_Btn_Save"), TEXT("저장"), TEXT("Save"));
@@ -1498,7 +1516,7 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 			continue;
 		}
 
-		Row->SetBrushColor(FLinearColor(0.050f, 0.082f, 0.084f, 0.34f));
+		Row->SetBrushColor(RowNormalColor);
 		Row->SetPadding(FMargin(14.0f, 7.0f));
 		LabelBox->SetWidthOverride(500.0f);
 		SelectorBox->SetWidthOverride(260.0f);
@@ -1517,9 +1535,9 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 		Selector->SetMargin(FMargin(12.0f, 6.0f));
 
 		FButtonStyle KeyButtonStyle;
-		KeyButtonStyle.SetNormal(FSlateColorBrush(FLinearColor(0.008f, 0.030f, 0.032f, 0.86f)));
-		KeyButtonStyle.SetHovered(FSlateColorBrush(FLinearColor(0.020f, 0.115f, 0.112f, 0.95f)));
-		KeyButtonStyle.SetPressed(FSlateColorBrush(FLinearColor(0.024f, 0.260f, 0.252f, 0.95f)));
+		KeyButtonStyle.SetNormal(FSlateColorBrush(TabNormalColor));
+		KeyButtonStyle.SetHovered(FSlateColorBrush(RowActiveColor));
+		KeyButtonStyle.SetPressed(FSlateColorBrush(TabActiveColor));
 		Selector->SetButtonStyle(KeyButtonStyle);
 
 		FTextBlockStyle KeyTextStyle;
@@ -1562,26 +1580,55 @@ void UShooterOptionsScreen::SetChoiceSegments(
 	const int32 ActiveIndex,
 	const int32 ChoiceCount) const
 {
-	static constexpr int32 MaxSegments = 24;
-	const int32 VisibleCount = FMath::Clamp(ChoiceCount, 0, MaxSegments);
+	if (!WidgetTree) return;
 	const FString PrefixString = Prefix.ToString();
-	for (int32 Index = 0; Index < MaxSegments; ++Index)
+	const FName ContainerName(*FString::Printf(TEXT("HB_Choices_%s"), *PrefixString));
+	UHorizontalBox* Container = Cast<UHorizontalBox>(GetWidgetFromName(ContainerName));
+	if (!Container)
 	{
-		const bool bVisible = Index < VisibleCount;
-		const FName SizeName(*FString::Printf(TEXT("SB_Choice_%s_%d"), *PrefixString, Index));
-		if (USizeBox* SegmentSize = Cast<USizeBox>(GetWidgetFromName(SizeName)))
+		// 이전 WBP도 첫 번째 표시 칸의 부모를 통해 같은 방식으로 갱신한다.
+		const FName FirstName(*FString::Printf(TEXT("SB_Choice_%s_0"), *PrefixString));
+		if (UWidget* FirstSegment = GetWidgetFromName(FirstName))
 		{
-			SegmentSize->SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+			Container = Cast<UHorizontalBox>(FirstSegment->GetParent());
 		}
+	}
+	if (!Container) return;
 
-		const FName SegmentName(*FString::Printf(TEXT("Border_Choice_%s_%d"), *PrefixString, Index));
-		if (UBorder* Segment = Cast<UBorder>(GetWidgetFromName(SegmentName)))
+	const int32 VisibleCount = FMath::Max(0, ChoiceCount);
+	while (Container->GetChildrenCount() > VisibleCount)
+	{
+		Container->RemoveChildAt(Container->GetChildrenCount() - 1);
+	}
+	while (Container->GetChildrenCount() < VisibleCount)
+	{
+		USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		UBorder* Segment = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+		Size->SetHeightOverride(3.0f);
+		Segment->SetPadding(FMargin(0.0f));
+		Segment->SetBrush(FSlateColorBrush(FLinearColor::White));
+		Size->SetContent(Segment);
+		Container->AddChildToHorizontalBox(Size);
+	}
+
+	for (int32 Index = 0; Index < VisibleCount; ++Index)
+	{
+		if (USizeBox* Size = Cast<USizeBox>(Container->GetChildAt(Index)))
 		{
-			Segment->SetBrushColor(Index == ActiveIndex ? SegmentActiveColor : SegmentInactiveColor);
+			Size->ClearWidthOverride();
+			Size->SetVisibility(ESlateVisibility::HitTestInvisible);
+			if (UHorizontalBoxSlot* SegmentSlot = Cast<UHorizontalBoxSlot>(Size->Slot))
+			{
+				SegmentSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				SegmentSlot->SetPadding(FMargin(1.0f, 0.0f));
+			}
+			if (UBorder* Segment = Cast<UBorder>(Size->GetContent()))
+			{
+				Segment->SetBrushColor(Index == ActiveIndex ? SegmentActiveColor : SegmentInactiveColor);
+			}
 		}
 	}
 }
-
 
 void UShooterOptionsScreen::SetToggleVisual(
 	const FName ButtonName,
@@ -1621,12 +1668,19 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Quality"), OverallText);
 	SetOptionText(TEXT("TXT_HeaderStatusValue_FPS"), FrameLimitText);
 
-
 	// Show how many discrete choices each selector has and where the current value sits.
 	{
 		const TArray<FIntPoint> Resolutions = GetSupportedResolutions();
 		const int32 ResolutionIndex = Resolutions.IndexOfByKey(GetScreenResolution());
 		SetChoiceSegments(TEXT("Resolution"), ResolutionIndex, Resolutions.Num());
+		if (UWidget* Previous = GetWidgetFromName(TEXT("Btn_ResolutionPrev")))
+		{
+			Previous->SetIsEnabled(ResolutionIndex > 0);
+		}
+		if (UWidget* Next = GetWidgetFromName(TEXT("Btn_ResolutionNext")))
+		{
+			Next->SetIsEnabled(ResolutionIndex >= 0 && ResolutionIndex < Resolutions.Num() - 1);
+		}
 		SetChoiceSegments(
 			TEXT("WindowMode"),
 			GetWindowMode() == EShooterWindowMode::Windowed ? 1 : 0,
@@ -1656,7 +1710,6 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 		{EShooterScalabilitySetting::Shading, TEXT("TXT_ShadingValue")},
 	};
 
-
 	for (const TPair<EShooterScalabilitySetting, FName>& Entry : QualityTexts)
 	{
 		SetOptionText(Entry.Value, GetQualityDisplayText(GetQualityLevel(Entry.Key)));
@@ -1682,7 +1735,16 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 		Slider->SetMaxValue(ResolutionMax);
 		Slider->SetValue(GetResolutionScalePercent());
 	}
-	SetOptionText(TEXT("TXT_ResolutionScaleValue"), FText::FromString(FString::Printf(TEXT("%.0f%%"), GetResolutionScalePercent())));
+	SetOptionText(TEXT("TXT_ResolutionScaleValue"), FText::FromString(FString::Printf(TEXT("%.0f"), GetResolutionScalePercent())));
+
+	if (USlider* Slider = Cast<USlider>(GetWidgetFromName(TEXT("SLD_ScreenBrightness"))))
+	{
+		Slider->SetMinValue(UShooterGameUserSettings::GetMinScreenBrightness());
+		Slider->SetMaxValue(UShooterGameUserSettings::GetMaxScreenBrightness());
+		Slider->SetStepSize(1.0f);
+		Slider->SetValue(GetScreenBrightness());
+	}
+	SetOptionText(TEXT("TXT_ScreenBrightnessValue"), FText::AsNumber(FMath::RoundToInt(GetScreenBrightness())));
 
 	SetToggleVisual(TEXT("Btn_VSyncToggle"), TEXT("TXT_VSyncValue"), IsVSyncEnabled());
 	SetToggleVisual(TEXT("Btn_DynamicResolutionToggle"), TEXT("TXT_DynamicResolutionValue"), IsDynamicResolutionEnabled());
@@ -1835,9 +1897,7 @@ void UShooterOptionsScreen::RefreshTabVisuals()
 		{
 			if (UButton* Button = Cast<UButton>(GetWidgetFromName(SideItem.Button)))
 			{
-				Button->SetBackgroundColor(bSelected
-					? FLinearColor(0.024f, 0.260f, 0.252f, 0.62f)
-					: FLinearColor(0.008f, 0.028f, 0.030f, 0.34f));
+				Button->SetBackgroundColor(bSelected ? TabActiveColor : TabNormalColor);
 			}
 		}
 		if (USizeBox* Accent = Cast<USizeBox>(GetWidgetFromName(SideItem.Accent)))
@@ -1854,7 +1914,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 {
 	const FName Prefixes[] =
 	{
-		TEXT("Resolution"), TEXT("WindowMode"), TEXT("ResolutionScale"), TEXT("VSync"), TEXT("FrameRate"), TEXT("DynamicResolution"),
+		TEXT("Resolution"), TEXT("WindowMode"), TEXT("ResolutionScale"), TEXT("ScreenBrightness"), TEXT("VSync"), TEXT("FrameRate"), TEXT("DynamicResolution"),
 		TEXT("Overall"), TEXT("ViewDistance"), TEXT("AntiAliasing"), TEXT("Shadow"), TEXT("GlobalIllumination"),
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
@@ -1880,9 +1940,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 			}
 			else
 			{
-				Row->SetBrushColor(bActive
-					? FLinearColor(0.030f, 0.175f, 0.170f, 0.46f)
-					: FLinearColor(0.050f, 0.082f, 0.084f, 0.34f));
+				Row->SetBrushColor(bActive ? RowActiveColor : RowNormalColor);
 			}
 		}
 	}
@@ -1902,9 +1960,9 @@ void UShooterOptionsScreen::StepResolution(const int32 Delta)
 	{
 		Index = 0;
 	}
-	Index = (Index + Delta + Resolutions.Num()) % Resolutions.Num();
+	// 최소/최대에서 반대쪽 해상도로 순환하지 않는다.
+	Index = FMath::Clamp(Index + Delta, 0, Resolutions.Num() - 1);
 	SetScreenResolution(Resolutions[Index]);
-	RefreshOptionsUI();
 }
 
 void UShooterOptionsScreen::StepWindowMode(const int32 Delta)
@@ -1918,7 +1976,6 @@ void UShooterOptionsScreen::StepWindowMode(const int32 Delta)
 	int32 Index = GetWindowMode() == EShooterWindowMode::Windowed ? 1 : 0;
 	Index = (Index + Delta + UE_ARRAY_COUNT(Modes)) % UE_ARRAY_COUNT(Modes);
 	SetWindowMode(Modes[Index]);
-	RefreshOptionsUI();
 }
 
 void UShooterOptionsScreen::StepFrameRate(const int32 Delta)
@@ -1934,20 +1991,17 @@ void UShooterOptionsScreen::StepFrameRate(const int32 Delta)
 	const int32 NextIndex = (CurrentIndex + Direction + ChoiceCount) % ChoiceCount;
 
 	SetFrameRateLimit(UShooterGameUserSettings::GetFrameRateLimitChoice(NextIndex));
-	RefreshOptionsUI();
 }
-
 
 void UShooterOptionsScreen::StepOverallQuality(const int32 Delta)
 {
 	int32 Level = GetOverallQualityLevel();
 	if (Level < 0 || Level > 4)
 	{
-		Level = 2;
+		Level = UShooterGameUserSettings::GetDefaultGraphicsQualityLevel();
 	}
 	Level = (Level + Delta + 5) % 5;
 	SetOverallQualityLevel(Level);
-	RefreshOptionsUI();
 }
 
 void UShooterOptionsScreen::StepQuality(const EShooterScalabilitySetting Setting, const int32 Delta)
@@ -1955,7 +2009,6 @@ void UShooterOptionsScreen::StepQuality(const EShooterScalabilitySetting Setting
 	int32 Level = FMath::Clamp(GetQualityLevel(Setting), 0, 4);
 	Level = (Level + Delta + 5) % 5;
 	SetQualityLevel(Setting, Level);
-	RefreshOptionsUI();
 }
 
 void UShooterOptionsScreen::HandleSideGraphics() { ActiveSideButton = TEXT("Btn_Side_Graphics"); ActiveOption = TEXT("Overall"); ShowOptionsPage(ToPageIndex(EOptionsPage::Graphics)); }
@@ -1967,9 +2020,9 @@ void UShooterOptionsScreen::HandleSideVoiceChat() { ActiveSideButton = TEXT("Btn
 void UShooterOptionsScreen::HandleSideSettings() { ActiveSideButton = TEXT("Btn_Side_Settings"); ActiveOption = TEXT("Language"); ShowOptionsPage(ToPageIndex(EOptionsPage::Settings)); }
 void UShooterOptionsScreen::HandleSave() { SaveOptions(); }
 void UShooterOptionsScreen::HandleBack() { RequestClose(); }
-void UShooterOptionsScreen::HandleReset() { ResetAllSettingsToDefaults(); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleVideoKeep() { ConfirmVideoMode(); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleVideoRevert() { RevertVideoMode(); RefreshOptionsUI(); }
+void UShooterOptionsScreen::HandleReset() { ResetAllSettingsToDefaults(); }
+void UShooterOptionsScreen::HandleVideoKeep() { ConfirmVideoMode(); }
+void UShooterOptionsScreen::HandleVideoRevert() { RevertVideoMode(); }
 
 void UShooterOptionsScreen::HandleResolutionPrev() { ActiveOption = TEXT("Resolution"); StepResolution(-1); }
 void UShooterOptionsScreen::HandleResolutionNext() { ActiveOption = TEXT("Resolution"); StepResolution(1); }
@@ -2000,9 +2053,6 @@ void UShooterOptionsScreen::HandleFoliageNext() { ActiveOption = TEXT("Foliage")
 void UShooterOptionsScreen::HandleShadingPrev() { ActiveOption = TEXT("Shading"); StepQuality(EShooterScalabilitySetting::Shading, -1); }
 void UShooterOptionsScreen::HandleShadingNext() { ActiveOption = TEXT("Shading"); StepQuality(EShooterScalabilitySetting::Shading, 1); }
 
-
-
-
 void UShooterOptionsScreen::HandleLanguagePrev()
 {
 	ActiveOption = TEXT("Language");
@@ -2016,12 +2066,12 @@ void UShooterOptionsScreen::HandleLanguageNext()
 	HandleLanguagePrev();
 }
 
-void UShooterOptionsScreen::HandleVSyncToggle() { ActiveOption = TEXT("VSync"); SetVSyncEnabled(!IsVSyncEnabled()); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveOption = TEXT("DynamicResolution"); SetDynamicResolutionEnabled(!IsDynamicResolutionEnabled()); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); RefreshOptionsUI(); }
-void UShooterOptionsScreen::HandleVoiceChatToggle() { ActiveOption = TEXT("VoiceChat"); SetVoiceChatEnabled(!IsVoiceChatEnabled()); RefreshOptionsUI(); }
+void UShooterOptionsScreen::HandleVSyncToggle() { ActiveOption = TEXT("VSync"); SetVSyncEnabled(!IsVSyncEnabled()); }
+void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveOption = TEXT("DynamicResolution"); SetDynamicResolutionEnabled(!IsDynamicResolutionEnabled()); }
+void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); }
+void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); }
+void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); }
+void UShooterOptionsScreen::HandleVoiceChatToggle() { ActiveOption = TEXT("VoiceChat"); SetVoiceChatEnabled(!IsVoiceChatEnabled()); }
 void UShooterOptionsScreen::HandleResetKeyBindings()
 {
 	if (AShooterPlayerController* Controller = Cast<AShooterPlayerController>(GetOwningPlayer()))
@@ -2048,10 +2098,9 @@ void UShooterOptionsScreen::CommitAudioPercent(
 	const FText& Text,
 	const ETextCommit::Type CommitMethod,
 	const EShooterAudioChannel Channel,
-	const FName OptionName,
-	const FName TextName)
+	const FName OptionName)
 {
-	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	if (bRefreshingUI || (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus))
 	{
 		return;
 	}
@@ -2065,20 +2114,15 @@ void UShooterOptionsScreen::CommitAudioPercent(
 
 	ActiveOption = OptionName;
 	SetAudioVolume(Channel, Percent / VolumePercentScale);
-	SetOptionText(
-		TextName,
-		FText::FromString(FString::Printf(TEXT("%.0f"), GetAudioVolume(Channel) * VolumePercentScale)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::CommitVoiceChatPercent(
 	const FText& Text,
 	const ETextCommit::Type CommitMethod,
 	const bool bMicrophone,
-	const FName OptionName,
-	const FName TextName)
+	const FName OptionName)
 {
-	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	if (bRefreshingUI || (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus))
 	{
 		return;
 	}
@@ -2100,49 +2144,41 @@ void UShooterOptionsScreen::CommitVoiceChatPercent(
 	{
 		SetVoiceChatOutputVolume(Scalar);
 	}
-
-	const float AppliedValue = bMicrophone
-		? GetVoiceChatMicrophoneVolume()
-		: GetVoiceChatOutputVolume();
-	SetOptionText(
-		TextName,
-		FText::FromString(FString::Printf(TEXT("%.0f"), AppliedValue * VolumePercentScale)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleMasterVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Master, TEXT("MasterVolume"), TEXT("TXT_MasterVolumeValue"));
+	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Master, TEXT("MasterVolume"));
 }
 
 void UShooterOptionsScreen::HandleMusicVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Music, TEXT("MusicVolume"), TEXT("TXT_MusicVolumeValue"));
+	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Music, TEXT("MusicVolume"));
 }
 
 void UShooterOptionsScreen::HandleSfxVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::SoundEffects, TEXT("SfxVolume"), TEXT("TXT_SfxVolumeValue"));
+	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::SoundEffects, TEXT("SfxVolume"));
 }
 
 void UShooterOptionsScreen::HandleUiVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::UserInterface, TEXT("UiVolume"), TEXT("TXT_UiVolumeValue"));
+	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::UserInterface, TEXT("UiVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Voice, TEXT("VoiceVolume"), TEXT("TXT_VoiceVolumeValue"));
+	CommitAudioPercent(Text, CommitMethod, EShooterAudioChannel::Voice, TEXT("VoiceVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceChatMicrophoneVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitVoiceChatPercent(Text, CommitMethod, true, TEXT("VoiceChatMicrophoneVolume"), TEXT("TXT_VoiceChatMicrophoneVolumeValue"));
+	CommitVoiceChatPercent(Text, CommitMethod, true, TEXT("VoiceChatMicrophoneVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceChatOutputVolumeCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	CommitVoiceChatPercent(Text, CommitMethod, false, TEXT("VoiceChatOutputVolume"), TEXT("TXT_VoiceChatOutputVolumeValue"));
+	CommitVoiceChatPercent(Text, CommitMethod, false, TEXT("VoiceChatOutputVolume"));
 }
 
 void UShooterOptionsScreen::HandleResolutionScaleChanged(const float Value)
@@ -2150,8 +2186,41 @@ void UShooterOptionsScreen::HandleResolutionScaleChanged(const float Value)
 	if (bRefreshingUI) return;
 	ActiveOption = TEXT("ResolutionScale");
 	SetResolutionScalePercent(Value);
-	SetOptionText(TEXT("TXT_ResolutionScaleValue"), FText::FromString(FString::Printf(TEXT("%.0f%%"), Value)));
-	RefreshOptionRowVisuals();
+}
+
+void UShooterOptionsScreen::HandleResolutionScaleCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (bRefreshingUI) return;
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus) return;
+	float Percent = 0.0f;
+	if (TryParseNumber(Text, Percent))
+	{
+		ActiveOption = TEXT("ResolutionScale");
+		SetResolutionScalePercent(Percent);
+		return;
+	}
+	RefreshOptionsUI();
+}
+
+void UShooterOptionsScreen::HandleScreenBrightnessChanged(const float Value)
+{
+	if (bRefreshingUI) return;
+	ActiveOption = TEXT("ScreenBrightness");
+	SetScreenBrightness(Value);
+}
+
+void UShooterOptionsScreen::HandleScreenBrightnessCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (bRefreshingUI) return;
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus) return;
+	float Brightness = 0.0f;
+	if (TryParseNumber(Text, Brightness))
+	{
+		ActiveOption = TEXT("ScreenBrightness");
+		SetScreenBrightness(Brightness);
+		return;
+	}
+	RefreshOptionsUI();
 }
 
 void UShooterOptionsScreen::HandleHorizontalSensitivityChanged(const float Value)
@@ -2159,8 +2228,6 @@ void UShooterOptionsScreen::HandleHorizontalSensitivityChanged(const float Value
 	if (bRefreshingUI) return;
 	ActiveOption = TEXT("HorizontalSensitivity");
 	SetMouseHorizontalSensitivity(Value);
-	SetOptionText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleVerticalSensitivityChanged(const float Value)
@@ -2168,8 +2235,6 @@ void UShooterOptionsScreen::HandleVerticalSensitivityChanged(const float Value)
 	if (bRefreshingUI) return;
 	ActiveOption = TEXT("VerticalSensitivity");
 	SetMouseVerticalSensitivity(Value);
-	SetOptionText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleAimSensitivityChanged(const float Value)
@@ -2177,57 +2242,63 @@ void UShooterOptionsScreen::HandleAimSensitivityChanged(const float Value)
 	if (bRefreshingUI) return;
 	ActiveOption = TEXT("AimSensitivity");
 	SetAimSensitivityMultiplier(Value);
-	SetOptionText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.3f"), Value)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleHorizontalSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	if (bRefreshingUI || (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus))
 	{
 		return;
 	}
 
 	ActiveOption = TEXT("HorizontalSensitivity");
-	SetMouseHorizontalSensitivity(FCString::Atof(*Text.ToString()));
-	// 설정 클래스가 자른 값을 칸에 되쓴다.
-	SetOptionText(TEXT("TXT_HorizontalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseHorizontalSensitivity())));
-	RefreshOptionRowVisuals();
+	float Value = 0.0f;
+	if (!TryParseNumber(Text, Value))
+	{
+		RefreshOptionsUI();
+		return;
+	}
+	SetMouseHorizontalSensitivity(Value);
 }
 
 void UShooterOptionsScreen::HandleVerticalSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	if (bRefreshingUI || (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus))
 	{
 		return;
 	}
 
 	ActiveOption = TEXT("VerticalSensitivity");
-	SetMouseVerticalSensitivity(FCString::Atof(*Text.ToString()));
-	// 설정 클래스가 자른 값을 칸에 되쓴다.
-	SetOptionText(TEXT("TXT_VerticalSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetMouseVerticalSensitivity())));
-	RefreshOptionRowVisuals();
+	float Value = 0.0f;
+	if (!TryParseNumber(Text, Value))
+	{
+		RefreshOptionsUI();
+		return;
+	}
+	SetMouseVerticalSensitivity(Value);
 }
 
 void UShooterOptionsScreen::HandleAimSensitivityCommitted(const FText& Text, const ETextCommit::Type CommitMethod)
 {
-	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	if (bRefreshingUI || (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus))
 	{
 		return;
 	}
 
 	ActiveOption = TEXT("AimSensitivity");
-	SetAimSensitivityMultiplier(FCString::Atof(*Text.ToString()));
-	// 설정 클래스가 자른 값을 칸에 되쓴다.
-	SetOptionText(TEXT("TXT_AimSensitivityValue"), FText::FromString(FString::Printf(TEXT("%.2f"), GetAimSensitivityMultiplier())));
-	RefreshOptionRowVisuals();
+	float Value = 0.0f;
+	if (!TryParseNumber(Text, Value))
+	{
+		RefreshOptionsUI();
+		return;
+	}
+	SetAimSensitivityMultiplier(Value);
 }
 
 void UShooterOptionsScreen::HandleAudioVolumeChangedInternal(
 	const float Value,
 	const EShooterAudioChannel Channel,
-	const FName OptionName,
-	const FName TextName)
+	const FName OptionName)
 {
 	if (bRefreshingUI)
 	{
@@ -2236,15 +2307,12 @@ void UShooterOptionsScreen::HandleAudioVolumeChangedInternal(
 
 	ActiveOption = OptionName;
 	SetAudioVolume(Channel, Value);
-	SetOptionText(TextName, FText::FromString(FString::Printf(TEXT("%.0f"), GetAudioVolume(Channel) * VolumePercentScale)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleVoiceChatVolumeChangedInternal(
 	const float Value,
 	const bool bMicrophone,
-	const FName OptionName,
-	const FName TextName)
+	const FName OptionName)
 {
 	if (bRefreshingUI)
 	{
@@ -2260,47 +2328,42 @@ void UShooterOptionsScreen::HandleVoiceChatVolumeChangedInternal(
 	{
 		SetVoiceChatOutputVolume(Value);
 	}
-
-	const float AppliedValue = bMicrophone ? GetVoiceChatMicrophoneVolume() : GetVoiceChatOutputVolume();
-	SetOptionText(TextName, FText::FromString(FString::Printf(TEXT("%.0f"), AppliedValue * VolumePercentScale)));
-	RefreshOptionRowVisuals();
 }
 
 void UShooterOptionsScreen::HandleMasterVolumeChanged(const float Value)
 {
-	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Master, TEXT("MasterVolume"), TEXT("TXT_MasterVolumeValue"));
+	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Master, TEXT("MasterVolume"));
 }
 
 void UShooterOptionsScreen::HandleMusicVolumeChanged(const float Value)
 {
-	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Music, TEXT("MusicVolume"), TEXT("TXT_MusicVolumeValue"));
+	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Music, TEXT("MusicVolume"));
 }
 
 void UShooterOptionsScreen::HandleSfxVolumeChanged(const float Value)
 {
-	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::SoundEffects, TEXT("SfxVolume"), TEXT("TXT_SfxVolumeValue"));
+	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::SoundEffects, TEXT("SfxVolume"));
 }
 
 void UShooterOptionsScreen::HandleUiVolumeChanged(const float Value)
 {
-	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::UserInterface, TEXT("UiVolume"), TEXT("TXT_UiVolumeValue"));
+	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::UserInterface, TEXT("UiVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceVolumeChanged(const float Value)
 {
-	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Voice, TEXT("VoiceVolume"), TEXT("TXT_VoiceVolumeValue"));
+	HandleAudioVolumeChangedInternal(Value, EShooterAudioChannel::Voice, TEXT("VoiceVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceChatMicrophoneVolumeChanged(const float Value)
 {
-	HandleVoiceChatVolumeChangedInternal(Value, true, TEXT("VoiceChatMicrophoneVolume"), TEXT("TXT_VoiceChatMicrophoneVolumeValue"));
+	HandleVoiceChatVolumeChangedInternal(Value, true, TEXT("VoiceChatMicrophoneVolume"));
 }
 
 void UShooterOptionsScreen::HandleVoiceChatOutputVolumeChanged(const float Value)
 {
-	HandleVoiceChatVolumeChangedInternal(Value, false, TEXT("VoiceChatOutputVolume"), TEXT("TXT_VoiceChatOutputVolumeValue"));
+	HandleVoiceChatVolumeChangedInternal(Value, false, TEXT("VoiceChatOutputVolume"));
 }
-
 
 UShooterGameUserSettings* UShooterOptionsScreen::GetGameUserSettings() const
 {

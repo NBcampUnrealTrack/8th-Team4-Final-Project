@@ -13,6 +13,7 @@ struct FPS_API FCustomizationAppearance
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor HairColor = FLinearColor::White;
  // Missing fields in v1 saves retain the authored material, not a white dye.
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bUseOriginalHairColor = true;
+ UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bAttachmentVisible = true;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor EyeColor = FLinearColor::White;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor SkinColor = FLinearColor::White;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) float SkinValue = 1.f;

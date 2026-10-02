@@ -23,10 +23,14 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameMode/ShooterGameMode.h"
 #include "InputActionValue.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerState.h"
 #include "Perception/AISense_Hearing.h"
+#include "Settings/ShooterAudioSettings.h"
+#include "Sound/SoundConcurrency.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
 
@@ -404,7 +408,38 @@ void AShooterCharacter::UpdateSprintBlocked(const float Stamina)
 {
 	if (UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(GetCharacterMovement()))
 	{
+		if (Stamina <= 0.f && ShooterMovement->IsSprinting() && IsLocallyControlled())
+		{
+			PlayExhaustedBreathSound();
+		}
+
 		ShooterMovement->SetSprintBlocked(Stamina <= 0.f);
+	}
+}
+
+void AShooterCharacter::PlayExhaustedBreathSound() const
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const ADominationPlayerState* DominationState = GetPlayerState<ADominationPlayerState>();
+	const EDominationCombatClass CombatClass = IsValid(DominationState)
+		? DominationState->GetCombatClass()
+		: EDominationCombatClass::Unselected;
+
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolveExhaustedBreathSoundPool(CombatClass);
+	if (Pool.IsEmpty())
+	{
+		return;
+	}
+
+	if (USoundBase* Sound = Pool[FMath::RandHelper(Pool.Num())].LoadSynchronous())
+	{
+		UGameplayStatics::PlaySound2D(this, Sound, 1.f, 1.f, 0.f,
+			AudioSettings->ExhaustedBreathConcurrency.LoadSynchronous());
 	}
 }
 
@@ -499,6 +534,16 @@ void AShooterCharacter::Landed(const FHitResult& Hit)
 	}
 }
 
+void AShooterCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayJumpSound();
+	}
+}
+
 void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
 {
 	Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
@@ -508,6 +553,11 @@ void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHe
 		FirstPersonCamera->AddWorldOffset(FVector::UpVector * ScaledHalfHeightAdjust);
 		bInterpolatingCrouchCamera = true;
 		SetActorTickEnabled(true);
+	}
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayCrouchSound();
 	}
 
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())
@@ -525,6 +575,11 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 		FirstPersonCamera->AddWorldOffset(-FVector::UpVector * ScaledHalfHeightAdjust);
 		bInterpolatingCrouchCamera = true;
 		SetActorTickEnabled(true);
+	}
+
+	if (IsValid(Footstep))
+	{
+		Footstep->PlayStandSound();
 	}
 
 	if (UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponent())

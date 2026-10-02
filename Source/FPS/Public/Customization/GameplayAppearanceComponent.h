@@ -22,6 +22,7 @@ public:
     void RequestAppearance(const FReplicatedAppearance& Data);
     void AppendPreloadAssetPaths(FName ClassId, TArray<FSoftObjectPath>& OutPaths) const;
     uint32 GetAppliedRevision() const { return AppliedRevision; }
+    USkeletalMeshComponent* GetReadyBody() const;
     const FString& GetFailure() const { return Failure; }
 protected:
     virtual void BeginPlay() override;
