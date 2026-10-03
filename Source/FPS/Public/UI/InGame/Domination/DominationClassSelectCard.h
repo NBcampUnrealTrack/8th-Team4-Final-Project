@@ -25,7 +25,7 @@ struct FPS_API FDominationClassCardPresentation
 	FText Description;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTexture2D> WeaponArt;
+	TObjectPtr<UTexture2D> Portrait;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(
@@ -69,7 +69,7 @@ protected:
 
 private:
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Image_WeaponArt;
+	TObjectPtr<UImage> Image_PickArt;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_ClassName;
