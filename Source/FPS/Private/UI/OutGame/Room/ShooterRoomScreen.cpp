@@ -636,6 +636,11 @@ void UShooterRoomScreen::RefreshActions(const ALobbyGameState* LobbyGameState, c
 		ReadyTarget = Wrapper_Ready;
 	}
 	ReadyTarget->SetVisibility(bIsHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+
+	// 미배정이면 레디 불가, 이미 레디면 취소는 허용
+	const bool bHasTeam = IsValid(LocalPlayerState) && LocalPlayerState->GetTeam() != EGameTeam::None;
+	Btn_Ready->SetIsEnabled(bIsLocalReady || bHasTeam);
+
 	const FText ReadyLabel = bIsLocalReady
 		? NSLOCTEXT("ShooterLobby", "CancelReady", "CANCEL")
 		: NSLOCTEXT("ShooterLobby", "Ready", "READY");
