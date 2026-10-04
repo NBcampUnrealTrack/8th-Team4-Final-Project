@@ -166,7 +166,13 @@ void UShooterChatInputBox::RefreshWhisperSuggestions(const FString& TypedPrefix)
 {
 	ClearSuggestions();
 
-	if (TypedPrefix.IsEmpty() || !Box_Suggestions || !SuggestionEntryWidgetClass)
+	if (TypedPrefix.IsEmpty() || !Box_Suggestions)
+	{
+		return;
+	}
+
+	// Box_Suggestions를 배치해 놓고 엔트리 클래스를 안 넣은 건 WBP 설정 누락이므로 조용히 넘기지 않는다.
+	if (!ensureMsgf(SuggestionEntryWidgetClass, TEXT("[ChatInputBox] %s: SuggestionEntryWidgetClass가 지정되지 않았습니다."), *GetNameSafe(this)))
 	{
 		return;
 	}
@@ -193,7 +199,7 @@ void UShooterChatInputBox::RefreshWhisperSuggestions(const FString& TypedPrefix)
 	for (int32 Index = CurrentSuggestions.Num() - 1; Index >= 0; --Index)
 	{
 		UShooterChatSuggestionEntry* Entry = CreateWidget<UShooterChatSuggestionEntry>(this, SuggestionEntryWidgetClass);
-		if (!Entry)
+		if (!ensure(Entry))
 		{
 			continue;
 		}

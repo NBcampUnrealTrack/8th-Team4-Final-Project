@@ -50,6 +50,4 @@ private:
 	bool bIsRoundInputEnabled = true;
 	bool bIsRoundInputLockApplied = false;
 
-	// Temp log
-	mutable uint32 LastTempInputMask = MAX_uint32;
 };
