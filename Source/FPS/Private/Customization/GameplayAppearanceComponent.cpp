@@ -4,6 +4,7 @@
 #include "Customization/AppearanceParameters.h"
 #include "Customization/AppearancePoseAnimInstance.h"
 #include "Customization/AppearanceBoneDependencyComponent.h"
+#include "Customization/AppearanceVisualSafety.h"
 #include "Character/ShooterCharacter.h"
 #include "Player/ShooterPlayerState.h"
 #include "GameMode/Settings/DominationClassSettings.h"
@@ -19,6 +20,12 @@
 #include "Misc/PackageName.h"
 #include "Combat/RogueDeathPresentation.h"
 #include "Weapon/WeaponBase.h"
+
+bool UGameplayAppearanceComponent::IsLatestAppearanceApplied() const
+{
+    return GetReadyBody() && AppliedRequestSerial == RequestSerial
+        && !bBusy && !bQueued && Failure.IsEmpty();
+}
 
 USkeletalMeshComponent* UGameplayAppearanceComponent::GetReadyBody() const
 {
@@ -115,18 +122,29 @@ void UGameplayAppearanceComponent::RefreshFromPlayerState()
     if (!HasBegunPlay() || GetNetMode() == NM_DedicatedServer) return;
     auto* Character = Cast<AShooterCharacter>(GetOwner());
     const auto* State = Character ? Character->GetPlayerState<AShooterPlayerState>() : nullptr;
-    if (!State) return;
     const FName ClassId = ResolveClassId();
-    if (const auto* Data = State->FindAppearance(ClassId)) RequestAppearance(*Data);
+    if (State) if (const auto* Data = State->FindAppearance(ClassId)) { RequestAppearance(*Data); return; }
+    // New players and class previews also use identity 1, without requiring a saved profile.
+    if (Desired.Revision == 0 && !ClassId.IsNone())
+    {
+        FReplicatedAppearance Data;
+        Data.ClassId = ClassId; Data.Revision = 1;
+        Data.Appearance = FCustomizationAppearance::DefaultForClass(ClassId.ToString());
+        RequestAppearance(Data);
+    }
 }
 
 void UGameplayAppearanceComponent::RequestAppearance(const FReplicatedAppearance& Data)
 {
+    FReplicatedAppearance Normalized = Data;
     if (GetNetMode() == NM_DedicatedServer || Data.ClassId != ResolveClassId()
-        || Data.Revision == 0 || !Data.Appearance.ValidateForClass(Data.ClassId.ToString())) return;
-    if (Desired.ClassId == Data.ClassId && Desired.Revision == Data.Revision) return;
-    Desired = Data;
+        || Data.Revision == 0 || !Normalized.Appearance.NormalizeBodyForClass(Data.ClassId.ToString())) return;
+    // A default local request and the first replicated save can both have revision 1.
+    if (Desired.ClassId == Normalized.ClassId && Desired.Revision == Normalized.Revision
+        && FCustomizationAppearance::StaticStruct()->CompareScriptStruct(&Desired.Appearance, &Normalized.Appearance, 0)) return;
+    Desired = Normalized;
     ++RequestSerial;
+    Failure.Reset();
     bQueued = true;
     if (!bBusy) StartUpdate();
 }
@@ -287,7 +305,11 @@ void UGameplayAppearanceComponent::StartUpdate()
         {
             auto* Mesh = Instance ? Instance->GetSkeletalMeshComponentSkeletalMesh(Name) : nullptr;
             Meshes.Add(Mesh);
-            Valid &= Mesh != nullptr;
+            const bool bRenderable = AppearanceVisualSafety::HasRenderableGeometry(Mesh);
+            Valid &= bRenderable;
+            if (!bRenderable)
+                UE_LOG(LogTemp, Warning, TEXT("[Appearance] Replacement rejected Class=%s Body=%s Component=%s Mesh=%s MutableResult=%d; previous appearance retained"),
+                    *Snapshot.ClassId.ToString(), *Snapshot.Appearance.BodyType, *Name.ToString(), *GetNameSafe(Mesh), int32(Context.UpdateResult));
         }
         if (!Valid) { Self->Failure = TEXT("Mutable generation failed; previous appearance retained"); Self->Pending = nullptr; return; }
         // Verify every chosen groom against the actual authored binding surface before replacing anything.
@@ -355,15 +377,13 @@ void UGameplayAppearanceComponent::StartUpdate()
         }
         for (UPrimitiveComponent* Authored : Self->AuthoredVisuals)
         {
-            Authored->SetRenderInMainPass(false); Authored->SetRenderInDepthPass(false); Authored->SetCastShadow(false);
-            Authored->bVisibleInRayTracing = false;
-            Authored->ComponentTags.AddUnique(TEXT("AppearanceNoOutline"));
-            Authored->SetRenderCustomDepth(false);
+            AppearanceVisualSafety::HideAuthoredVisual(Authored);
         }
         Self->RefreshLODSynchronization();
         for (auto* Target : Targets) Target->SetVisibility(true);
         Self->Live = Self->Pending; Self->Pending = nullptr;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
+        Self->AppliedRequestSerial = Serial;
         if (AWeaponBase* Weapon = Character->GetCurrentWeapon_Implementation())
             Weapon->RefreshThirdPersonAttachment();
         Self->SetComponentTickEnabled(true);

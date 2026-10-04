@@ -1,6 +1,9 @@
 #include "Customization/CustomizationStudioActor.h"
 #include "Customization/AppearanceParameters.h"
 #include "Customization/CustomizationPreviewGrounding.h"
+#include "Customization/AppearanceVisualSafety.h"
+#include "Customization/CustomizationClassRules.h"
+#include "HAL/PlatformProperties.h"
 #include "MuCO/CustomizableObject.h"
 #include "MuCO/CustomizableObjectInstance.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -32,8 +35,9 @@ ACustomizationStudioActor::ACustomizationStudioActor()
 }
 void ACustomizationStudioActor::RequestAppearance(const FCustomizationAppearance& Data)
 {
- if(!Config||!Data.ValidateForClass(Config->ClassId)||!IsBodyValid(Data.BodyType)){++Revision;bQueued=false;Status=TEXT("잘못된 외형 설정입니다.");return;}
- Desired=Data;++Revision;bQueued=true;Debounce=.12f;
+ FCustomizationAppearance Normalized=Data;
+ if(!Config||!Normalized.NormalizeBodyForClass(Config->ClassId)||!IsBodyValid(Normalized.BodyType)){++Revision;bQueued=false;Status=TEXT("잘못된 외형 설정입니다.");return;}
+ Desired=Normalized;++Revision;bQueued=true;Debounce=.12f;
 }
 void ACustomizationStudioActor::BeginPlay()
 {
@@ -56,10 +60,11 @@ TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoicesForConfig(const
 bool ACustomizationStudioActor::IsHairValid(const FString& Type,FName Id) const
 {if(!IsBodyValid(Type))return false;if(Id==TEXT("Bald"))return true;for(auto& H:HairChoices(Type))if(H.Id==Id)return true;return false;}
 bool ACustomizationStudioActor::IsBodyValid(const FString& Type) const
-{return Config&&Config->BodyTypes.Contains(Type);}
+{return Config&&Type==FixedCustomizationBodyForClass(Config->ClassId)&&Config->BodyTypes.Contains(Type);}
 bool ACustomizationStudioActor::SetClassConfig(UCustomizationStudioConfig* NewConfig)
 {
  if(!NewConfig||!NewConfig->CustomizableObject||!NewConfig->BodyTypes.Contains(NewConfig->DefaultBodyType))return false;
+ if(NewConfig->DefaultBodyType!=FixedCustomizationBodyForClass(NewConfig->ClassId))return false;
  if(Config==NewConfig)return true;
  Config=NewConfig;++Revision;bQueued=false;
  for(auto* M:{Body.Get(),Face.Get(),Outfit.Get()})M->SetVisibility(false);
@@ -85,11 +90,12 @@ void ACustomizationStudioActor::StartUpdate()
  Callback.AddLambda([Weak,Request,Snapshot,I,RequestConfig](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();Self->bBusy=false;
   bool Valid=Context.UpdateResult==EUpdateResult::Success||Context.UpdateResult==EUpdateResult::Warning;
   if(Request!=Self->Revision||RequestConfig.Get()!=Self->Config){Self->PendingInstance=nullptr;return;}
-  TArray<USkeletalMesh*> Meshes;for(const TCHAR* Name:{TEXT("Body"),TEXT("Face"),TEXT("Outfit")}){auto* M=I->GetSkeletalMeshComponentSkeletalMesh(Name);Meshes.Add(M);auto* R=M?M->GetResourceForRendering():nullptr;Valid&=R&&R->LODRenderData.Num()>0;if(R)for(auto& L:R->LODRenderData)Valid&=L.GetNumVertices()>0&&L.RenderSections.Num()>0;}
+  TArray<USkeletalMesh*> Meshes;for(const TCHAR* Name:{TEXT("Body"),TEXT("Face"),TEXT("Outfit")}){auto* M=I->GetSkeletalMeshComponentSkeletalMesh(Name);Meshes.Add(M);Valid&=AppearanceVisualSafety::HasRenderableGeometry(M);}
   if(!Valid){Self->Status=TEXT("외형 생성 실패 — 이전 미리보기를 유지합니다.");Self->PendingInstance=nullptr;return;}
   FTransform GroundedTransform=Self->ModelRoot->GetRelativeTransform();
-  if(Self->bUseMutableLevelFraming&&!Self->ResolveGroundedPreview(Meshes,GroundedTransform))
-  {Self->Status=TEXT("발 위치 확인 실패 — 이전 미리보기를 유지합니다.");Self->PendingInstance=nullptr;return;}
+  // Floor placement is optional: cooked meshes may have no CPU-readable vertices.
+  // Keep the existing placement without blocking valid mesh/material/color updates.
+  const bool bGroundingResolved=!Self->bUseMutableLevelFraming||Self->ResolveGroundedPreview(Meshes,GroundedTransform);
   const TArray<USkeletalMeshComponent*> Components={Self->Body.Get(),Self->Face.Get(),Self->Outfit.Get()};
   // This studio displays reference poses. The generated face inherits the CO
   // reference face's post-process setup, which can deform a different identity.
@@ -109,8 +115,9 @@ void ACustomizationStudioActor::StartUpdate()
    for(int32 Slot=0;Slot<Materials.Num();++Slot)Component->SetMaterial(Slot,Materials[Slot]);
   }
   Self->Face->SetForcedLOD(Self->PreviewFaceLOD);Self->LiveInstance=Self->PendingInstance;Self->PendingInstance=nullptr;Self->ApplyGrooms(Snapshot);Self->AppliedRevision=Request;Self->Status=TEXT("미리보기 준비 완료");
+  if(!bGroundingResolved)Self->Status=TEXT("미리보기 준비 완료 · 발 높이는 기존 배치 유지");
   for(auto* M:{Self->Body.Get(),Self->Face.Get(),Self->Outfit.Get()})M->SetVisibility(true);
-  if(Self->bUseMutableLevelFraming)Self->ModelRoot->SetRelativeTransform(GroundedTransform);
+  if(Self->bUseMutableLevelFraming&&bGroundingResolved)Self->ModelRoot->SetRelativeTransform(GroundedTransform);
   Self->UpdateCamera();
  });I->UpdateSkeletalMeshAsyncResult(Callback,true,true);
 }
@@ -126,8 +133,9 @@ bool ACustomizationStudioActor::ResolveGroundedPreview(const TArray<USkeletalMes
   if(!RenderData||RenderData->LODRenderData.IsEmpty())return false;
   const auto& Positions=RenderData->LODRenderData[0].StaticVertexBuffers.PositionVertexBuffer;
   // CPU data may be stripped in cooked content. Never access a released buffer
-  // or guess from bounds; retain the preceding valid preview in that case.
-  if(!Positions.GetVertexData()||Positions.GetNumVertices()==0)return false;
+  // or guess from bounds; retain only the preceding floor placement in that case.
+  if(!CanReadPreviewVertices(FPlatformProperties::RequiresCookedData(), Positions.GetAllowCPUAccess(),
+      Positions.GetVertexData()!=nullptr&&Positions.GetNumVertices()>0))return false;
   const FTransform ComponentToModel=(MeshIndex==0?Body.Get():Outfit.Get())->GetRelativeTransform();
   Vertices.Reserve(Vertices.Num()+Positions.GetNumVertices());
   for(uint32 Index=0;Index<Positions.GetNumVertices();++Index)
@@ -201,4 +209,4 @@ void ACustomizationStudioActor::PanPreview(FVector2D Delta)
  CameraPan.X=FMath::Clamp(CameraPan.X,-250.,250.);CameraPan.Y=FMath::Clamp(CameraPan.Y,-250.,250.);
  UpdateCamera();
 }
-void ACustomizationStudioActor::SetFaceView(bool bFace){bFaceCamera=bFace;CameraPan=FVector2D::ZeroVector;Distance=bFace?(bUseMutableLevelFraming?150.f:100.f):(bUseMutableLevelFraming?560.f:310.f);UpdateCamera();}
+void ACustomizationStudioActor::SetFaceView(bool bFace){bFaceCamera=bFace;CameraPan=FVector2D::ZeroVector;Distance=bFace?(bUseMutableLevelFraming?150.f:100.f):(bUseMutableLevelFraming?700.f:310.f);UpdateCamera();}

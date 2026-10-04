@@ -23,6 +23,9 @@ public:
     void RequestAppearance(const FReplicatedAppearance& Data);
     void AppendPreloadAssetPaths(FName ClassId, TArray<FSoftObjectPath>& OutPaths) const;
     uint32 GetAppliedRevision() const { return AppliedRevision; }
+    // A valid previous body is still usable while a newer request is generating.
+    // Previews must wait for this, not merely a nonzero applied revision.
+    bool IsLatestAppearanceApplied() const;
     USkeletalMeshComponent* GetReadyBody() const;
     const FString& GetFailure() const { return Failure; }
 protected:
@@ -49,6 +52,7 @@ private:
     UPROPERTY(Transient) TArray<TObjectPtr<UPrimitiveComponent>> AuthoredVisuals;
     FReplicatedAppearance Desired;
     uint32 RequestSerial = 0;
+    uint32 AppliedRequestSerial = 0;
     uint32 AppliedRevision = 0;
     bool bBusy = false;
     bool bQueued = false;

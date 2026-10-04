@@ -5,10 +5,14 @@
 #include "WeaponEffectsComponent.generated.h"
 
 class AWeaponBase;
+class UAnimMontage;
 class UCameraShakeBase;
 class USceneComponent;
 class USoundAttenuation;
 class USoundBase;
+class UAnimInstance;
+struct FAnimNotifyEvent;
+struct FAnimNotifyEventReference;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_API UWeaponEffectsComponent : public UActorComponent
@@ -21,6 +25,15 @@ public:
 	void PlayFireCameraShake() const;
 	void PlayFireSound() const;
 	void PlayEmptyClipSound();
+	// Common 3P animation state calls this once per equip transition on each peer.
+	// No RPC/animation notify: owner and observers hear the same world-space emitter.
+	void PlayDrawSound() const;
+	// Called by the common character anim instance when a registered Holster starts.
+	// Returns false for unrelated montages; always emits from the world-space gun.
+	bool TryPlayHolsterSound(const UAnimMontage* Montage) const;
+	// Synchronization may rewind a weapon montage across the same sound notify.
+	// Consume that event once per playback, not once per frame or time window.
+	bool ConsumeMontageSoundNotify(UAnimInstance* Source, const FAnimNotifyEventReference& EventReference);
 
 	// 무기를 꺼낼(장착 사이클 시작) 때 서버에서 호출한다. 무기를 든 본인에게만 Client RPC로 재생한다.
 	void PlayEquipSound();
@@ -61,6 +74,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundAttenuation> ActionAttenuation;
 
+	// Gun Draw audio lives here, not on the Draw animation's notify tracks.
+	// Uses ActionAttenuation, including for the owning player's first-person view.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundBase> DrawSound;
+
+	// 무기를 집어넣을 때 한 번 재생. 거리 감쇠는 ActionAttenuation을 사용한다.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
+	TObjectPtr<USoundBase> HolsterSound;
+
+	// Sound-free character montages that trigger HolsterSound (1P + each class 3P).
+	// Exact assets, not name matching; weapon-mesh montages must not be added here.
+	UPROPERTY(EditDefaultsOnly, AdvancedDisplay, Category = "FPS|Weapon|Effects|Sound")
+	TArray<TObjectPtr<UAnimMontage>> HolsterMontages;
+
 	// 무기를 꺼낼 때(무기 교체/리스폰/유틸리티 해제 후 재장착) 본인에게만 재생할 사운드.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EquipSound;
@@ -80,4 +107,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Camera")
 	TSubclassOf<UCameraShakeBase> FireCameraShake;
+
+private:
+	struct FPlayedMontageSound
+	{
+		TWeakObjectPtr<UAnimInstance> Source;
+		int32 MontageInstanceID = INDEX_NONE;
+		const FAnimNotifyEvent* Event = nullptr;
+	};
+	TArray<FPlayedMontageSound> PlayedMontageSounds;
 };

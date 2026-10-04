@@ -46,6 +46,13 @@ namespace
 			return;
 		}
 
+		// A successful gameplay appearance replacement retires authored grooms.
+		// Late legacy preset calls must not show them over the selected face.
+		if (Component->ComponentHasTag(TEXT("AppearanceNoOutline")))
+		{
+			return;
+		}
+
 		if (!IsValid(Groom))
 		{
 			Component->SetVisibility(false);
@@ -308,6 +315,13 @@ void UCharacterCustomizationComponent::ApplyCurrentHair()
 	}
 
 	if (HairPresets.Num() == 0)
+	{
+		return;
+	}
+
+	// Keep legacy hair as a fallback until replacement succeeds, but never
+	// re-enable it afterward (BeginPlay and asynchronous completion can race).
+	if (HairComponent->ComponentHasTag(TEXT("AppearanceNoOutline")))
 	{
 		return;
 	}

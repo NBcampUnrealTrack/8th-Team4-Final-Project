@@ -42,10 +42,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::RebuildWidget()
  Panel->AddSlot().AutoHeight().HAlign(HAlign_Left).Padding(0,0,0,12)[Button(TEXT("뒤로가기"),[this](){if(auto* C=Controller())C->RequestReturnToFrontend();})];
  Panel->AddSlot().AutoHeight().Padding(0,0,0,12)[Label(TEXT("RANGER / CUSTOMIZATION"),22)];
  Panel->AddSlot().AutoHeight()[SNew(STextBlock).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->AccountLabel:TEXT(""));}).AutoWrapText(true)];
- Panel->AddSlot().AutoHeight().Padding(0,14,0,4)[Label(TEXT("캐릭터 외형"),16)];
- auto Bodies=SNew(SHorizontalBox);for(FString Type:{TEXT("Seo"),TEXT("Custom"),TEXT("Fab")})Bodies->AddSlot().FillWidth(1).Padding(2)[Button(Type,[this,Type](){if(auto* C=Controller())C->SelectBody(Type);})];
- Panel->AddSlot().AutoHeight()[Bodies];
- Panel->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?TEXT("선택: ")+C->Draft.BodyType:TEXT(""));})];
+ Panel->AddSlot().AutoHeight().Padding(0,14,0,4)[Label(TEXT("몸·얼굴은 클래스 기본 외형으로 고정됩니다."),14)];
  Panel->AddSlot().AutoHeight()[SNew(SComboButton).OnGetMenuContent_Lambda([this](){return HairMenu();}).ButtonContent()[SNew(STextBlock).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?TEXT("헤어 선택 · ")+C->Draft.HairId.ToString():TEXT("헤어"));})]];
  Panel->AddSlot().AutoHeight().Padding(0,18,0,6)[Label(TEXT("편집할 부위"),16)];
  const TArray<FString> Labels={TEXT("상의"),TEXT("하의"),TEXT("조끼"),TEXT("부착물"),TEXT("벨트"),TEXT("장갑"),TEXT("부츠"),TEXT("스카프"),TEXT("피부"),TEXT("눈")};

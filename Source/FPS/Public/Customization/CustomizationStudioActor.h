@@ -31,7 +31,7 @@ class FPS_API UCustomizationStudioConfig : public UDataAsset
  GENERATED_BODY()
 public:
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FString ClassId=TEXT("Ranger");
- UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FString> BodyTypes={TEXT("Seo"),TEXT("Custom"),TEXT("Fab")};
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FString> BodyTypes={TEXT("Seo")};
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FString DefaultBodyType=TEXT("Seo");
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FName DefaultHairId=TEXT("Default");
  UPROPERTY(EditAnywhere,BlueprintReadWrite) TArray<FName> EnabledClothingParts={TEXT("Top"),TEXT("Bottom"),TEXT("Vest"),TEXT("Attachment"),TEXT("Belt"),TEXT("Gloves"),TEXT("Boots"),TEXT("Scarf")};

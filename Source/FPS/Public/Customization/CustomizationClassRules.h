@@ -1,5 +1,19 @@
 #pragma once
 #include "CoreMinimal.h"
+// Fixed identities used by the studio, network presentation and default spawn.
+// Legacy body IDs below remain readable so old saves can be migrated without losing colors.
+inline FString FixedCustomizationBodyForClass(const FString& C)
+{
+ if(C==TEXT("Ranger"))return TEXT("Seo");
+ if(C==TEXT("Trooper"))return TEXT("MHC_Frey");
+ if(C==TEXT("Vanguard"))return TEXT("MHC_Crowd80");
+ return {};
+}
+inline FName FixedCustomizationHairForClass(const FString& C)
+{
+ if(C==TEXT("Ranger"))return TEXT("Default");
+ return FName(*FixedCustomizationBodyForClass(C));
+}
 inline bool IsCustomizationBodyForClass(const FString& C,const FString& B)
 {
  if(C==TEXT("Ranger"))return B==TEXT("Seo")||B==TEXT("Custom")||B==TEXT("Fab");
