@@ -13,6 +13,7 @@ class UGroomAsset;
 class UGroomBindingAsset;
 class UGroomComponent;
 class UCameraComponent;
+struct FStreamableHandle;
 
 USTRUCT(BlueprintType)
 struct FStudioGroomChoice
@@ -21,9 +22,12 @@ struct FStudioGroomChoice
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FString BodyType;
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FName Id;
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FString Label;
- UPROPERTY(EditAnywhere,BlueprintReadWrite) TObjectPtr<UGroomAsset> Groom;
- UPROPERTY(EditAnywhere,BlueprintReadWrite) TObjectPtr<UGroomBindingAsset> Binding;
+ // Catalog entries are paths: opening a class must not load every hairstyle.
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) TSoftObjectPtr<UGroomAsset> Groom;
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) TSoftObjectPtr<UGroomBindingAsset> Binding;
  UPROPERTY(EditAnywhere,BlueprintReadWrite) FName Component = TEXT("Hair");
+ // Persist the editor-validated menu choice without loading all candidate bindings.
+ UPROPERTY(EditAnywhere,BlueprintReadWrite) bool bSelectable = true;
 };
 UCLASS(BlueprintType)
 class FPS_API UCustomizationStudioConfig : public UDataAsset
@@ -46,6 +50,7 @@ class FPS_API ACustomizationStudioActor : public AActor
 public:
  ACustomizationStudioActor();
  virtual void BeginPlay() override;
+ virtual void EndPlay(const EEndPlayReason::Type Reason) override;
  virtual void Tick(float Delta) override;
  UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Studio") TObjectPtr<UCustomizationStudioConfig> Config;
  UPROPERTY(EditAnywhere,BlueprintReadWrite,Category="Studio") TMap<FName,TObjectPtr<UCustomizationStudioConfig>> ClassConfigs;
@@ -83,13 +88,18 @@ private:
  UPROPERTY() TObjectPtr<USkeletalMeshComponent> GroomBindingSurface;
  UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> LiveInstance;
  UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> PendingInstance;
+ UPROPERTY(Transient) TObjectPtr<UCustomizationStudioConfig> PendingConfig;
+ UPROPERTY(Transient) TArray<FStudioGroomChoice> PendingGrooms;
+ TSharedPtr<FStreamableHandle> GroomLoadHandle;
  FCustomizationAppearance Desired;
- int32 Revision=0,AppliedRevision=0;
- bool bBusy=false,bQueued=false,bFaceCamera=false;
+ int32 Revision=0,AppliedRevision=0,ActiveRequest=0;
+ bool bBusy=false,bQueued=false,bFaceCamera=false,bEndingPlay=false;
  float Debounce=0,Distance=310;
  FVector2D CameraPan=FVector2D::ZeroVector;
  FString Status;
  void StartUpdate();
+ void BeginMutableUpdate(int32 Request,FCustomizationAppearance Snapshot);
+ void FinishRequest(int32 Request);
  void ApplyGrooms(const FCustomizationAppearance& Data);
  bool ResolveGroundedPreview(const TArray<USkeletalMesh*>& Meshes,FTransform& OutTransform) const;
  void UpdateCamera();

@@ -28,5 +28,16 @@ void AppearanceVisualSafety::HideAuthoredVisual(UPrimitiveComponent* Visual)
 	Visual->SetRenderCustomDepth(false);
 	// Strands have their own rendering path and do not obey the main-pass flag.
 	// Do not hide the skeletal driver or propagate visibility to replacement children.
-	if (Visual->IsA<UGroomComponent>()) Visual->SetVisibility(false, false);
+	if (auto* Groom = Cast<UGroomComponent>(Visual))
+	{
+		Groom->SetVisibility(false, false);
+		// Called only after the replacement appearance has passed validation.
+		// Hiding alone retains per-character strand buffers and Niagara simulation.
+		// Keep the authored component/BP intact, but retire its runtime resources.
+		Groom->UnregisterComponent();
+		Groom->SetComponentTickEnabled(false);
+		Groom->SetGroomAsset(nullptr, nullptr);
+		Groom->SetGroomCache(nullptr);
+		Groom->EmptyOverrideMaterials();
+	}
 }

@@ -2,6 +2,10 @@
 #include "Customization/GameplayAppearanceConfig.h"
 #include "Customization/CustomizationStudioActor.h"
 #include "Customization/AppearanceParameters.h"
+#include "Customization/AppearanceGroomSelection.h"
+#include "Customization/AppearanceGroomLifecycle.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Customization/AppearancePoseAnimInstance.h"
 #include "Customization/AppearanceBoneDependencyComponent.h"
 #include "Customization/AppearanceVisualSafety.h"
@@ -136,6 +140,7 @@ void UGameplayAppearanceComponent::RefreshFromPlayerState()
 
 void UGameplayAppearanceComponent::RequestAppearance(const FReplicatedAppearance& Data)
 {
+    if (bEndingPlay) return;
     FReplicatedAppearance Normalized = Data;
     if (GetNetMode() == NM_DedicatedServer || Data.ClassId != ResolveClassId()
         || Data.Revision == 0 || !Normalized.Appearance.NormalizeBodyForClass(Data.ClassId.ToString())) return;
@@ -260,6 +265,7 @@ void UGameplayAppearanceComponent::RefreshLODSynchronization()
 
 void UGameplayAppearanceComponent::StartUpdate()
 {
+    if (bBusy || bEndingPlay) return;
     bQueued = false;
     if (!Config)
     {
@@ -268,6 +274,37 @@ void UGameplayAppearanceComponent::StartUpdate()
         Studio = Config ? Config->StudioConfig.LoadSynchronous() : nullptr;
     }
     if (!Config || !Studio || !Studio->CustomizableObject) { Failure = TEXT("Gameplay appearance catalog missing"); return; }
+    const FGameplayAppearanceBody* Definition = Config->Bodies.FindByPredicate([this](const auto& B){ return B.BodyType == Desired.Appearance.BodyType; });
+    USkeletalMesh* SourceFace = Definition ? Definition->FaceMesh.LoadSynchronous() : nullptr;
+    if (!SourceFace) { Failure = TEXT("Original binding face missing"); return; }
+    if (!AppearanceGroomSelection::Select(*Studio, Desired.Appearance.BodyType, Desired.Appearance.HairId, PendingGrooms, Failure)) return;
+    PendingSourceFace = SourceFace;
+    bBusy = true; ActiveRequest = RequestSerial;
+    const uint32 Serial = ActiveRequest;
+    const FReplicatedAppearance Snapshot = Desired;
+    TArray<FSoftObjectPath> Paths; AppearanceGroomSelection::GatherPaths(PendingGrooms, Paths);
+    if (Paths.IsEmpty()) { BeginMutableUpdate(Serial, Snapshot); return; }
+    GroomLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths,
+        FStreamableDelegate::CreateWeakLambda(this, [this, Serial, Snapshot] { BeginMutableUpdate(Serial, Snapshot); }),
+        FStreamableManager::DefaultAsyncLoadPriority, false, true, TEXT("Gameplay selected grooms"));
+    if (!GroomLoadHandle) { Failure = TEXT("Selected groom request failed; previous appearance retained"); FinishRequest(Serial); return; }
+    const auto Handle = GroomLoadHandle; Handle->StartStalledHandle();
+}
+
+void UGameplayAppearanceComponent::FinishRequest(uint32 Serial)
+{
+    if (!bBusy || ActiveRequest != Serial) return;
+    bBusy = false; ActiveRequest = 0;
+    Pending = nullptr; PendingGrooms.Reset(); PendingSourceFace = nullptr; GroomLoadHandle.Reset();
+    if (bQueued && !bEndingPlay) StartUpdate();
+}
+
+void UGameplayAppearanceComponent::BeginMutableUpdate(uint32 Serial, FReplicatedAppearance Snapshot)
+{
+    if (bEndingPlay || !bBusy || ActiveRequest != Serial) return;
+    if (Serial != RequestSerial) { FinishRequest(Serial); return; }
+    USkeletalMesh* SourceFace = PendingSourceFace.Get();
+    if (!AppearanceGroomSelection::ValidateLoaded(PendingGrooms, SourceFace, Failure)) { FinishRequest(Serial); return; }
 #if WITH_EDITOR
     if (!Studio->CustomizableObject->IsCompiled())
     {
@@ -275,26 +312,19 @@ void UGameplayAppearanceComponent::StartUpdate()
         Studio->CustomizableObject->Compile(Params);
     }
 #endif
-    if (!Studio->CustomizableObject->IsCompiled()) { Failure = TEXT("Gameplay CO not compiled/cooked"); return; }
-    const FGameplayAppearanceBody* Definition = Config->Bodies.FindByPredicate([this](const auto& B){ return B.BodyType == Desired.Appearance.BodyType; });
-    USkeletalMesh* SourceFace = Definition ? Definition->FaceMesh.LoadSynchronous() : nullptr;
-    if (!SourceFace) { Failure = TEXT("Original binding face missing"); return; }
+    if (!Studio->CustomizableObject->IsCompiled()) { Failure = TEXT("Gameplay CO not compiled/cooked"); FinishRequest(Serial); return; }
     Pending = Studio->CustomizableObject->CreateInstance();
-    if (!ApplyAppearanceParameters(Pending, Studio, Desired.Appearance)) { Pending = nullptr; Failure = TEXT("Invalid appearance parameters"); return; }
-    const uint32 Serial = RequestSerial;
-    const FReplicatedAppearance Snapshot = Desired;
-    bBusy = true;
+    if (!ApplyAppearanceParameters(Pending, Studio, Snapshot.Appearance)) { Failure = TEXT("Invalid appearance parameters"); FinishRequest(Serial); return; }
     TWeakObjectPtr<UGameplayAppearanceComponent> Weak(this);
     FInstanceUpdateNativeDelegate Callback;
     Callback.AddLambda([Weak, Serial, Snapshot, SourceFace](const FUpdateContext& Context)
     {
         if (!Weak.IsValid()) return;
         auto* Self = Weak.Get();
-        Self->bBusy = false;
+        if (Self->bEndingPlay || !Self->bBusy || Self->ActiveRequest != Serial) return;
         if (Serial != Self->RequestSerial)
         {
-            Self->Pending = nullptr;
-            if (Self->bQueued) Self->StartUpdate();
+            Self->FinishRequest(Serial);
             return;
         }
         auto* Instance = Self->Pending.Get();
@@ -311,16 +341,10 @@ void UGameplayAppearanceComponent::StartUpdate()
                 UE_LOG(LogTemp, Warning, TEXT("[Appearance] Replacement rejected Class=%s Body=%s Component=%s Mesh=%s MutableResult=%d; previous appearance retained"),
                     *Snapshot.ClassId.ToString(), *Snapshot.Appearance.BodyType, *Name.ToString(), *GetNameSafe(Mesh), int32(Context.UpdateResult));
         }
-        if (!Valid) { Self->Failure = TEXT("Mutable generation failed; previous appearance retained"); Self->Pending = nullptr; return; }
+        if (!Valid) { Self->Failure = TEXT("Mutable generation failed; previous appearance retained"); Self->FinishRequest(Serial); return; }
         // Verify every chosen groom against the actual authored binding surface before replacing anything.
-        for (const auto& Choice : Self->Studio->Grooms)
-        {
-            if (Choice.BodyType != Snapshot.Appearance.BodyType) continue;
-            if (Choice.Component == TEXT("Hair") && Choice.Id != Snapshot.Appearance.HairId) continue;
-            if (!Choice.Groom || !Choice.Binding || !UGroomBindingAsset::IsCompatible(SourceFace, Choice.Binding, false)
-                || !UGroomBindingAsset::IsCompatible(Choice.Groom, Choice.Binding, false)) Valid = false;
-        }
-        if (!Valid) { Self->Failure = TEXT("Groom binding is incompatible with selected face"); Self->Pending = nullptr; return; }
+        if (!AppearanceGroomSelection::ValidateLoaded(Self->PendingGrooms, SourceFace, Self->Failure))
+        { Self->FinishRequest(Serial); return; }
         Self->EnsureVisualComponents();
         auto* Character = CastChecked<AShooterCharacter>(Self->GetOwner());
         auto* Driver = Character->GetMesh();
@@ -350,16 +374,14 @@ void UGameplayAppearanceComponent::StartUpdate()
         Self->BindingSurface->SetVisibility(true);
         for (UGroomComponent* Groom : Self->Grooms)
         {
-            Groom->SetVisibility(false);
-            Groom->SetGroomAsset(nullptr);
-            Groom->EmptyOverrideMaterials();
+            AppearanceGroomLifecycle::Clear(*Groom);
             const FName Part = Groom->ComponentTags[0];
-            for (const auto& Choice : Self->Studio->Grooms)
+            for (const auto& Choice : Self->PendingGrooms)
             {
                 if (Choice.BodyType != Snapshot.Appearance.BodyType || Choice.Component != Part) continue;
                 if (Part == TEXT("Hair") && Choice.Id != Snapshot.Appearance.HairId) continue;
-                Groom->SetGroomAsset(Choice.Groom, Choice.Binding, true);
-                Groom->SetVisibility(true);
+                AppearanceGroomLifecycle::Activate(*Groom, *Self->BindingSurface,
+                    *Choice.Groom.Get(), *Choice.Binding.Get(), Groom->bUseCards);
                 if (Part == TEXT("Hair") && !Snapshot.Appearance.bUseOriginalHairColor)
                 {
                     const auto& Materials = Choice.Groom->GetHairGroupsMaterials();
@@ -381,7 +403,7 @@ void UGameplayAppearanceComponent::StartUpdate()
         }
         Self->RefreshLODSynchronization();
         for (auto* Target : Targets) Target->SetVisibility(true);
-        Self->Live = Self->Pending; Self->Pending = nullptr;
+        Self->Live = Self->Pending;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
         Self->AppliedRequestSerial = Serial;
         if (AWeaponBase* Weapon = Character->GetCurrentWeapon_Implementation())
@@ -390,6 +412,7 @@ void UGameplayAppearanceComponent::StartUpdate()
         // An asynchronous Mutable update can finish after the character has died.
         RogueDeathPresentation::RefreshRagdollFollowers(*Character);
         Character->RefreshTeamOutline();
+        Self->FinishRequest(Serial);
     });
     Pending->UpdateSkeletalMeshAsyncResult(Callback, true, true);
 }
@@ -406,7 +429,9 @@ void UGameplayAppearanceComponent::TickComponent(float Delta, ELevelTick Tick, F
 
 void UGameplayAppearanceComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
-    ++RequestSerial; bQueued = false;
+    bEndingPlay = true; ++RequestSerial; bQueued = false;
+    if (GroomLoadHandle) GroomLoadHandle->CancelHandle();
+    FinishRequest(ActiveRequest);
     Pending = nullptr; Live = nullptr;
     Super::EndPlay(Reason);
 }

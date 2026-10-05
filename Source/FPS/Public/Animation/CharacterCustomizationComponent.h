@@ -9,6 +9,7 @@ class UMaterialInstanceDynamic;
 class UGroomAsset;
 class UGroomBindingAsset;
 class UGroomComponent;
+struct FStreamableHandle;
 
 
 UENUM(BlueprintType)
@@ -25,21 +26,22 @@ struct FPS_API FCharacterHairPreset
 {
 	GENERATED_BODY()
 
-	// Çì¾î Groom
+	// Catalog entries retain paths only; ApplyCurrentHair loads the selected pair.
+	// í—¤ì–´ Groom
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hair")
-	TObjectPtr<UGroomAsset> Groom = nullptr;
+	TSoftObjectPtr<UGroomAsset> Groom;
 
-	// Seo Face¿ë ±âÁ¸ Binding
+	// Seo Faceìš© ê¸°ì¡´ Binding
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hair")
-	TObjectPtr<UGroomBindingAsset> SeoBinding = nullptr;
+	TSoftObjectPtr<UGroomBindingAsset> SeoBinding;
 
-	// Custom Face¿ë Binding
+	// Custom Faceìš© Binding
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hair")
-	TObjectPtr<UGroomBindingAsset> CustomBinding = nullptr;
+	TSoftObjectPtr<UGroomBindingAsset> CustomBinding;
 
-	// Fab Face¿ë Binding
+	// Fab Faceìš© Binding
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hair")
-	TObjectPtr<UGroomBindingAsset> FabBinding = nullptr;
+	TSoftObjectPtr<UGroomBindingAsset> FabBinding;
 };
 
 
@@ -49,9 +51,9 @@ struct FPS_API FCharacterCustomizationData
 	GENERATED_BODY()
 
 	/*
-	 * ±âÁ¸ È£È¯¿ë.
-	 * ÇöÀç Face Mesh ÀÚÃ¼´Â MutableÀÌ °ü¸®ÇÏ¹Ç·Î
-	 * ÀÌ PresetÀº Groom °è¿­ÀÇ ±âº» µ¥ÀÌÅÍ Á¤µµ·Î¸¸ »ç¿ëÇÑ´Ù.
+	 * ê¸°ì¡´ í˜¸í™˜ìš©.
+	 * í˜„ì¬ Face Mesh ìì²´ëŠ” Mutableì´ ê´€ë¦¬í•˜ë¯€ë¡œ
+	 * ì´ Presetì€ Groom ê³„ì—´ì˜ ê¸°ë³¸ ë°ì´í„° ì •ë„ë¡œë§Œ ì‚¬ìš©í•œë‹¤.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
 	TObjectPtr<UCharacterFacePreset> FacePreset = nullptr;
@@ -80,8 +82,8 @@ class FPS_API UCharacterCustomizationComponent : public UActorComponent
 public:
 	UCharacterCustomizationComponent();
 
-	// ±âÁ¸ FacePreset È£È¯¿ë.
-	// Face Mesh / Hair´Â ¿©±â¼­ º¯°æÇÏÁö ¾Ê´Â´Ù.
+	// ê¸°ì¡´ FacePreset í˜¸í™˜ìš©.
+	// Face Mesh / HairëŠ” ì—¬ê¸°ì„œ ë³€ê²½í•˜ì§€ ì•ŠëŠ”ë‹¤.
 	UFUNCTION(BlueprintCallable, Category = "Customization")
 	void ApplyFacePreset(UCharacterFacePreset* Preset);
 
@@ -117,7 +119,7 @@ public:
 	void ApplyCurrentHair();
 
 	/*
-	 * MutableÀÇ BodyType°ú ¹İµå½Ã °°Àº °ªÀ¸·Î ¸ÂÃçÁà¾ß ÇÑ´Ù.
+	 * Mutableì˜ BodyTypeê³¼ ë°˜ë“œì‹œ ê°™ì€ ê°’ìœ¼ë¡œ ë§ì¶°ì¤˜ì•¼ í•œë‹¤.
 	 *
 	 * Seo    -> Seo Binding
 	 * Custom -> Custom Binding
@@ -129,10 +131,11 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 
 	// =========================
-	// ±âÁ¸ Customization
+	// ê¸°ì¡´ Customization
 	// =========================
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Customization")
@@ -198,7 +201,13 @@ protected:
 private:
 	void FindHairComponent();
 
-	UGroomBindingAsset* GetBindingForCurrentCharacter(
+	TSoftObjectPtr<UGroomBindingAsset> GetBindingForCurrentCharacter(
 		const FCharacterHairPreset& HairPreset
 	) const;
+
+	// Keep only the current request resident; completed assets are owned by HairComponent.
+	void CancelPendingHair();
+	TSharedPtr<FStreamableHandle> HairLoadHandle;
+	uint64 HairRequestSerial = 0;
+	bool bEndingPlay = false;
 };

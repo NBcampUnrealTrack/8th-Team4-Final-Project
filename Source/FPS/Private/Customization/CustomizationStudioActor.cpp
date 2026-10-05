@@ -1,5 +1,9 @@
 #include "Customization/CustomizationStudioActor.h"
 #include "Customization/AppearanceParameters.h"
+#include "Customization/AppearanceGroomSelection.h"
+#include "Customization/AppearanceGroomLifecycle.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Customization/CustomizationPreviewGrounding.h"
 #include "Customization/AppearanceVisualSafety.h"
 #include "Customization/CustomizationClassRules.h"
@@ -35,6 +39,7 @@ ACustomizationStudioActor::ACustomizationStudioActor()
 }
 void ACustomizationStudioActor::RequestAppearance(const FCustomizationAppearance& Data)
 {
+ if(bEndingPlay)return;
  FCustomizationAppearance Normalized=Data;
  if(!Config||!Normalized.NormalizeBodyForClass(Config->ClassId)||!IsBodyValid(Normalized.BodyType)){++Revision;bQueued=false;Status=TEXT("잘못된 외형 설정입니다.");return;}
  Desired=Normalized;++Revision;bQueued=true;Debounce=.12f;
@@ -50,10 +55,10 @@ TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoices(const FString&
 {return HairChoicesForConfig(Config,Type);}
 TArray<FStudioGroomChoice> ACustomizationStudioActor::HairChoicesForConfig(const UCustomizationStudioConfig* Config,const FString& Type)
 {
- TArray<FStudioGroomChoice> Out;if(Config)for(auto& H:Config->Grooms)if(H.BodyType==Type&&H.Component==TEXT("Hair")&&H.Groom&&H.Binding&&UGroomBindingAsset::IsCompatible(H.Groom,H.Binding,false))Out.Add(H);
+ TArray<FStudioGroomChoice> Out;if(Config)for(auto& H:Config->Grooms)if(H.BodyType==Type&&H.Component==TEXT("Hair")&&H.bSelectable&&!H.Groom.IsNull()&&!H.Binding.IsNull())Out.Add(H);
  const TArray<FString> Order={TEXT("Hair_S_UpdoBuns"),TEXT("Hair_M_BobStraight"),TEXT("Hair_M_SlickPonytail")};
  Out.StableSort([&Order](const FStudioGroomChoice& A,const FStudioGroomChoice& B){
-  auto Rank=[&Order](const FStudioGroomChoice& H){const int32 Index=Order.IndexOfByKey(H.Groom->GetName());return Index==INDEX_NONE?MAX_int32:Index;};
+  auto Rank=[&Order](const FStudioGroomChoice& H){const int32 Index=Order.IndexOfByKey(H.Groom.ToSoftObjectPath().GetAssetName());return Index==INDEX_NONE?MAX_int32:Index;};
   return Rank(A)<Rank(B);
  });return Out;
 }
@@ -73,25 +78,65 @@ bool ACustomizationStudioActor::SetClassConfig(UCustomizationStudioConfig* NewCo
 }
 void ACustomizationStudioActor::StartUpdate()
 {
+ if(bBusy||bEndingPlay)return;
  bQueued=false;if(!Config||!Config->CustomizableObject){Status=TEXT("프리뷰 설정 또는 CO_Ranger가 없습니다.");return;}
  if(!IsHairValid(Desired.BodyType,Desired.HairId)){Status=TEXT("이 외형에 맞는 헤어 바인딩이 없습니다.");return;}
+ if(!AppearanceGroomSelection::Select(*Config,Desired.BodyType,Desired.HairId,PendingGrooms,Status))return;
+ PendingConfig=Config;bBusy=true;ActiveRequest=Revision;
+ const int32 Request=ActiveRequest;const FCustomizationAppearance Snapshot=Desired;
+ Status=TEXT("선택한 헤어 준비 중…");
+ TArray<FSoftObjectPath> Paths;AppearanceGroomSelection::GatherPaths(PendingGrooms,Paths);
+ if(Paths.IsEmpty()){BeginMutableUpdate(Request,Snapshot);return;}
+ // Start stalled so even cache hits cannot finish before we own the handle.
+ GroomLoadHandle=UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths,
+  FStreamableDelegate::CreateWeakLambda(this,[this,Request,Snapshot]{BeginMutableUpdate(Request,Snapshot);}),
+  FStreamableManager::DefaultAsyncLoadPriority,false,true,TEXT("Preview selected grooms"));
+ if(!GroomLoadHandle){Status=TEXT("헤어 로딩 실패 — 이전 미리보기를 유지합니다.");FinishRequest(Request);return;}
+ const auto Handle=GroomLoadHandle;Handle->StartStalledHandle();
+}
+void ACustomizationStudioActor::FinishRequest(int32 Request)
+{
+ if(!bBusy||ActiveRequest!=Request)return;
+ bBusy=false;ActiveRequest=0;PendingInstance=nullptr;PendingConfig=nullptr;PendingGrooms.Reset();GroomLoadHandle.Reset();
+ // Queued requests retain their debounce and start on Tick, never recursively.
+}
+void ACustomizationStudioActor::EndPlay(const EEndPlayReason::Type Reason)
+{
+ bEndingPlay=true;++Revision;bQueued=false;
+ if(GroomLoadHandle)GroomLoadHandle->CancelHandle();
+ FinishRequest(ActiveRequest);LiveInstance=nullptr;
+ Super::EndPlay(Reason);
+}
+void ACustomizationStudioActor::BeginMutableUpdate(int32 Request,FCustomizationAppearance Snapshot)
+{
+ if(bEndingPlay||!bBusy||ActiveRequest!=Request)return;
+ if(Request!=Revision||PendingConfig!=Config){FinishRequest(Request);return;}
+ for(const auto& H:PendingGrooms)if(!H.Groom.Get()||!H.Binding.Get())
+ {Status=TEXT("헤어 로딩 실패 — 이전 미리보기를 유지합니다.");FinishRequest(Request);return;}
 #if WITH_EDITOR
  // Standalone editor play does not automatically compile every class CO.
  // Prepare a newly selected object before creating its parameter descriptor.
  if(!Config->CustomizableObject->IsCompiled())
  {FCompileParams Params;Params.bAsync=false;Params.bSkipIfNotOutOfDate=false;Config->CustomizableObject->Compile(Params);}
 #endif
- if(!Config->CustomizableObject->IsCompiled()){Status=TEXT("클래스 CO가 준비되지 않았습니다. 컴파일 상태를 확인하세요.");return;}
- PendingInstance=Config->CustomizableObject->CreateInstance();if(!PendingInstance){Status=TEXT("Mutable 인스턴스를 만들지 못했습니다.");return;}
- auto* I=PendingInstance.Get();const FCustomizationAppearance Snapshot=Desired;const int32 Request=Revision;
- if(!ApplyAppearanceParameters(I,Config,Snapshot)){PendingInstance=nullptr;Status=TEXT("잘못된 외형 설정입니다.");return;}
+ if(!Config->CustomizableObject->IsCompiled()){Status=TEXT("클래스 CO가 준비되지 않았습니다. 컴파일 상태를 확인하세요.");FinishRequest(Request);return;}
+ PendingInstance=Config->CustomizableObject->CreateInstance();if(!PendingInstance){Status=TEXT("Mutable 인스턴스를 만들지 못했습니다.");FinishRequest(Request);return;}
+ auto* I=PendingInstance.Get();
+ if(!ApplyAppearanceParameters(I,Config,Snapshot)){Status=TEXT("잘못된 외형 설정입니다.");FinishRequest(Request);return;}
  bBusy=true;Status=TEXT("외형 생성 중…");FInstanceUpdateNativeDelegate Callback;TWeakObjectPtr<ACustomizationStudioActor> Weak(this);
  TWeakObjectPtr<UCustomizationStudioConfig> RequestConfig(Config);
- Callback.AddLambda([Weak,Request,Snapshot,I,RequestConfig](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();Self->bBusy=false;
+ Callback.AddLambda([Weak,Request,Snapshot,I,RequestConfig](const FUpdateContext& Context){if(!Weak.IsValid())return;auto* Self=Weak.Get();
+  if(Self->bEndingPlay||!Self->bBusy||Self->ActiveRequest!=Request)return;
   bool Valid=Context.UpdateResult==EUpdateResult::Success||Context.UpdateResult==EUpdateResult::Warning;
-  if(Request!=Self->Revision||RequestConfig.Get()!=Self->Config){Self->PendingInstance=nullptr;return;}
+  if(Request!=Self->Revision||RequestConfig.Get()!=Self->Config){Self->FinishRequest(Request);return;}
   TArray<USkeletalMesh*> Meshes;for(const TCHAR* Name:{TEXT("Body"),TEXT("Face"),TEXT("Outfit")}){auto* M=I->GetSkeletalMeshComponentSkeletalMesh(Name);Meshes.Add(M);Valid&=AppearanceVisualSafety::HasRenderableGeometry(M);}
-  if(!Valid){Self->Status=TEXT("외형 생성 실패 — 이전 미리보기를 유지합니다.");Self->PendingInstance=nullptr;return;}
+  if(!Valid){Self->Status=TEXT("외형 생성 실패 — 이전 미리보기를 유지합니다.");Self->FinishRequest(Request);return;}
+  USkeletalMesh* Surface=Meshes[1];
+  if(Self->bUseReferencePoseGrooms){Surface=nullptr;for(const auto& H:Self->PendingGrooms)
+   if(H.Binding.Get()&&(Surface=H.Binding->GetTargetSkeletalMesh()))break;}
+  FString GroomError;
+  if(!AppearanceGroomSelection::ValidateLoaded(Self->PendingGrooms,Surface,GroomError))
+  {Self->Status=TEXT("헤어 연결 오류 — 이전 미리보기를 유지합니다.");Self->FinishRequest(Request);return;}
   FTransform GroundedTransform=Self->ModelRoot->GetRelativeTransform();
   // Floor placement is optional: cooked meshes may have no CPU-readable vertices.
   // Keep the existing placement without blocking valid mesh/material/color updates.
@@ -114,11 +159,12 @@ void ACustomizationStudioActor::StartUpdate()
    const auto Materials=I->GetSkeletalMeshComponentOverrideMaterials(ComponentNames[Index]);
    for(int32 Slot=0;Slot<Materials.Num();++Slot)Component->SetMaterial(Slot,Materials[Slot]);
   }
-  Self->Face->SetForcedLOD(Self->PreviewFaceLOD);Self->LiveInstance=Self->PendingInstance;Self->PendingInstance=nullptr;Self->ApplyGrooms(Snapshot);Self->AppliedRevision=Request;Self->Status=TEXT("미리보기 준비 완료");
+  Self->Face->SetForcedLOD(Self->PreviewFaceLOD);Self->LiveInstance=Self->PendingInstance;Self->ApplyGrooms(Snapshot);Self->AppliedRevision=Request;Self->Status=TEXT("미리보기 준비 완료");
   if(!bGroundingResolved)Self->Status=TEXT("미리보기 준비 완료 · 발 높이는 기존 배치 유지");
   for(auto* M:{Self->Body.Get(),Self->Face.Get(),Self->Outfit.Get()})M->SetVisibility(true);
   if(Self->bUseMutableLevelFraming&&bGroundingResolved)Self->ModelRoot->SetRelativeTransform(GroundedTransform);
   Self->UpdateCamera();
+  Self->FinishRequest(Request);
  });I->UpdateSkeletalMeshAsyncResult(Callback,true,true);
 }
 bool ACustomizationStudioActor::ResolveGroundedPreview(const TArray<USkeletalMesh*>& Meshes,FTransform& OutTransform) const
@@ -148,25 +194,22 @@ void ACustomizationStudioActor::ApplyGrooms(const FCustomizationAppearance& Data
  // The authored target retains the vertex layout AND the head shape used to fit
  // cross-body hairstyles. It supplies deformation only, never a second visible face.
  USkeletalMesh* BindingTarget=nullptr;
- if(bUseReferencePoseGrooms&&Config)for(const auto& H:Config->Grooms)
+ if(bUseReferencePoseGrooms)for(const auto& H:PendingGrooms)
   if(H.BodyType==Data.BodyType&&H.Binding){BindingTarget=H.Binding->GetTargetSkeletalMesh();if(BindingTarget)break;}
  GroomBindingSurface->SetSkeletalMesh(BindingTarget);
  GroomBindingSurface->SetForcedLOD(1);
  GroomBindingSurface->SetRelativeTransform(Face->GetRelativeTransform());
- for(UGroomComponent* G:GroomComponents){G->SetVisibility(false);G->SetGroomAsset(nullptr);
-  if(G->GetFName()==TEXT("Hair"))G->EmptyOverrideMaterials();
+ for(UGroomComponent* G:GroomComponents){AppearanceGroomLifecycle::Clear(*G);
   if(!Config)continue;
-  for(auto& H:Config->Grooms){if(H.BodyType!=Data.BodyType||H.Component!=G->GetFName())continue;if(H.Component==TEXT("Hair")&&H.Id!=Data.HairId)continue;
+  for(const auto& H:PendingGrooms){if(H.Component!=G->GetFName())continue;
    auto* Surface=bUseReferencePoseGrooms?GroomBindingSurface.Get():Face.Get();
-   if(H.Groom&&H.Binding&&Surface->GetSkeletalMeshAsset()&&UGroomBindingAsset::IsCompatible(H.Groom,H.Binding,false)&&UGroomBindingAsset::IsCompatible(Surface->GetSkeletalMeshAsset(),H.Binding,false))
+   if(H.Groom&&H.Binding&&Surface->GetSkeletalMeshAsset()&&UGroomBindingAsset::IsCompatible(H.Groom.Get(),H.Binding.Get(),false)&&UGroomBindingAsset::IsCompatible(Surface->GetSkeletalMeshAsset(),H.Binding.Get(),false))
    {
-    G->AttachToComponent(Surface,FAttachmentTransformRules::KeepRelativeTransform);
     // MutableLevel was authored with cards forced for Ranger. Do not carry
     // that override into strand-only styles (for example Frey's Middle_part).
     // Keep the existing card preview where the selected asset supplies cards.
     const bool bHasCards=H.Groom->GetHairGroupsCards().ContainsByPredicate([](const FHairGroupsCardsSourceDescription& Cards){return Cards.GetMesh()!=nullptr&&Cards.LODIndex>=0;});
-    G->SetUseCards(bHasCards);
-    G->SetGroomAsset(H.Groom,H.Binding,true);G->SetVisibility(true);
+    AppearanceGroomLifecycle::Activate(*G,*Surface,*H.Groom.Get(),*H.Binding.Get(),bHasCards);
     if(H.Component==TEXT("Hair")&&!Data.bUseOriginalHairColor)
     {
      // Keep each authored cards/strands/helmet shader; tint only this component.

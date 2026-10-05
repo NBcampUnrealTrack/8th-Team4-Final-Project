@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Customization/ReplicatedAppearance.h"
+#include "Customization/CustomizationStudioActor.h"
 #include "UObject/SoftObjectPath.h"
 #include "GameplayAppearanceComponent.generated.h"
 
@@ -12,6 +13,7 @@ class USkeletalMeshComponent;
 class UGroomComponent;
 class UPrimitiveComponent;
 class UAppearanceBoneDependencyComponent;
+struct FStreamableHandle;
 
 UCLASS(ClassGroup=(Customization))
 class FPS_API UGameplayAppearanceComponent : public UActorComponent
@@ -35,6 +37,8 @@ protected:
 private:
     void InitializeAuthoredBoneDependencies();
     void StartUpdate();
+    void BeginMutableUpdate(uint32 Serial, FReplicatedAppearance Snapshot);
+    void FinishRequest(uint32 Serial);
     void EnsureVisualComponents();
     void RefreshLODSynchronization();
     FName ResolveClassId() const;
@@ -42,6 +46,9 @@ private:
     UPROPERTY(Transient) TObjectPtr<UCustomizationStudioConfig> Studio;
     UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> Pending;
     UPROPERTY(Transient) TObjectPtr<UCustomizableObjectInstance> Live;
+    UPROPERTY(Transient) TArray<FStudioGroomChoice> PendingGrooms;
+    UPROPERTY(Transient) TObjectPtr<USkeletalMesh> PendingSourceFace;
+    TSharedPtr<FStreamableHandle> GroomLoadHandle;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Body;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Face;
     UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Outfit;
@@ -52,9 +59,11 @@ private:
     UPROPERTY(Transient) TArray<TObjectPtr<UPrimitiveComponent>> AuthoredVisuals;
     FReplicatedAppearance Desired;
     uint32 RequestSerial = 0;
+    uint32 ActiveRequest = 0;
     uint32 AppliedRequestSerial = 0;
     uint32 AppliedRevision = 0;
     bool bBusy = false;
     bool bQueued = false;
+    bool bEndingPlay = false;
     FString Failure;
 };
