@@ -35,6 +35,8 @@ struct FDominationFogSnapshot
 	FLinearColor Color = FLinearColor::White;
 	FLinearColor CubemapTint = FLinearColor::White;
 	FLinearColor DirectionalColor = FLinearColor::White;
+	FLinearColor SkyAtmosphereAmbientColorScale = FLinearColor::White;
+	FColor VolumetricAlbedo = FColor::White;
 	FLinearColor VolumetricEmissive = FLinearColor::Black;
 	FExponentialHeightFogData SecondFog;
 	bool bVolumetricFog = false;
@@ -130,6 +132,7 @@ private:
 	FDominationSandstormState CurrentState;
 	float StormIntensity = 0.0f;
 	float LastAppliedIntensity = -1.0f;
+	FLinearColor LastAppliedFogTint = FLinearColor::Black;
 	float LocalPreviewIntensity = -1.0f;
 	bool bPresentationActive = false;
 };
