@@ -37,9 +37,15 @@ public:
 
 	AShooterMinimapBounds* GetMapBounds() const { return MapBounds.Get(); }
 
+	// 등록된 기준이 없으면 레벨에서 직접 찾아 등록한다. BeginPlay 등록을 놓친 경우(레이트 조인 등) 복구용.
+	AShooterMinimapBounds* ResolveMapBounds();
+
 	FOnMinimapBoundsChanged OnMapBoundsChanged;
 
 private:
+	// 킬캠 재생용 복제 레벨(DynamicDuplicatedLevels)의 사본인지. 사본은 킬캠마다 월드에 붙었다 떨어지므로 기준으로 쓰지 않는다.
+	static bool IsKillcamDuplicate(const AShooterMinimapBounds* Bounds);
+
 	void EvaluateSpotting();
 
 	// 관측자 눈 → 대상(머리/몸통) 중 한 점이라도 시야각·거리 안이고 가리는 게 없으면 true

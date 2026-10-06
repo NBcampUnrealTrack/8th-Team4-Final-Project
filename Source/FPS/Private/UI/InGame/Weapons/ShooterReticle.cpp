@@ -156,6 +156,9 @@ void UShooterReticle::NativeConstruct()
 
 void UShooterReticle::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 {
+	// 부활 중 HUD 재구성 등으로 스코프 레이어가 빠졌으면 다시 올린다. 이미 올라가 있으면 아무것도 안 한다.
+	PromoteSniperScopeToViewportLayer();
+
 	UCombatComponent* NewCombat = nullptr;
 	if (NewPawn && NewPawn->Implements<UPlayerInterface>())
 	{
@@ -312,8 +315,24 @@ bool UShooterReticle::IsPerfectAccuracy() const
 
 bool UShooterReticle::IsAiming() const
 {
+	APawn* Pawn = GetViewedPawn();
 	const AWeaponBase* Weapon = FindEquippedWeapon();
-	return IsValid(Weapon) && Weapon->IsADS();
+	if (!IsValid(Pawn) || !IsValid(Weapon))
+	{
+		return false;
+	}
+
+	if (Pawn->IsLocallyControlled())
+	{
+		return Weapon->IsADS();
+	}
+
+	// 관전 대상의 무기 ADS 값(bIsADS)은 GA_ADS가 서버/소유 클라에서만 세팅해 복제되지 않는다.
+	// 대신 복제되는 CombatComponent::bAiming을 본다.
+	const UCombatComponent* Combat = Pawn->Implements<UPlayerInterface>()
+		? IPlayerInterface::Execute_GetCombatComponent(Pawn)
+		: nullptr;
+	return IsValid(Combat) && Combat->bAiming && Weapon->CanADS();
 }
 
 FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
@@ -475,9 +494,24 @@ FLinearColor UShooterReticle::ResolveHitMarkerColor(const ERogueHitMarkerType Ty
 	}
 }
 
+APawn* UShooterReticle::GetViewedPawn() const
+{
+	// 관전 중에는 화면에 보이는 대상(뷰 타깃)의 무기 기준으로 스코프/크로스헤어를 그린다.
+	// 킬캠 카메라처럼 Pawn이 아닌 뷰 타깃이면 내 Pawn으로 돌아간다.
+	if (const APlayerController* PC = GetOwningPlayer())
+	{
+		if (APawn* ViewTargetPawn = Cast<APawn>(PC->GetViewTarget()))
+		{
+			return ViewTargetPawn;
+		}
+	}
+
+	return GetOwningPlayerPawn();
+}
+
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const
 {
-	APawn* Pawn = GetOwningPlayerPawn();
+	APawn* Pawn = GetViewedPawn();
 	if (!Pawn)
 	{
 		return nullptr;

@@ -78,6 +78,9 @@ protected:
 	// 장착 무기가 없거나 동적 크로스헤어가 꺼져 있으면 0.
 	float GetSpreadDegrees() const;
 
+	// 화면에 보이는 Pawn. 평소엔 내 Pawn, 관전 중엔 관전 대상이다.
+	APawn* GetViewedPawn() const;
+
 	AWeaponBase* FindEquippedWeapon() const;
 
 	void PromoteSniperScopeToViewportLayer();
