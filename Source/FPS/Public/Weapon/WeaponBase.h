@@ -278,6 +278,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetMoveSpeedMultiplier() const { return MoveSpeedMultiplier; }
 
+	// true면 이동 상태(걷기/뛰기/브레이킹 실패)에 따른 탄퍼짐 변화를 받지 않는다(예: 산탄총).
+	// CombatComponent::UpdateMovementSpreadMultiplier가 참고한다. 공중 페널티는 별개로 유지된다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Spread")
+	bool IgnoresMovementSpread() const { return bIgnoreMovementSpread; }
+
 	// Hitscan Definition의 Weapon.Type.* 태그를 그대로 노출한다.
 	// 스왑/애니메이션/로그가 DamageRequest와 동일한 태그 원본을 사용하게 하기 위한 접근자다.
 	// bHeavyAttack이 true고 AltWeaponTag가 채워져 있으면(예: 전술 칼 우클릭) AltWeaponTag를 대신 반환한다 -
@@ -429,6 +434,10 @@ protected:
 	// GetMoveSpeedMultiplier() 참고. 무기별 실제 값은 기획이 각 무기 BP에서 조정한다(기본값 1 = 무영향).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (ClampMin = "0.0"))
 	float MoveSpeedMultiplier = 1.f;
+
+	// IgnoresMovementSpread() 참고. 기본값 false = 기존과 동일하게 이동 상태 탄퍼짐을 받는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	bool bIgnoreMovementSpread = false;
 
 	// 스나이퍼가 비ADS(노줌)일 때 강제로 적용되는 탄퍼짐(도). 스나이퍼가 아닌 무기에는 영향 없다.
 	// GetCurrentSpreadDegrees() 참고. 실제 값은 기획이 스나이퍼 BP에서 조정한다.

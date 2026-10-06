@@ -125,6 +125,15 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	const bool bIsFalling = Movement->IsFalling();
 	Weapon->SetIsAirborne(bIsFalling);
 
+	// 이동 탄퍼짐을 무시하는 무기(예: 산탄총)는 항상 정지(브레이킹 성공) + 배율 1로 취급한다 -
+	// MovingSpreadPenaltyDegrees/MovingADSSpreadDegrees/걷기·뛰기 배율이 전부 빠지고 공중 페널티만 남는다.
+	if (Weapon->IgnoresMovementSpread())
+	{
+		Weapon->SetIsStationary(true);
+		Weapon->SetMovementSpreadMultiplier(1.f);
+		return;
+	}
+
 	// 이동 입력을 누르고 있는지와 무관하게, 실제 속도가 임계값 이하로 떨어지면 그 즉시 "정지
 	// (브레이킹 성공)"로 취급한다 - 반대 방향 키로 급정지(카운터 스트레이프)해서 속도를 0으로
 	// 만든 경우도 정지로 인정된다. 완전 정지든 감속으로 멈춘 것이든 동일하게 취급한다.
