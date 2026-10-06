@@ -4,10 +4,12 @@
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Weapon/WeaponBase.h"
+#include "Weapon/WeaponEffectsComponent.h"
 #include "Tags/GameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundAttenuation.h"
+#include "Animation/AnimInstance.h"
 USkeletalMeshComponent* UAnimNotify_FirearmSound::ResolveEmitter(USkeletalMeshComponent* Source,bool bSingleView)
 {
  if(!IsValid(Source)||!Source->GetWorld()||Source->GetWorld()->GetNetMode()==NM_DedicatedServer)return nullptr;
@@ -47,6 +49,21 @@ void UAnimNotify_FirearmSound::Notify(USkeletalMeshComponent* MeshComp,UAnimSequ
  if(bPreviewOnly||bGunshotHandledByWeapon)return;
  auto* Emitter=ResolveEmitter(MeshComp,bSingleViewAction);
  if(!Emitter)return;
+ if (!bSingleViewAction)
+ {
+  // Leader/follower synchronization can cross the same notify twice. Keep
+  // consumption on this weapon instance; shared notify assets hold no state.
+  if (auto* Weapon = Cast<AWeaponBase>(MeshComp->GetOwner()))
+  {
+   if (Weapon->GetWeaponTag() != RogueTags::Weapon_Type_Knife)
+   {
+    if (auto* Effects = Weapon->FindComponentByClass<UWeaponEffectsComponent>())
+    {
+     if (!Effects->ConsumeMontageSoundNotify(MeshComp->GetAnimInstance(), EventReference)) return;
+    }
+   }
+  }
+ }
  if(!AttenuationOverride)
  {
   Super::Notify(Emitter,Animation,EventReference);

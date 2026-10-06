@@ -1,6 +1,7 @@
 #include "Customization/CustomizationStudioWidget.h"
 #include "Customization/CustomizationStudioController.h"
 #include "Customization/CustomizationAppearanceControls.h"
+#include "CustomizationPresentationTheme.h"
 #include "Engine/Font.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Layout/SBorder.h"
@@ -31,10 +32,10 @@ public:
 
 TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableColorPopup()
 {
- const FLinearColor Accent(0.f,.48515f,1.f);
+ const FLinearColor Accent=CustomizationPresentationTheme::Accent;
  const auto Font=BodyFont?FSlateFontInfo(BodyFont,15):FCoreStyle::GetDefaultFontStyle("Regular",15);
  auto Label=[Font](const FString& Text){return SNew(STextBlock).Text(FText::FromString(Text)).Font(Font);};
- auto Action=[this,Label](const FString& Text,TFunction<void()> Fn){return SNew(SButton).ButtonStyle(&ActionStyle).ContentPadding(FMargin(10,8))
+ auto Action=[this,Label](const FString& Text,TFunction<void()> Fn){return SNew(SButton).ButtonStyle(&ActionStyle).ButtonColorAndOpacity(CustomizationPresentationTheme::Button).ContentPadding(FMargin(10,8))
   .OnClicked_Lambda([Fn](){Fn();return FReply::Handled();})[SNew(SBox).HAlign(HAlign_Center)[Label(Text)]];};
  auto GetColor=[this](){auto* C=Controller();return C?C->GetEditingColor():FLinearColor::White;};
  auto Panel=SNew(SVerticalBox);
@@ -112,7 +113,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableColorPopup()
   +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("취소"),[this](){if(auto* C=Controller())C->EndColorEdit(false);})]];
  auto Popup=SNew(SMutableColorPanel).Padding(22)
   .Visibility_Lambda([this](){auto* C=Controller();return C&&C->IsColorEditOpen()?EVisibility::Visible:EVisibility::Collapsed;})
-  .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(.014f,.026f,.042f,1.f))
+  .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(CustomizationPresentationTheme::Panel)
   [SNew(SBox).WidthOverride(366)[Panel]];
  Popup->Controller=Controller();ColorPopup=Popup;
  return Popup;

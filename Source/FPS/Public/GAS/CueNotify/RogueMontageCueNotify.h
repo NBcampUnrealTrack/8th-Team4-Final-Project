@@ -18,6 +18,8 @@ class FPS_API URogueMontageCueNotify : public UGameplayCueNotify_Burst
 
 protected:
 	virtual bool OnExecute_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) const override;
+	// Specialized cues can select a presentation without changing cue effects or 1P playback.
+	virtual UAnimMontage* ResolveMontage3P(AActor* Target) const;
 
 	// 시전자 본인만 보는 팔 메시용
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Montage")

@@ -2,6 +2,8 @@
 #include "Customization/CustomizationStudioController.h"
 #include "Customization/CustomizationStudioActor.h"
 #include "Customization/CustomizationAppearanceControls.h"
+#include "CustomizationPresentationTheme.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/Font.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Widgets/SBoxPanel.h"
@@ -20,8 +22,9 @@
 
 namespace MutableScreen
 {
-const FLinearColor Accent(0.f,.48515f,1.f);
-const FLinearColor Muted(.42f,.55f,.65f);
+using CustomizationPresentationTheme::Accent;
+using CustomizationPresentationTheme::Muted;
+using CustomizationPresentationTheme::Ink;
 class SModelViewport : public SBorder
 {
 public:
@@ -61,16 +64,23 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
 {
  using namespace MutableScreen;
  Selected=0;bConfirmReset=false;
+ // Keep styles alive with the widget. Neutral controls replace the old cyan textures.
+ ActionStyle.SetNormal(FSlateRoundedBoxBrush(FLinearColor::White, 2.f, FLinearColor(.20f,.20f,.17f), 1.f));
+ ActionStyle.SetHovered(FSlateRoundedBoxBrush(FLinearColor(1.3f,1.3f,1.3f), 2.f, Accent, 1.f));
+ ActionStyle.SetPressed(FSlateRoundedBoxBrush(FLinearColor(.7f,.7f,.7f), 2.f, Accent, 1.f));
+ ActionStyle.SetDisabled(FSlateRoundedBoxBrush(FLinearColor(.45f,.45f,.45f), 2.f));
+ PrimaryActionStyle=ActionStyle;
  const FSlateFontInfo TextFont=BodyFont?FSlateFontInfo(BodyFont,16):FCoreStyle::GetDefaultFontStyle("Regular",16);
  auto Label=[TextFont](const FString& Text,int32 Size=16,FLinearColor Color=FLinearColor::White)->TSharedRef<STextBlock>
  {
   auto Font=TextFont;Font.Size=Size;
-  return SNew(STextBlock).Text(FText::FromString(Text)).Font(Font).ColorAndOpacity(Color).AutoWrapText(true);
+  return SNew(STextBlock).Text(FText::FromString(Text)).Font(Font).ColorAndOpacity(Color).AutoWrapText(true)
+   .ShadowOffset(FVector2D(1,1)).ShadowColorAndOpacity(FLinearColor(0,0,0,.7f));
  };
  auto Action=[this,Label](const FString& Text,TFunction<void()> Fn)->TSharedRef<SButton>
  {
-  auto Caption=Label(Text,15);Caption->SetAutoWrapText(false);
-  return SNew(SButton).ButtonStyle(&ActionStyle).ContentPadding(FMargin(14,10))
+  auto Caption=Label(Text,15);Caption->SetAutoWrapText(false);Caption->SetColorAndOpacity(FSlateColor::UseForeground());
+  return SNew(SButton).ButtonStyle(&ActionStyle).ButtonColorAndOpacity(CustomizationPresentationTheme::Button).ForegroundColor(CustomizationPresentationTheme::Text).ContentPadding(FMargin(14,10))
    .OnClicked_Lambda([Fn](){Fn();return FReply::Handled();})
    [SNew(SBox).MinDesiredHeight(22).VAlign(VAlign_Center).HAlign(HAlign_Center)[Caption]];
  };
@@ -84,15 +94,17 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  auto Classes=SNew(SHorizontalBox);
  for(const FName Class:{FName(TEXT("Ranger")),FName(TEXT("Trooper")),FName(TEXT("Vanguard"))})
  {
-  auto Caption=Label(Class.ToString(),12);Caption->SetAutoWrapText(false);
+  auto Caption=Label(Class.ToString().ToUpper(),13);Caption->SetAutoWrapText(false);Caption->SetColorAndOpacity(FSlateColor::UseForeground());
   auto Button=SNew(SButton).ButtonStyle(&ActionStyle).ContentPadding(FMargin(3,10)).HAlign(HAlign_Center)
    .OnClicked_Lambda([this,Class](){if(auto* C=Controller())C->SelectClass(Class);return FReply::Handled();})[Caption];
-  Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Class](){auto* C=Controller();return FSlateColor(C&&C->ActiveClass==Class?Accent:FLinearColor::White);}));
+  Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Class](){auto* C=Controller();return FSlateColor(C&&C->ActiveClass==Class?Accent:CustomizationPresentationTheme::Button);}));
+  Button->SetForegroundColor(TAttribute<FSlateColor>::CreateLambda([this,Class](){auto* C=Controller();return FSlateColor(C&&C->ActiveClass==Class?Ink:CustomizationPresentationTheme::Text);}));
   Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Class](){auto* C=Controller();return C&&C->Studio&&C->Studio->ClassConfigs.Contains(Class)&&!C->IsColorEditOpen();}));
   Classes->AddSlot().FillWidth(1).Padding(0,0,4,0)[Button];
  }
  Edit->AddSlot().AutoHeight().Padding(0,0,0,16)[Classes];
- Edit->AddSlot().AutoHeight().Padding(0,0,0,12)[Section(TEXT("01"),TEXT("캐릭터 외형"))];
+ Edit->AddSlot().AutoHeight().Padding(0,0,0,12)[Section(TEXT("01"),TEXT("헤어"))];
+ Edit->AddSlot().AutoHeight().Padding(0,0,0,8)[Label(TEXT("몸·얼굴은 클래스 기본 외형으로 고정됩니다."),12,Muted)];
  // Build each class selector once. Visibility is live, so switching/load/reset
  // cannot leave callbacks referring to a previous class's body or hairstyle.
  for(const FName Class:{FName(TEXT("Ranger")),FName(TEXT("Trooper")),FName(TEXT("Vanguard"))})
@@ -101,17 +113,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  if(auto* C=Controller())if(C->Studio){if(auto* Entry=C->Studio->ClassConfigs.Find(Class))Config=Entry->Get();else if(C->Studio->Config&&C->Studio->Config->ClassId==Class.ToString())Config=C->Studio->Config;}
  if(!Config)continue;
  auto Selector=SNew(SVerticalBox).Visibility_Lambda([this,Class](){auto* C=Controller();return C&&C->ActiveClass==Class?EVisibility::Visible:EVisibility::Collapsed;});
- auto Bodies=SNew(SHorizontalBox);
- const TArray<FString> Types=Config->BodyTypes;
- for(int32 I=0;I<Types.Num();++I)
- {
-  const FString Type=Types[I];
-  auto Button=Action(FString::FromInt(I+1),[this,Type](){if(auto* C=Controller())C->SelectBody(Type);});
-  Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Type](){auto* C=Controller();return FSlateColor(C&&C->Draft.BodyType==Type?Accent:FLinearColor::White);}));
-  Bodies->AddSlot().FillWidth(1).Padding(0,0,4,0)[Button];
- }
- Selector->AddSlot().AutoHeight()[Bodies];
- Selector->AddSlot().AutoHeight().Padding(0,12,0,6)[Label(TEXT("헤어"),16)];
+ const TArray<FString> Types={FCustomizationAppearance::DefaultForClass(Class.ToString()).BodyType};
  // Each body has its own authored options. Visibility follows the draft, so
  // load/reset/body changes update the selector without losing saved hair IDs.
  for(const auto& Type:Types)
@@ -126,7 +128,8 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
    const FName Id=Ids[I];
    auto Button=Action(I==0?TEXT("X"):FString::FromInt(I),[this,Type,Id](){if(auto* C=Controller())if(C->Draft.BodyType==Type){C->Draft.HairId=Id;C->Changed();}});
    Button->SetToolTipText(FText::FromString(I==0?TEXT("헤어 없음"):FString::Printf(TEXT("헤어 %d"),I)));
-   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Id](){auto* C=Controller();return FSlateColor(C&&C->Draft.HairId==Id?Accent:FLinearColor::White);}));
+   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Id](){auto* C=Controller();return FSlateColor(C&&C->Draft.HairId==Id?Accent:CustomizationPresentationTheme::Button);}));
+   Button->SetForegroundColor(TAttribute<FSlateColor>::CreateLambda([this,Id](){auto* C=Controller();return FSlateColor(C&&C->Draft.HairId==Id?Ink:CustomizationPresentationTheme::Text);}));
    HairRow->AddSlot()[SNew(SBox).WidthOverride(76)[Button]];
   }
   Selector->AddSlot().AutoHeight().Padding(0,0,0,12)[HairRow];
@@ -148,11 +151,14 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
     C->BeginColorEdit(Index);if(C->IsColorEditOpen()){Selected=Index;ColorInputError.Reset();if(auto Popup=ColorPopup.Pin())FSlateApplication::Get().SetKeyboardFocus(Popup);}
    }});
    Button->SetEnabled(TAttribute<bool>::CreateLambda([this,Index](){auto* C=Controller();return C&&(C->CanEditPart(Index)||(Index==3&&C->CanToggleAttachment()));}));
-   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){auto* C=Controller();const bool Active=Index==3&&C&&C->CanToggleAttachment()?C->Draft.bAttachmentVisible:Selected==Index;return FSlateColor(Active?Accent:FLinearColor::White);}));
+   Button->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){auto* C=Controller();const bool Active=Index==3&&C&&C->CanToggleAttachment()?C->Draft.bAttachmentVisible:Selected==Index;return FSlateColor(Active?Accent:CustomizationPresentationTheme::Button);}));
+   Button->SetForegroundColor(TAttribute<FSlateColor>::CreateLambda([this,Index](){auto* C=Controller();const bool Active=Index==3&&C&&C->CanToggleAttachment()?C->Draft.bAttachmentVisible:Selected==Index;return FSlateColor(Active?Ink:CustomizationPresentationTheme::Text);}));
    if(Index==3)
    {
     auto Caption=Label(TEXT("부착물"),15);
-    Caption->SetText(TAttribute<FText>::CreateLambda([this](){auto* C=Controller();return FText::FromString(C&&(C->ActiveClass==TEXT("Ranger")||C->ActiveClass==TEXT("Vanguard"))?(C->Draft.bAttachmentVisible?TEXT("부착물 ON"):TEXT("부착물 OFF")):TEXT("부착물"));}));
+    Caption->SetAutoWrapText(false);
+    Caption->SetColorAndOpacity(FSlateColor::UseForeground());
+    Caption->SetText(TAttribute<FText>::CreateLambda([this](){auto* C=Controller();return FText::FromString(C&&(C->ActiveClass==TEXT("Ranger")||C->ActiveClass==TEXT("Vanguard"))?(C->Draft.bAttachmentVisible?TEXT("선글라스 ON"):TEXT("선글라스 OFF")):TEXT("부착물"));}));
     Button->SetContent(SNew(SBox).MinDesiredHeight(22).VAlign(VAlign_Center).HAlign(HAlign_Center)[Caption]);
    }
    Pair->AddSlot().FillWidth(1).Padding(0,0,4,4)[Button];
@@ -160,38 +166,35 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
   PartRows->AddSlot().AutoHeight()[Pair];
  }
  Edit->AddSlot().AutoHeight()[PartRows];
- Edit->AddSlot().AutoHeight().Padding(0,8)[Label(TEXT("부위: 색상 변경 · 부착물: 착용/해제"),12,Muted)];
+ Edit->AddSlot().AutoHeight().Padding(0,8)[Label(TEXT("부위: 색상 변경 · 선글라스: 착용/해제"),12,Muted)];
 
  auto Preview=SNew(SModelViewport).BorderImage(FCoreStyle::Get().GetBrush("NoBrush"));
  if(auto* C=Controller())Preview->Studio=C->Studio;
  auto HeaderFont=HeadingFont?FSlateFontInfo(HeadingFont,46):FCoreStyle::GetDefaultFontStyle("Bold",46);
  auto Left=SNew(SVerticalBox);
- Left->AddSlot().AutoHeight().HAlign(HAlign_Left).Padding(0,0,0,16)[Action(TEXT("뒤로가기"),[this](){if(auto* C=Controller())C->RequestReturnToFrontend();})];
- Left->AddSlot().AutoHeight()[Label(TEXT("OPERATOR  /  APPEARANCE"),14,Accent)];
+ Left->AddSlot().AutoHeight()[Label(TEXT("DUSTBASE  /  OPERATOR CUSTOMIZATION"),14,Accent)];
  Left->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Font(HeaderFont).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->ActiveClass.ToString().ToUpper():TEXT(""));})];
- Left->AddSlot().AutoHeight()[Label(TEXT("외형 커스터마이징"),20)];
+ Left->AddSlot().AutoHeight()[Label(TEXT("장비를 정비하고, 나만의 스타일을 완성하세요."),16,CustomizationPresentationTheme::Text)];
  Left->AddSlot().FillHeight(1)[Preview];
- Left->AddSlot().AutoHeight().HAlign(HAlign_Center)
+ Left->AddSlot().AutoHeight().HAlign(HAlign_Right)
  [SNew(SHorizontalBox)
   +SHorizontalBox::Slot().AutoWidth().Padding(5)[Action(TEXT("전신 보기"),[this](){if(auto* C=Controller())if(C->Studio)C->Studio->SetFaceView(false);})]
   +SHorizontalBox::Slot().AutoWidth().Padding(5)[Action(TEXT("얼굴 보기"),[this](){if(auto* C=Controller())if(C->Studio)C->Studio->SetFaceView(true);})]];
- Left->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0,8)
- [SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).Justification(ETextJustify::Center)
+ Left->AddSlot().AutoHeight().HAlign(HAlign_Right).Padding(0,8)
+ [SNew(STextBlock).Font(TextFont).ColorAndOpacity(CustomizationPresentationTheme::Text).Justification(ETextJustify::Center)
+  .ShadowOffset(FVector2D(1,1)).ShadowColorAndOpacity(FLinearColor::Black)
   .Text(FText::FromString(TEXT("좌클릭 회전 · 우클릭 이동\n휠 확대·축소")))];
 
  auto Save=Action(TEXT("외형 저장"),[this](){if(auto* C=Controller())C->SaveAppearance();});
+ Save->SetButtonStyle(&PrimaryActionStyle);Save->SetBorderBackgroundColor(Accent);Save->SetForegroundColor(Ink);
  Save->SetEnabled(TAttribute<bool>::CreateLambda([this](){auto* C=Controller();return C&&C->CanSave();}));
  auto Right=SNew(SVerticalBox);
- Right->AddSlot().AutoHeight().Padding(0,0,0,16)[Label(TEXT("LOADOUT  /  PERSONALIZE"),15,Accent)];
+ Right->AddSlot().AutoHeight().Padding(0,0,0,6)[SNew(STextBlock).Font(HeadingFont?FSlateFontInfo(HeadingFont,30):TextFont).Text(FText::FromString(TEXT("CUSTOMIZE"))).ColorAndOpacity(CustomizationPresentationTheme::Text)];
+ Right->AddSlot().AutoHeight().Padding(0,0,0,22)[Label(TEXT("헤어 · 의상 색상 · 부착물"),14,Muted)];
  Right->AddSlot().FillHeight(1)[SNew(SScrollBox)+SScrollBox::Slot()[Edit]];
  Right->AddSlot().AutoHeight().Padding(0,12)
  [SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
   .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?(C->bDirty?TEXT("● 미저장 변경사항\n"):TEXT(""))+C->Status+TEXT("\n")+(C->Studio?C->Studio->GetStatus():TEXT("미리보기 없음")):TEXT("준비 중"));})];
- Right->AddSlot().AutoHeight()[Save];
- Right->AddSlot().AutoHeight().Padding(0,6)
- [SNew(SHorizontalBox)
-  +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,4,0)[Action(TEXT("불러오기"),[this](){if(auto* C=Controller())C->LoadAppearance();})]
-  +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("초기화"),[this](){bConfirmReset=true;})]];
  auto ConflictChoices=SNew(SHorizontalBox)
   +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,4,0)[Action(TEXT("PC 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(true);})]
   +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("클라우드 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(false);})];
@@ -199,23 +202,33 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  Right->AddSlot().AutoHeight().Padding(0,6)[ConflictChoices];
  Right->AddSlot().AutoHeight().Padding(0,8)[SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
   .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->CloudStatus():TEXT("저장 상태 확인 중"));})];
- Right->AddSlot().AutoHeight()[SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
-  .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->AccountLabel:TEXT("계정 확인 중"));})];
  auto Content=SNew(SHorizontalBox)
-  +SHorizontalBox::Slot().FillWidth(1).Padding(48,32,24,24)[Left]
+  +SHorizontalBox::Slot().FillWidth(1).Padding(48,40,24,24)[Left]
   +SHorizontalBox::Slot().AutoWidth().Padding(0,24,28,24)
-  [SNew(SBox).WidthOverride(390)
+  [SNew(SBox).WidthOverride(440)
    [SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-    .BorderBackgroundColor(FLinearColor(.008f,.014f,.022f,.96f)).Padding(24)[Right]]];
- auto Overlay=SNew(SOverlay)+SOverlay::Slot()[Content];
- Content->SetEnabled(TAttribute<bool>::CreateLambda([this](){auto* C=Controller();return !C||!C->IsColorEditOpen();}));
- Overlay->AddSlot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0,16,434,16)[BuildMutableColorPopup()];
+    .BorderBackgroundColor(CustomizationPresentationTheme::Panel).Padding(24)[Right]]];
+ auto Footer=SNew(SHorizontalBox)
+  +SHorizontalBox::Slot().FillWidth(1).VAlign(VAlign_Center)
+  [SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
+   .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->AccountLabel:TEXT("계정 확인 중"));})]
+  +SHorizontalBox::Slot().AutoWidth().Padding(6,0)[Action(TEXT("불러오기"),[this](){if(auto* C=Controller())C->LoadAppearance();})]
+  +SHorizontalBox::Slot().AutoWidth().Padding(6,0)[Action(TEXT("초기화"),[this](){bConfirmReset=true;})]
+  +SHorizontalBox::Slot().AutoWidth().Padding(6,0)[Action(TEXT("뒤로"),[this](){if(auto* C=Controller())C->RequestReturnToFrontend();})]
+  +SHorizontalBox::Slot().AutoWidth().Padding(6,0)[SNew(SBox).WidthOverride(190)[Save]];
+ auto Main=SNew(SVerticalBox)
+  +SVerticalBox::Slot().FillHeight(1)[Content]
+  +SVerticalBox::Slot().AutoHeight()[SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+   .BorderBackgroundColor(CustomizationPresentationTheme::Panel).Padding(40,16)[Footer]];
+ auto Overlay=SNew(SOverlay)+SOverlay::Slot()[Main];
+ Main->SetEnabled(TAttribute<bool>::CreateLambda([this](){auto* C=Controller();return !C||!C->IsColorEditOpen();}));
+ Overlay->AddSlot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0,16,484,16)[BuildMutableColorPopup()];
  Overlay->AddSlot().HAlign(HAlign_Fill).VAlign(VAlign_Fill)
  [SNew(SBorder).Visibility_Lambda([this](){return bConfirmReset?EVisibility::Visible:EVisibility::Collapsed;})
   .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0,0,0,.85f))
   .HAlign(HAlign_Center).VAlign(VAlign_Center)
   [SNew(SBox).WidthOverride(460)
-   [SNew(SBorder).BorderBackgroundColor(FLinearColor(.02f,.04f,.065f)).Padding(30)
+   [SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(CustomizationPresentationTheme::Panel).Padding(30)
     [SNew(SVerticalBox)
      +SVerticalBox::Slot().AutoHeight()[Label(TEXT("외형을 초기화할까요?"),24)]
      +SVerticalBox::Slot().AutoHeight().Padding(0,18)[Label(TEXT("현재 편집값이 기본값으로 돌아갑니다.\n저장된 외형은 저장 버튼을 누르기 전까지 유지됩니다."),16,Muted)]

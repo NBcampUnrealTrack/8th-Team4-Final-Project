@@ -1,7 +1,9 @@
 #include "Minimap/ShooterMinimapSubsystem.h"
 
 #include "CollisionQueryParams.h"
+#include "Engine/Level.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/Pawn.h"
 #include "Minimap/MinimapTypes.h"
@@ -50,9 +52,42 @@ void UShooterMinimapSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+bool UShooterMinimapSubsystem::IsKillcamDuplicate(const AShooterMinimapBounds* Bounds)
+{
+	const ULevel* Level = Bounds ? Bounds->GetLevel() : nullptr;
+	const FLevelCollection* Collection = Level ? Level->GetCachedLevelCollection() : nullptr;
+	return Collection && Collection->GetType() == ELevelCollectionType::DynamicDuplicatedLevels;
+}
+
+AShooterMinimapBounds* UShooterMinimapSubsystem::ResolveMapBounds()
+{
+	if (MapBounds.IsValid())
+	{
+		return MapBounds.Get();
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return nullptr;
+	}
+
+	for (TActorIterator<AShooterMinimapBounds> It(World); It; ++It)
+	{
+		if (IsValid(*It) && It->HasActorBegunPlay() && !IsKillcamDuplicate(*It))
+		{
+			RegisterMapBounds(*It);
+			break;
+		}
+	}
+
+	return MapBounds.Get();
+}
+
 void UShooterMinimapSubsystem::RegisterMapBounds(AShooterMinimapBounds* Bounds)
 {
-	if (!IsValid(Bounds) || MapBounds.Get() == Bounds)
+	// 킬캠 사본이 기준을 차지하면 재생 종료 때 Unregister되면서 실제 맵의 기준까지 사라진다.
+	if (!IsValid(Bounds) || MapBounds.Get() == Bounds || IsKillcamDuplicate(Bounds))
 	{
 		return;
 	}

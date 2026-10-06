@@ -1,4 +1,8 @@
 #include "Weapon/WeaponEffectsComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/ActiveMontageInstanceScope.h"
+#include "Animation/AnimNotifyQueue.h"
 
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
@@ -77,7 +81,8 @@ void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 void UWeaponEffectsComponent::PlayEquipSound()
 {
 	const AActor* Owner = GetOwner();
-	if (IsValid(Owner) && Owner->HasAuthority() && EquipSound)
+	// A configured DrawSound owns equip audio. Do not layer the legacy owner RPC.
+	if (IsValid(Owner) && Owner->HasAuthority() && EquipSound && !DrawSound)
 	{
 		// 무기 액터는 Pawn(→PlayerController) 소유라 Client RPC는 무기를 든 본인 연결에만 간다.
 		// 리슨 서버 호스트 본인이면 로컬에서 바로 실행된다.
@@ -87,10 +92,53 @@ void UWeaponEffectsComponent::PlayEquipSound()
 
 void UWeaponEffectsComponent::Client_PlayEquipSound_Implementation()
 {
-	if (EquipSound && IsOwnerLocallyControlled())
+	if (EquipSound && !DrawSound && IsOwnerLocallyControlled())
 	{
 		UGameplayStatics::PlaySound2D(this, EquipSound);
 	}
+}
+
+void UWeaponEffectsComponent::PlayDrawSound() const
+{
+	const AWeaponBase* Weapon = GetWeaponOwner();
+	if (!DrawSound || !Weapon || !Weapon->GetMesh3P() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UGameplayStatics::SpawnSoundAttached(DrawSound, Weapon->GetMesh3P(), NAME_None,
+		FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
+}
+
+bool UWeaponEffectsComponent::TryPlayHolsterSound(const UAnimMontage* Montage) const
+{
+	if (!Montage || !HolsterMontages.Contains(Montage)) return false;
+	const AWeaponBase* Weapon = GetWeaponOwner();
+	if (HolsterSound && Weapon && Weapon->GetMesh3P() && GetNetMode() != NM_DedicatedServer)
+	{
+		UGameplayStatics::SpawnSoundAttached(HolsterSound, Weapon->GetMesh3P(), NAME_None,
+			FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
+	}
+	return true;
+}
+
+bool UWeaponEffectsComponent::ConsumeMontageSoundNotify(UAnimInstance* Source, const FAnimNotifyEventReference& EventReference)
+{
+	const auto* Context = EventReference.GetContextData<UE::Anim::FAnimNotifyMontageInstanceContext>();
+	const FAnimNotifyEvent* Event = EventReference.GetNotify();
+	// Sequence/editor playback has no montage identity and keeps its normal routing.
+	if (!Source || !Context || !Event) return true;
+	PlayedMontageSounds.RemoveAll([](const FPlayedMontageSound& Played)
+	{
+		return !Played.Source.IsValid()
+			|| !Played.Source->GetMontageInstanceForID(Played.MontageInstanceID);
+	});
+	for (const FPlayedMontageSound& Played : PlayedMontageSounds)
+	{
+		if (Played.Source == Source && Played.MontageInstanceID == Context->MontageInstanceID && Played.Event == Event)
+			return false;
+	}
+	PlayedMontageSounds.Add({Source, Context->MontageInstanceID, Event});
+	return true;
 }
 
 void UWeaponEffectsComponent::PlayMeleeAttackSound(const bool bHeavyAttack)
