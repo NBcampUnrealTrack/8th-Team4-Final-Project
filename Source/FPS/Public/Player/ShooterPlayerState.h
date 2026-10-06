@@ -15,6 +15,7 @@ class AShooterPlayerState;
 class UAugmentInventoryComponent;
 class UCreditWalletComponent;
 class URogueAbilitySystemComponent;
+class URogueAmmoAttributeSet;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
 class URogueVitalAttributeSet;
@@ -199,6 +200,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<URogueAugmentAttributeSet> AugmentSet;
+
+	UPROPERTY()
+	TObjectPtr<URogueAmmoAttributeSet> AmmoSet;
 
 	// 사망 상태 관리
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|GAS")

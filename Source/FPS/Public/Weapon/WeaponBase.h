@@ -58,6 +58,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
 	void SetInfiniteAmmo(bool bNewInfiniteAmmo);
 
+	// 예비탄 지급은 서버에서만 처리하며 탄창/증강 최대치는 바꾸지 않는다.
+	UFUNCTION(BlueprintPure, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	bool CanReceiveReserveAmmo(int32 Amount) const;
+
+	// 기본 예비탄 수량을 넘어 누적할 수 있다. 실제 지급량을 반환한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	int32 AddReserveAmmo(int32 Amount);
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
 	bool HasInfiniteAmmo() const { return bUsesAmmo && bInfiniteAmmo; }
 

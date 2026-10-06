@@ -10,6 +10,7 @@
 #include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GAS/RogueAmmoAttributeSet.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
@@ -32,6 +33,7 @@ AShooterPlayerState::AShooterPlayerState()
 
 	VitalSet   = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
 	AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
+	AmmoSet    = CreateDefaultSubobject<URogueAmmoAttributeSet>(TEXT("AmmoSet"));
 
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
