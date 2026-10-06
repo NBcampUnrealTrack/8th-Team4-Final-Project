@@ -1,0 +1,7 @@
+Generated using the built-in image generation tool for DustBase customization, 2026-10-02.
+Source image: T_CustomizationHangar.png
+Runtime texture: /Game/FPS/Customizable/MutableLevel/Art/T_CustomizationHangar
+Runtime material: /Game/FPS/Customizable/MutableLevel/Art/M_CustomizationHangar
+
+Prompt:
+Use case: stylized-concept. Asset type: production background texture for DustBase military FPS character customization screen, 16:9 landscape. Create a photorealistic game environment of an empty military hangar equipment bay, weathered charcoal steel, muted sand concrete floor, subtle warm amber practical lamps, distant soft dusty sunset through a small hangar opening. Camera at human chest height facing into the bay, straight verticals. Left and center area is open uncluttered space for a separately rendered full-body game character; right third very dark and low contrast for UI panel overlay. Ground plane visible lower quarter. Soft neutral light in character area so clothing colors remain readable, warm highlights only around edges. Dark cinematic realistic environment consistent with tactical shooter menu, restrained details and no saturated blue. No people, no human silhouettes, no guns in foreground, no text, no letters, no logos, no buttons, no UI, no watermarks. Wide 16:9 composition.

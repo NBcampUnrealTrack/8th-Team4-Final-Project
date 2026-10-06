@@ -52,6 +52,17 @@ public:
 	float GetEquipAwarePostureSourceWeight() const;
 
 protected:
+	// Class identity is independent of the cosmetic mesh. The layered graph
+	// reads these game-thread caches instead of comparing deleted body assets.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Class")
+	bool bVanguardAnimationClass = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Class")
+	bool bRangerAnimationClass = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Class")
+	bool bTrooperAnimationClass = false;
+
 	// Opt-in from the third-person graph only while a support-hand-held action plays.
 	// Keeps the weapon with the supporting hand so the trigger hand can leave the grip.
 	UPROPERTY(BlueprintReadWrite, Category = "FPS|Animation|Weapon")
@@ -147,6 +158,11 @@ private:
 	void UpdateWeaponValues();
 	void UpdateWeaponAnimationData();
 	void PlayEquipMontageForCurrentWeapon();
+	UFUNCTION()
+	void HandleWeaponMontageStarted(UAnimMontage* Montage);
+	void UpdateHolsterMontageBinding();
+	void UnbindHolsterMontageSource();
+	TWeakObjectPtr<UAnimInstance> HolsterMontageSource;
 	void PlayReloadMontageForCurrentWeapon();
 	void TurnInPlace(float DeltaSeconds);
 	EDominationCombatClass GetCurrentCombatClass() const;

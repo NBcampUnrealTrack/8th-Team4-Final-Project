@@ -9,6 +9,7 @@
 class AGameStateBase;
 class ADominationGameState;
 class APawn;
+class UArrowComponent;
 class UBoxComponent;
 class UPrimitiveComponent;
 class UStaticMeshComponent;
@@ -64,6 +65,10 @@ private:
 	// 실제 차단 콜리전. 활성일 때만 QueryOnly로 켜진다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|ZoneWall", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBoxComponent> WallZone;
+
+	// 화살표 추가
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|ZoneWall", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArrowComponent> InsideArrow;
 
 	// 순수 오버랩 감지용. WallZone보다 두께 방향으로 DetectionMargin만큼 크게 잡아 접근하는 폰을 감지한다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|ZoneWall", meta = (AllowPrivateAccess = "true"))

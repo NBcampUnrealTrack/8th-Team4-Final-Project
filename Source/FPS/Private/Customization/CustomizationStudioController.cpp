@@ -1,5 +1,6 @@
 #include "Customization/CustomizationStudioController.h"
 #include "Customization/CustomizationStudioActor.h"
+#include "Customization/CustomizationClassRules.h"
 #include "Customization/CustomizationStudioWidget.h"
 #include "GroomAsset.h"
 #include "Engine/LocalPlayer.h"
@@ -48,15 +49,16 @@ void ACustomizationStudioController::SetAccountIdentity(const FString& NewServic
 }
 FCustomizationAppearance ACustomizationStudioController::DefaultAppearance() const
 {
- FCustomizationAppearance D;if(Studio&&Studio->Config){D.BodyType=Studio->Config->DefaultBodyType;D.HairId=Studio->Config->DefaultHairId;}return D;
+ return FCustomizationAppearance::DefaultForClass(ActiveClass.ToString());
 }
 TArray<FString> ACustomizationStudioController::BodyChoices() const
-{return Studio&&Studio->Config?Studio->Config->BodyTypes:TArray<FString>();}
+{return Studio&&Studio->Config?TArray<FString>{DefaultAppearance().BodyType}:TArray<FString>();}
 bool ACustomizationStudioController::SelectClass(FName Class)
 {
  if(IsColorEditOpen()||!Studio)return false;
  auto* Entry=Studio->ClassConfigs.Find(Class);auto* Candidate=Entry?Entry->Get():nullptr;
  if(!Candidate||Candidate->ClassId!=Class.ToString()||!Candidate->CustomizableObject||!Candidate->BodyTypes.Contains(Candidate->DefaultBodyType))return false;
+ if(Candidate->DefaultBodyType!=FixedCustomizationBodyForClass(Candidate->ClassId))return false;
  FCustomizationAppearance Default;Default.BodyType=Candidate->DefaultBodyType;Default.HairId=Candidate->DefaultHairId;if(!Default.ValidateForClass(Candidate->ClassId))return false;
  if(Class==ActiveClass&&Studio->Config==Candidate)return true;
  if(!Studio->SetClassConfig(Candidate))return false;
@@ -87,21 +89,9 @@ void ACustomizationStudioController::ToggleAttachment()
 void ACustomizationStudioController::Changed(){bDirty=true;Status=TEXT("저장하지 않은 변경사항");if(Studio)Studio->RequestAppearance(Draft);}
 void ACustomizationStudioController::SelectBody(const FString& Type)
 {
- if(IsColorEditOpen()||!Studio||!Studio->IsBodyValid(Type))return;
- // IDs such as Default are body-local; match the actual hairstyle before switching.
- FName PreviousHair=NAME_None;
- // The same hairstyle can be duplicated into different MetaHuman asset folders.
- if(Studio&&Draft.HairId!=TEXT("Bald"))for(const auto& H:Studio->HairChoices(Draft.BodyType))if(H.Id==Draft.HairId){PreviousHair=H.Groom->GetFName();break;}
- Draft.BodyType=Type;
- if(Studio&&Draft.HairId!=TEXT("Bald"))
- {
-  const auto Choices=Studio->HairChoices(Type);
-  const auto* Match=Choices.FindByPredicate([PreviousHair](const FStudioGroomChoice& H){return !PreviousHair.IsNone()&&H.Groom->GetFName()==PreviousHair;});
-  // Keep an unresolved selection visible as an error. Never silently replace
-  // a hairstyle merely because its destination binding is missing.
-  if(Match)Draft.HairId=Match->Id;
- }
- Changed();
+ // Keep old callers harmless: body/face selection is no longer editable.
+ if(IsColorEditOpen()||Type!=DefaultAppearance().BodyType)return;
+ if(Draft.NormalizeBodyForClass(ActiveClass.ToString()))Changed();
 }
 void ACustomizationStudioController::ResetAppearance(){ColorEditPart=INDEX_NONE;Draft=DefaultAppearance();Changed();}
 

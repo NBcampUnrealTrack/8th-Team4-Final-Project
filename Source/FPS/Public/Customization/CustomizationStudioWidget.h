@@ -27,4 +27,5 @@ private:
  TWeakPtr<SWidget> ColorPopup;
  FString ColorInputError;
  bool bConfirmReset=false;
+ FButtonStyle PrimaryActionStyle;
 };

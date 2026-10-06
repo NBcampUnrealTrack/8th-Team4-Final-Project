@@ -16,6 +16,20 @@ bool FCustomizationAppearance::Validate() const
  return true;
 }
 bool FCustomizationAppearance::ValidateForClass(const FString& C) const{return Validate()&&IsCustomizationHairForBody(C,BodyType,HairId);}
+FCustomizationAppearance FCustomizationAppearance::DefaultForClass(const FString& ClassId)
+{
+ FCustomizationAppearance Data;
+ Data.BodyType=FixedCustomizationBodyForClass(ClassId);
+ Data.HairId=FixedCustomizationHairForClass(ClassId);
+ return Data;
+}
+bool FCustomizationAppearance::NormalizeBodyForClass(const FString& ClassId)
+{
+ if(!ValidateForClass(ClassId))return false;
+ BodyType=FixedCustomizationBodyForClass(ClassId);
+ if(!IsCustomizationHairForBody(ClassId,BodyType,HairId))HairId=FixedCustomizationHairForClass(ClassId);
+ return ValidateForClass(ClassId);
+}
 bool FCustomizationAppearance::NetSerialize(FArchive& Ar, UPackageMap*, bool& bOutSuccess)
 {
  // Fixed array lengths and bounded identifiers are enforced before allocation.

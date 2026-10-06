@@ -3,6 +3,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/State/DominationGameState.h"
 #include "Net/UnrealNetwork.h"
 
 
@@ -40,16 +41,30 @@ void AAugmentPhaseBarrier::BeginPlay()
 	}
 
 	BoundRoundGameState = GetWorld()->GetGameState<ABaseRoundGameState>();
-	if (!IsValid(BoundRoundGameState))
+	if (IsValid(BoundRoundGameState))
+	{
+		BoundRoundGameState->OnRoundStateChanged.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleRoundStateChanged);
+
+		// 늦게 로드된 배치 인스턴스도 현재 페이즈를 즉시 반영한다.
+		UpdateForCurrentPhase();
+		return;
+	}
+
+	// DominationMode에서 재사용할 수 있도록 수정
+	BoundDominationGameState = GetWorld()->GetGameState<ADominationGameState>();
+	if (!IsValid(BoundDominationGameState))
 	{
 		return;
 	}
 
-	BoundRoundGameState->OnRoundStateChanged.AddUniqueDynamic(
+	BoundDominationGameState->OnDominationFlowStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleRoundStateChanged);
-
-	// 늦게 로드된 배치 인스턴스도 현재 페이즈를 즉시 반영한다.
+	BoundDominationGameState->OnObjectiveFlowStateChanged.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleRoundStateChanged);
 	UpdateForCurrentPhase();
 }
 
@@ -62,6 +77,17 @@ void AAugmentPhaseBarrier::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (IsValid(BoundRoundGameState))
 		{
 			BoundRoundGameState->OnRoundStateChanged.RemoveDynamic(
+				this,
+				&ThisClass::HandleRoundStateChanged);
+		}
+
+		// Domination 바인딩 해제
+		if (IsValid(BoundDominationGameState))
+		{
+			BoundDominationGameState->OnDominationFlowStateChanged.RemoveDynamic(
+				this,
+				&ThisClass::HandleRoundStateChanged);
+			BoundDominationGameState->OnObjectiveFlowStateChanged.RemoveDynamic(
 				this,
 				&ThisClass::HandleRoundStateChanged);
 		}
@@ -82,12 +108,21 @@ void AAugmentPhaseBarrier::OnRep_IsRuntimeBarrier()
 
 void AAugmentPhaseBarrier::UpdateForCurrentPhase()
 {
-	if (!HasAuthority() || bIsRuntimeBarrier || !IsValid(BoundRoundGameState))
+	// 라운드 모드/Domination 모드 중 바인딩된 쪽의 상태로 장벽 필요 여부를 판단
+	if (!HasAuthority() || bIsRuntimeBarrier
+		|| (!IsValid(BoundRoundGameState) && !IsValid(BoundDominationGameState)))
 	{
 		return;
 	}
 
-	if (BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting)
+	// Domination은 모든 플레이어의 초기 증강 선택이 끝나는 순간 첫 거점(C)이 활성화되며 ActivePointId가 None에서 바뀐다.
+	// 따라서 매치가 진행 중이면서 활성 거점이 없는 동안이 초기 증강 선택 구간이고, 이후에는 스폰 보호 장벽이 대신한다.
+	const bool bShouldBlock = IsValid(BoundRoundGameState)
+		? BoundRoundGameState->GetGameFlowPhase() == EGameFlowPhase::AugmentSelecting
+		: BoundDominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
+			&& BoundDominationGameState->GetActivePointId() == EDominationPointId::None;
+
+	if (bShouldBlock)
 	{
 		SpawnRuntimeBarrier();
 	}

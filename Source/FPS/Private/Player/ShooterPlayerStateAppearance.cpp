@@ -5,16 +5,17 @@
 
 bool AShooterPlayerState::StoreValidatedAppearance(FName ClassId, const FCustomizationAppearance& Appearance)
 {
-    if (!HasAuthority() || !Appearance.ValidateForClass(ClassId.ToString())) return false;
+    FCustomizationAppearance Normalized = Appearance;
+    if (!HasAuthority() || !Normalized.NormalizeBodyForClass(ClassId.ToString())) return false;
     FReplicatedAppearance* Existing = SavedAppearances.FindByPredicate([ClassId](const auto& Row){ return Row.ClassId == ClassId; });
-    if (Existing && FCustomizationAppearance::StaticStruct()->CompareScriptStruct(&Existing->Appearance, &Appearance, 0)) return true;
+    if (Existing && FCustomizationAppearance::StaticStruct()->CompareScriptStruct(&Existing->Appearance, &Normalized, 0)) return true;
     if (!Existing)
     {
         if (SavedAppearances.Num() >= 3) return false;
         Existing = &SavedAppearances.AddDefaulted_GetRef();
         Existing->ClassId = ClassId;
     }
-    Existing->Appearance = Appearance;
+    Existing->Appearance = Normalized;
     ++Existing->Revision;
     if (Existing->Revision == 0) ++Existing->Revision;
     OnRep_Appearances();
