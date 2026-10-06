@@ -47,4 +47,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UDominationUIInitComponent> UIInitComponent;
+
+	// [INPUTDBG] CanProcessGameplayInput 조건 변화 로그용 임시 변수. 원인 확인 후 제거할 것.
+	mutable uint32 LastInputDebugMask = MAX_uint32;
 };

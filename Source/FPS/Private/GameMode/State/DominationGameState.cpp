@@ -152,6 +152,9 @@ void ADominationGameState::SetDominationPhase(
 		return;
 	}
 
+	// [INPUTDBG] 매치 페이즈 전환 기록. InProgress가 아니면 Domination 컨트롤러는 입력을 받지 않는다.
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetDominationPhase %d -> %d (duration=%.1f)"),
+		static_cast<int32>(MatchFlowState.Phase), static_cast<int32>(NewPhase), PhaseDuration);
 	MatchFlowState.Phase = NewPhase;
 	MatchFlowState.PhaseEndServerTime = PhaseDuration > 0.0f
 		? static_cast<float>(GetServerWorldTimeSeconds() + PhaseDuration)
@@ -296,6 +299,9 @@ void ADominationGameState::SetCaptureState(
 
 void ADominationGameState::OnRep_MatchFlowState()
 {
+	// [INPUTDBG] 클라이언트가 매치 페이즈를 복제받은 시점 기록(서버와의 시차 확인용)
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] OnRep_MatchFlowState Phase=%d NetMode=%d"),
+		static_cast<int32>(MatchFlowState.Phase), static_cast<int32>(GetNetMode()));
 	BroadcastMatchFlowStateChanged();
 }
 

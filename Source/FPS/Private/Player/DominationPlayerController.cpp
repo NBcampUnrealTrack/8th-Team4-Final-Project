@@ -46,6 +46,23 @@ bool ADominationPlayerController::CanProcessGameplayInput() const
 	const ADominationPlayerState* DominationPlayerState =
 		GetPlayerState<ADominationPlayerState>();
 
+	// [INPUTDBG] 조작 불능 원인 추적용 임시 로그. 입력 가능 조건이 하나라도 바뀔 때만 한 번 출력한다.
+	const bool bSuper = Super::CanProcessGameplayInput();
+	const bool bHasGameState = IsValid(DominationGameState);
+	const bool bInProgress = bHasGameState && DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
+	const bool bHasPawn = IsValid(GetPawn());
+	const bool bHasPlayerState = IsValid(DominationPlayerState);
+	const bool bAlive = bHasPlayerState && DominationPlayerState->IsAlive();
+	const uint32 DebugMask = (bSuper ? 1u : 0u) | (bHasGameState ? 2u : 0u) | (bInProgress ? 4u : 0u)
+		| (bHasPawn ? 8u : 0u) | (bHasPlayerState ? 16u : 0u) | (bAlive ? 32u : 0u);
+	if (DebugMask != LastInputDebugMask)
+	{
+		LastInputDebugMask = DebugMask;
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] %s CanProcessGameplayInput=%d (Super[InputBlocked tag 없음]=%d GameState=%d InProgress=%d Pawn=%d(%s) PlayerState=%d Alive=%d) Local=%d"),
+			*GetNameSafe(this), DebugMask == 63u, bSuper, bHasGameState, bInProgress, bHasPawn, *GetNameSafe(GetPawn()),
+			bHasPlayerState, bAlive, IsLocalController());
+	}
+
 	return Super::CanProcessGameplayInput()
 		&& IsValid(DominationGameState)
 		&& DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
