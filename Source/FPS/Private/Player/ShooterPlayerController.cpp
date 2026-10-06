@@ -94,6 +94,11 @@ void AShooterPlayerController::BeginPlay()
 	{
 		return;
 	}
+	OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().AddUObject(this, &ThisClass::HandleViewTargetBlendComplete);
+	}
 
 	// FPS 마우스 입력은 보간/가속 없이 선형 입력으로 사용한다.
 	if (UInputSettings* EngineInputSettings = GetMutableDefault<UInputSettings>())
@@ -137,6 +142,11 @@ void AShooterPlayerController::BeginPlay()
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().RemoveAll(this);
+	}
     GetWorldTimerManager().ClearTimer(AppearanceSubmitTimer);
 	if (HasAuthority())
 	{
@@ -1154,7 +1164,40 @@ void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerSt
 
 void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 {
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			// The owning Pawn may still be the spectator; invalidate first, restore on actual possession.
+			Killcam->CancelForRespawn();
+		}
+	}
 	HideSpectatorWidget();
+}
+
+void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
+{
+	if (!IsLocalController() || NewPawn == PreviousPawn || GetPawn() != NewPawn
+		|| !UKillcamReplaySubsystem::IsLiveWorldActor(NewPawn) || !NewPawn->IsA<AShooterCharacter>())
+	{
+		return;
+	}
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			Killcam->HandleOwnedPawnChanged(NewPawn);
+		}
+	}
+	if (!bKillcamViewTargetSuppressed)
+	{
+		SetViewTarget(NewPawn);
+	}
+}
+
+void AShooterPlayerController::HandleViewTargetBlendComplete()
+{
+	OnViewPresentationChanged.Broadcast();
 }
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
@@ -1171,7 +1214,12 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 		return;
 	}
 
+	AActor* PreviousViewTarget = GetViewTarget();
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
+	if (GetViewTarget() != PreviousViewTarget)
+	{
+		OnViewPresentationChanged.Broadcast();
+	}
 }
 
 void AShooterPlayerController::UpdateHiddenComponents(
@@ -1244,6 +1292,7 @@ void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppre
 		PendingViewTarget.Reset();
 		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
 	}
+	OnViewPresentationChanged.Broadcast();
 }
 
 void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
@@ -1254,6 +1303,7 @@ void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
 	}
 
 	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+	OnViewPresentationChanged.Broadcast();
 }
 
 AActor* AShooterPlayerController::ConsumePendingViewTarget()
@@ -2271,7 +2321,7 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
-		bAiming = CombatComponent && CombatComponent->bAiming;
+		bAiming = CombatComponent && CombatComponent->IsAiming();
 	}
 
 	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())

@@ -144,7 +144,7 @@ float UShooterMovementComponent::GetMaxSpeed() const
 			float SpeedMultiplier = Weapon->GetMoveSpeedMultiplier();
 			// ADS(조준) 중에는 무기별 ADS 이속 배율을 추가로 곱한다 - 라이플/스나이퍼처럼 ADS가
 			// 가능한 무기만 영향받는다(CanADS()가 false인 무기는 애초에 IsADS()가 true가 될 수 없다).
-			if (Weapon->IsADS())
+			if (Combat->IsAiming())
 			{
 				SpeedMultiplier *= Weapon->GetADSMoveSpeedMultiplier();
 			}

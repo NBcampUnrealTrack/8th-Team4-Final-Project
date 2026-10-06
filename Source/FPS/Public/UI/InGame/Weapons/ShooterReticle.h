@@ -83,9 +83,6 @@ protected:
 
 	AWeaponBase* FindEquippedWeapon() const;
 
-	void PromoteSniperScopeToViewportLayer();
-	void RemoveSniperScopeFromViewportLayer();
-
 	// 히트마커 자체의 표시 상태만 관리한다.
 	// 기본 크로스헤어의 Visibility는 Blueprint 바인딩이 전담한다.
 	void HandleHitMarker(ERogueHitMarkerType Type, bool bKill);
@@ -116,16 +113,6 @@ protected:
 	TObjectPtr<UImage> Image_Right;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Center;
-
-	// Designer에서는 기존처럼 ShooterReticle 안에 배치해도 된다. 런타임에는 같은 인스턴스를
-	// 부모에서 분리해 독립 Viewport 레이어로 올려 Main HUD와 렌더 순서를 분리한다.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UUserWidget> WBP_SniperScope;
-
-	// ShooterUIManagerSubsystem의 Root Layout(-1)보다 아래에 두는 기본값.
-	// WBP_ShooterReticle Class Defaults에서 필요하면 값만 조정하면 된다.
-	UPROPERTY(EditDefaultsOnly, Category = "UI|Scope")
-	int32 SniperScopeViewportZOrder = -2;
 
 	// 크로스헤어와 같은 위치(중앙)에 겹쳐서 뜨는 히트마커. HitMarkerOpacity로 반투명 처리해서
 	// 겹쳐도 크로스헤어가 뒤로 비쳐 보이게 한다(오버워치 스타일).

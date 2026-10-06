@@ -91,6 +91,10 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 
 void AShooterCharacter::BeginPlay()
 {
+	if (HasAuthority() && !PawnLifeId.IsValid())
+	{
+		PawnLifeId = FGuid::NewGuid();
+	}
 	Super::BeginPlay();
 	StandingCameraRelativeLocation = FirstPersonCamera->GetRelativeLocation();
 
@@ -720,6 +724,7 @@ void AShooterCharacter::OnRep_ReplicatedDeath()
 void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(AShooterCharacter, PawnLifeId);
 
 	DOREPLIFETIME(AShooterCharacter, ReplicatedDeathReaction);
 	DOREPLIFETIME(AShooterCharacter, bReplicatedDeath);

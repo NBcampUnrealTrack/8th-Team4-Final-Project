@@ -38,6 +38,7 @@ public:
 
 	// ASC 는 AShooterPlayerState 소유
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	FGuid GetPawnLifeId() const { return PawnLifeId; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -166,6 +167,9 @@ protected:
     TObjectPtr<UFirstPersonAppearanceComponent> FirstPersonAppearance;
 
 private:
+	UPROPERTY(Replicated)
+	FGuid PawnLifeId;
+
 	int32 CachedTeamOutlineState = INDEX_NONE;
 
 	// 달리기 태그 - 이동 갱신마다 CMC 상태와 비교

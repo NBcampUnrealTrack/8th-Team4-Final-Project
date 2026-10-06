@@ -25,6 +25,10 @@ struct FShooterEliminationEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
 	TObjectPtr<AShooterPlayerState> VictimPlayerState = nullptr;
 
+	// 사망한 생명의 식별자. Pawn 참조 복제를 기다리지 않고 늦은 사망 이벤트를 구분한다.
+	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
+	FGuid VictimPawnLifeId;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
 	FGameplayTag WeaponTag;
 

@@ -102,6 +102,16 @@ void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, AP
 		InitializeForAvatar(NewPawn);
 		OnRep_Appearances();
 	}
+	else if (OldPawn && AbilitySystemComponent->GetAvatarActor() == OldPawn)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (UCombatComponent* Combat = OldPawn->FindComponentByClass<UCombatComponent>())
+		{
+			Combat->ResetAiming();
+		}
+		AbilitySystemComponent->InitAbilityActorInfo(this, nullptr);
+	}
 }
 
 void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
@@ -112,6 +122,14 @@ void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
 	if (bNewIsDead && AbilitySystemComponent)
 	{
 		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (AActor* Avatar = AbilitySystemComponent->GetAvatarActor(); IsValid(Avatar))
+		{
+			if (UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+			{
+				Combat->ResetAiming();
+			}
+		}
 	}
 }
 
@@ -122,8 +140,33 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 		return;
 	}
 
+	const bool bAvatarChanged = AbilitySystemComponent->GetAvatarActor() != Avatar;
+	if (bAvatarChanged)
+	{
+		// 취소는 새 아바타를 연결하기 전에 수행한다. 같은 아바타 재초기화는 조준을 유지한다.
+		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (AActor* PreviousAvatar = AbilitySystemComponent->GetAvatarActor(); IsValid(PreviousAvatar))
+		{
+			if (UCombatComponent* Combat = PreviousAvatar->FindComponentByClass<UCombatComponent>())
+			{
+				Combat->ResetAiming();
+			}
+		}
+	}
+
 	// 소유자는 PlayerState, 아바타는 캐릭터.
 	AbilitySystemComponent->InitAbilityActorInfo(this, Avatar);
+	const APawn* AvatarPawn = Cast<APawn>(Avatar);
+	const bool bOwnsAimingState = Avatar->HasAuthority() || Avatar->GetLocalRole() == ROLE_AutonomousProxy
+		|| (IsValid(AvatarPawn) && AvatarPawn->IsLocallyControlled());
+	if (bAvatarChanged && bOwnsAimingState)
+	{
+		if (UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+		{
+			Combat->ResetAiming();
+		}
+	}
 
 	// ASC가 Pawn보다 오래 살기 때문에 서버·클라이언트 모두 새 아바타의 이동 상태로 맞춘다.
 	if (const AShooterCharacter* ShooterAvatar = Cast<AShooterCharacter>(Avatar))

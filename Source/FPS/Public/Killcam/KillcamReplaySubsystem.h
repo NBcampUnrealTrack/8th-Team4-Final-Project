@@ -7,6 +7,7 @@
 #include "KillcamReplaySubsystem.generated.h"
 
 class ABaseTeamGameState;
+class APawn;
 class AKillcamCameraActor;
 class AShooterPlayerController;
 class UDemoNetDriver;
@@ -26,6 +27,8 @@ public:
 	void SetUpForWorld(UWorld* World);
 	void ReleaseWorld(UWorld* World);
 	bool IsPlaying() const;
+	void CancelForRespawn();
+	void HandleOwnedPawnChanged(APawn* NewPawn);
 
 private:
 	UFUNCTION()
@@ -36,16 +39,23 @@ private:
 	bool IsSetUpComplete() const;
 	float GetRequiredBufferSeconds() const;
 	void StartRecording();
-	void StartPlayback();
-	void HandlePlaybackReady(bool bWasSuccessful);
+	void StartPlayback(uint64 Generation, TWeakObjectPtr<UWorld> RequestWorld, TWeakObjectPtr<APawn> VictimPawn);
+	void HandlePlaybackReady(bool bWasSuccessful, uint64 Generation, TWeakObjectPtr<UWorld> RequestWorld,
+		TWeakObjectPtr<APawn> VictimPawn, TWeakObjectPtr<UDemoNetDriver> PlaybackDriver);
+	bool IsCurrentRequest(uint64 Generation, TWeakObjectPtr<UWorld> RequestWorld,
+		TWeakObjectPtr<APawn> VictimPawn) const;
+	bool CanPlayForCurrentLife() const;
 	bool ShowPlayback();
 	void StopPlayback();
+	void CancelPlayback(bool bRestartRecording);
+	void FinishPlaybackCleanup(TWeakObjectPtr<UWorld> RequestWorld,
+		TWeakObjectPtr<UDemoNetDriver> PlaybackDriver, uint64 Generation, bool bRestartRecording);
 
 	AKillcamCameraActor* SpawnPlaybackCamera(AActor* KillerActor);
 	void DestroyPlaybackCamera();
 
 	AActor* ResolveRestoreViewTarget(AShooterPlayerController* PlayerController) const;
-	void CleanPlaybackWorld();
+	void CleanPlaybackWorld(UWorld* World, UDemoNetDriver* ExpectedPlaybackDriver);
 	void RestoreLiveWorld();
 	bool IsSupportedWorld(const UWorld* World) const;
 	AShooterPlayerController* GetPlayerController() const;
@@ -80,13 +90,19 @@ private:
 	FShooterEliminationEvent PlaybackElimination;
 
 	TWeakObjectPtr<UWorld> SourceWorld;
+	TWeakObjectPtr<UWorld> PlaybackCleanupWorld;
+	TWeakObjectPtr<APawn> VictimPawnAtElimination;
+	FGuid VictimPawnLifeIdAtElimination;
 	TWeakObjectPtr<AActor> SavedLiveViewTarget;
 	FNetworkGUID KillerActorGuid;
 	FNetworkGUID VictimActorGuid;
 	FTimerHandle PostDeathTimerHandle;
 	FTimerHandle PlaybackTimerHandle;
+	FTimerHandle PlaybackCleanupTimerHandle;
 	FTimerHandle SetupRetryTimerHandle;
 	float SetupRetryElapsed = 0.0f;
 	float DeathDemoTime = 0.0f;
 	bool bPlaying = false;
+	bool bPlaybackRequestPending = false;
+	uint64 PlaybackGeneration = 0;
 };

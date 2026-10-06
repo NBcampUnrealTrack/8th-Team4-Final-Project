@@ -51,6 +51,7 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/,
 // 발신되며, ShooterGameMode가 자살/팀킬을 걸러낸 뒤의 확정된 처치에만 발신하므로 OnHitMarker의 bKill보다
 // 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
+DECLARE_MULTICAST_DELEGATE(FOnShooterViewPresentationChanged);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapOpenChanged, bool /*bOpen*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnFullMapZoomInput, float /*WheelDelta*/);
@@ -93,6 +94,7 @@ public:
 
 	// 크로스헤어가 이 델리게이트를 구독해 중앙 킬 이펙트를 표시
 	FOnKillEffect OnKillEffect;
+	FOnShooterViewPresentationChanged OnViewPresentationChanged;
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Lobby")
 	void SetLobbyReady(bool bNewLobbyReady);
@@ -507,6 +509,9 @@ private:
 	double LastChatMessageServerTime = -1.0;
 	double LastPingServerTime = -1.0;
 	bool bKillcamViewTargetSuppressed = false;
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn);
+	void HandleViewTargetBlendComplete();
     UFUNCTION(Server, Reliable)
     void ServerSubmitAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
     FTimerHandle AppearanceSubmitTimer;
