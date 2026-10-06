@@ -124,6 +124,13 @@ void ARogueAugmentActor::Detonate()
 
 	SpawnFollowUpActor();
 
+	if (bDestroyOnDetonate && DetonateDestroyDelaySeconds > 0.f)
+	{
+		GetWorldTimerManager().ClearTimer(LifeTimer);
+		SetLifeSpan(DetonateDestroyDelaySeconds);
+		return;
+	}
+
 	if (bDestroyOnDetonate)
 	{
 		Destroy();

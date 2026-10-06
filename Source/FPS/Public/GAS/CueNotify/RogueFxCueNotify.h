@@ -68,4 +68,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx",
 		meta = (EditCondition = "bAttachToTarget", EditConditionHides))
 	FName AttachSocket = NAME_None;
+
+	// 켜면 대상이 든 무기의 소켓에서 Normal 방향으로 재생 (1인칭은 본인, 3인칭은 다른 사람)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx")
+	bool bAttachToWeapon = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rogue|Fx",
+		meta = (EditCondition = "bAttachToWeapon", EditConditionHides))
+	FName WeaponSocket = TEXT("Muzzle");
+
+private:
+	void SpawnOnWeapon(AActor* Target, const FRotator& Rotation) const;
 };
