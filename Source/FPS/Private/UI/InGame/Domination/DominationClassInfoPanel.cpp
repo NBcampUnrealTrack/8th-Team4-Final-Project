@@ -2,7 +2,7 @@
 
 #include "CommonTextBlock.h"
 #include "Components/Image.h"
-#include "Components/VerticalBox.h"
+#include "Components/HorizontalBox.h"
 #include "Engine/Texture2D.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "UI/InGame/Domination/DominationClassTraitTag.h"
@@ -82,6 +82,6 @@ void UDominationClassInfoPanel::RebuildTraitTags(const TArray<FText>& TraitTags)
 		}
 
 		TraitWidget->SetTraitText(TraitText);
-		Panel_TraitTags->AddChildToVerticalBox(TraitWidget);
+		Panel_TraitTags->AddChildToHorizontalBox(TraitWidget);
 	}
 }

@@ -9,7 +9,7 @@ class UCommonTextBlock;
 class UDominationClassTraitTag;
 class UImage;
 class UTexture2D;
-class UVerticalBox;
+class UHorizontalBox;
 
 /**
  * 클래스 선택 화면 우측의 정보 패널
@@ -36,7 +36,7 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_PrimaryWeapon;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UVerticalBox> Panel_TraitTags;
+	TObjectPtr<UHorizontalBox> Panel_TraitTags;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	TSubclassOf<UDominationClassTraitTag> TraitTagWidgetClass;

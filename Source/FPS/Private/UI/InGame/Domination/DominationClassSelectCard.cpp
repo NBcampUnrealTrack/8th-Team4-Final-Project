@@ -19,16 +19,16 @@ void UDominationClassSelectCard::SetClassData(
 		Text_Description->SetText(Presentation.Description);
 	}
 
-	if (IsValid(Image_WeaponArt))
+	if (IsValid(Image_PickArt))
 	{
-		if (UTexture2D* WeaponArtTexture = Presentation.WeaponArt.Get())
+		if (UTexture2D* PortraitTexture = Presentation.Portrait.Get())
 		{
-			Image_WeaponArt->SetBrushFromTexture(WeaponArtTexture, true);
-			Image_WeaponArt->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Image_PickArt->SetBrushFromTexture(PortraitTexture, true);
+			Image_PickArt->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 		else
 		{
-			Image_WeaponArt->SetVisibility(ESlateVisibility::Collapsed);
+			Image_PickArt->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 }

@@ -486,7 +486,7 @@ void UDominationClassSelectScreen::RebuildClassCards()
 		Presentation.CombatClass = Definition.CombatClass;
 		Presentation.DisplayName = Definition.DisplayName;
 		Presentation.Description = Definition.Description;
-		Presentation.WeaponArt = GetCachedClassWeaponArt(Definition.CombatClass);
+		Presentation.Portrait = GetCachedClassPortrait(Definition.CombatClass);
 
 		ClassCard->SetClassData(Presentation);
 		ClassCard->OnClassCardClicked.AddUObject(
