@@ -571,11 +571,6 @@ void UAugmentDraftManager::ClearPlayerGameplayInputBlock(AShooterPlayerState* Pl
 
 	if (URogueAbilitySystemComponent* AbilitySystem = PlayerState->GetRogueAbilitySystemComponent())
 	{
-		// [INPUTDBG] 입력 차단 태그가 남아 있다가 해제되는지 확인(이전 개수가 0보다 크면 직전까지 입력이 막혀 있던 것)
-		UE_LOG(LogAugmentDraftManager, Warning, TEXT("[INPUTDBG] ClearPlayerGameplayInputBlock %s AugmentDraftTagCount(before)=%d InputBlockedParentCount=%d"),
-			*GetNameSafe(PlayerState),
-			AbilitySystem->GetTagCount(RogueTags::State_Gameplay_InputBlocked_AugmentDraft),
-			AbilitySystem->GetTagCount(RogueTags::State_Gameplay_InputBlocked));
 		AbilitySystem->SetLooseGameplayTagCount(
 			RogueTags::State_Gameplay_InputBlocked_AugmentDraft,
 			0,
