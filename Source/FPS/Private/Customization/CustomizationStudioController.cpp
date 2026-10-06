@@ -4,6 +4,7 @@
 #include "Customization/CustomizationStudioWidget.h"
 #include "GroomAsset.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/GameViewportClient.h"
 #include "EngineUtils.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Customization/AppearanceLocalPlayerSubsystem.h"
@@ -27,7 +28,14 @@ void ACustomizationStudioController::BeginPlay()
  if(auto* Transition=GetGameInstance()?GetGameInstance()->GetSubsystem<UScreenTransitionSubsystem>():nullptr)Transition->EndTransition();
 }
 void ACustomizationStudioController::Tick(float Delta){Super::Tick(Delta);if(!IsLocalController())return;AccountPoll+=Delta;if(AccountPoll>=1){AccountPoll=0;RefreshAccount();}}
-void ACustomizationStudioController::EndPlay(const EEndPlayReason::Type Reason){if(Screen)Screen->RemoveFromParent();Super::EndPlay(Reason);}
+void ACustomizationStudioController::EndPlay(const EEndPlayReason::Type Reason)
+{
+ if(Screen)Screen->RemoveFromParent();
+ // Modified: BeginPlay에서 FInputModeUIOnly를 적용하면 GameViewportClient의 bIgnoreInput이 true가 되는데, 뷰포트 클라이언트는 맵을 옮겨도 유지되고
+ // CommonUI도 이 값을 되돌리지 않는다. 그대로 두면 이후 게임플레이에서 키보드/마우스(이동/시점/메뉴)가 전부 무시되므로 이 컨트롤러가 사라질 때 복구한다.
+ if(const ULocalPlayer* LP=GetLocalPlayer()) if(UGameViewportClient* VC=LP->ViewportClient)VC->SetIgnoreInput(false);
+ Super::EndPlay(Reason);
+}
 void ACustomizationStudioController::RefreshAccount()
 {
  if(auto* LP=GetLocalPlayer())if(auto* Storage=LP->GetSubsystem<UAppearanceLocalPlayerSubsystem>())

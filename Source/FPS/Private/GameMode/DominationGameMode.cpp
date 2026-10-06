@@ -479,9 +479,6 @@ bool ADominationGameMode::PrepareCombatPawn(APlayerController* PlayerController)
 void ADominationGameMode::ActivateCombatPlayer(APlayerController* PlayerController)
 {
 	ADominationPlayerState* PlayerState = PlayerController->GetPlayerState<ADominationPlayerState>();
-	// [INPUTDBG] 전투 플레이어 활성화 시점의 Pawn/PlayerState 상태 기록
-	UE_LOG(LogDominationGameMode, Warning, TEXT("[INPUTDBG] ActivateCombatPlayer: Controller=%s Pawn=%s PlayerState=%s"),
-		*GetNameSafe(PlayerController), *GetNameSafe(PlayerController->GetPawn()), *GetNameSafe(PlayerState));
 	PlayerController->ChangeState(NAME_Playing);
 	PlayerController->ClientGotoState(NAME_Playing);
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
@@ -636,9 +633,6 @@ void ADominationGameMode::HandleInitialPlayersSpawned()
 
 	TArray<ADominationPlayerState*> InitialPlayerStates;
 	GetInitialParticipantPlayerStates(InitialPlayerStates);
-	// [INPUTDBG] 초기 스폰 완료 시점의 참가자 수와 증강 드래프트 사용 여부 기록
-	UE_LOG(LogDominationGameMode, Warning, TEXT("[INPUTDBG] HandleInitialPlayersSpawned: Participants=%d EnableAugmentDraft=%d"),
-		InitialPlayerStates.Num(), bEnableAugmentDraft);
 
 	if (!bEnableAugmentDraft)
 	{
@@ -707,10 +701,6 @@ void ADominationGameMode::TryStartInitialObjectiveTransition()
 		|| !IsValid(DominationGameState)
 		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
 	{
-		// [INPUTDBG] 첫 거점 전환이 시작되지 않는 이유 기록(남은 증강 선택자 수, 이미 시작됨 여부, 페이즈)
-		UE_LOG(LogDominationGameMode, Warning, TEXT("[INPUTDBG] TryStartInitialObjectiveTransition waiting: Authority=%d AlreadyStarted=%d PendingAugmentPlayers=%d GameState=%d Phase=%d"),
-			HasAuthority(), bInitialObjectiveTransitionStarted, PendingInitialAugmentPlayers.Num(), IsValid(DominationGameState),
-			IsValid(DominationGameState) ? static_cast<int32>(DominationGameState->GetDominationPhase()) : -1);
 		return;
 	}
 
