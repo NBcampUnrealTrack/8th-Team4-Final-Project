@@ -8,8 +8,7 @@
 
 // 정조준(ADS)을 홀드 입력으로 트리거하는 GameplayAbility. InputTag.Ability.Secondary를 누르고 있는
 // 동안만 조준 상태를 유지하고, 떼거나 어빌리티가 취소/종료되면 반드시 조준을 해제한다.
-// AWeaponBase::bIsADS(스프레드 0 고정/반동 판정이 이미 참조 중)와 UCombatComponent::bAiming
-// (ShooterAnimInstance가 이미 구독 중인 애니메이션 블렌드)을 동시에 켜고 끈다.
+// CombatComponent가 무기 ADS/카메라/HUD의 적용 상태를 함께 관리한다.
 UCLASS()
 class FPS_API UGA_ADS : public UGA_WeaponAbilityBase
 {
@@ -17,6 +16,8 @@ class FPS_API UGA_ADS : public UGA_WeaponAbilityBase
 
 public:
 	UGA_ADS();
+
+	bool IsAimingWithWeapon(const AWeaponBase* Weapon) const { return AimingWeapon.Get() == Weapon; }
 
 	virtual bool CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	                                 const FGameplayTagContainer* SourceTags = nullptr, const FGameplayTagContainer* TargetTags = nullptr,

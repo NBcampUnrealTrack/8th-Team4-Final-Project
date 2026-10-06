@@ -2,6 +2,7 @@
 
 
 #include "GameMode/ShooterGameMode.h"
+#include "Character/ShooterCharacter.h"
 
 #include "EngineUtils.h"
 #include "GAS/Damage/RogueDamageTypes.h"
@@ -97,6 +98,10 @@ void AShooterGameMode::HandlePlayerEliminated(
             FShooterEliminationEvent EliminationEvent;
             EliminationEvent.KillerPlayerState = KillerPlayerState;
             EliminationEvent.VictimPlayerState = VictimPlayerState;
+            if (const AShooterCharacter* VictimCharacter = Cast<AShooterCharacter>(VictimPawn))
+            {
+                EliminationEvent.VictimPawnLifeId = VictimCharacter->GetPawnLifeId();
+            }
             EliminationEvent.WeaponTag = DeathContext.WeaponTag;
             EliminationEvent.bHeadshot = DeathContext.bHeadshot;
             TeamGameState->BroadcastPlayerEliminated(EliminationEvent);

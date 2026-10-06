@@ -134,7 +134,6 @@ void UShooterReticle::NativeOnInitialized()
 void UShooterReticle::NativeConstruct()
 {
 	Super::NativeConstruct();
-	PromoteSniperScopeToViewportLayer();
 
 	if (APlayerController* PC = GetOwningPlayer())
 	{
@@ -156,9 +155,6 @@ void UShooterReticle::NativeConstruct()
 
 void UShooterReticle::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 {
-	// 부활 중 HUD 재구성 등으로 스코프 레이어가 빠졌으면 다시 올린다. 이미 올라가 있으면 아무것도 안 한다.
-	PromoteSniperScopeToViewportLayer();
-
 	UCombatComponent* NewCombat = nullptr;
 	if (NewPawn && NewPawn->Implements<UPlayerInterface>())
 	{
@@ -212,31 +208,8 @@ void UShooterReticle::RefreshSpreadOffsets()
 	SetSlotRenderOffset(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
-void UShooterReticle::PromoteSniperScopeToViewportLayer()
-{
-	if (!WBP_SniperScope || WBP_SniperScope->IsInViewport())
-	{
-		return;
-	}
-
-	// Scope는 Reticle의 자식으로 그리면 전체화면 검은 마스크가 Main HUD까지 덮는다.
-	// 같은 위젯 인스턴스를 부모에서 분리해 Root HUD보다 한 단계 아래 Viewport 레이어로 옮긴다.
-	// Scope 자체의 기존 Blueprint Visibility/ADS 로직은 그대로 유지된다.
-	WBP_SniperScope->RemoveFromParent();
-	WBP_SniperScope->AddToViewport(SniperScopeViewportZOrder);
-}
-
-void UShooterReticle::RemoveSniperScopeFromViewportLayer()
-{
-	if (WBP_SniperScope && WBP_SniperScope->IsInViewport())
-	{
-		WBP_SniperScope->RemoveFromParent();
-	}
-}
-
 void UShooterReticle::NativeDestruct()
 {
-	RemoveSniperScopeFromViewportLayer();
 	// 델리게이트 해제
 	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
@@ -322,17 +295,10 @@ bool UShooterReticle::IsAiming() const
 		return false;
 	}
 
-	if (Pawn->IsLocallyControlled())
-	{
-		return Weapon->IsADS();
-	}
-
-	// 관전 대상의 무기 ADS 값(bIsADS)은 GA_ADS가 서버/소유 클라에서만 세팅해 복제되지 않는다.
-	// 대신 복제되는 CombatComponent::bAiming을 본다.
 	const UCombatComponent* Combat = Pawn->Implements<UPlayerInterface>()
 		? IPlayerInterface::Execute_GetCombatComponent(Pawn)
 		: nullptr;
-	return IsValid(Combat) && Combat->bAiming && Weapon->CanADS();
+	return IsValid(Combat) && Combat->IsAiming() && Weapon->CanADS();
 }
 
 FGameplayTag UShooterReticle::GetEquippedWeaponTag() const

@@ -3,10 +3,14 @@
 #include "GAS/CueNotify/RogueFxCueNotify.h"
 
 #include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Particles/ParticleSystem.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "Weapon/WeaponBase.h"
 
 bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) const
 {
@@ -22,6 +26,12 @@ bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplay
 	const FRotator Rotation = Parameters.Normal.IsNearlyZero()
 		? FRotator::ZeroRotator
 		: Parameters.Normal.Rotation();
+
+	if (bAttachToWeapon)
+	{
+		SpawnOnWeapon(Target, Rotation);
+		return bResult;
+	}
 
 	USceneComponent* AttachTo = bAttachToTarget ? Target->GetRootComponent() : nullptr;
 
@@ -91,4 +101,62 @@ bool URogueFxCueNotify::OnExecute_Implementation(AActor* Target, const FGameplay
 	}
 
 	return bResult;
+}
+
+void URogueFxCueNotify::SpawnOnWeapon(AActor* Target, const FRotator& Rotation) const
+{
+	AWeaponBase* Weapon = IsValid(Target) && Target->Implements<UPlayerInterface>()
+		? IPlayerInterface::Execute_GetCurrentWeapon(Target)
+		: nullptr;
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* Meshes[] = { Weapon->GetMesh1P(), Weapon->GetMesh3P() };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Meshes); ++Index)
+	{
+		USkeletalMeshComponent* Mesh = Meshes[Index];
+		if (!IsValid(Mesh))
+		{
+			continue;
+		}
+
+		// 1인칭은 본인만, 3인칭은 본인 제외
+		const bool bFirstPerson = (Index == 0);
+
+		for (const FRogueFxCueEntry& Entry : Particles)
+		{
+			const FVector ScaleVector(Entry.Scale);
+
+			if (Entry.Particle)
+			{
+				if (UParticleSystemComponent* Spawned = UGameplayStatics::SpawnEmitterAttached(Entry.Particle, Mesh,
+						WeaponSocket, Entry.Offset, FRotator::ZeroRotator, ScaleVector,
+						EAttachLocation::KeepRelativeOffset, /*bAutoDestroy*/ true))
+				{
+					Spawned->SetWorldRotation(Rotation);
+					Spawned->SetOnlyOwnerSee(bFirstPerson);
+					Spawned->SetOwnerNoSee(!bFirstPerson);
+				}
+			}
+
+			if (Entry.Niagara)
+			{
+				if (UNiagaraComponent* Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(Entry.Niagara, Mesh,
+						WeaponSocket, Entry.Offset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset,
+						/*bAutoDestroy*/ true, /*bAutoActivate*/ true))
+				{
+					Spawned->SetRelativeScale3D(ScaleVector);
+					Spawned->SetWorldRotation(Rotation);
+					Spawned->SetOnlyOwnerSee(bFirstPerson);
+					Spawned->SetOwnerNoSee(!bFirstPerson);
+					if (Entry.bOverrideColor)
+					{
+						Spawned->SetVariableLinearColor(TEXT("User.Color"), Entry.Color);
+					}
+				}
+			}
+		}
+	}
 }

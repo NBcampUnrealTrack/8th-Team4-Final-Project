@@ -1,6 +1,7 @@
 ﻿#include "Killcam/KillcamReplaySubsystem.h"
 
 #include "Engine/ActorChannel.h"
+#include "Character/ShooterCharacter.h"
 #include "Engine/DemoNetConnection.h"
 #include "Engine/DemoNetDriver.h"
 #include "Engine/GameInstance.h"
@@ -149,26 +150,20 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 	World->GetTimerManager().ClearTimer(PostDeathTimerHandle);
 	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
 	World->GetTimerManager().ClearTimer(SetupRetryTimerHandle);
-	if (IsValid(PlaybackWidget))
-	{
-		PlaybackWidget->RemoveFromParent();
-		PlaybackWidget = nullptr;
-	}
-	PlaybackElimination = FShooterEliminationEvent();
+	CancelPlayback(false);
 
 	if (IsValid(BoundGameState))
 	{
 		BoundGameState->OnPlayerEliminated.RemoveDynamic(this, &ThisClass::HandlePlayerEliminated);
 	}
 
-	if (bPlaying)
+	UDemoNetDriver* RecordingDriver = World->GetDemoNetDriver();
+	if (IsValid(RecordingDriver) && RecordingDriver->IsRecording())
 	{
-		RestoreLiveWorld();
-		CleanPlaybackWorld();
-	}
-	else if (UGameInstance* GameInstance = World->GetGameInstance())
-	{
-		GameInstance->StopRecordingReplay();
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			GameInstance->StopRecordingReplay();
+		}
 	}
 
 	DestroyPlaybackCamera();
@@ -187,10 +182,59 @@ bool UKillcamReplaySubsystem::IsPlaying() const
 	return bPlaying;
 }
 
+void UKillcamReplaySubsystem::CancelForRespawn()
+{
+	CancelPlayback(true);
+}
+
+void UKillcamReplaySubsystem::HandleOwnedPawnChanged(APawn* NewPawn)
+{
+	AShooterPlayerController* PlayerController = GetPlayerController();
+	if (!IsValid(PlayerController) || PlayerController->GetPawn() != NewPawn
+		|| !IsLiveWorldActor(NewPawn) || !NewPawn->IsA<AShooterCharacter>())
+	{
+		return;
+	}
+
+	// The new owned avatar is a life boundary even if the previous death flag is still replicated.
+	if (bPlaybackRequestPending && NewPawn != VictimPawnAtElimination.Get())
+	{
+		CancelPlayback(true);
+	}
+}
+
+bool UKillcamReplaySubsystem::IsCurrentRequest(const uint64 Generation,
+	const TWeakObjectPtr<UWorld> RequestWorld, const TWeakObjectPtr<APawn> VictimPawn) const
+{
+	return bPlaybackRequestPending && Generation == PlaybackGeneration
+		&& RequestWorld.IsValid() && RequestWorld == SourceWorld && VictimPawn == VictimPawnAtElimination;
+}
+
+bool UKillcamReplaySubsystem::CanPlayForCurrentLife() const
+{
+	const AShooterPlayerController* PlayerController = GetPlayerController();
+	if (!IsValid(PlayerController)
+		|| PlayerController->GetPlayerState<AShooterPlayerState>() != PlaybackElimination.VictimPlayerState)
+	{
+		return false;
+	}
+	if (const AShooterCharacter* VictimPawn = Cast<AShooterCharacter>(VictimPawnAtElimination.Get()))
+	{
+		if (VictimPawn->GetPawnLifeId() != VictimPawnLifeIdAtElimination)
+		{
+			return false;
+		}
+	}
+
+	const APawn* OwnedPawn = PlayerController->GetPawn();
+	return !IsLiveWorldActor(OwnedPawn) || !OwnedPawn->IsA<AShooterCharacter>()
+		|| OwnedPawn == VictimPawnAtElimination.Get();
+}
+
 void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent)
 {
 	AShooterPlayerController* PlayerController = GetPlayerController();
-	if (bPlaying || !IsValid(PlayerController)
+	if (bPlaybackRequestPending || bPlaying || !IsValid(PlayerController)
 		|| PlayerController->GetPlayerState<AShooterPlayerState>() != EliminationEvent.VictimPlayerState
 		|| !IsValid(EliminationEvent.KillerPlayerState)
 		|| EliminationEvent.KillerPlayerState == EliminationEvent.VictimPlayerState)
@@ -205,7 +249,7 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 		RecordingDriver = World->GetDemoNetDriver();
 	}
 	APawn* KillerPawn = EliminationEvent.KillerPlayerState->GetPawn();
-	APawn* VictimPawn = EliminationEvent.VictimPlayerState->GetPawn();
+	AShooterCharacter* VictimPawn = Cast<AShooterCharacter>(EliminationEvent.VictimPlayerState->GetPawn());
 	if (!IsValid(RecordingDriver) || !RecordingDriver->IsRecording() || !IsValid(KillerPawn) || !IsValid(VictimPawn))
 	{
 		return;
@@ -219,11 +263,27 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	{
 		return;
 	}
+	if (!EliminationEvent.VictimPawnLifeId.IsValid()
+		|| VictimPawn->GetPawnLifeId() != EliminationEvent.VictimPawnLifeId)
+	{
+		return;
+	}
+	APawn* OwnedPawn = PlayerController->GetPawn();
+	if (!IsLiveWorldActor(VictimPawn)
+		|| (IsLiveWorldActor(OwnedPawn) && OwnedPawn->IsA<AShooterCharacter>() && OwnedPawn != VictimPawn))
+	{
+		// A delayed elimination belongs to its original avatar, never the newly possessed one.
+		return;
+	}
+	VictimPawnAtElimination = VictimPawn;
+	VictimPawnLifeIdAtElimination = EliminationEvent.VictimPawnLifeId;
+	bPlaybackRequestPending = true;
+	const uint64 Generation = ++PlaybackGeneration;
 
 	World->GetTimerManager().SetTimer(
 		PostDeathTimerHandle,
-		this,
-		&ThisClass::StartPlayback,
+		FTimerDelegate::CreateUObject(this, &ThisClass::StartPlayback,
+			Generation, SourceWorld, VictimPawnAtElimination),
 		PostDeathRecordDuration,
 		false);
 }
@@ -261,7 +321,9 @@ void UKillcamReplaySubsystem::StartRecording()
 	{
 		GameInstance = World->GetGameInstance();
 	}
-	if (!IsValid(GameInstance) || bPlaying)
+	if (!IsValid(GameInstance) || bPlaying || IsValid(GetPlaybackDemoNetDriver())
+		|| (PlaybackCleanupWorld.Get() == World
+			&& World->GetTimerManager().IsTimerActive(PlaybackCleanupTimerHandle)))
 	{
 		return;
 	}
@@ -297,8 +359,18 @@ void UKillcamReplaySubsystem::StartRecording()
 	}
 }
 
-void UKillcamReplaySubsystem::StartPlayback()
+void UKillcamReplaySubsystem::StartPlayback(const uint64 Generation,
+	const TWeakObjectPtr<UWorld> RequestWorld, const TWeakObjectPtr<APawn> VictimPawn)
 {
+	if (!IsCurrentRequest(Generation, RequestWorld, VictimPawn))
+	{
+		return;
+	}
+	if (!CanPlayForCurrentLife())
+	{
+		CancelPlayback(true);
+		return;
+	}
 	UWorld* World = SourceWorld.Get();
 	UGameInstance* GameInstance = nullptr;
 	FLevelCollection* DuplicateCollection = nullptr;
@@ -311,12 +383,14 @@ void UKillcamReplaySubsystem::StartPlayback()
 	}
 	if (!IsValid(GameInstance) || !DuplicateCollection || !IsValid(RecordingDriver) || !RecordingDriver->IsRecording())
 	{
+		CancelPlayback(true);
 		return;
 	}
 
 	AShooterPlayerController* PlayerController = GetPlayerController();
 	if (!IsValid(PlayerController))
 	{
+		CancelPlayback(true);
 		return;
 	}
 
@@ -340,14 +414,15 @@ void UKillcamReplaySubsystem::StartPlayback()
 	if (!GameInstance->PlayReplay(TEXT("_Killcam"), nullptr, Options))
 	{
 		DuplicateCollection->SetIsVisible(false);
-		RetrySetup();
+		CancelPlayback(true);
 		return;
 	}
 
 	UDemoNetDriver* PlaybackDriver = World->GetDemoNetDriver();
 	if (!IsValid(PlaybackDriver))
 	{
-		RetrySetup();
+		DuplicateCollection->SetIsVisible(false);
+		CancelPlayback(true);
 		return;
 	}
 
@@ -355,14 +430,34 @@ void UKillcamReplaySubsystem::StartPlayback()
 	DuplicateCollection->SetDemoNetDriver(PlaybackDriver);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(KillerActorGuid);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(VictimActorGuid);
+	const TWeakObjectPtr<UDemoNetDriver> WeakPlaybackDriver = PlaybackDriver;
+	// Seeking also has a deadline; an unfinished seek cannot outlive this death indefinitely.
+	World->GetTimerManager().SetTimer(PlaybackTimerHandle,
+		FTimerDelegate::CreateWeakLambda(this, [this, Generation, RequestWorld, VictimPawn, WeakPlaybackDriver]()
+		{
+			if (IsCurrentRequest(Generation, RequestWorld, VictimPawn)
+				&& GetPlaybackDemoNetDriver() == WeakPlaybackDriver.Get())
+			{
+				StopPlayback();
+			}
+		}), GetRequiredBufferSeconds(), false);
 	PlaybackDriver->GotoTimeInSeconds(
 		PlaybackStartTime,
-		FOnGotoTimeDelegate::CreateUObject(this, &ThisClass::HandlePlaybackReady));
+		FOnGotoTimeDelegate::CreateUObject(this, &ThisClass::HandlePlaybackReady,
+			Generation, RequestWorld, VictimPawn, WeakPlaybackDriver));
 }
 
-void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful)
+void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful, const uint64 Generation,
+	const TWeakObjectPtr<UWorld> RequestWorld, const TWeakObjectPtr<APawn> VictimPawn,
+	const TWeakObjectPtr<UDemoNetDriver> PlaybackDriver)
 {
-	if (!bWasSuccessful)
+	// Check before both success and failure: an old callback must never stop a newer replay.
+	if (!IsCurrentRequest(Generation, RequestWorld, VictimPawn) || !PlaybackDriver.IsValid()
+		|| GetPlaybackDemoNetDriver() != PlaybackDriver.Get())
+	{
+		return;
+	}
+	if (!bWasSuccessful || !CanPlayForCurrentLife())
 	{
 		StopPlayback();
 		return;
@@ -378,8 +473,14 @@ void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful)
 	{
 		World->GetTimerManager().SetTimer(
 			PlaybackTimerHandle,
-			this,
-			&ThisClass::StopPlayback,
+			FTimerDelegate::CreateWeakLambda(this, [this, Generation, RequestWorld, VictimPawn, PlaybackDriver]()
+			{
+				if (IsCurrentRequest(Generation, RequestWorld, VictimPawn)
+					&& GetPlaybackDemoNetDriver() == PlaybackDriver.Get())
+				{
+					StopPlayback();
+				}
+			}),
 			PlaybackDuration,
 			false);
 	}
@@ -388,7 +489,7 @@ void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful)
 bool UKillcamReplaySubsystem::ShowPlayback()
 {
 	UWorld* World = SourceWorld.Get();
-	if (!IsValid(World))
+	if (!IsValid(World) || !bPlaybackRequestPending || !CanPlayForCurrentLife())
 	{
 		return false;
 	}
@@ -429,44 +530,97 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 
 void UKillcamReplaySubsystem::StopPlayback()
 {
+	CancelPlayback(true);
+}
+
+void UKillcamReplaySubsystem::CancelPlayback(const bool bRestartRecording)
+{
 	UWorld* World = SourceWorld.Get();
 	UDemoNetDriver* PlaybackDriver = GetPlaybackDemoNetDriver();
-	if (IsValid(World) && IsValid(PlaybackDriver) && PlaybackDriver->IsInTick())
+	const uint64 Generation = ++PlaybackGeneration;
+	bPlaybackRequestPending = false;
+	const bool bHadPlayback = bPlaying || IsValid(PlaybackCamera);
+	bPlaying = false;
+	if (IsValid(World))
 	{
+		World->GetTimerManager().ClearTimer(PostDeathTimerHandle);
 		World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
-		PlaybackTimerHandle = World->GetTimerManager().SetTimerForNextTick(this, &ThisClass::StopPlayback);
-		return;
 	}
-
 	if (IsValid(PlaybackWidget))
 	{
 		PlaybackWidget->RemoveFromParent();
 		PlaybackWidget = nullptr;
 	}
-	if (!IsValid(World))
+	if (bHadPlayback && IsValid(World))
+	{
+		RestoreLiveWorld();
+	}
+	else
 	{
 		DestroyPlaybackCamera();
-		bPlaying = false;
+	}
+	PlaybackElimination = FShooterEliminationEvent();
+	VictimPawnAtElimination.Reset();
+	VictimPawnLifeIdAtElimination.Invalidate();
+	SavedLiveViewTarget.Reset();
+
+	if (IsValid(World) && IsValid(PlaybackDriver))
+	{
+		FinishPlaybackCleanup(World, PlaybackDriver, Generation, bRestartRecording);
+	}
+	else if (bRestartRecording && IsValid(World))
+	{
+		// Cancelling the post-death delay keeps an existing recording running.
+		RetrySetup();
+	}
+}
+
+void UKillcamReplaySubsystem::FinishPlaybackCleanup(const TWeakObjectPtr<UWorld> RequestWorld,
+	const TWeakObjectPtr<UDemoNetDriver> PlaybackDriver, const uint64 Generation, const bool bRestartRecording)
+{
+	UWorld* World = RequestWorld.Get();
+	UDemoNetDriver* Driver = PlaybackDriver.Get();
+	FLevelCollection* DuplicateCollection = IsValid(World)
+		? World->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels) : nullptr;
+	// The world and exact driver are captured. Never tear down a replacement replay driver.
+	if (!DuplicateCollection || !IsValid(Driver) || DuplicateCollection->GetDemoNetDriver() != Driver)
+	{
+		return;
+	}
+	if (Driver->IsInTick())
+	{
+		if (UWorld* CleanupWorld = PlaybackCleanupWorld.Get())
+		{
+			CleanupWorld->GetTimerManager().ClearTimer(PlaybackCleanupTimerHandle);
+		}
+		PlaybackCleanupWorld = World;
+		PlaybackCleanupTimerHandle = World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(this, &ThisClass::FinishPlaybackCleanup,
+				RequestWorld, PlaybackDriver, Generation, bRestartRecording));
 		return;
 	}
 
-	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
-	RestoreLiveWorld();
-	CleanPlaybackWorld();
-	bPlaying = false;
-	RetrySetup();
+	CleanPlaybackWorld(World, Driver);
+	if (Generation == PlaybackGeneration && RequestWorld == SourceWorld)
+	{
+		PlaybackCleanupWorld.Reset();
+		PlaybackCleanupTimerHandle.Invalidate();
+		if (bRestartRecording)
+		{
+			RetrySetup();
+		}
+	}
 }
 
-
-void UKillcamReplaySubsystem::CleanPlaybackWorld()
+void UKillcamReplaySubsystem::CleanPlaybackWorld(UWorld* World, UDemoNetDriver* ExpectedPlaybackDriver)
 {
-	UWorld* World = SourceWorld.Get();
 	FLevelCollection* DuplicateCollection = nullptr;
 	if (IsValid(World))
 	{
 		DuplicateCollection = World->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels);
 	}
-	if (!IsValid(World) || !DuplicateCollection)
+	if (!IsValid(World) || !DuplicateCollection || !IsValid(ExpectedPlaybackDriver)
+		|| DuplicateCollection->GetDemoNetDriver() != ExpectedPlaybackDriver)
 	{
 		return;
 	}
@@ -542,25 +696,34 @@ void UKillcamReplaySubsystem::RestoreLiveWorld()
 		DuplicateCollection->SetIsVisible(false);
 	}
 
-	AShooterPlayerController* PlayerController = GetPlayerController();
-	if (IsValid(PlayerController))
+	auto RestoreView = [this]()
 	{
-		AActor* RestoreTarget = ResolveRestoreViewTarget(PlayerController);
-
-		PlayerController->SetKillcamViewTargetSuppressed(false);
-		if (IsValid(RestoreTarget))
+		AShooterPlayerController* PlayerController = GetPlayerController();
+		if (IsValid(PlayerController))
 		{
-			PlayerController->SetViewTarget(RestoreTarget);
+			AActor* RestoreTarget = ResolveRestoreViewTarget(PlayerController);
+			PlayerController->SetKillcamViewTargetSuppressed(false);
+			if (IsValid(RestoreTarget))
+			{
+				PlayerController->SetViewTarget(RestoreTarget);
+			}
+			if (!PlayerController->HasAuthority())
+			{
+				PlayerController->ServerVerifyViewTarget();
+			}
 		}
-
-		if (!PlayerController->HasAuthority())
-		{
-			PlayerController->ServerVerifyViewTarget();
-		}
-
+		DestroyPlaybackCamera();
+	};
+	if (SourceCollection)
+	{
+		// A failed seek may call back while the duplicate collection is active.
+		FScopedLevelCollectionContextSwitch CollectionContext(SourceCollection, World);
+		RestoreView();
 	}
-
-	DestroyPlaybackCamera();
+	else
+	{
+		RestoreView();
+	}
 	SavedLiveViewTarget.Reset();
 }
 
@@ -623,20 +786,23 @@ AActor* UKillcamReplaySubsystem::ResolveRestoreViewTarget(AShooterPlayerControll
 	}
 
 	AActor* PendingTarget = PlayerController->ConsumePendingViewTarget();
-	if (IsLiveWorldActor(PendingTarget) && PendingTarget != PlayerController)
+	APawn* CurrentPawn = PlayerController->GetPawn();
+	const bool bHasFreshCombatPawn = IsLiveWorldActor(CurrentPawn) && CurrentPawn->IsA<AShooterCharacter>()
+		&& CurrentPawn != VictimPawnAtElimination.Get();
+	if (bHasFreshCombatPawn)
+	{
+		// Pending may still describe an old spectator request. Ownership of a new avatar wins.
+		return CurrentPawn;
+	}
+	if (IsLiveWorldActor(PendingTarget) && PendingTarget != PlayerController
+		&& PendingTarget != VictimPawnAtElimination.Get())
 	{
 		return PendingTarget;
 	}
 
-	APawn* CurrentPawn = PlayerController->GetPawn();
-	const bool bIsSpectatorPawn = IsValid(CurrentPawn) && CurrentPawn->IsA<ASpectatorPawn>();
-	if (IsValid(CurrentPawn) && !bIsSpectatorPawn)
-	{
-		return CurrentPawn;
-	}
-
 	AActor* SavedTarget = SavedLiveViewTarget.Get();
-	if (IsLiveWorldActor(SavedTarget) && SavedTarget != PlaybackCamera.Get() && SavedTarget != PlayerController)
+	if (IsLiveWorldActor(SavedTarget) && SavedTarget != PlaybackCamera.Get() && SavedTarget != PlayerController
+		&& SavedTarget != VictimPawnAtElimination.Get())
 	{
 		return SavedTarget;
 	}
@@ -646,7 +812,8 @@ AActor* UKillcamReplaySubsystem::ResolveRestoreViewTarget(AShooterPlayerControll
 		return SpectatorPawn;
 	}
 
-	return CurrentPawn;
+	return IsLiveWorldActor(CurrentPawn) && CurrentPawn != VictimPawnAtElimination.Get()
+		? static_cast<AActor*>(CurrentPawn) : PlayerController;
 }
 
 bool UKillcamReplaySubsystem::IsSupportedWorld(const UWorld* World) const

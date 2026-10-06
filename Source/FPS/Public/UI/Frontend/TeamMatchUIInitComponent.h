@@ -17,6 +17,7 @@ class UShooterOptionsScreen;
 class UShooterSurrenderVoteScreen;
 class UShooterUIManagerSubsystem;
 class UShooterScoreboard;
+class UShooterScopeWidget;
 
 enum class ESurrenderVoteStartResult : uint8;
 
@@ -126,6 +127,8 @@ private:
 	void RemoveSurrenderVote();
 	void ScheduleModalRefresh();
 	void RefreshModalPresentation();
+	void CreateScopeWidget(AShooterPlayerController* PlayerController);
+	void RemoveScopeWidget();
 	bool CanRequestSurrender() const;
 	TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 
@@ -151,6 +154,16 @@ private:
 	
 	UFUNCTION()
 	void HandleSelectionOutroFinished();
+
+	// Root Layout(-1) 아래에서 모든 전투 모드의 스코프를 별도로 그린다.
+	UPROPERTY(EditAnywhere, Category = "UI|Scope")
+	TSubclassOf<UShooterScopeWidget> ScopeWidgetClass;
+
+	UPROPERTY(EditAnywhere, Category = "UI|Scope")
+	int32 ScopeViewportZOrder = -2;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterScopeWidget> ScopeWidgetInstance;
 
 	// 모든 팀 매치가 공통으로 사용하는 옵션 화면. 파생 UI Init BP에서 WBP_OptionsScreen을 지정한다.
 	UPROPERTY(EditAnywhere, Category = "UI|System Menu")
