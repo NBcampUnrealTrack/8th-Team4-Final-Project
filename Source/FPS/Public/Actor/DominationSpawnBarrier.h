@@ -50,7 +50,7 @@ private:
 		bool bFromSweep,
 		const FHitResult& SweepResult);
 
-	void RefreshBarrierState(EDominationPointId ActivePointId);
+	bool RefreshBarrierState(EDominationPointId ActivePointId);
 	void SetBarrierActive(EGameTeam NewGuardedTeam);
 	// 메시 비지빌리티가 안보이는 현상 개선
 	void ForceRefreshMeshVisibility();
