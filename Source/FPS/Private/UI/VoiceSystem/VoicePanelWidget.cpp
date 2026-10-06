@@ -8,6 +8,8 @@
 #include "GameFramework/PlayerState.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerController.h"
+#include "Player/ShooterPlayerState.h"
+#include "TimerManager.h"
 #include "UI/VoiceSystem/VoicePlayerEntryWidget.h"
 
 void UVoicePanelWidget::NativeOnInitialized()
@@ -39,6 +41,12 @@ void UVoicePanelWidget::NativeConstruct()
 	}
 
 	RefreshVoicePanel();
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			ReconcileTimerHandle, this, &ThisClass::ReconcileTeammates, ReconcileInterval, true);
+	}
 }
 
 void UVoicePanelWidget::NativeDestruct()
@@ -48,6 +56,12 @@ void UVoicePanelWidget::NativeDestruct()
 		VoiceChatSubsystem->OnVoiceMuteChanged.RemoveDynamic(this, &ThisClass::HandleMuteChanged);
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReconcileTimerHandle);
+	}
+
+	UnbindAllTalkingEvents();
 	EntryWidgets.Reset();
 	Super::NativeDestruct();
 }
@@ -58,6 +72,7 @@ void UVoicePanelWidget::RefreshVoicePanel()
 	if (ShooterController && !ShooterController->SupportsVoiceChat())
 	{
 		SetVisibility(ESlateVisibility::Collapsed);
+		UnbindAllTalkingEvents();
 		EntryWidgets.Reset();
 		if (PlayerListPanel)
 		{
@@ -66,6 +81,7 @@ void UVoicePanelWidget::RefreshVoicePanel()
 		return;
 	}
 
+	UnbindAllTalkingEvents();
 	EntryWidgets.Reset();
 
 	if (PlayerListPanel)
@@ -73,57 +89,7 @@ void UVoicePanelWidget::RefreshVoicePanel()
 		PlayerListPanel->ClearChildren();
 	}
 
-	APlayerController* OwningPlayer = GetOwningPlayer();
-	UWorld* World = GetWorld();
-	if (!IsValid(OwningPlayer) || !IsValid(World) || !EntryWidgetClass || !PlayerListPanel)
-	{
-		NotifyAudienceUpdated();
-
-		const UVoiceChatSubsystem* VoiceChatSubsystem = GetVoiceChatSubsystem();
-		OnVoicePanelRefreshed(
-			0,
-			IsValid(VoiceChatSubsystem) ? VoiceChatSubsystem->GetVoiceAudience() : EVoiceChatAudience::Everyone);
-		return;
-	}
-
-	AGameStateBase* GameState = World->GetGameState();
-	APlayerState* LocalPlayerState = GetLocalPlayerState();
-	if (!IsValid(GameState))
-	{
-		NotifyAudienceUpdated();
-
-		const UVoiceChatSubsystem* VoiceChatSubsystem = GetVoiceChatSubsystem();
-		OnVoicePanelRefreshed(
-			0,
-			IsValid(VoiceChatSubsystem) ? VoiceChatSubsystem->GetVoiceAudience() : EVoiceChatAudience::Everyone);
-		return;
-	}
-
-	const ABaseTeamPlayerState* LocalTeamPlayerState = Cast<ABaseTeamPlayerState>(LocalPlayerState);
-	const EGameTeam LocalTeam = IsValid(LocalTeamPlayerState)
-		? LocalTeamPlayerState->GetTeam()
-		: EGameTeam::None;
-
-	for (APlayerState* PlayerState : GameState->PlayerArray)
-	{
-		const ABaseTeamPlayerState* CandidateTeamPlayerState = Cast<ABaseTeamPlayerState>(PlayerState);
-		if (!IsValid(CandidateTeamPlayerState)
-			|| LocalTeam == EGameTeam::None
-			|| LocalTeam != CandidateTeamPlayerState->GetTeam())
-		{
-			continue;
-		}
-
-		UVoicePlayerEntryWidget* EntryWidget = CreateWidget<UVoicePlayerEntryWidget>(OwningPlayer, EntryWidgetClass);
-		if (!IsValid(EntryWidget))
-		{
-			continue;
-		}
-
-		EntryWidget->SetupVoicePlayerEntry(PlayerState, LocalPlayerState);
-		PlayerListPanel->AddChild(EntryWidget);
-		EntryWidgets.Add(EntryWidget);
-	}
+	ReconcileTeammates();
 
 	NotifyAudienceUpdated();
 
@@ -152,6 +118,146 @@ void UVoicePanelWidget::HandleMuteChanged(APlayerState*, bool)
 			EntryWidget->RefreshVoicePlayerEntry();
 		}
 	}
+}
+
+void UVoicePanelWidget::HandleVoiceTalkingChanged(AShooterPlayerState* ChangedPlayerState, bool bIsTalking)
+{
+	if (bIsTalking)
+	{
+		AddTalkingEntry(ChangedPlayerState);
+	}
+	else
+	{
+		RemoveEntry(FindEntry(ChangedPlayerState));
+	}
+}
+
+void UVoicePanelWidget::ReconcileTeammates()
+{
+	UWorld* World = GetWorld();
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	const ABaseTeamPlayerState* LocalTeamPlayerState = Cast<ABaseTeamPlayerState>(GetLocalPlayerState());
+	const EGameTeam LocalTeam = IsValid(LocalTeamPlayerState)
+		? LocalTeamPlayerState->GetTeam()
+		: EGameTeam::None;
+
+	TSet<AShooterPlayerState*> Teammates;
+	if (IsValid(GameState) && LocalTeam != EGameTeam::None)
+	{
+		for (APlayerState* PlayerState : GameState->PlayerArray)
+		{
+			AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
+			if (IsValid(ShooterPlayerState) && ShooterPlayerState->GetTeam() == LocalTeam)
+			{
+				Teammates.Add(ShooterPlayerState);
+			}
+		}
+	}
+
+	for (int32 Index = BoundPlayerStates.Num() - 1; Index >= 0; --Index)
+	{
+		AShooterPlayerState* PlayerState = BoundPlayerStates[Index].Get();
+		if (IsValid(PlayerState) && Teammates.Contains(PlayerState))
+		{
+			continue;
+		}
+
+		if (PlayerState)
+		{
+			PlayerState->OnVoiceTalkingChanged.RemoveDynamic(this, &ThisClass::HandleVoiceTalkingChanged);
+		}
+		BoundPlayerStates.RemoveAtSwap(Index, EAllowShrinking::No);
+	}
+
+	for (int32 Index = EntryWidgets.Num() - 1; Index >= 0; --Index)
+	{
+		UVoicePlayerEntryWidget* EntryWidget = EntryWidgets[Index];
+		AShooterPlayerState* PlayerState = IsValid(EntryWidget)
+			? Cast<AShooterPlayerState>(EntryWidget->GetVoicePlayerState())
+			: nullptr;
+		if (!IsValid(PlayerState) || !Teammates.Contains(PlayerState))
+		{
+			if (IsValid(EntryWidget))
+			{
+				EntryWidget->RemoveFromParent();
+			}
+			EntryWidgets.RemoveAtSwap(Index, EAllowShrinking::No);
+			continue;
+		}
+
+		EntryWidget->RefreshProfileImage();
+	}
+
+	for (AShooterPlayerState* PlayerState : Teammates)
+	{
+		if (BoundPlayerStates.Contains(PlayerState))
+		{
+			continue;
+		}
+
+		PlayerState->OnVoiceTalkingChanged.AddUniqueDynamic(this, &ThisClass::HandleVoiceTalkingChanged);
+		BoundPlayerStates.Add(PlayerState);
+		if (PlayerState->IsVoiceTalking())
+		{
+			AddTalkingEntry(PlayerState);
+		}
+	}
+}
+
+void UVoicePanelWidget::AddTalkingEntry(AShooterPlayerState* PlayerState)
+{
+	if (!IsValid(PlayerState) || FindEntry(PlayerState) || !EntryWidgetClass || !PlayerListPanel)
+	{
+		return;
+	}
+
+	UVoicePlayerEntryWidget* EntryWidget = CreateWidget<UVoicePlayerEntryWidget>(GetOwningPlayer(), EntryWidgetClass);
+	if (!IsValid(EntryWidget))
+	{
+		return;
+	}
+
+	EntryWidget->SetupVoicePlayerEntry(PlayerState, GetLocalPlayerState());
+	// 새로 말한 사람은 맨 아래에 붙는다
+	PlayerListPanel->AddChild(EntryWidget);
+	EntryWidgets.Add(EntryWidget);
+}
+
+void UVoicePanelWidget::RemoveEntry(UVoicePlayerEntryWidget* EntryWidget)
+{
+	if (!IsValid(EntryWidget))
+	{
+		return;
+	}
+
+	EntryWidget->RemoveFromParent();
+	EntryWidgets.RemoveSingleSwap(EntryWidget, EAllowShrinking::No);
+}
+
+UVoicePlayerEntryWidget* UVoicePanelWidget::FindEntry(const APlayerState* PlayerState) const
+{
+	for (UVoicePlayerEntryWidget* EntryWidget : EntryWidgets)
+	{
+		if (IsValid(EntryWidget) && EntryWidget->GetVoicePlayerState() == PlayerState)
+		{
+			return EntryWidget;
+		}
+	}
+
+	return nullptr;
+}
+
+void UVoicePanelWidget::UnbindAllTalkingEvents()
+{
+	for (const TWeakObjectPtr<AShooterPlayerState>& BoundPlayerState : BoundPlayerStates)
+	{
+		if (AShooterPlayerState* PlayerState = BoundPlayerState.Get())
+		{
+			PlayerState->OnVoiceTalkingChanged.RemoveDynamic(this, &ThisClass::HandleVoiceTalkingChanged);
+		}
+	}
+
+	BoundPlayerStates.Reset();
 }
 
 void UVoicePanelWidget::NotifyAudienceUpdated()
