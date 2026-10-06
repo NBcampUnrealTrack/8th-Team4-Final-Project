@@ -5,6 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "Customization/CustomizationProfile.h"
 #include "DominationClassPreviewStage.generated.h"
 
 class AShooterCharacter;
@@ -67,6 +68,7 @@ private:
 	void SpawnPreviewPawns();
 	AShooterCharacter* SpawnPreviewPawn(EDominationCombatClass CombatClass);
 	bool RequestSavedAppearance(EDominationCombatClass CombatClass, AShooterCharacter* Pawn);
+	void RefreshSavedAppearances();
 	void PollAppearanceApplied();
 	void ShowCurrentPreview();
 	void RegisterPreviewComponents();
@@ -95,9 +97,12 @@ private:
 	TArray<TWeakObjectPtr<AWeaponBase>> PreviewWeapons;
 	// 외형 생성이 끝나지 않아 아직 캡처하지 않는 클래스
 	TSet<EDominationCombatClass> PendingAppearanceClasses;
+	// Cached values prevent regenerating Mutable meshes on unchanged profile polls.
+	TMap<EDominationCombatClass, FCustomizationAppearance> RequestedAppearances;
 	FTimerHandle InspectTimerHandle;
 	FTimerHandle AppearanceTimerHandle;
 	FTimerHandle StreamingTimerHandle;
+	FTimerHandle SavedAppearanceTimerHandle;
 	int32 AppearancePollsRemaining = 0;
 
 	EDominationCombatClass CurrentPreviewClass = EDominationCombatClass::Unselected;

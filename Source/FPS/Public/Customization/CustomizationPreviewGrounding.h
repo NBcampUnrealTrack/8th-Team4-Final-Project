@@ -2,6 +2,12 @@
 
 #include "CoreMinimal.h"
 
+inline bool CanReadPreviewVertices(bool bRequiresCookedData, bool bAllowCPUAccess, bool bHasVertexData)
+{
+    // A cooked buffer can retain a stale pointer after its CPU storage is discarded.
+    return bHasVertexData && (!bRequiresCookedData || bAllowCPUAccess);
+}
+
 // Vertices are actual reference-pose geometry in the shared model-root space.
 // Only the shared root translation may change; authored proportions are retained.
 inline bool CalculatePreviewGroundedTransform(TConstArrayView<FVector> Vertices,

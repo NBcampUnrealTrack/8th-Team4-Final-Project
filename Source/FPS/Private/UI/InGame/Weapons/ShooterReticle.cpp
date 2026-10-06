@@ -7,7 +7,9 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Combat/CombatComponent.h"
 #include "Player/ShooterPlayerController.h"
+#include "UnrealClient.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
@@ -133,6 +135,81 @@ void UShooterReticle::NativeConstruct()
 {
 	Super::NativeConstruct();
 	PromoteSniperScopeToViewportLayer();
+
+	if (APlayerController* PC = GetOwningPlayer())
+	{
+		PC->OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+		HandlePossessedPawnChanged(nullptr, PC->GetPawn());
+	}
+
+	// 동적 크로스헤어 On/Off 등 설정이 바뀌면 간격을 즉시 다시 계산한다.
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		CrosshairSettingsHandle = Settings->OnCrosshairSettingsChanged.AddUObject(this, &ThisClass::RefreshSpreadOffsets);
+	}
+
+	// ComputeSpreadRadius가 뷰포트 크기에 의존하므로 창 크기/해상도 변경 시에도 다시 계산한다.
+	ViewportResizedHandle = FViewport::ViewportResizedEvent.AddUObject(this, &ThisClass::HandleViewportResized);
+
+	RefreshSpreadOffsets();
+}
+
+void UShooterReticle::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
+{
+	// 부활 중 HUD 재구성 등으로 스코프 레이어가 빠졌으면 다시 올린다. 이미 올라가 있으면 아무것도 안 한다.
+	PromoteSniperScopeToViewportLayer();
+
+	UCombatComponent* NewCombat = nullptr;
+	if (NewPawn && NewPawn->Implements<UPlayerInterface>())
+	{
+		NewCombat = IPlayerInterface::Execute_GetCombatComponent(NewPawn);
+	}
+
+	BindToCombatComponent(NewCombat);
+}
+
+void UShooterReticle::BindToCombatComponent(UCombatComponent* NewCombat)
+{
+	if (CachedCombat.Get() == NewCombat)
+	{
+		return;
+	}
+
+	if (UCombatComponent* OldCombat = CachedCombat.Get())
+	{
+		OldCombat->OnCrosshairSpreadInputsChanged.Remove(CrosshairSpreadInputsHandle);
+	}
+	CrosshairSpreadInputsHandle.Reset();
+
+	CachedCombat = NewCombat;
+
+	if (NewCombat)
+	{
+		CrosshairSpreadInputsHandle = NewCombat->OnCrosshairSpreadInputsChanged.AddUObject(this, &ThisClass::RefreshSpreadOffsets);
+	}
+
+	// 구독 직후에는 CombatComponent가 "값이 안 바뀌었다"고 판단해 알리지 않을 수 있으므로 한 번 직접 갱신한다.
+	RefreshSpreadOffsets();
+}
+
+void UShooterReticle::HandleViewportResized(FViewport* Viewport, uint32 Unused)
+{
+	RefreshSpreadOffsets();
+}
+
+void UShooterReticle::RefreshSpreadOffsets()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(UShooterReticle::RefreshSpreadOffsets);
+
+	// 4방향 모두 브러시 자체가 이미 올바른 방향을 향하고 있으므로, 회전 없이 중심에서 반경만큼
+	// 축을 따라 밀어내기만 하면 된다. Top/Bottom은 박스 크기 차이를 보정하기 위해 반경을 줄이고,
+	// VerticalGroupOffset으로 둘을 한 축으로 묶어 미세 위치를 맞춘다.
+	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
+	const float VerticalRadius = Radius * VerticalSpreadRadiusScale;
+	SetSlotRenderOffset(Image_Right, HorizontalGroupOffset + FVector2D(Radius, 0.f));
+	SetSlotRenderOffset(Image_Left, HorizontalGroupOffset + FVector2D(-Radius, 0.f));
+	SetSlotRenderOffset(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius - TopBarLift));
+	SetSlotRenderOffset(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
 void UShooterReticle::PromoteSniperScopeToViewportLayer()
@@ -165,12 +242,24 @@ void UShooterReticle::NativeDestruct()
 	{
 		PC->OnHitMarker.RemoveAll(this);
 		PC->OnKillEffect.RemoveAll(this);
+		PC->OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
 	}
 
+	BindToCombatComponent(nullptr);
+
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnCrosshairSettingsChanged.Remove(CrosshairSettingsHandle);
+	}
+	CrosshairSettingsHandle.Reset();
+
+	FViewport::ViewportResizedEvent.Remove(ViewportResizedHandle);
+	ViewportResizedHandle.Reset();
+
+	// 히트마커/킬이펙트 등 이 위젯이 건 타이머를 한 번에 정리한다.
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(HitMarkerTimerHandle);
-		World->GetTimerManager().ClearTimer(KillEffectTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
 	bHitMarkerActive = false;
 	bKillEffectActive = false;
@@ -226,8 +315,24 @@ bool UShooterReticle::IsPerfectAccuracy() const
 
 bool UShooterReticle::IsAiming() const
 {
+	APawn* Pawn = GetViewedPawn();
 	const AWeaponBase* Weapon = FindEquippedWeapon();
-	return IsValid(Weapon) && Weapon->IsADS();
+	if (!IsValid(Pawn) || !IsValid(Weapon))
+	{
+		return false;
+	}
+
+	if (Pawn->IsLocallyControlled())
+	{
+		return Weapon->IsADS();
+	}
+
+	// 관전 대상의 무기 ADS 값(bIsADS)은 GA_ADS가 서버/소유 클라에서만 세팅해 복제되지 않는다.
+	// 대신 복제되는 CombatComponent::bAiming을 본다.
+	const UCombatComponent* Combat = Pawn->Implements<UPlayerInterface>()
+		? IPlayerInterface::Execute_GetCombatComponent(Pawn)
+		: nullptr;
+	return IsValid(Combat) && Combat->bAiming && Weapon->CanADS();
 }
 
 FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
@@ -239,21 +344,6 @@ FGameplayTag UShooterReticle::GetEquippedWeaponTag() const
 bool UShooterReticle::IsHitMarkerActive() const
 {
 	return bHitMarkerActive;
-}
-
-void UShooterReticle::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
-{
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	// 4방향 모두 브러시 자체가 이미 올바른 방향을 향하고 있으므로, 회전 없이 중심에서 반경만큼
-	// 축을 따라 밀어내기만 하면 된다. Top/Bottom은 박스 크기 차이를 보정하기 위해 반경을 줄이고,
-	// VerticalGroupOffset으로 둘을 한 축으로 묶어 미세 위치를 맞춘다.
-	const float Radius = FMath::Max(ComputeSpreadRadius(), MinSpreadRadius);
-	const float VerticalRadius = Radius * VerticalSpreadRadiusScale;
-	SetSlotRenderOffset(Image_Right, HorizontalGroupOffset + FVector2D(Radius, 0.f));
-	SetSlotRenderOffset(Image_Left, HorizontalGroupOffset + FVector2D(-Radius, 0.f));
-	SetSlotRenderOffset(Image_Top, VerticalGroupOffset + FVector2D(0.f, -VerticalRadius - TopBarLift));
-	SetSlotRenderOffset(Image_Bottom, VerticalGroupOffset + FVector2D(0.f, VerticalRadius));
 }
 
 float UShooterReticle::GetSpreadDegrees() const
@@ -404,9 +494,24 @@ FLinearColor UShooterReticle::ResolveHitMarkerColor(const ERogueHitMarkerType Ty
 	}
 }
 
+APawn* UShooterReticle::GetViewedPawn() const
+{
+	// 관전 중에는 화면에 보이는 대상(뷰 타깃)의 무기 기준으로 스코프/크로스헤어를 그린다.
+	// 킬캠 카메라처럼 Pawn이 아닌 뷰 타깃이면 내 Pawn으로 돌아간다.
+	if (const APlayerController* PC = GetOwningPlayer())
+	{
+		if (APawn* ViewTargetPawn = Cast<APawn>(PC->GetViewTarget()))
+		{
+			return ViewTargetPawn;
+		}
+	}
+
+	return GetOwningPlayerPawn();
+}
+
 AWeaponBase* UShooterReticle::FindEquippedWeapon() const
 {
-	APawn* Pawn = GetOwningPlayerPawn();
+	APawn* Pawn = GetViewedPawn();
 	if (!Pawn)
 	{
 		return nullptr;

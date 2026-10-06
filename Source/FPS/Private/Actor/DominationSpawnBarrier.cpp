@@ -253,6 +253,8 @@ void ADominationSpawnBarrier::SetBarrierActive(const EGameTeam NewGuardedTeam)
 {
 	if (CurrentGuardedTeam == NewGuardedTeam)
 	{
+		// 팀이 같아 조기 반환하더라도 메시 상태는 재적용
+		ApplyMeshVisibility(CurrentGuardedTeam == EGameTeam::None);
 		return;
 	}
 

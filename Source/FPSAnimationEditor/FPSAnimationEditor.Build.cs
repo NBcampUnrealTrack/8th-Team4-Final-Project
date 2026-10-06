@@ -5,6 +5,7 @@ public class FPSAnimationEditor : ModuleRules
  {
   PCHUsage=PCHUsageMode.UseExplicitOrSharedPCHs;
   PublicDependencyModuleNames.AddRange(new[]{"Core","CoreUObject","Engine","FPS","AnimGraph","AnimGraphRuntime","BlueprintGraph"});
-  PrivateDependencyModuleNames.AddRange(new[]{"UnrealEd"});
+  PrivateDependencyModuleNames.AddRange(new[]{"UnrealEd","CustomizableObject","DataflowCore","DataflowEngine"});
+  DynamicallyLoadedModuleNames.Add("HairStrandsDataflow");
  }
 }

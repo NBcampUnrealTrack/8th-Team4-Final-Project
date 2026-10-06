@@ -1,6 +1,8 @@
 ﻿#include "Player/ShooterPlayerController.h"
 
 #include "AudioDevice.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Camera/PlayerCameraManager.h"
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
@@ -115,6 +117,7 @@ void AShooterPlayerController::BeginPlay()
 	}
 
 	InitializeAudioSettings();
+	PreloadCombatFeedbackSounds();
 	InitializeRuntimeInputMappings();
 	BindApplicationActivation();
 
@@ -154,6 +157,7 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 
 		ShutdownAudioSettings();
+		ReleaseCombatFeedbackSounds();
 		UnbindApplicationActivation();
 		HideSpectatorWidget();
 
@@ -205,6 +209,8 @@ void AShooterPlayerController::UnbindApplicationActivation()
 
 void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
 {
+	// [INPUTDBG] 알트탭 활성/비활성 이벤트 기록
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ApplicationActivation Active=%d Local=%d Controller=%s"), bIsActive, IsLocalController(), *GetNameSafe(this));
 	if (!bIsActive || !IsLocalController())
 	{
 		return;
@@ -219,6 +225,7 @@ void AShooterPlayerController::ReapplyCommonUIInputConfig()
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig skipped: LocalPlayer null"));
 		return;
 	}
 
@@ -227,10 +234,15 @@ void AShooterPlayerController::ReapplyCommonUIInputConfig()
 	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
 	if (!Viewport || !Viewport->IsForegroundWindow())
 	{
+		// [INPUTDBG] 전경 창이 아니라서 복구가 건너뛰어지는 경우(알트탭 직후 타이밍 문제 후보)
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig skipped: Viewport=%d Foreground=%d"),
+			Viewport != nullptr, Viewport ? Viewport->IsForegroundWindow() : false);
 		return;
 	}
-	
-	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
+
+	UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>());
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig: ShooterActionRouter=%d"), Router != nullptr);
+	if (Router)
 	{
 		Router->RecalculateActiveInputConfig();
 	}
@@ -253,6 +265,46 @@ void AShooterPlayerController::InitializeAudioSettings()
 	}
 
 	HandleAudioSettingsChanged();
+}
+
+void AShooterPlayerController::PreloadCombatFeedbackSounds()
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
+
+	// 실드 히트 사운드는 기획 요청으로 재생하지 않으므로 로드 대상에서 뺀다.
+	TArray<FSoftObjectPath> Paths;
+	for (const FSoftObjectPath& Path : {
+		AudioSettings->HitMarkerSound_Body.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Headshot.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Kill.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_HeadshotKill.ToSoftObjectPath(),
+		AudioSettings->LocalKillSound.ToSoftObjectPath(),
+		AudioSettings->DoubleKillSound.ToSoftObjectPath(),
+		AudioSettings->TripleKillSound.ToSoftObjectPath(),
+		AudioSettings->QuadraKillSound.ToSoftObjectPath(),
+		AudioSettings->PingSound_Location.ToSoftObjectPath(),
+		AudioSettings->PingSound_Enemy.ToSoftObjectPath() })
+	{
+		if (!Path.IsNull())
+		{
+			Paths.Add(Path);
+		}
+	}
+
+	if (!Paths.IsEmpty())
+	{
+		CombatFeedbackSoundsHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths);
+	}
+}
+
+void AShooterPlayerController::ReleaseCombatFeedbackSounds()
+{
+	if (CombatFeedbackSoundsHandle.IsValid())
+	{
+		CombatFeedbackSoundsHandle->CancelHandle();
+		CombatFeedbackSoundsHandle.Reset();
+	}
 }
 
 void AShooterPlayerController::ShutdownAudioSettings()
@@ -396,8 +448,12 @@ void AShooterPlayerController::SetupInputComponent()
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EnhancedInputComponent || !InputConfig)
 	{
+		// [INPUTDBG] 액션 바인딩이 통째로 건너뛰어지면 조작이 전혀 안 되므로 반드시 기록
+		UE_LOG(LogTemp, Error, TEXT("[INPUTDBG] SetupInputComponent: action binding SKIPPED %s EnhancedInputComponent=%d InputConfig=%d"),
+			*GetNameSafe(this), EnhancedInputComponent != nullptr, InputConfig != nullptr);
 		return;
 	}
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetupInputComponent: action binding OK %s Local=%d"), *GetNameSafe(this), IsLocalController());
 
 	if (InputConfig->MoveAction)
 	{
@@ -964,76 +1020,126 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 {
 	OnHitMarker.Broadcast(Type, bKill);
 
+	if (!bPlaySound)
+	{
+		return;
+	}
+
 	// 사운드는 PlayerController 하위 클래스마다 따로 두지 않고 UShooterAudioSettings 하나로 통합돼 있다.
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
 
 	// 헤드샷 처치는 전용 사운드를 최우선으로, 그 외 처치는 일반 처치 사운드를 우선 재생하고,
-	// 둘 다 없으면 부위별 사운드로 대체한다.
-	USoundBase* Sound = nullptr;
-	if (bKill && Type == ERogueHitMarkerType::Headshot)
+	// 둘 다 없으면 부위별 사운드로 대체한다. 로드 여부가 아니라 "지정돼 있는지(IsNull)"로 고른다 -
+	// 로드는 PlayCombatFeedbackSound가 동기 로드 없이 처리한다.
+	const TSoftObjectPtr<USoundBase>* SoundRef = nullptr;
+	if (bKill && Type == ERogueHitMarkerType::Headshot && !AudioSettings->HitMarkerSound_HeadshotKill.IsNull())
 	{
-		Sound = AudioSettings->HitMarkerSound_HeadshotKill.LoadSynchronous();
+		SoundRef = &AudioSettings->HitMarkerSound_HeadshotKill;
 	}
-	if (!Sound && bKill)
+	if (!SoundRef && bKill && !AudioSettings->HitMarkerSound_Kill.IsNull())
 	{
-		Sound = AudioSettings->HitMarkerSound_Kill.LoadSynchronous();
+		SoundRef = &AudioSettings->HitMarkerSound_Kill;
 	}
-	if (!Sound)
+	if (!SoundRef)
 	{
 		switch (Type)
 		{
 		case ERogueHitMarkerType::Headshot:
-			Sound = AudioSettings->HitMarkerSound_Headshot.LoadSynchronous();
+			SoundRef = &AudioSettings->HitMarkerSound_Headshot;
 			break;
 		case ERogueHitMarkerType::Shield:
 			// 실드 히트 사운드는 뺀다(기획 요청).
 			break;
 		case ERogueHitMarkerType::Body:
 		default:
-			Sound = AudioSettings->HitMarkerSound_Body.LoadSynchronous();
+			SoundRef = &AudioSettings->HitMarkerSound_Body;
 			break;
 		}
 	}
 
-	if (bPlaySound && Sound)
+	if (SoundRef)
 	{
-		UGameplayStatics::PlaySound2D(this, Sound);
+		PlayCombatFeedbackSound(*SoundRef);
 	}
 }
 
 void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 KillStreak)
 {
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
 
 	// 스트릭별 사운드가 지정돼 있으면 그걸 우선 재생하고, 없으면 기본 킬 사운드로 대체한다.
-	USoundBase* Sound = nullptr;
+	const TSoftObjectPtr<USoundBase>* SoundRef = nullptr;
 	switch (KillStreak)
 	{
 	case 2:
-		Sound = AudioSettings->DoubleKillSound.LoadSynchronous();
+		SoundRef = &AudioSettings->DoubleKillSound;
 		break;
 	case 3:
-		Sound = AudioSettings->TripleKillSound.LoadSynchronous();
+		SoundRef = &AudioSettings->TripleKillSound;
 		break;
 	default:
 		if (KillStreak >= 4)
 		{
-			Sound = AudioSettings->QuadraKillSound.LoadSynchronous();
+			SoundRef = &AudioSettings->QuadraKillSound;
 		}
 		break;
 	}
 
-	if (!Sound)
+	if (!SoundRef || SoundRef->IsNull())
 	{
-		Sound = AudioSettings->LocalKillSound.LoadSynchronous();
+		SoundRef = &AudioSettings->LocalKillSound;
 	}
 
-	if (Sound)
-	{
-		UGameplayStatics::PlaySound2D(this, Sound);
-	}
+	PlayCombatFeedbackSound(*SoundRef);
 
 	OnKillEffect.Broadcast();
+}
+
+void AShooterPlayerController::PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation)
+{
+	if (SoundRef.IsNull())
+	{
+		return;
+	}
+
+	// BeginPlay 시점에 아직 로컬 컨트롤러로 확정되지 않은 경우(리슨 서버 호스트의 seamless travel 등)
+	// 프리로드가 건너뛰어졌을 수 있으므로, 첫 재생 요청 때 한 번 더 걸어 둔다.
+	if (!CombatFeedbackSoundsHandle.IsValid())
+	{
+		PreloadCombatFeedbackSounds();
+	}
+
+	auto PlayLoaded = [this, WorldLocation](USoundBase* Sound)
+	{
+		if (WorldLocation.IsSet())
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, WorldLocation.GetValue());
+		}
+		else
+		{
+			UGameplayStatics::PlaySound2D(this, Sound);
+		}
+	};
+
+	if (USoundBase* LoadedSound = SoundRef.Get())
+	{
+		PlayLoaded(LoadedSound);
+		return;
+	}
+
+	// 아직 로드 전이면 동기 로드(히치) 대신 이 사운드만 비동기 로드를 요청하고, 끝나는 즉시 재생한다.
+	// 그 사이 PlayerController가 파괴되면 WeakLambda라 콜백이 호출되지 않는다.
+	UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		SoundRef.ToSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [SoundRef, PlayLoaded]()
+		{
+			if (USoundBase* Sound = SoundRef.Get())
+			{
+				PlayLoaded(Sound);
+			}
+		}));
 }
 
 void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
@@ -1428,21 +1534,16 @@ void AShooterPlayerController::ServerSendPing_Implementation(const FVector_NetQu
 void AShooterPlayerController::ClientReceivePing_Implementation(const FPingEvent& Ping)
 {
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
 
-	USoundBase* Sound = Ping.Type == EShooterPingType::Enemy
-		? AudioSettings->PingSound_Enemy.LoadSynchronous()
-		: nullptr;
-	if (!Sound)
-	{
-		Sound = AudioSettings->PingSound_Location.LoadSynchronous();
-	}
+	const TSoftObjectPtr<USoundBase>& SoundRef =
+		(Ping.Type == EShooterPingType::Enemy && !AudioSettings->PingSound_Enemy.IsNull())
+		? AudioSettings->PingSound_Enemy
+		: AudioSettings->PingSound_Location;
 
-	if (Sound)
-	{
-		// 위치 핑 특성상 방향을 듣고 찾아갈 수 있어야 하므로 2D가 아니라 핑 찍힌 지점에서
-		// 나는 3D 사운드로 재생한다. 감쇠(Attenuation)는 사운드 에셋 쪽 설정을 따른다.
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Ping.Location);
-	}
+	// 위치 핑 특성상 방향을 듣고 찾아갈 수 있어야 하므로 2D가 아니라 핑 찍힌 지점에서
+	// 나는 3D 사운드로 재생한다. 감쇠(Attenuation)는 사운드 에셋 쪽 설정을 따른다.
+	PlayCombatFeedbackSound(SoundRef, Ping.Location);
 
 	OnPingReceived.Broadcast(Ping);
 }
@@ -1791,6 +1892,9 @@ void AShooterPlayerController::InitializeRuntimeInputMappings()
 {
 	if (!IsLocalController() || !IsValid(InputConfig))
 	{
+		// [INPUTDBG] 입력 매핑 초기화가 조용히 건너뛰어지는 경우를 기록(로컬 컨트롤러가 아니면 정상)
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] InitializeRuntimeInputMappings skipped: %s Local=%d InputConfigValid=%d"),
+			*GetNameSafe(this), IsLocalController(), IsValid(InputConfig));
 		return;
 	}
 
@@ -1899,6 +2003,9 @@ void AShooterPlayerController::RebuildRuntimeInputMappings()
 		: nullptr;
 	if (!IsValid(InputSubsystem))
 	{
+		// [INPUTDBG] 입력 서브시스템이 없어 매핑 컨텍스트가 하나도 추가되지 않는 경우(이러면 조작이 전혀 안 된다)
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] RebuildRuntimeInputMappings FAILED: %s LocalPlayer=%d EnhancedInputSubsystem=0"),
+			*GetNameSafe(this), IsValid(LocalPlayer));
 		return;
 	}
 
@@ -1935,6 +2042,11 @@ void AShooterPlayerController::RebuildRuntimeInputMappings()
 	{
 		InputSubsystem->AddMappingContext(RuntimeSystemMappingContext, InputConfig->SystemMappingPriority);
 	}
+
+	// Modified: [INPUTDBG] 매핑 컨텍스트 추가 결과 기록. Default가 0이면 이동/시점/사격 입력이 전혀 동작하지 않는다.
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] RebuildRuntimeInputMappings OK: %s DefaultContext=%d(added=%d) SystemContext=%d SystemEnabled=%d"),
+		*GetNameSafe(this), IsValid(RuntimeDefaultMappingContext), IsValid(RuntimeDefaultMappingContext),
+		IsValid(RuntimeSystemMappingContext), bSystemMappingContextEnabled);
 }
 
 void AShooterPlayerController::HandleInputBindingsChanged()
@@ -2078,12 +2190,16 @@ void AShooterPlayerController::SetMappingContextEnabled(
 {
 	if (!IsLocalController() || !IsValid(MappingContext))
 	{
+		// [INPUTDBG] 매핑 컨텍스트 변경이 조용히 무시되는 경우 기록
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s Local=%d ContextValid=%d"),
+			bEnabled, *GetNameSafe(this), IsLocalController(), IsValid(MappingContext));
 		return;
 	}
 
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!IsValid(LocalPlayer))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s LocalPlayer invalid"), bEnabled, *GetNameSafe(this));
 		return;
 	}
 
@@ -2091,9 +2207,12 @@ void AShooterPlayerController::SetMappingContextEnabled(
 		LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	if (!IsValid(InputSubsystem))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s EnhancedInputSubsystem invalid"), bEnabled, *GetNameSafe(this));
 		return;
 	}
 
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d): %s Context=%s Priority=%d"),
+		bEnabled, *GetNameSafe(this), *GetNameSafe(MappingContext), Priority);
 	if (bEnabled)
 	{
 		InputSubsystem->AddMappingContext(MappingContext, Priority);
@@ -2268,6 +2387,8 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 	}
 
 	bIsChatInputOpen = true;
+	// [INPUTDBG] 채팅창이 열린 채 닫히지 않으면 사격/어빌리티 입력이 막히므로 열림/닫힘을 기록
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] BeginChatInput: %s"), *GetNameSafe(this));
 	ChatInputWidget = Widget;
 	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
 }
@@ -2281,6 +2402,7 @@ void AShooterPlayerController::CloseChatInput()
 
 	UShooterChatInputBox* Widget = ChatInputWidget.Get();
 	bIsChatInputOpen = false;
+	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] CloseChatInput: %s"), *GetNameSafe(this));
 	ChatInputWidget.Reset();
 
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())

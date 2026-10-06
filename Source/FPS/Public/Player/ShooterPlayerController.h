@@ -32,8 +32,10 @@ class USurrenderVoteManager;
 class UTeamMatchUIInitComponent;
 class UInputMappingContext;
 class APlayerState;
+class USoundBase;
 class USoundMix;
 struct FInputActionValue;
+struct FStreamableHandle;
 struct FEnhancedActionKeyMapping;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
@@ -388,6 +390,15 @@ private:
 	void InitializeAudioSettings();
 	void ShutdownAudioSettings();
 	void HandleAudioSettingsChanged();
+
+	// 히트마커/킬/핑 사운드를 로컬 BeginPlay에서 비동기로 미리 로드한다. 교전 중 첫 재생 시
+	// LoadSynchronous로 인한 히치를 막기 위함이며, 핸들을 들고 있는 동안 에셋이 GC되지 않는다.
+	void PreloadCombatFeedbackSounds();
+	void ReleaseCombatFeedbackSounds();
+	// 이미 로드돼 있으면 즉시 재생하고, 아니면 그 사운드만 비동기 로드한 뒤 재생한다(동기 로드 없음).
+	// WorldLocation이 있으면 그 위치에서 3D로, 없으면 2D로 재생한다.
+	void PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation = TOptional<FVector>());
+	TSharedPtr<FStreamableHandle> CombatFeedbackSoundsHandle;
 
 	// 조작이 안되는 문제 수정하기 위해 갱신
 	void BindApplicationActivation();

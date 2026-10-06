@@ -2,6 +2,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "ContentStreaming.h"
@@ -14,6 +15,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Settings/DominationClassSettings.h"
+#include "GroomAsset.h"
+#include "GroomComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
 #include "TimerManager.h"
@@ -70,6 +73,29 @@ namespace
 		for (USkinnedMeshComponent* Mesh : Meshes)
 		{
 			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		}
+	}
+
+	// 프리뷰 캡처는 TAA를 거치지 않아 스트랜드가 점박이로 깨진다. 카드가 있는 Groom만 카드로 그린다
+	void UsePreviewGroomCards(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+
+		TArray<UGroomComponent*> Grooms;
+		Actor->GetComponents<UGroomComponent>(Grooms);
+
+		for (UGroomComponent* Groom : Grooms)
+		{
+			const UGroomAsset* GroomAsset = Groom->GroomAsset;
+			const bool bHasCards = IsValid(GroomAsset) && GroomAsset->GetHairGroupsCards().ContainsByPredicate(
+				[](const FHairGroupsCardsSourceDescription& Cards) { return Cards.LODIndex == 0; });
+			if (Groom->bUseCards != bHasCards)
+			{
+				Groom->SetUseCards(bHasCards);
+			}
 		}
 	}
 
@@ -167,6 +193,10 @@ void ADominationClassPreviewStage::BeginPlay()
 
 	// 카드 전환 때마다 Mutable 생성을 기다리지 않도록 세 클래스를 미리 만들어 둔다.
 	SpawnPreviewPawns();
+	// Identity/cloud data can arrive after the selection screen has already opened.
+	// Poll only while this stage exists; unchanged saves never trigger generation.
+	GetWorldTimerManager().SetTimer(SavedAppearanceTimerHandle, this,
+		&ThisClass::RefreshSavedAppearances, 1.0f, /*bLoop=*/true);
 
 	KeepPreviewTexturesStreamed();
 	GetWorldTimerManager().SetTimer(
@@ -277,13 +307,16 @@ AShooterCharacter* ADominationClassPreviewStage::SpawnPreviewPawn(const EDominat
 		return nullptr;
 	}
 
-	const FTransform StageTransform = GetActorTransform();
+	// 클래스 애니메이션에서 방향을 결정한다. 메시 교체를 보상하려고
+	// Vanguard만 추가 회전하면 실제 게임과 선택창 자세가 다시 달라진다.
+	const FTransform PreviewTransform = GetActorTransform();
 
 	// 프리뷰 Pawn이 네트워크에 복제되기 전에 설정할 수 있도록 Deferred Spawn한다.
 	AShooterCharacter* Pawn = World->SpawnActorDeferred<AShooterCharacter>(
 		PawnClass,
-		StageTransform,
-		/*Owner=*/nullptr,
+		PreviewTransform,
+		// Keep the presentation pawn owned by its stage for lifecycle/visibility.
+		/*Owner=*/this,
 		/*Instigator=*/nullptr,
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!IsValid(Pawn))
@@ -293,9 +326,11 @@ AShooterCharacter* ADominationClassPreviewStage::SpawnPreviewPawn(const EDominat
 
 	Pawn->SetReplicates(false);
 	Pawn->SetActorEnableCollision(false);
+	// 이동은 끈 채로, AnimGraph에는 서 있는 미리보기임을 전달한다.
+	Pawn->Tags.AddUnique(CharacterPresentationTags::ClassSelectionPreview);
 
 	// BeginPlay를 실행
-	Pawn->FinishSpawning(StageTransform);
+	Pawn->FinishSpawning(PreviewTransform);
 
 	// BeginPlay가 GravityScale에 배수를 곱하므로 그 뒤에 실행
 	// 컴포넌트를 Deactivate하지는 않는다. AnimBP가 멈춰 T-포즈로 떨어짐
@@ -380,23 +415,54 @@ bool ADominationClassPreviewStage::RequestSavedAppearance(
 		: nullptr;
 	
 	UGameplayAppearanceComponent* Appearance = Pawn->FindComponentByClass<UGameplayAppearanceComponent>();
-	if (!Storage || !IsValid(Appearance))
+	if (!IsValid(Appearance))
 	{
 		return false;
 	}
 
 	FReplicatedAppearance Data;
 	Data.ClassId = ToAppearanceClassId(CombatClass);
-	if (Data.ClassId.IsNone()
-		|| Storage->LoadSavedAppearance(Data.ClassId, Data.Appearance) != ECustomizationLoadResult::Loaded)
+	if (Data.ClassId.IsNone())
 	{
 		return false;
 	}
+	if (!Storage || Storage->LoadSavedAppearance(Data.ClassId, Data.Appearance) != ECustomizationLoadResult::Loaded)
+		Data.Appearance = FCustomizationAppearance::DefaultForClass(Data.ClassId.ToString());
 	Data.Revision = 1;
+	if (const auto* Previous = RequestedAppearances.Find(CombatClass))
+	{
+		if (FCustomizationAppearance::StaticStruct()->CompareScriptStruct(Previous, &Data.Appearance, 0))
+			return false;
+	}
+	RequestedAppearances.Add(CombatClass, Data.Appearance);
 
 	Appearance->RequestAppearance(Data);
 	// 카탈로그 누락 등은 동기로 실패한다. 기다리지 않고 기본 외형으로 보여준다.
 	return Appearance->GetFailure().IsEmpty();
+}
+
+void ADominationClassPreviewStage::RefreshSavedAppearances()
+{
+	bool bChanged = false;
+	bool bCurrentChanged = false;
+	for (const auto& Pair : PreviewPawns)
+	{
+		if (IsValid(Pair.Value) && RequestSavedAppearance(Pair.Key, Pair.Value))
+		{
+			PendingAppearanceClasses.Add(Pair.Key);
+			bChanged = true;
+			bCurrentChanged |= Pair.Key == CurrentPreviewClass;
+		}
+	}
+	if (!bChanged) return;
+	AppearancePollsRemaining = AppearanceMaxPolls;
+	GetWorldTimerManager().SetTimer(AppearanceTimerHandle, this,
+		&ThisClass::PollAppearanceApplied, AppearancePollInterval, /*bLoop=*/true);
+	if (bCurrentChanged)
+	{
+		GetWorldTimerManager().ClearTimer(InspectTimerHandle);
+		RegisterPreviewComponents();
+	}
 }
 
 void ADominationClassPreviewStage::PollAppearanceApplied()
@@ -410,7 +476,7 @@ void ADominationClassPreviewStage::PollAppearanceApplied()
 		const UGameplayAppearanceComponent* Appearance = IsValid(Pawn)
 			? Pawn->FindComponentByClass<UGameplayAppearanceComponent>()
 			: nullptr;
-		const bool bApplied = IsValid(Appearance) && Appearance->GetAppliedRevision() != 0;
+		const bool bApplied = IsValid(Appearance) && Appearance->IsLatestAppearanceApplied();
 		const bool bFailed = !IsValid(Appearance) || !Appearance->GetFailure().IsEmpty();
 		if (!bApplied && !bFailed && !bTimedOut)
 		{
@@ -452,6 +518,7 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 		SceneCapture->ShowOnlyActorComponents(PreviewPawn);
 		ApplyPreviewLightingChannels(PreviewPawn);
 		ForcePreviewAnimRefresh(PreviewPawn);
+		UsePreviewGroomCards(PreviewPawn);
 
 		TArray<AWeaponBase*> Weapons;
 		CollectPawnWeapons(PreviewPawn, Weapons);
@@ -478,6 +545,7 @@ void ADominationClassPreviewStage::DestroyPreviewPawns()
 	{
 		World->GetTimerManager().ClearTimer(InspectTimerHandle);
 		World->GetTimerManager().ClearTimer(AppearanceTimerHandle);
+		World->GetTimerManager().ClearTimer(SavedAppearanceTimerHandle);
 	}
 
 	for (const TWeakObjectPtr<AWeaponBase>& WeaponPtr : PreviewWeapons)
@@ -499,6 +567,7 @@ void ADominationClassPreviewStage::DestroyPreviewPawns()
 	PreviewPawns.Reset();
 	PreviewPawn = nullptr;
 	PendingAppearanceClasses.Reset();
+	RequestedAppearances.Reset();
 }
 
 UMaterialInstanceDynamic* ADominationClassPreviewStage::GetPreviewMaterial() const

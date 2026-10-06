@@ -1,6 +1,7 @@
 #include "Animation/AnimNode_AlignLowerBody.h"
 #include "Animation/AnimInstance.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -26,8 +27,14 @@ void FAnimNode_AlignLowerBody::PreUpdate(const UAnimInstance* Instance)
   for(const auto& Def:GetDefault<UDominationClassSettings>()->CombatClasses)
    if(Def.PawnClass.Get()&&C->IsA(Def.PawnClass.Get())){CombatClass=Def.CombatClass;break;}
  const auto* Move=C->GetCharacterMovement();
- bEligible=PrimaryStances.Contains(CombatClass)&&Move&&Move->IsMovingOnGround()&&!C->bIsCrouched
+ // 클래스 선택 Pawn은 낙하/이동 방지를 위해 MOVE_None을 쓴다.
+ // 명시적으로 표시된 정지 미리보기에만 게임의 서 있는 자세 보정을 허용한다.
+ const bool bStationaryPreview=Move&&Move->MovementMode==MOVE_None
+  &&C->ActorHasTag(CharacterPresentationTags::ClassSelectionPreview);
+ bEligible=PrimaryStances.Contains(CombatClass)&&Move&&(Move->IsMovingOnGround()||bStationaryPreview)&&!C->bIsCrouched
   &&C->GetVelocity().SizeSquared2D()<9.f&&Move->GetCurrentAcceleration().IsNearlyZero();
+ // The fixed-body stance is coherent with its upper pose. A preview camera
+ // may rotate the whole pawn, but must never counter-rotate only its legs.
 }
 void FAnimNode_AlignLowerBody::UpdateInternal(const FAnimationUpdateContext& Context)
 {

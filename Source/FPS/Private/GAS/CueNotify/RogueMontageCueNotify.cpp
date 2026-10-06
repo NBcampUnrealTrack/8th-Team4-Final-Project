@@ -37,12 +37,17 @@ bool URogueMontageCueNotify::OnExecute_Implementation(AActor* Target, const FGam
 		USkeletalMeshComponent* Mesh1P = IPlayerInterface::Execute_GetMesh1P(Target);
 		USkeletalMeshComponent* Mesh3P = IPlayerInterface::Execute_GetMesh3P(Target);
 		PlayMontageOnMesh(Mesh1P, Montage1P, PlayRate);
-		PlayMontageOnMesh(Mesh3P, Montage3P, PlayRate);
+		PlayMontageOnMesh(Mesh3P, ResolveMontage3P(Target), PlayRate);
 		SpawnProp(Mesh1P, PropAnim1P, PropOffset1P, true);
 		SpawnProp(Mesh3P, PropAnim3P, PropOffset3P, false);
 	}
 
 	return bResult;
+}
+
+UAnimMontage* URogueMontageCueNotify::ResolveMontage3P(AActor* Target) const
+{
+	return Montage3P;
 }
 
 void URogueMontageCueNotify::SpawnProp(USkeletalMeshComponent* Mesh, UAnimSequenceBase* Anim, const FTransform& Offset, bool bFirstPerson) const

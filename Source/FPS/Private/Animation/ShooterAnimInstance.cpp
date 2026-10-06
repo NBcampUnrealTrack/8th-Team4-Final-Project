@@ -12,6 +12,7 @@
 #include "Tags/GameplayTags.h"
 #include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Weapon/WeaponBase.h"
+#include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
 
@@ -25,6 +26,7 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 	Super::NativeInitializeAnimation();
 
 	CacheReferences();
+	UpdateHolsterMontageBinding();
 	if (!bFirstPersonAnimation && GetSkelMeshComponent())
 	{
 		SupportAnchorBody = GetSkelMeshComponent();
@@ -61,6 +63,7 @@ void UShooterAnimInstance::RestoreSupportAnchor()
 
 void UShooterAnimInstance::NativeUninitializeAnimation()
 {
+	UnbindHolsterMontageSource();
 	RestoreSupportAnchor();
 	UnregisterSupportAnchor();
 	PreviousWeaponMesh.Reset();
@@ -128,6 +131,7 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		CacheReferences();
 	}
 
+	UpdateHolsterMontageBinding();
 	UpdateWeaponValues();
 	if (!bFirstPersonAnimation)
 	{
@@ -293,6 +297,10 @@ void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 
 void UShooterAnimInstance::UpdateWeaponValues()
 {
+	const EDominationCombatClass AnimationClass = GetCurrentCombatClass();
+	bVanguardAnimationClass = AnimationClass == EDominationCombatClass::Vanguard;
+	bRangerAnimationClass = AnimationClass == EDominationCombatClass::Ranger;
+	bTrooperAnimationClass = AnimationClass == EDominationCombatClass::Trooper;
 	bAiming = IsValid(Combat) && Combat->bAiming;
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
@@ -345,6 +353,51 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 	}
 }
 
+void UShooterAnimInstance::UnbindHolsterMontageSource()
+{
+	if (UAnimInstance* Source = HolsterMontageSource.Get())
+		Source->OnMontageStarted.RemoveDynamic(this, &ThisClass::HandleWeaponMontageStarted);
+	HolsterMontageSource.Reset();
+}
+
+void UShooterAnimInstance::UpdateHolsterMontageBinding()
+{
+	// Only the canonical 3P instance owns audio. The owner's 1P animation can be
+	// a different native class (TacticalShooter), so listen to its public event.
+	UAnimInstance* Desired = nullptr;
+	if (IsValid(ShooterCharacter) && GetSkelMeshComponent() == ShooterCharacter->GetMesh())
+	{
+		USkeletalMeshComponent* SourceMesh = ShooterCharacter->IsLocallyControlled()
+			? ShooterCharacter->GetMesh1P_Implementation() : ShooterCharacter->GetMesh();
+		Desired = SourceMesh ? SourceMesh->GetAnimInstance() : nullptr;
+	}
+	if (Desired == HolsterMontageSource.Get()) return;
+	UnbindHolsterMontageSource();
+	if (Desired)
+	{
+		HolsterMontageSource = Desired;
+		Desired->OnMontageStarted.AddUniqueDynamic(this, &ThisClass::HandleWeaponMontageStarted);
+	}
+}
+
+void UShooterAnimInstance::HandleWeaponMontageStarted(UAnimMontage* Montage)
+{
+	CacheReferences();
+	if (!IsValid(ShooterCharacter) || !IsValid(Combat)) return;
+	if (GetSkelMeshComponent() != ShooterCharacter->GetMesh()) return;
+
+	// CurrentWeapon can already be the incoming weapon after replication. Match
+	// the actual outgoing montage against loadout weapons instead of that pointer.
+	AWeaponBase* const Candidates[] = {Combat->GetCurrentWeapon(),
+		Combat->GetWeaponInSlot(EWeaponSlot::Primary), Combat->GetWeaponInSlot(EWeaponSlot::Secondary),
+		Combat->GetWeaponInSlot(EWeaponSlot::Melee)};
+	for (AWeaponBase* Weapon : Candidates)
+	{
+		if (auto* Effects = IsValid(Weapon) ? Weapon->FindComponentByClass<UWeaponEffectsComponent>() : nullptr)
+			if (Effects->TryPlayHolsterSound(Montage)) return;
+	}
+}
+
 void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 {
 	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
@@ -377,7 +430,19 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 		return;
 	}
 
-	const float PlayedDuration = Montage_Play(EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
+	// The presentation relay can start remote Draw before the weapon-state tick.
+	// Adopt that playback instead of restarting the same montage and its notifies.
+	const float PlayedDuration = Montage_IsPlaying(EquipMontage) ? EquipMontage->GetPlayLength()
+		: Montage_Play(EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
+	if (PlayedDuration > 0.f && !bFirstPersonAnimation && GetSkelMeshComponent() == ShooterCharacter->GetMesh())
+	{
+		// UpdateWeaponValues calls this only for a weapon change / utility return.
+		// Draw audio must not also be placed on either view's animation notify track.
+		if (auto* Effects = CurrentWeapon->FindComponentByClass<UWeaponEffectsComponent>())
+		{
+			Effects->PlayDrawSound();
+		}
+	}
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(
@@ -515,12 +580,19 @@ EDominationCombatClass UShooterAnimInstance::GetCurrentCombatClass() const
 	}
 
 	const ADominationPlayerState* PlayerState = ShooterCharacter->GetPlayerState<ADominationPlayerState>();
-	if (!IsValid(PlayerState))
+	if (IsValid(PlayerState) && PlayerState->GetCombatClass() != EDominationCombatClass::Unselected)
 	{
-		return EDominationCombatClass::Unselected;
+		return PlayerState->GetCombatClass();
 	}
 
-	return PlayerState->GetCombatClass();
+	// Selection previews and newly replicated pawns may not have a PlayerState
+	// yet. Their configured pawn class still provides a stable identity.
+	for (const auto& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+	{
+		if (Definition.PawnClass.Get() && ShooterCharacter->IsA(Definition.PawnClass.Get()))
+			return Definition.CombatClass;
+	}
+	return EDominationCombatClass::Unselected;
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)

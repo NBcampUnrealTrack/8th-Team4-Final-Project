@@ -5,6 +5,7 @@
 #include "AugmentPhaseBarrier.generated.h"
 
 class ABaseRoundGameState;
+class ADominationGameState;
 class UStaticMeshComponent;
 
 /**
@@ -49,6 +50,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<ABaseRoundGameState> BoundRoundGameState;
+
+	// Domination Mode에서 사용할 수 있도록 수정
+	UPROPERTY(Transient)
+	TObjectPtr<ADominationGameState> BoundDominationGameState;
 
 	// 맵 배치 인스턴스가 현재 페이즈에 생성한 실제 장벽이다.
 	UPROPERTY(Transient)

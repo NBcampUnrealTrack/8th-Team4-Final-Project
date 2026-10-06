@@ -321,6 +321,11 @@ void UDominationSandstormComponent::UpdatePresentation()
 		{
 			ApplyIntensity();
 		}
+		else if (LastAppliedFogTint != Settings->SandTint)
+		{
+			// Peak/고정 프리뷰에서도 색 변경은 기존 갱신 경로로 반영한다.
+			ApplyFog(StormIntensity);
+		}
 		if (SandParticles && !SandParticles->IsActive()) { SandParticles->Activate(true); }
 	}
 	else if (bPresentationActive)
@@ -384,6 +389,8 @@ void UDominationSandstormComponent::CaptureFog(UExponentialHeightFogComponent* F
 	Snapshot.Color = Fog->FogInscatteringLuminance;
 	Snapshot.CubemapTint = Fog->InscatteringTextureTint;
 	Snapshot.DirectionalColor = Fog->DirectionalInscatteringLuminance;
+	Snapshot.SkyAtmosphereAmbientColorScale = Fog->SkyAtmosphereAmbientContributionColorScale;
+	Snapshot.VolumetricAlbedo = Fog->VolumetricFogAlbedo;
 	Snapshot.SecondFog = Fog->SecondFogData;
 	Snapshot.bVolumetricFog = Fog->bEnableVolumetricFog;
 	Snapshot.VolumetricEmissive = Fog->VolumetricFogEmissive;
@@ -441,6 +448,9 @@ void UDominationSandstormComponent::ApplyFog(const float Intensity)
 		Fog->SetFogMaxOpacity(FMath::Lerp(Snapshot.MaxOpacity, Settings->PeakFogMaxOpacity, Intensity));
 		Fog->SetFogInscatteringColor(FMath::Lerp(Snapshot.Color, Settings->SandTint, Intensity));
 		Fog->SetDirectionalInscatteringColor(FMath::Lerp(Snapshot.DirectionalColor, Settings->SandTint, Intensity));
+		// 안개에 더해지는 하늘 조명을 줄여 Peak에서는 폭풍색이 유지되게 한다.
+		Fog->SetSkyAtmosphereAmbientContributionColorScale(
+			FMath::Lerp(Snapshot.SkyAtmosphereAmbientColorScale, FLinearColor::Black, Intensity));
 		// 기존 큐브맵을 갑자기 제거하지 않고 색을 보간한다.
 		Fog->SetInscatteringTextureTint(FMath::Lerp(Snapshot.CubemapTint, Snapshot.CubemapTint * Settings->SandTint, Intensity));
 		Fog->SetFogCutoffDistance(0.0f);
@@ -448,9 +458,13 @@ void UDominationSandstormComponent::ApplyFog(const float Intensity)
 		SecondFog.FogDensity *= 1.0f - Intensity;
 		Fog->SetSecondFogData(SecondFog);
 		Fog->SetVolumetricFog(Settings->bEnableVolumetricFog || Snapshot.bVolumetricFog);
+		// 발광색만 바꾸면 조명을 받는 흰 안개가 남으므로 반사색도 보간한다.
+		Fog->SetVolumetricFogAlbedo(
+			FMath::Lerp(FLinearColor(Snapshot.VolumetricAlbedo), Settings->SandTint, Intensity).ToFColor(true));
 		// r.SupportExpFogMatchesVolumetricFog도 동일한 색을 사용하도록 한다.
 		Fog->SetVolumetricFogEmissive(FMath::Lerp(Snapshot.VolumetricEmissive, Settings->SandTint, Intensity));
 	}
+	LastAppliedFogTint = Settings->SandTint;
 }
 
 void UDominationSandstormComponent::RestoreFog()
@@ -466,10 +480,12 @@ void UDominationSandstormComponent::RestoreFog()
 		Fog->SetFogMaxOpacity(Snapshot.MaxOpacity);
 		Fog->SetFogInscatteringColor(Snapshot.Color);
 		Fog->SetDirectionalInscatteringColor(Snapshot.DirectionalColor);
+		Fog->SetSkyAtmosphereAmbientContributionColorScale(Snapshot.SkyAtmosphereAmbientColorScale);
 		Fog->SetFogCutoffDistance(Snapshot.CutoffDistance);
 		Fog->SetInscatteringTextureTint(Snapshot.CubemapTint);
 		Fog->SetSecondFogData(Snapshot.SecondFog);
 		Fog->SetVolumetricFog(Snapshot.bVolumetricFog);
+		Fog->SetVolumetricFogAlbedo(Snapshot.VolumetricAlbedo);
 		Fog->SetVolumetricFogEmissive(Snapshot.VolumetricEmissive);
 	}
 	FogSnapshots.Reset();
