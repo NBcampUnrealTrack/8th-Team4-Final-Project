@@ -13,6 +13,7 @@ struct FPS_API FCustomizationAppearance
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor HairColor = FLinearColor::White;
  // Missing fields in v1 saves retain the authored material, not a white dye.
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bUseOriginalHairColor = true;
+ // Legacy save/network field name: Ranger/Vanguard sunglasses only, not clothing gear.
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) bool bAttachmentVisible = true;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor EyeColor = FLinearColor::White;
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) FLinearColor SkinColor = FLinearColor::White;
@@ -22,6 +23,9 @@ struct FPS_API FCustomizationAppearance
  UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame) TArray<float> Originals;
  bool Validate() const;
  bool ValidateForClass(const FString& ClassId) const;
+ // Does not alter disk/cloud saves; callers normalize only a validated working copy.
+ bool NormalizeBodyForClass(const FString& ClassId);
+ static FCustomizationAppearance DefaultForClass(const FString& ClassId);
  bool NetSerialize(FArchive& Ar, UPackageMap* Map, bool& bOutSuccess);
  static const TArray<FString>& Parts();
 };

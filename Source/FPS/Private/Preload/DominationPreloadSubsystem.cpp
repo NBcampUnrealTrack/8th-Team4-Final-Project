@@ -1,7 +1,6 @@
 ﻿#include "Preload/DominationPreloadSubsystem.h"
 
 #include "Character/ShooterCharacter.h"
-#include "Customization/FirstPersonAppearanceComponent.h"
 #include "Customization/GameplayAppearanceComponent.h"
 #include "Customization/GameplayAppearanceConfig.h"
 #include "Engine/AssetManager.h"
@@ -223,10 +222,10 @@ void UDominationPreloadSubsystem::HandleAssetStageLoaded(const uint32 Generation
 			{
 				Appearance->AppendPreloadAssetPaths(ClassId, AppearanceConfigPaths);
 			}
-			if (const UFirstPersonAppearanceComponent* Appearance = PawnCDO->FindComponentByClass<UFirstPersonAppearanceComponent>())
-			{
-				Appearance->AppendPreloadAssetPaths(ClassId, AppearancePaths);
-			}
+			// First-person clothing is owner-only and loaded by FirstPersonAppearance
+			// when this client actually possesses that class. Retaining every class's
+			// arms here also keeps unused visuals alive for the whole combat map.
+			// Keep shared pawn/weapon/3P preloads intact for remote players and previews.
 		}
 		for (const FSoftObjectPath& Path : AppearanceConfigPaths) AppearancePaths.AddUnique(Path);
 		RequestAssetStage(MoveTemp(AppearancePaths), Generation, EPreloadStage::AppearanceCatalogs);

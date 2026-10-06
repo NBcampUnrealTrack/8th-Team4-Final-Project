@@ -116,6 +116,15 @@ void AWeaponBase::BeginPlay()
 	}
 }
 
+void AWeaponBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 재장전 중 무기가 파괴(스왑 정리/사망/레벨 이동)되면 ReloadTimerHandle 콜백이 파괴된 무기를
+	// 가리키게 되므로, 이 객체가 건 타이머를 전부 한 번에 해제한다.
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AWeaponBase::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);

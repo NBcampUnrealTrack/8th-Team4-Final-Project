@@ -208,7 +208,7 @@ void UShooterMapWidget::NativeConstruct()
 	if (UShooterMinimapSubsystem* Subsystem = UShooterMinimapSubsystem::Get(this))
 	{
 		MapBoundsChangedHandle = Subsystem->OnMapBoundsChanged.AddUObject(this, &ThisClass::HandleMapBoundsChanged);
-		HandleMapBoundsChanged(Subsystem->GetMapBounds());
+		HandleMapBoundsChanged(Subsystem->ResolveMapBounds());
 	}
 
 	if (AShooterPlayerController* PC = GetOwningPlayer<AShooterPlayerController>())
@@ -592,6 +592,19 @@ void UShooterMapWidget::RebuildPlayerMarkers()
 
 void UShooterMapWidget::UpdatePositions()
 {
+	if (!BoundMapBounds.IsValid())
+	{
+		// 기준을 잃은 채로 남지 않게(레이트 조인/킬캠 이후 등) 서브시스템에 다시 찾아달라고 한다.
+		// 새로 등록되면 OnMapBoundsChanged로 이미 들어왔을 수 있으니 그때는 다시 적용하지 않는다.
+		UShooterMinimapSubsystem* Subsystem = UShooterMinimapSubsystem::Get(this);
+		AShooterMinimapBounds* ResolvedBounds = Subsystem ? Subsystem->ResolveMapBounds() : nullptr;
+		if (ResolvedBounds && !BoundMapBounds.IsValid())
+		{
+			HandleMapBoundsChanged(ResolvedBounds);
+		}
+		return;
+	}
+
 	const AShooterMinimapBounds* Bounds = BoundMapBounds.Get();
 	if (Bounds == nullptr || Panel_MapViewport == nullptr || Panel_MapContent == nullptr)
 	{

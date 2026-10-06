@@ -71,13 +71,18 @@ void UAppearanceLocalPlayerSubsystem::RefreshIdentity()
 ECustomizationLoadResult UAppearanceLocalPlayerSubsystem::LoadSavedAppearance(FName ClassId, FCustomizationAppearance& Out)
 {
     RefreshIdentity();
-    return FCustomizationStorage::Load(Service, Account, ClassId.ToString(), Out);
+    const auto Result = FCustomizationStorage::Load(Service, Account, ClassId.ToString(), Out);
+    if (Result == ECustomizationLoadResult::Loaded && !Out.NormalizeBodyForClass(ClassId.ToString()))
+        return ECustomizationLoadResult::Invalid;
+    return Result;
 }
 
 bool UAppearanceLocalPlayerSubsystem::SaveAppearance(FName ClassId, const FCustomizationAppearance& Data)
 {
     RefreshIdentity();
-    if (!FCustomizationStorage::Save(Service, Account, ClassId.ToString(), Data)) { FailedLocalSaves.Add(ClassId); return false; }
+    FCustomizationAppearance Normalized = Data;
+    if (!Normalized.NormalizeBodyForClass(ClassId.ToString())
+        || !FCustomizationStorage::Save(Service, Account, ClassId.ToString(), Normalized)) { FailedLocalSaves.Add(ClassId); return false; }
     FailedLocalSaves.Remove(ClassId);
     if (Cloud) Cloud->Refresh(ClassId);
     return true;

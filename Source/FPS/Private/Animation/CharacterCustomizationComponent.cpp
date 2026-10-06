@@ -4,6 +4,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 
 #include "GroomAsset.h"
 #include "GroomBindingAsset.h"
@@ -46,6 +48,13 @@ namespace
 			return;
 		}
 
+		// A successful gameplay appearance replacement retires authored grooms.
+		// Late legacy preset calls must not show them over the selected face.
+		if (Component->ComponentHasTag(TEXT("AppearanceNoOutline")))
+		{
+			return;
+		}
+
 		if (!IsValid(Groom))
 		{
 			Component->SetVisibility(false);
@@ -69,6 +78,21 @@ void UCharacterCustomizationComponent::BeginPlay()
 	ApplyCustomization(DefaultCustomization);
 	FindHairComponent();
 	ApplyCurrentHair();
+}
+
+void UCharacterCustomizationComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	bEndingPlay = true;
+	CancelPendingHair();
+	Super::EndPlay(EndPlayReason);
+}
+
+void UCharacterCustomizationComponent::CancelPendingHair()
+{
+	// Invalidate even callbacks already queued for delivery before cancelling the handle.
+	++HairRequestSerial;
+	if (HairLoadHandle) HairLoadHandle->CancelHandle();
+	HairLoadHandle.Reset();
 }
 
 void UCharacterCustomizationComponent::ApplyFacePreset(UCharacterFacePreset* Preset)
@@ -275,7 +299,7 @@ void UCharacterCustomizationComponent::FindHairComponent()
 		*HairComponentName.ToString());
 }
 
-UGroomBindingAsset*
+TSoftObjectPtr<UGroomBindingAsset>
 UCharacterCustomizationComponent::GetBindingForCurrentCharacter(
 	const FCharacterHairPreset& HairPreset) const
 {
@@ -297,6 +321,8 @@ UCharacterCustomizationComponent::GetBindingForCurrentCharacter(
 
 void UCharacterCustomizationComponent::ApplyCurrentHair()
 {
+	CancelPendingHair();
+	if (bEndingPlay) return;
 	if (!IsValid(HairComponent))
 	{
 		FindHairComponent();
@@ -308,6 +334,13 @@ void UCharacterCustomizationComponent::ApplyCurrentHair()
 	}
 
 	if (HairPresets.Num() == 0)
+	{
+		return;
+	}
+
+	// Keep legacy hair as a fallback until replacement succeeds, but never
+	// re-enable it afterward (BeginPlay and asynchronous completion can race).
+	if (HairComponent->ComponentHasTag(TEXT("AppearanceNoOutline")))
 	{
 		return;
 	}
@@ -326,19 +359,17 @@ void UCharacterCustomizationComponent::ApplyCurrentHair()
 	const FCharacterHairPreset& HairPreset =
 		HairPresets[CurrentHairIndex];
 
-	if (!IsValid(HairPreset.Groom))
+	if (HairPreset.Groom.IsNull())
 	{
 		HairComponent->SetVisibility(false);
 		return;
 	}
 
-	UGroomBindingAsset* Binding =
+	const TSoftObjectPtr<UGroomBindingAsset> Binding =
 		GetBindingForCurrentCharacter(HairPreset);
 
-	if (!IsValid(Binding))
+	if (Binding.IsNull())
 	{
-		HairComponent->SetVisibility(false);
-
 		UE_LOG(
 			LogTemp,
 			Warning,
@@ -351,12 +382,43 @@ void UCharacterCustomizationComponent::ApplyCurrentHair()
 		return;
 	}
 
-	HairComponent->SetGroomAsset(
-		HairPreset.Groom,
-		Binding,
-		true);
-
-	HairComponent->SetVisibility(true);
+	const TSoftObjectPtr<UGroomAsset> Groom = HairPreset.Groom;
+	const uint64 Request = HairRequestSerial;
+	const TWeakObjectPtr<UGroomComponent> RequestedComponent = HairComponent;
+	TArray<FSoftObjectPath> Paths{Groom.ToSoftObjectPath(), Binding.ToSoftObjectPath()};
+	// Stalling lets us own the handle before an already-resident request can finish.
+	HairLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths,
+		FStreamableDelegate::CreateWeakLambda(this, [this, Request, RequestedComponent, Groom, Binding]
+		{
+			if (bEndingPlay || Request != HairRequestSerial) return;
+			auto* Component = RequestedComponent.Get();
+			// Mutable can replace/retire authored hair while this legacy load is in flight.
+			if (!Component || Component != HairComponent || Component->ComponentHasTag(TEXT("AppearanceNoOutline")))
+			{
+				HairLoadHandle.Reset();
+				return;
+			}
+			auto* LoadedGroom = Groom.Get();
+			auto* LoadedBinding = Binding.Get();
+			auto* Face = Cast<USkeletalMeshComponent>(Component->GetAttachParent());
+			const bool bCompatible = LoadedGroom && LoadedBinding
+				&& LoadedGroom->IsValid()
+				&& UGroomBindingAsset::IsBindingAssetValid(LoadedBinding, false, false)
+				&& UGroomBindingAsset::IsCompatible(LoadedGroom, LoadedBinding, false)
+				&& (!Face || UGroomBindingAsset::IsCompatible(Face->GetSkeletalMeshAsset(), LoadedBinding, false));
+			if (bCompatible)
+			{
+				Component->SetGroomAsset(LoadedGroom, LoadedBinding, true);
+				Component->SetVisibility(true);
+			}
+			else
+			{
+				// Keep the previous fallback visible if loading or compatibility validation fails.
+				UE_LOG(LogTemp, Warning, TEXT("CharacterCustomization: Selected hair failed to load or has incompatible binding: %s"), *Groom.ToString());
+			}
+			HairLoadHandle.Reset();
+		}), FStreamableManager::DefaultAsyncLoadPriority, false, true, TEXT("Legacy selected hair"));
+	if (HairLoadHandle) HairLoadHandle->StartStalledHandle();
 }
 
 void UCharacterCustomizationComponent::SetHairStyle(const int32 HairIndex)

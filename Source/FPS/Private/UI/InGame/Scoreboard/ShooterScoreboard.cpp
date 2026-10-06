@@ -376,7 +376,7 @@ FText UShooterScoreboard::ResolveWeaponText(APlayerState* PlayerState) const
 	}
 	
 	AWeaponBase* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(Pawn);
-	if (Pawn == nullptr || !Pawn->Implements<UPlayerInterface>())
+	if (!IsValid(Weapon) || !WeaponDisplaySet)
 	{
 		return FText::GetEmpty();
 	}
