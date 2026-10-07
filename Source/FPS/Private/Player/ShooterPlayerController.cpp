@@ -21,6 +21,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "UnrealClient.h"
 #include "GameFramework/InputSettings.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Input/UIActionBindingHandle.h"
 #include "Input/CommonUIActionRouterBase.h"
 #include "UI/Foundation/ShooterActionRouter.h"
 #include "GAS/RogueAbilitySystemComponent.h"
@@ -229,6 +231,10 @@ void AShooterPlayerController::UnbindApplicationActivation()
 
 void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
 {
+	if (IsLocalController() && !bIsActive)
+	{
+		ResetInputModeState();
+	}
 	if (!bIsActive || !IsLocalController())
 	{
 		return;
@@ -489,8 +495,8 @@ void AShooterPlayerController::SetupInputComponent()
 	if (InputConfig->CrouchAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchPressed);
-		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased);
-		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased, false);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased, true);
 	}
 	if (SupportsVoiceChat() && InputConfig->PushToTalkAction)
 	{
@@ -568,9 +574,9 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, PressEvent, this, &ThisClass::Input_AbilityPressed, AbilityInput.InputTag);
 		EnhancedInputComponent->BindAction(
-			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag, false);
 		EnhancedInputComponent->BindAction(
-			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag, true);
 	}
 }
 
@@ -1175,6 +1181,14 @@ void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 
 void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
 {
+	if (IsLocalController() && PreviousPawn != NewPawn)
+	{
+		if (AShooterCharacter* PreviousCharacter = Cast<AShooterCharacter>(PreviousPawn))
+		{
+			PreviousCharacter->HandleCrouchReleased();
+		}
+		ResetInputModeState();
+	}
 	if (!IsLocalController() || NewPawn == PreviousPawn || GetPawn() != NewPawn
 		|| !UKillcamReplaySubsystem::IsLiveWorldActor(NewPawn) || !NewPawn->IsA<AShooterCharacter>())
 	{
@@ -1947,6 +1961,16 @@ void AShooterPlayerController::InitializeRuntimeInputMappings()
 	{
 		Settings->OnInputBindingsChanged.RemoveAll(this);
 		Settings->OnInputBindingsChanged.AddUObject(this, &ThisClass::HandleInputBindingsChanged);
+		Settings->OnInputModesChanged.RemoveAll(this);
+		Settings->OnInputModesChanged.AddUObject(this, &ThisClass::ResetInputModeState);
+	}
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UCommonUIActionRouterBase* Router = LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>())
+		{
+			Router->OnActiveInputConfigChanged().RemoveAll(this);
+			Router->OnActiveInputConfigChanged().AddUObject(this, &ThisClass::HandleUIInputConfigChanged);
+		}
 	}
 
 	RebuildRuntimeInputMappings();
@@ -1954,13 +1978,19 @@ void AShooterPlayerController::InitializeRuntimeInputMappings()
 
 void AShooterPlayerController::ShutdownRuntimeInputMappings()
 {
+	ResetInputModeState();
 	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
 		Settings->OnInputBindingsChanged.RemoveAll(this);
+		Settings->OnInputModesChanged.RemoveAll(this);
 	}
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
+		if (UCommonUIActionRouterBase* Router = LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>())
+		{
+			Router->OnActiveInputConfigChanged().RemoveAll(this);
+		}
 		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
 			LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
 		{
@@ -2037,6 +2067,7 @@ void AShooterPlayerController::ApplySavedBindingsToContext(
 
 void AShooterPlayerController::RebuildRuntimeInputMappings()
 {
+	ResetInputModeState();
 	if (!IsLocalController() || !IsValid(InputConfig))
 	{
 		return;
@@ -2083,6 +2114,33 @@ void AShooterPlayerController::RebuildRuntimeInputMappings()
 	if (bSystemMappingContextEnabled && RuntimeSystemMappingContext)
 	{
 		InputSubsystem->AddMappingContext(RuntimeSystemMappingContext, InputConfig->SystemMappingPriority);
+	}
+}
+
+void AShooterPlayerController::ResetInputModeState()
+{
+	PressedAbilityInputTags.Reset();
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		ASC->ReleaseADSInput();
+	}
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
+		ShooterCharacter->HandleCrouchReleased();
+	}
+}
+
+void AShooterPlayerController::FlushPressedKeys()
+{
+	ResetInputModeState();
+	Super::FlushPressedKeys();
+}
+
+void AShooterPlayerController::HandleUIInputConfigChanged(const FUIInputConfig Config)
+{
+	if (Config.GetInputMode() == ECommonInputMode::Menu || Config.bIgnoreMoveInput)
+	{
+		ResetInputModeState();
 	}
 }
 
@@ -2249,6 +2307,7 @@ void AShooterPlayerController::SetMappingContextEnabled(
 	}
 	else
 	{
+		ResetInputModeState();
 		InputSubsystem->RemoveMappingContext(MappingContext);
 	}
 }
@@ -2371,12 +2430,26 @@ void AShooterPlayerController::Input_CrouchPressed()
 
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
-		ShooterCharacter->HandleCrouchPressed();
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		const UCharacterMovementComponent* Movement = ShooterCharacter->GetCharacterMovement();
+		if (Settings && Settings->IsCrouchToggleEnabled() && Movement && Movement->bWantsToCrouch)
+		{
+			ShooterCharacter->HandleCrouchReleased();
+		}
+		else
+		{
+			ShooterCharacter->HandleCrouchPressed();
+		}
 	}
 }
 
-void AShooterPlayerController::Input_CrouchReleased()
+void AShooterPlayerController::Input_CrouchReleased(const bool bCanceled)
 {
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!bCanceled && Settings && Settings->IsCrouchToggleEnabled() && CanProcessMovementInput())
+	{
+		return;
+	}
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleCrouchReleased();
@@ -2426,15 +2499,15 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 		return;
 	}
 
-	if (!bMatchChatChannelAllowed && CurrentChatChannel == EChatChannel::Match)
+	if (!bMatchChatChannelAllowed && CurrentChatChannel1 == EChatChannel1::Match)
 	{
-		CurrentChatChannel = EChatChannel::Team;
+		CurrentChatChannel1 = EChatChannel1::Team;
 	}
 
-	bIsChatInputOpen = true;
-	ChatInputWidget = Widget;
-	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
-}
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		ASC->ReleaseADSInput();
+	}
 
 void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
 {
@@ -2734,12 +2807,17 @@ void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, co
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		ASC->AbilityInputTagPressed(InputTag);
+		const bool bIsNewPress = !PressedAbilityInputTags.Contains(InputTag);
+		PressedAbilityInputTags.Add(InputTag);
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		ASC->AbilityInputTagPressed(InputTag, Settings && Settings->IsADSToggleEnabled(), bIsNewPress);
 	}
 }
 
-void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, const FGameplayTag InputTag)
+void AShooterPlayerController::Input_AbilityReleased(
+	const FInputActionValue&, const FGameplayTag InputTag, const bool bCanceled)
 {
+	PressedAbilityInputTags.Remove(InputTag);
 	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
 	{
 		return;
@@ -2747,7 +2825,9 @@ void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, c
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		ASC->AbilityInputTagReleased(InputTag);
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		ASC->AbilityInputTagReleased(InputTag,
+			!bCanceled && Settings && Settings->IsADSToggleEnabled() && CanProcessActionInput());
 	}
 
 	// 발사 입력을 뗀 순간을 장착 무기에 알린다 - 빈 탄창에서 "클릭음 → 떼고 다시 클릭 → 재장전"

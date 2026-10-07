@@ -23,15 +23,16 @@ public:
 
 	// 눌림 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
-	void AbilityInputTagPressed(const FGameplayTag& InputTag);
+	void AbilityInputTagPressed(const FGameplayTag& InputTag, bool bToggleADS = false, bool bIsNewPress = true);
 
 	// 떼짐 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
-	void AbilityInputTagReleased(const FGameplayTag& InputTag);
+	void AbilityInputTagReleased(const FGameplayTag& InputTag, bool bPreserveADS = false);
 
 	// 실제 무기 전환은 이전 무기의 ADS와 그 입력만 정리한다.
 	void CancelADSAbilityForWeapon(const AWeaponBase* Weapon);
 	void ClearAbilityInput();
+	void ReleaseADSInput();
 
 	// 목록의 어빌리티를 부여 서버 전용.
 	void GrantAbilitySet(const URogueAbilitySet* AbilitySet);
@@ -53,6 +54,8 @@ public:
 	virtual void OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect) override;
 
 private:
+	void ReleaseAbilityInput(FGameplayAbilitySpec& Spec);
+
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그
 	void ReportInputResult(const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount);
 

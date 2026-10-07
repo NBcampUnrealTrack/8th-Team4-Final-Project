@@ -748,6 +748,42 @@ void UShooterOptionsScreen::SetQualityLevel(
 	OnSettingsChanged.Broadcast();
 }
 
+bool UShooterOptionsScreen::IsADSToggleEnabled() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return IsValid(Settings) && Settings->IsADSToggleEnabled();
+}
+
+void UShooterOptionsScreen::SetADSToggleEnabled(const bool bEnabled)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	Settings->SetADSToggleEnabled(bEnabled);
+	OnSettingsChanged.Broadcast();
+}
+
+bool UShooterOptionsScreen::IsCrouchToggleEnabled() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return IsValid(Settings) && Settings->IsCrouchToggleEnabled();
+}
+
+void UShooterOptionsScreen::SetCrouchToggleEnabled(const bool bEnabled)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	Settings->SetCrouchToggleEnabled(bEnabled);
+	OnSettingsChanged.Broadcast();
+}
+
 float UShooterOptionsScreen::GetMouseHorizontalSensitivity() const
 {
 	const UShooterGameUserSettings* Settings = GetGameUserSettings();
@@ -1150,6 +1186,10 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_VSyncToggle", HandleVSyncToggle);
 	BIND_CLICK("Btn_DynamicResolutionToggle", HandleDynamicResolutionToggle);
 	BIND_CLICK("Btn_InvertYToggle", HandleInvertYToggle);
+	BIND_CLICK("Btn_ADSModePrev", HandleADSModeChanged);
+	BIND_CLICK("Btn_ADSModeNext", HandleADSModeChanged);
+	BIND_CLICK("Btn_CrouchModePrev", HandleCrouchModeChanged);
+	BIND_CLICK("Btn_CrouchModeNext", HandleCrouchModeChanged);
 	BIND_CLICK("Btn_DynamicCrosshairToggle", HandleDynamicCrosshairToggle);
 	BIND_CLICK("Btn_MasterMuteToggle", HandleMasterMuteToggle);
 	BIND_CLICK("Btn_VoiceChatToggle", HandleVoiceChatToggle);
@@ -1198,6 +1238,7 @@ void UShooterOptionsScreen::ApplyOptionStaticStyles()
 		TEXT("Overall"), TEXT("ViewDistance"), TEXT("AntiAliasing"), TEXT("Shadow"),
 		TEXT("GlobalIllumination"), TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"),
 		TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"), TEXT("Language"),
+		TEXT("ADSMode"), TEXT("CrouchMode"),
 	};
 
 	if (bOverrideValueBoxStyle)
@@ -1380,6 +1421,8 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_VerticalSensitivity"), TEXT("수직 감도"), TEXT("Vertical Sensitivity"));
 	Set(TEXT("TXT_Label_AimSensitivity"), TEXT("ADS 감도 배율"), TEXT("ADS Sensitivity Multiplier"));
 	Set(TEXT("TXT_Label_InvertY"), TEXT("Y축 반전"), TEXT("Invert Y"));
+	Set(TEXT("TXT_Label_ADSMode"), TEXT("ADS"), TEXT("ADS"));
+	Set(TEXT("TXT_Label_CrouchMode"), TEXT("앉기"), TEXT("Crouch"));
 	Set(TEXT("TXT_Label_DynamicCrosshair"), TEXT("동적 크로스헤어"), TEXT("Dynamic Crosshair"));
 
 	Set(TEXT("TXT_Label_MasterVolume"), TEXT("마스터"), TEXT("Master"));
@@ -1663,6 +1706,15 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 	SetOptionText(TEXT("TXT_LanguageValue"), GetLanguage() == EShooterOptionsLanguage::English ? FText::FromString(TEXT("English")) : FText::FromString(TEXT("한국어")));
 	SetChoiceSegments(TEXT("Language"), GetLanguage() == EShooterOptionsLanguage::English ? 1 : 0, 2);
 
+	const bool bADSToggle = IsADSToggleEnabled();
+	const bool bCrouchToggle = IsCrouchToggleEnabled();
+	SetOptionText(TEXT("TXT_ADSModeValue"), bADSToggle
+		? Localize(TEXT("토글"), TEXT("Toggle")) : Localize(TEXT("유지"), TEXT("Hold")));
+	SetOptionText(TEXT("TXT_CrouchModeValue"), bCrouchToggle
+		? Localize(TEXT("토글"), TEXT("Toggle")) : Localize(TEXT("유지"), TEXT("Hold")));
+	SetChoiceSegments(TEXT("ADSMode"), bADSToggle ? 1 : 0, 2);
+	SetChoiceSegments(TEXT("CrouchMode"), bCrouchToggle ? 1 : 0, 2);
+
 	// Header is intentionally not navigation; it summarizes the current runtime state.
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Display"), ResolutionText);
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Quality"), OverallText);
@@ -1918,6 +1970,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 		TEXT("Overall"), TEXT("ViewDistance"), TEXT("AntiAliasing"), TEXT("Shadow"), TEXT("GlobalIllumination"),
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
+		TEXT("ADSMode"), TEXT("CrouchMode"),
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"),
 		TEXT("VoiceChat"), TEXT("VoiceChatMicrophoneVolume"), TEXT("VoiceChatOutputVolume"),
 		TEXT("Language"),
@@ -2069,16 +2122,22 @@ void UShooterOptionsScreen::HandleLanguageNext()
 void UShooterOptionsScreen::HandleVSyncToggle() { ActiveOption = TEXT("VSync"); SetVSyncEnabled(!IsVSyncEnabled()); }
 void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveOption = TEXT("DynamicResolution"); SetDynamicResolutionEnabled(!IsDynamicResolutionEnabled()); }
 void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); }
+void UShooterOptionsScreen::HandleADSModeChanged() { ActiveOption = TEXT("ADSMode"); SetADSToggleEnabled(!IsADSToggleEnabled()); }
+void UShooterOptionsScreen::HandleCrouchModeChanged() { ActiveOption = TEXT("CrouchMode"); SetCrouchToggleEnabled(!IsCrouchToggleEnabled()); }
 void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); }
 void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); }
 void UShooterOptionsScreen::HandleVoiceChatToggle() { ActiveOption = TEXT("VoiceChat"); SetVoiceChatEnabled(!IsVoiceChatEnabled()); }
 void UShooterOptionsScreen::HandleResetKeyBindings()
 {
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		Settings->ResetInputModes();
+	}
 	if (AShooterPlayerController* Controller = Cast<AShooterPlayerController>(GetOwningPlayer()))
 	{
 		Controller->ResetInputBindings();
-		RebuildKeyBindings();
 	}
+	OnSettingsChanged.Broadcast();
 }
 
 bool UShooterOptionsScreen::TryParseNumber(const FText& Text, float& OutValue) const

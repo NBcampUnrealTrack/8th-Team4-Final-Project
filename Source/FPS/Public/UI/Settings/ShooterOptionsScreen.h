@@ -171,6 +171,18 @@ public:
 
 	// ----- Controls / Gameplay -----
 	UFUNCTION(BlueprintPure, Category = "UI|Options|Controls")
+	bool IsADSToggleEnabled() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Controls")
+	void SetADSToggleEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Controls")
+	bool IsCrouchToggleEnabled() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Controls")
+	void SetCrouchToggleEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Controls")
 	float GetMouseHorizontalSensitivity() const;
 
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Controls")
@@ -344,6 +356,8 @@ private:
 	UFUNCTION() void HandleVSyncToggle();
 	UFUNCTION() void HandleDynamicResolutionToggle();
 	UFUNCTION() void HandleInvertYToggle();
+	UFUNCTION() void HandleADSModeChanged();
+	UFUNCTION() void HandleCrouchModeChanged();
 	UFUNCTION() void HandleDynamicCrosshairToggle();
 	UFUNCTION() void HandleMasterMuteToggle();
 	UFUNCTION() void HandleVoiceChatToggle();
@@ -409,15 +423,15 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideValueBoxStyle"))
 	FLinearColor ValueBoxColor = FLinearColor::White;
 
-	// 좌우 화살표 30개에 한 번만 적용한다. 체크를 끄면 WBP에 설정한 모양이 그대로 유지된다.
+	// 좌우 화살표에 한 번만 적용한다. 체크를 끄면 WBP에 설정한 모양이 그대로 유지된다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
 	bool bOverrideStepperArrowStyle = false;
 
-	// 왼쪽(Prev) 화살표 15개.
+	// 왼쪽(Prev) 화살표.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
 	FButtonStyle StepperArrowPrevStyle;
 
-	// 오른쪽(Next) 화살표 15개.
+	// 오른쪽(Next) 화살표.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
 	FButtonStyle StepperArrowNextStyle;
 
@@ -425,7 +439,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
 	FLinearColor StepperArrowBackgroundColor = FLinearColor::White;
 
-	// 화살표 글자(TXT_Btn_*Prev/Next) 색 30개.
+	// 화살표 글자(TXT_Btn_*Prev/Next) 색.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideStepperArrowStyle"))
 	FLinearColor StepperArrowTextColor = FLinearColor::White;
 
