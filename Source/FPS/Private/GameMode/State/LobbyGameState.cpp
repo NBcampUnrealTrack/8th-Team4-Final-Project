@@ -36,6 +36,21 @@ void ALobbyGameState::NotifyLobbyPlayerListChanged()
 	ForceNetUpdate();
 }
 
+void ALobbyGameState::RemovePlayerState(APlayerState* PlayerState)
+{
+	Super::RemovePlayerState(PlayerState);
+
+	// 서버는 레디 수를 다시 세서 복제하고, 클라는 자기 PlayerArray 에서 빠진 뒤 화면을 다시 그린다
+	if (HasAuthority())
+	{
+		NotifyLobbyPlayerListChanged();
+	}
+	else
+	{
+		OnLobbyPlayerListChanged.Broadcast();
+	}
+}
+
 void ALobbyGameState::SetSelectedMatchMode(const ELobbyMatchMode NewMatchMode)
 {
 	if (!HasAuthority() || SelectedMatchMode == NewMatchMode)
