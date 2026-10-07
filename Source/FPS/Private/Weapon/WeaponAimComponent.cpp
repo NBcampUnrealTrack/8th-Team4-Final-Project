@@ -43,6 +43,7 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 	SpreadDecayDelay = Row->SpreadDecayDelay;
 	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
 	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
+	CrouchSpreadMultiplier = Row->CrouchSpreadMultiplier;
 
 	RecoilCurve = Row->RecoilCurve;
 	RecoilRandomness = Row->RecoilRandomness;
@@ -111,6 +112,11 @@ void UWeaponAimComponent::SetIsAirborne(const bool bNewIsAirborne)
 void UWeaponAimComponent::SetIsStationary(const bool bNewIsStationary)
 {
 	bIsStationary = bNewIsStationary;
+}
+
+void UWeaponAimComponent::SetIsCrouching(const bool bNewIsCrouching)
+{
+	bIsCrouching = bNewIsCrouching;
 }
 
 void UWeaponAimComponent::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
@@ -191,6 +197,13 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 	if (!bIsStationary)
 	{
 		SpreadDegrees += MovingSpreadPenaltyDegrees;
+	}
+
+	// 앉아서 쏘면 지상 탄퍼짐(지향 블룸/이동 배율/ADS 이동 탄퍼짐/이동 페널티)이 줄어든다. 공중 페널티는
+	// 앉기와 무관하게 그대로 붙어야 해서 그 앞에서 곱한다.
+	if (bIsCrouching)
+	{
+		SpreadDegrees *= CrouchSpreadMultiplier;
 	}
 
 	// 공중에서는 ADS로 고정한 0도, 이동 배율을 곱해도 0인 지향사격(기본 탄퍼짐 0인 무기)도 전부
