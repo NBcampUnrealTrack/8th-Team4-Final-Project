@@ -2,6 +2,7 @@
 
 #include "EngineUtils.h"
 #include "Actor/BaseTeamPlayerStart.h"
+#include "Engine/GameInstance.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GameMode/Manager/SurrenderVoteManager.h"
 #include "GameMode/Manager/TeamPlayerManager.h"
@@ -9,6 +10,7 @@
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
+#include "Session/SessionSubSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBaseTeamGameMode, Log, All);
 
@@ -22,6 +24,17 @@ ABaseTeamGameMode::ABaseTeamGameMode()
 	SurrenderVoteManager = CreateDefaultSubobject<USurrenderVoteManager>(TEXT("SurrenderVoteManager"));
 }
 
+void ABaseTeamGameMode::PostLogin(APlayerController* NewPlayer)
+{
+	Super::PostLogin(NewPlayer);
+
+	// 중도 참가로 인원이 바뀌면 방 찾기 목록의 인원수도 갱신한다
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
+}
+
 void ABaseTeamGameMode::Logout(AController* Exiting)
 {
 	if (AShooterPlayerController* ExitingPlayerController = Cast<AShooterPlayerController>(Exiting))
@@ -30,6 +43,11 @@ void ABaseTeamGameMode::Logout(AController* Exiting)
 	}
 
 	Super::Logout(Exiting);
+
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
 }
 
 int32 ABaseTeamGameMode::GetTeamPlayerCount(const EGameTeam Team) const

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Containers/Ticker.h"
 #include "Engine/EngineBaseTypes.h"
+#include "Engine/TimerHandle.h"
 #include "Net/Core/Connection/NetEnums.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Interfaces/OnlineSessionInterface.h"
@@ -66,6 +67,9 @@ public:
 	// 게임 모드가 실제 플레이 맵에 진입한 뒤 중도 참가 허용 여부를 명시적으로 제어한다.
 	bool SetRoomJoinable(bool bIsJoinable);
 
+	// 호스트 게임모드가 입장·퇴장 때 부른다. 방 찾기 목록에 보이는 인원수를 다시 게시한다
+	void NotifyRoomMembersChanged();
+
 	void NotifyLobbyReady(UWorld* LobbyWorld);
 	void CancelRoomGameStart();
 	bool IsRoomOperationInProgress() const;
@@ -107,6 +111,7 @@ private:
 	void ReturnToFrontendNow();
 	bool TravelRoomToLobbyNow();
 	void QueueRoomSettingsUpdate();
+	void PublishRoomMembers();
 	void SendRoomSettingsUpdate();
 	void OnUpdateSessionComplete(FName SessionName, bool bWasSuccessful);
 	void ShutdownTravelLifecycle();
@@ -170,6 +175,7 @@ private:
 	uint32 RoomSettingsRevision = 0;
 	uint32 SubmittedRoomSettingsRevision = 0;
 	double NextRoomSettingsUpdateAt = 0.0;
+	FTimerHandle RoomMembersPublishHandle;
 	FDelegateHandle UpdateSessionCompleteDelegateHandle;
 	bool bCancelRoomGameStartPending = false;
 	TArray<FConnectionTimeoutSnapshot> ConnectionTimeoutSnapshots;

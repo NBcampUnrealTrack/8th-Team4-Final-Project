@@ -81,6 +81,11 @@ void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 		CancelMatchTravelPreparation(TEXT("The room roster changed while preparing travel."));
 	}
 	NotifyLobbyPlayerListChanged();
+
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
 }
 
 void ALobbyGameMode::PostSeamlessTravel()
@@ -106,6 +111,11 @@ void ALobbyGameMode::Logout(AController* Exiting)
 	Super::Logout(Exiting);
 	ReassignHostPlayerIfNeeded(ExitingPlayerState);
 	NotifyLobbyPlayerListChanged();
+
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
 }
 
 bool ALobbyGameMode::RequestStartRoomGame(
