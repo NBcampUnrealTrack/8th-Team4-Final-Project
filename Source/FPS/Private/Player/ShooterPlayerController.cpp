@@ -2499,15 +2499,20 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 		return;
 	}
 
-	if (!bMatchChatChannelAllowed && CurrentChatChannel1 == EChatChannel1::Match)
+	if (!bMatchChatChannelAllowed && CurrentChatChannel == EChatChannel::Match)
 	{
-		CurrentChatChannel1 = EChatChannel1::Team;
+		CurrentChatChannel = EChatChannel::Team;
 	}
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
 		ASC->ReleaseADSInput();
 	}
+
+	bIsChatInputOpen = true;
+	ChatInputWidget = Widget;
+	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
+}
 
 void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
 {
