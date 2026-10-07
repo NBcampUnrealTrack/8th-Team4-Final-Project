@@ -124,6 +124,8 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	// 대상은 아니다(스프린트는 지상이라 ADS 자체가 대부분 불가능/취소되므로 별개로 취급).
 	const bool bIsFalling = Movement->IsFalling();
 	Weapon->SetIsAirborne(bIsFalling);
+	// 이동 탄퍼짐을 무시하는 무기(샷건 등)도 앉기 보정은 받아야 해서 아래 조기 반환보다 먼저 넘긴다.
+	Weapon->SetIsCrouching(Movement->IsCrouching());
 
 	// 이동 탄퍼짐을 무시하는 무기(예: 산탄총)는 항상 정지(브레이킹 성공) + 배율 1로 취급한다 -
 	// MovingSpreadPenaltyDegrees/MovingADSSpreadDegrees/걷기·뛰기 배율이 전부 빠지고 공중 페널티만 남는다.

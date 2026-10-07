@@ -49,6 +49,8 @@ public:
 	// "ADS 중"에서 "ADS 중 + 정지(브레이킹 성공)"로 바뀌었다 - CombatComponent::
 	// UpdateMovementSpreadMultiplier가 매 틱 갱신해서 넘겨준다.
 	void SetIsStationary(bool bNewIsStationary);
+	// 앉아 있는지. CombatComponent::UpdateMovementSpreadMultiplier가 매 틱 갱신한다.
+	void SetIsCrouching(bool bNewIsCrouching);
 	void SetEffectiveSpreadDegrees(float NewSpreadDegrees);
 	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
 	// 지금 이 순간 실제로 적용 중인 탄퍼짐 각도(도). ADS/연사 블룸/이동 배율/증강까지 전부 반영된 최종값.
@@ -212,6 +214,15 @@ protected:
 	// MovingADSSpreadDegrees가 적용된다(브레이킹 실패, 이동 중 조준).
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	bool bIsStationary = true;
+
+	// 앉아서 쏠 때 탄퍼짐에 곱해지는 배율(1=영향 없음). 공중 페널티에는 적용되지 않는다.
+	// SpreadRecoilTable 미지정 시 사용되는 기본값(=fallback).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CrouchSpreadMultiplier = 0.7f;
+
+	// SetIsCrouching으로만 갱신된다.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	bool bIsCrouching = false;
 
 	// 연속 사격 횟수. 탄퍼짐 블룸 계산에 사용.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")

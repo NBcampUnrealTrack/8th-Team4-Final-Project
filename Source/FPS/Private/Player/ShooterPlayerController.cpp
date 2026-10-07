@@ -2395,6 +2395,11 @@ void AShooterPlayerController::Input_PushToTalkReleased()
 
 void AShooterPlayerController::Input_OpenChat()
 {
+	OpenChatInput();
+}
+
+void AShooterPlayerController::OpenChatInput(const FVector2D& ScreenOffset)
+{
 	if (!IsLocalController() || bIsChatInputOpen)
 	{
 		return;
@@ -2406,7 +2411,12 @@ void AShooterPlayerController::Input_OpenChat()
 		return;
 	}
 
-	BeginChatInput(UIInitComponent->OpenChat());
+	UShooterChatInputBox* ChatInput = UIInitComponent->OpenChat();
+	if (IsValid(ChatInput))
+	{
+		ChatInput->SetRenderTranslation(ScreenOffset);
+	}
+	BeginChatInput(ChatInput);
 }
 
 void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
@@ -2416,9 +2426,29 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 		return;
 	}
 
+	if (!bMatchChatChannelAllowed && CurrentChatChannel == EChatChannel::Match)
+	{
+		CurrentChatChannel = EChatChannel::Team;
+	}
+
 	bIsChatInputOpen = true;
 	ChatInputWidget = Widget;
 	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
+}
+
+void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
+{
+	bMatchChatChannelAllowed = bAllowed;
+	if (bAllowed || CurrentChatChannel != EChatChannel::Match)
+	{
+		return;
+	}
+
+	CurrentChatChannel = EChatChannel::Team;
+	if (ChatInputWidget.IsValid())
+	{
+		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+	}
 }
 
 void AShooterPlayerController::CloseChatInput()
@@ -2621,7 +2651,12 @@ void AShooterPlayerController::HandleChatChannelSwitchRequested()
 		CurrentIndex = 2 + FMath::Max(WhisperIndex, 0);
 	}
 
-	const int32 NextIndex = (CurrentIndex + 1) % SlotCount;
+	int32 NextIndex = (CurrentIndex + 1) % SlotCount;
+	// 전체 채널이 막힌 화면(클래스 선택창)에서는 Match 칸을 건너뛴다. 귓말 대상이 없으면 Team으로 돌아온다.
+	if (NextIndex == 1 && !bMatchChatChannelAllowed)
+	{
+		NextIndex = (NextIndex + 1) % SlotCount;
+	}
 
 	if (NextIndex == 0)
 	{

@@ -110,6 +110,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetIsStationary(bool bNewIsStationary);
 
+	// 앉아 있는지. 앉으면 탄퍼짐에 CrouchSpreadMultiplier가 곱해지도록 Aim 컴포넌트에 위임한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetIsCrouching(bool bNewIsCrouching);
+
 	// 아래 SetEffective* 계열은 전부 같은 규칙: 증강/스탯 보정을 반영해 "지금 이 무기에 실제로
 	// 적용할 값"을 외부(GA_RangedAttack/GA_MeleeAttack/GA_Reload)가 URogueAugmentStatResolver로
 	// 계산해서 꽂아주는 Setter다. AWeaponBase는 누가 어떻게 계산했는지 몰라도 된다.
