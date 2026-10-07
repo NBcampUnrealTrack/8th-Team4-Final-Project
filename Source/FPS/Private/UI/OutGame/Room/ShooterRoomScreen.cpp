@@ -540,6 +540,23 @@ void UShooterRoomScreen::RebuildUnassignedEntries(const TArray<FShooterRoomSlotV
 		Entry->SetPlayer(View);
 		Box_Unassigned->AddChild(Entry);
 	}
+
+	// 팀에 있는 동안엔 끝에 대기로 돌아가는 Join 칸을 둔다. 레디 중엔 팀 칸처럼 잠금
+	const AShooterPlayerState* LocalPlayerState = GetLocalShooterPlayerState();
+	if (!IsValid(LocalPlayerState) || LocalPlayerState->GetTeam() == EGameTeam::None)
+	{
+		return;
+	}
+
+	UShooterRoomPlayerSlot* JoinEntry = CreateWidget<UShooterRoomPlayerSlot>(this, UnassignedEntryWidgetClass);
+	if (!IsValid(JoinEntry))
+	{
+		return;
+	}
+
+	JoinEntry->OnJoinRequested.AddUObject(this, &ThisClass::HandleSlotJoinRequested);
+	JoinEntry->SetEmpty(EGameTeam::None, !LocalPlayerState->IsLobbyReady());
+	Box_Unassigned->AddChild(JoinEntry);
 }
 
 void UShooterRoomScreen::RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views)
@@ -689,6 +706,11 @@ FText UShooterRoomScreen::BuildStatusText(const FLobbyStartState& StartState, co
 			NSLOCTEXT("ShooterLobby", "ReadyCount", "READY {0} / {1}"),
 			FText::AsNumber(StartState.ReadyCount + 1),
 			FText::AsNumber(StartState.ReadyRequired + 1));
+
+	case ELobbyStartBlocker::HostNotInTeam:
+		return bIsHost
+			? NSLOCTEXT("ShooterLobby", "HostChooseTeam", "팀을 선택해 주세요")
+			: NSLOCTEXT("ShooterLobby", "HostChoosingTeam", "호스트가 팀을 고르는 중");
 
 	case ELobbyStartBlocker::None:
 	default:

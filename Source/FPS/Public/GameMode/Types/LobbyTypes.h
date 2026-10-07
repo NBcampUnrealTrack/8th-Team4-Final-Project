@@ -18,7 +18,8 @@ enum class ELobbyStartBlocker : uint8
 	Starting,                  // 시작 요청 처리 중이거나 게임 맵으로 이동 중
 	NotEnoughPlayers,
 	TeamsCannotBeFinalized,
-	WaitingForReady
+	WaitingForReady,
+	HostNotInTeam              // 호스트가 대기에 있음
 };
 
 USTRUCT(BlueprintType)

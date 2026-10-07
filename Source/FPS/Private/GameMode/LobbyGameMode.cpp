@@ -224,6 +224,7 @@ bool ALobbyGameMode::RequestStartRoomGame(
 bool ALobbyGameMode::CanStartRoomGame() const
 {
 	return IsSupportedMatchMode(GetSelectedMatchMode())
+		&& IsHostInTeam()
 		&& AreAllClientsReady()
 		&& HasMinimumPlayersToStart()
 		&& CanFinalizeTeamsForMatchStart();
@@ -238,6 +239,10 @@ FLobbyStartState ALobbyGameMode::BuildStartState() const
 	if (bStartRoomGamePending || bTravelingToGameMap)
 	{
 		Result.Blocker = ELobbyStartBlocker::Starting;
+	}
+	else if (!IsHostInTeam())
+	{
+		Result.Blocker = ELobbyStartBlocker::HostNotInTeam;
 	}
 	else if (!HasMinimumPlayersToStart())
 	{
@@ -439,10 +444,11 @@ bool ALobbyGameMode::RequestLobbyTeam(
 		return false;
 	}
 
-	// None and invalid enum values are internal/invalid states, not player-facing choices.
-	if (RequestedTeam != EGameTeam::TeamA && RequestedTeam != EGameTeam::TeamB)
+	// None 은 대기로 돌아가기. 시작할 때 FinalizeTeamsForMatchStart 가 남은 대기 인원을 채운다
+	const bool bToWaiting = RequestedTeam == EGameTeam::None;
+	if (!bToWaiting && RequestedTeam != EGameTeam::TeamA && RequestedTeam != EGameTeam::TeamB)
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: only TeamA or TeamB is selectable."));
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: only TeamA, TeamB or None is selectable."));
 		return false;
 	}
 
@@ -451,13 +457,20 @@ bool ALobbyGameMode::RequestLobbyTeam(
 		return true;
 	}
 
-	if (CountTeamPlayers(RequestedTeam) >= MaxPlayersPerTeam)
+	// 대기는 정원이 없다
+	if (!bToWaiting && CountTeamPlayers(RequestedTeam) >= MaxPlayersPerTeam)
 	{
 		UE_LOG(LogLobbyGameMode, Warning,
 			TEXT("Team change blocked: requested team is full (%d/%d)."),
 			CountTeamPlayers(RequestedTeam),
 			MaxPlayersPerTeam);
 		return false;
+	}
+
+	// 대기에서는 레디할 수 없다
+	if (bToWaiting)
+	{
+		ShooterPlayerState->SetLobbyReady(false);
 	}
 
 	ShooterPlayerState->SetTeam(RequestedTeam);
@@ -686,6 +699,13 @@ bool ALobbyGameMode::IsHostPlayerState(const APlayerState* PlayerState) const
 	return IsValid(PlayerState)
 		&& HostPlayerState.IsValid()
 		&& HostPlayerState.Get() == PlayerState;
+}
+
+bool ALobbyGameMode::IsHostInTeam() const
+{
+	// 호스트가 대기에 있으면 자동 배정에 맡기지 않고 시작을 막는다
+	const AShooterPlayerState* HostState = Cast<AShooterPlayerState>(HostPlayerState.Get());
+	return IsValid(HostState) && HostState->GetTeam() != EGameTeam::None;
 }
 
 bool ALobbyGameMode::IsSupportedMatchMode(const ELobbyMatchMode MatchMode) const

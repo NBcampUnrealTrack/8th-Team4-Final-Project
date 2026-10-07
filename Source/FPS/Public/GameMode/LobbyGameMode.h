@@ -87,6 +87,7 @@ private:
 	bool HasMinimumPlayersToStart() const;
 	bool CanFinalizeTeamsForMatchStart() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;
+	bool IsHostInTeam() const;
 	bool IsSupportedMatchMode(ELobbyMatchMode MatchMode) const;
 	bool TryResolveMatchModeFromMapName(const FString& MapName, ELobbyMatchMode& OutMatchMode) const;
 	void GetTeamAssignmentCounts(int32& OutTeamA, int32& OutTeamB, int32& OutUnassigned) const;
