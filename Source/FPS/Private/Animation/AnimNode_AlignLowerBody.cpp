@@ -55,9 +55,16 @@ void FAnimNode_AlignLowerBody::EvaluateSkeletalControl_AnyThread(FComponentSpace
  const auto* Hip=Stance->Bones.Find(TEXT("pelvis"));if(!Hip)return;
  const auto& Bones=Output.Pose.GetPose().GetBoneContainer();
  const auto P=Pelvis.GetCompactPoseIndex(Bones),S=Spine.GetCompactPoseIndex(Bones);
- const FTransform Upper=Output.Pose.GetComponentSpaceTransform(S);
+ FTransform Upper=Output.Pose.GetComponentSpaceTransform(S);
  FTransform PelvisPose=Output.Pose.GetComponentSpaceTransform(P);
+ const FVector OriginalPelvisLocation=PelvisPose.GetLocation();
  PelvisPose.SetRotation(Hip->GetRotation());PelvisPose.SetTranslation(Hip->GetTranslation());
+ // bIsCrouched changes before the input animation finishes standing up.
+ // Keep the pelvis/spine connection coherent when imposing the fixed stance:
+ // the downstream crouch transition can then move both back together. Holding
+ // the spine at its old component-space position would lower the torso twice.
+ // Preserve upper-body orientation/aim; only follow the pelvis translation.
+ Upper.AddToTranslation(PelvisPose.GetLocation()-OriginalPelvisLocation);
  TMap<int32,FTransform> Corrected;Corrected.Add(P.GetInt(),PelvisPose);Out.Add(FBoneTransform(P,PelvisPose));
  // Fixed primary rotations: equip/reload never changes the stance.
  // Preserve local translations/scales so limb lengths are not stretched.

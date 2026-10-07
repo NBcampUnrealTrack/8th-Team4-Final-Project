@@ -168,6 +168,7 @@ void ADominationClassPreviewStage::BeginPlay()
 
 	// 카드 전환 때마다 Mutable 생성을 기다리지 않도록 세 클래스를 미리 만들어 둔다.
 	SpawnPreviewPawns();
+	RegisterPreviewComponents();
 	// Identity/cloud data can arrive after the selection screen has already opened.
 	// Poll only while this stage exists; unchanged saves never trigger generation.
 	GetWorldTimerManager().SetTimer(SavedAppearanceTimerHandle, this,
@@ -486,6 +487,26 @@ void ADominationClassPreviewStage::PollAppearanceApplied()
 void ADominationClassPreviewStage::RegisterPreviewComponents()
 {
 	SceneCapture->ClearShowOnlyComponents();
+	// ShowOnly filters camera visibility, not shadow casters. All cached pawns
+	// occupy the same stage, so explicitly hide non-selected actors and weapons.
+	// Actor hiding also covers visuals added by asynchronous appearance updates.
+	for (const auto& Pair : PreviewPawns)
+	{
+		AShooterCharacter* Pawn = Pair.Value;
+		if (!IsValid(Pawn)) continue;
+		const bool bPreviewHidden = Pawn != PreviewPawn || PendingAppearanceClasses.Contains(Pair.Key);
+		Pawn->SetActorHiddenInGame(bPreviewHidden);
+		TArray<AWeaponBase*> Weapons;
+		CollectPawnWeapons(Pawn, Weapons);
+		const UCombatComponent* Combat = Pawn->GetCombatComponent();
+		for (AWeaponBase* Weapon : Weapons)
+		{
+			// An attachment refresh while hidden also hides Mesh3P. Restore the
+			// selected weapon's full presentation, not only its actor flag.
+			const bool bShowWeapon = !bPreviewHidden && Combat && Weapon == Combat->GetCurrentWeapon();
+			Weapon->SetPresentationActive(bShowWeapon);
+		}
+	}
 
 	// 다른 클래스 Pawn과 외형 생성 중인 Pawn은 ShowOnly에 넣지 않아 캡처되지 않는다.
 	if (IsValid(PreviewPawn) && !PendingAppearanceClasses.Contains(CurrentPreviewClass))

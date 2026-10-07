@@ -51,6 +51,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Animation|Posture")
 	float GetEquipAwarePostureSourceWeight() const;
 
+	// Preview actions are additive after the fitted grip. Keep that base steady
+	// while their montage enters blend-out; gameplay retains its existing gate.
+	UFUNCTION(BlueprintPure, Category = "FPS|Animation|Posture")
+	float GetPreviewAwareFinalGripAlpha(float GameplayAlpha) const;
+
 protected:
 	// Class identity is independent of the cosmetic mesh. The layered graph
 	// reads these game-thread caches instead of comparing deleted body assets.
