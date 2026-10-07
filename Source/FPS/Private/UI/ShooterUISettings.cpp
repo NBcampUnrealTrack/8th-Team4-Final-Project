@@ -6,7 +6,7 @@
 UShooterUISettings::UShooterUISettings()
 {
 	DefaultOptionsScreenClass = TSoftClassPtr<UShooterOptionsScreen>(
-		FSoftObjectPath(TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen.WBP_OptionsScreen_C")));
+		FSoftObjectPath(TEXT("/Game/FPS/UI/InGame/Option/WBP_OptionsScreen_Glass.WBP_OptionsScreen_Glass_C")));
 }
 
 TSubclassOf<UShooterOptionsScreen> UShooterUISettings::LoadDefaultOptionsScreenClass()
