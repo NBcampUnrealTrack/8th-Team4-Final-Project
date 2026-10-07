@@ -38,6 +38,28 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableColorPopup()
  auto Action=[this,Label](const FString& Text,TFunction<void()> Fn){return SNew(SButton).ButtonStyle(&ActionStyle).ButtonColorAndOpacity(CustomizationPresentationTheme::Button).ContentPadding(FMargin(10,8))
   .OnClicked_Lambda([Fn](){Fn();return FReply::Handled();})[SNew(SBox).HAlign(HAlign_Center)[Label(Text)]];};
  auto GetColor=[this](){auto* C=Controller();return C?C->GetEditingColor():FLinearColor::White;};
+ // RGB cannot store hue/saturation at zero brightness (black) or hue for greys.
+ // Keep the last chromatic choice per part so the wheel and the brightness
+ // slider stay usable after brightness reaches zero.
+ struct FHsvMemory{int32 Part=INDEX_NONE;float Hue=0.f;float Saturation=0.f;float Value=1.f;};
+ const TSharedRef<FHsvMemory> Memory=MakeShared<FHsvMemory>();
+ auto GetHSV=[this,GetColor,Memory]()
+ {
+  auto* C=Controller();const int32 Part=C?C->GetColorEditPart():INDEX_NONE;
+  FLinearColor HSV=GetColor().LinearRGBToHSV();
+  if(Memory->Part!=Part){Memory->Part=Part;Memory->Hue=HSV.R;Memory->Saturation=HSV.G;Memory->Value=HSV.B>KINDA_SMALL_NUMBER?HSV.B:1.f;}
+  if(HSV.B<=KINDA_SMALL_NUMBER){HSV.R=Memory->Hue;HSV.G=Memory->Saturation;}
+  else if(HSV.G<=KINDA_SMALL_NUMBER){HSV.R=Memory->Hue;}
+  else{Memory->Hue=HSV.R;Memory->Saturation=HSV.G;}
+  if(HSV.B>KINDA_SMALL_NUMBER)Memory->Value=HSV.B;
+  return HSV;
+ };
+ auto ApplyHSV=[this,Memory](FLinearColor HSV)
+ {
+  ColorInputError.Reset();
+  Memory->Hue=HSV.R;Memory->Saturation=HSV.G;if(HSV.B>KINDA_SMALL_NUMBER)Memory->Value=HSV.B;
+  if(auto* C=Controller())C->SetEditingColor(HSV.HSVToLinearRGB());
+ };
  auto Panel=SNew(SVerticalBox);
  Panel->AddSlot().AutoHeight().Padding(0,0,0,14)
  [SNew(SHorizontalBox)
@@ -50,12 +72,14 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableColorPopup()
   +SHorizontalBox::Slot().AutoWidth()[Action(TEXT("닫기"),[this](){if(auto* C=Controller())C->EndColorEdit(false);})]];
  Panel->AddSlot().AutoHeight().HAlign(HAlign_Center)
  [SNew(SBox).WidthOverride(210).HeightOverride(210)
-  [SNew(SColorWheel).SelectedColor_Lambda([GetColor](){return GetColor().LinearRGBToHSV();})
-   .OnValueChanged_Lambda([this](FLinearColor HSV){ColorInputError.Reset();if(auto* C=Controller())C->SetEditingColor(HSV.HSVToLinearRGB());})]];
+  [SNew(SColorWheel).SelectedColor_Lambda([GetHSV](){return GetHSV();})
+   // Picking a hue on a black colour means "use this colour": restore the last
+   // non-zero brightness instead of producing black again.
+   .OnValueChanged_Lambda([ApplyHSV,Memory](FLinearColor HSV){if(HSV.B<=KINDA_SMALL_NUMBER)HSV.B=Memory->Value;ApplyHSV(HSV);})]];
  Panel->AddSlot().AutoHeight().Padding(0,12,0,4)[Label(TEXT("색상 밝기"))];
  Panel->AddSlot().AutoHeight()
  [SNew(SSlider).SliderHandleColor(Accent).Value_Lambda([GetColor](){return GetColor().LinearRGBToHSV().B;})
-  .OnValueChanged_Lambda([this,GetColor](float V){ColorInputError.Reset();auto HSV=GetColor().LinearRGBToHSV();HSV.B=V;if(auto* C=Controller())C->SetEditingColor(HSV.HSVToLinearRGB());})];
+  .OnValueChanged_Lambda([GetHSV,ApplyHSV](float V){auto HSV=GetHSV();HSV.B=V;ApplyHSV(HSV);})];
  Panel->AddSlot().AutoHeight().Padding(0,12)
  [SNew(SHorizontalBox)
   +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,5,0)
