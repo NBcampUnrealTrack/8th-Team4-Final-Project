@@ -99,6 +99,18 @@ void ADominationSpawnBarrier::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	GetWorldTimerManager().ClearTimer(GameStateRetryTimer);
 
+	// Ignoring Actor 초기화
+	for (const TWeakObjectPtr<AActor>& IgnoringActor : IgnoringActors)
+	{
+		AActor* Actor = IgnoringActor.Get();
+		UPrimitiveComponent* MovementComponent = IsValid(Actor) ? Cast<UPrimitiveComponent>(Actor->GetRootComponent()) : nullptr;
+		if (MovementComponent)
+		{
+			MovementComponent->IgnoreActorWhenMoving(this, false);
+		}
+	}
+	IgnoringActors.Reset();
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GameStateSetEvent.RemoveAll(this);
