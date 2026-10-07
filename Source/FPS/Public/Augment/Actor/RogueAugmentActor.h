@@ -90,6 +90,11 @@ protected:
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
 	bool bDestroyOnDetonate = true;
 
+	// 0 보다 크면 기폭 후 이 시간 뒤 소멸
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (EditCondition = "DetonateInterval <= 0 && bDestroyOnDetonate", EditConditionHides, ClampMin = "0.0"))
+	float DetonateDestroyDelaySeconds = 0.f;
+
 	// 터진 위치에 남길 액터
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))

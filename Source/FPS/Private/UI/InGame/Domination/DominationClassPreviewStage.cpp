@@ -15,6 +15,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Settings/DominationClassSettings.h"
+#include "GroomAsset.h"
+#include "GroomComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
 #include "TimerManager.h"
@@ -71,6 +73,29 @@ namespace
 		for (USkinnedMeshComponent* Mesh : Meshes)
 		{
 			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		}
+	}
+
+	// 프리뷰 캡처는 TAA를 거치지 않아 스트랜드가 점박이로 깨진다. 카드가 있는 Groom만 카드로 그린다
+	void UsePreviewGroomCards(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+
+		TArray<UGroomComponent*> Grooms;
+		Actor->GetComponents<UGroomComponent>(Grooms);
+
+		for (UGroomComponent* Groom : Grooms)
+		{
+			const UGroomAsset* GroomAsset = Groom->GroomAsset;
+			const bool bHasCards = IsValid(GroomAsset) && GroomAsset->GetHairGroupsCards().ContainsByPredicate(
+				[](const FHairGroupsCardsSourceDescription& Cards) { return Cards.LODIndex == 0; });
+			if (Groom->bUseCards != bHasCards)
+			{
+				Groom->SetUseCards(bHasCards);
+			}
 		}
 	}
 
@@ -514,6 +539,7 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 		SceneCapture->ShowOnlyActorComponents(PreviewPawn);
 		ApplyPreviewLightingChannels(PreviewPawn);
 		ForcePreviewAnimRefresh(PreviewPawn);
+		UsePreviewGroomCards(PreviewPawn);
 
 		TArray<AWeaponBase*> Weapons;
 		CollectPawnWeapons(PreviewPawn, Weapons);

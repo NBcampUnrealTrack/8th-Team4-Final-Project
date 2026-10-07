@@ -148,9 +148,10 @@ void ADominationSpawnBarrier::RefreshFromCurrentGameState()
 	// ActivateInitialPoint()는 매치 시작 후 PointTransitionDuration(기본 30초) 동안 의도적으로
 	// 아무 거점도 활성화하지 않는다 - 그동안 None은 리플리케이션 지연이 아니라 정상 상태다.
 	// 이 구간에 C로 잘못 추측하면 아직 열리지도 않은 거점을 기준으로 장벽이 너무 일찍 켜진다.
+	bool bBarrierStateResolved = false;
 	if (ActivePointId != EDominationPointId::None)
 	{
-		RefreshBarrierState(ActivePointId);
+		bBarrierStateResolved = RefreshBarrierState(ActivePointId);
 	}
 	else
 	{
@@ -166,7 +167,9 @@ void ADominationSpawnBarrier::RefreshFromCurrentGameState()
 		}
 	}
 
-	if (ActivePointId != EDominationPointId::None && SpawnVolumeCount == DominationRules::SpawnBoundaryCount)
+	if (ActivePointId != EDominationPointId::None
+		&& SpawnVolumeCount == DominationRules::SpawnBoundaryCount
+		&& bBarrierStateResolved)
 	{
 		GetWorldTimerManager().ClearTimer(GameStateRetryTimer);
 		return;
@@ -180,15 +183,7 @@ void ADominationSpawnBarrier::RefreshFromCurrentGameState()
 
 void ADominationSpawnBarrier::HandleActivePointChanged(const EDominationPointId ActivePointId)
 {
-	GetWorldTimerManager().ClearTimer(GameStateRetryTimer);
-
-	if (ActivePointId == EDominationPointId::None)
-	{
-		SetBarrierActive(EGameTeam::None);
-		return;
-	}
-
-	RefreshBarrierState(ActivePointId);
+	RefreshFromCurrentGameState();
 }
 
 void ADominationSpawnBarrier::HandleDetectionBeginOverlap(
@@ -229,12 +224,16 @@ EGameTeam ADominationSpawnBarrier::ResolveActorTeam(const AActor* Actor)
 	return IsValid(PlayerState) ? PlayerState->GetTeam() : EGameTeam::None;
 }
 
-void ADominationSpawnBarrier::RefreshBarrierState(const EDominationPointId ActivePointId)
+bool ADominationSpawnBarrier::RefreshBarrierState(const EDominationPointId ActivePointId)
 {
 	ADominationSpawnVolume* TeamASpawnVolume = nullptr;
 	ADominationSpawnVolume* TeamBSpawnVolume = nullptr;
-	FindTeamSpawnVolume(ActivePointId, EGameTeam::TeamA, TeamASpawnVolume);
-	FindTeamSpawnVolume(ActivePointId, EGameTeam::TeamB, TeamBSpawnVolume);
+	const bool bFoundTeamA = FindTeamSpawnVolume(ActivePointId, EGameTeam::TeamA, TeamASpawnVolume);
+	const bool bFoundTeamB = FindTeamSpawnVolume(ActivePointId, EGameTeam::TeamB, TeamBSpawnVolume);
+	if (!bFoundTeamA || !bFoundTeamB || !IsValid(BoundSpawnVolume))
+	{
+		return false;
+	}
 
 	EGameTeam NewGuardedTeam = EGameTeam::None;
 	if (IsValid(BoundSpawnVolume) && BoundSpawnVolume == TeamASpawnVolume)
@@ -247,6 +246,7 @@ void ADominationSpawnBarrier::RefreshBarrierState(const EDominationPointId Activ
 	}
 
 	SetBarrierActive(NewGuardedTeam);
+	return true;
 }
 
 void ADominationSpawnBarrier::SetBarrierActive(const EGameTeam NewGuardedTeam)

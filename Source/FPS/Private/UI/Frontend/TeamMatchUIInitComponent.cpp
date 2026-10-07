@@ -15,6 +15,7 @@
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/InGame/Scoreboard/ShooterScoreboard.h"
+#include "UI/InGame/Weapons/ShooterScopeWidget.h"
 #include "UI/Settings/ShooterOptionsScreen.h"
 #include "UI/ShooterUISettings.h"
 
@@ -33,6 +34,7 @@ void UTeamMatchUIInitComponent::InitializeTeamMatchUI(
 {
 	BoundPlayerController = PlayerController;
 	BoundInventory = Inventory;
+	CreateScopeWidget(PlayerController);
 
 	Inventory->OnOffersChanged.AddUniqueDynamic(
 		this,
@@ -60,6 +62,7 @@ void UTeamMatchUIInitComponent::ShutdownTeamMatchUI()
 	bInGameMenuRequested = false;
 	bLastObservedVoteActive = false;
 	bModalRefreshPending = false;
+	RemoveScopeWidget();
 	RemoveOptionsScreen();
 	RemoveInGameMenu();
 	RemoveSurrenderVote();
@@ -138,12 +141,50 @@ void UTeamMatchUIInitComponent::SuspendScreenPresentation()
 	bScreenPresentationSuspended = true;
 	bInGameMenuRequested = false;
 
+	RemoveScopeWidget();
 	// 채팅은 PC 가 따로 든 상태가 있어 건드리지 않음
 	RemoveOptionsScreen();
 	RemoveInGameMenu();
 	RemoveSurrenderVote();
 	HideAugmentSelect();
 	HideScoreboard();
+}
+
+void UTeamMatchUIInitComponent::CreateScopeWidget(AShooterPlayerController* PlayerController)
+{
+	if (bScreenPresentationSuspended || !IsValid(PlayerController) || !PlayerController->IsLocalController())
+	{
+		return;
+	}
+	if (!ScopeWidgetClass)
+	{
+		UE_LOG(LogTeamMatchUIInit, Warning,
+			TEXT("ScopeWidgetClass is unset on %s. Assign a scope Blueprint based on ShooterScopeWidget."),
+			*GetNameSafe(this));
+		return;
+	}
+	if (!IsValid(ScopeWidgetInstance))
+	{
+		ScopeWidgetInstance = CreateWidget<UShooterScopeWidget>(PlayerController, ScopeWidgetClass);
+		if (!IsValid(ScopeWidgetInstance))
+		{
+			UE_LOG(LogTeamMatchUIInit, Error, TEXT("Could not create scope widget: %s."), *GetNameSafe(ScopeWidgetClass));
+			return;
+		}
+	}
+	if (!ScopeWidgetInstance->IsInViewport())
+	{
+		ScopeWidgetInstance->AddToViewport(ScopeViewportZOrder);
+	}
+}
+
+void UTeamMatchUIInitComponent::RemoveScopeWidget()
+{
+	if (IsValid(ScopeWidgetInstance))
+	{
+		ScopeWidgetInstance->RemoveFromParent();
+		ScopeWidgetInstance = nullptr;
+	}
 }
 
 bool UTeamMatchUIInitComponent::IsInGameMenuOpen() const

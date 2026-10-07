@@ -309,7 +309,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bVanguardAnimationClass = AnimationClass == EDominationCombatClass::Vanguard;
 	bRangerAnimationClass = AnimationClass == EDominationCombatClass::Ranger;
 	bTrooperAnimationClass = AnimationClass == EDominationCombatClass::Trooper;
-	bAiming = IsValid(Combat) && Combat->bAiming;
+	bAiming = IsValid(Combat) && Combat->IsAiming();
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
 	bIsCycling = IsValid(Combat) && Combat->IsCycling();

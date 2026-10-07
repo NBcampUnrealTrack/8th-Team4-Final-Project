@@ -103,6 +103,8 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> PickupTrigger;
 
+protected:
+	// 네이티브 픽업 자식은 GE와 지급량의 기본값만 지정한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Effect",
 		meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<UGameplayEffect> PickupGameplayEffect;
@@ -111,6 +113,7 @@ private:
 		meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float PickupMagnitude = 50.0f;
 
+private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Pickup|Respawn",
 		meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
 	float RespawnDelay = 20.0f;

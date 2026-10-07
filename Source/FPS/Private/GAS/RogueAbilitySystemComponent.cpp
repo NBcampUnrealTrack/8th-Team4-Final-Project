@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "Abilities/GA_ADS.h"
 
 #include "GAS/RogueAbilitySet.h"
 #include "Tags/GameplayTags.h"
@@ -161,6 +162,48 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 		// WaitInputRelease 태스크는 이 복제 이벤트를 기다림
 		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
 			Spec.Handle, GetInstanceActivationPredictionKey(Spec));
+	}
+}
+
+void URogueAbilitySystemComponent::CancelADSAbilityForWeapon(const AWeaponBase* Weapon)
+{
+	TArray<FGameplayAbilitySpecHandle> Handles;
+	{
+		ABILITYLIST_SCOPE_LOCK();
+		for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+		{
+			if (!Spec.Ability || !Spec.Ability->IsA<UGA_ADS>())
+			{
+				continue;
+			}
+			bool bMatchesWeapon = !Spec.IsActive();
+			for (UGameplayAbility* Instance : Spec.GetAbilityInstances())
+			{
+				const UGA_ADS* ADS = Cast<UGA_ADS>(Instance);
+				bMatchesWeapon |= ADS && ADS->IsAimingWithWeapon(Weapon);
+			}
+			if (bMatchesWeapon)
+			{
+				Spec.InputPressed = false;
+				if (Spec.IsActive())
+				{
+					Handles.Add(Spec.Handle);
+				}
+			}
+		}
+	}
+	for (const FGameplayAbilitySpecHandle& Handle : Handles)
+	{
+		CancelAbilityHandle(Handle);
+	}
+}
+
+void URogueAbilitySystemComponent::ClearAbilityInput()
+{
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		Spec.InputPressed = false;
 	}
 }
 

@@ -25,6 +25,12 @@ void UShooterMinimapSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 
+	for (TActorIterator<AShooterMinimapBounds> It(&InWorld); It; ++It)
+	{
+		RegisterMapBounds(*It);
+		break;
+	}
+
 	// 시야 판정은 서버만 한다. 클라는 복제된 결과만 본다.
 	if (InWorld.GetNetMode() == NM_Client)
 	{
