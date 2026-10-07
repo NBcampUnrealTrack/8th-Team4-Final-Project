@@ -2,6 +2,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
@@ -164,6 +165,13 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 float UShooterAnimInstance::GetIdlePostureSourceWeight() const
 {
 	return 1.f - FMath::Clamp(GetSlotMontageGlobalWeight(TEXT("DefaultSlot")), 0.f, 1.f);
+}
+
+float UShooterAnimInstance::GetPreviewAwareFinalGripAlpha(float GameplayAlpha) const
+{
+	const AActor* Owner = GetOwningActor();
+	return !bFirstPersonAnimation && Owner && Owner->ActorHasTag(CharacterPresentationTags::ClassSelectionPreview)
+		? 1.f : GameplayAlpha;
 }
 
 float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const

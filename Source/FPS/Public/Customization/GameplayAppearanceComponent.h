@@ -41,6 +41,7 @@ private:
     void FinishRequest(uint32 Serial);
     void EnsureVisualComponents();
     void RefreshLODSynchronization();
+    void RefreshRenderVisibility();
     FName ResolveClassId() const;
     UPROPERTY(Transient) TObjectPtr<UGameplayAppearanceConfig> Config;
     UPROPERTY(Transient) TObjectPtr<UCustomizationStudioConfig> Studio;
@@ -65,5 +66,8 @@ private:
     bool bBusy = false;
     bool bQueued = false;
     bool bEndingPlay = false;
+    // A collection (killcam) can hide a component without changing its visible flag.
+    // Recreate only on its next visible edge, never continuously while hidden.
+    uint8 PendingRenderRecovery = 0;
     FString Failure;
 };

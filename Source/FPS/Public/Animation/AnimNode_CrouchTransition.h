@@ -35,10 +35,10 @@ private:
  TArray<FCompactPoseBoneIndex> LowerBones;
  TArray<FName> LowerNames;
  TArray<bool> CachedBoneValid;
- TArray<FTransform> LastPose,StartPose;
+ TArray<FTransform> LastPose,StartPose,StartSamplePose;
  UPROPERTY(Transient) TObjectPtr<UAnimSequence> EnterClip;
  UPROPERTY(Transient) TObjectPtr<UAnimSequence> ExitClip;
  UPROPERTY(Transient) TObjectPtr<UAnimSequence> ActiveClip;
- bool bEligible=false,bCrouched=false,bPreviousCrouched=false,bInitializedState=false,bCaptureStart=false;
+ bool bEligible=false,bCrouched=false,bPreviousCrouched=false,bInitializedState=false,bCaptureStart=false,bMatchReversalPose=false;
  float Speed=0,Elapsed=0,StartTime=0,Duration=0,MovementWeight=1;
 };

@@ -1,8 +1,32 @@
 #include "Customization/AppearanceVisualSafety.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "GroomComponent.h"
+#include "Materials/Material.h"
 #include "Rendering/SkeletalMeshRenderData.h"
+
+void AppearanceVisualSafety::UpdateSunglassesDrawOrder(const USkeletalMeshComponent& Face, USkeletalMeshComponent& Outfit)
+{
+	bool bHasSunglassesLens = false;
+	for (int32 Slot = 0; Slot < Outfit.GetNumMaterials(); ++Slot)
+	{
+		const auto* Material = Outfit.GetMaterial(Slot);
+		const auto* Base = Material ? Material->GetMaterial() : nullptr;
+		if (!Base) continue;
+		const FString Path = Base->GetPathName();
+		if (Path == TEXT("/Game/FPS/Customizable/Character/Accessories/M_Ranger_SunglassesLens.M_Ranger_SunglassesLens") ||
+			Path == TEXT("/Game/FPS/Customizable/Character/Accessories/M_Vanguard_SunglassesLens.M_Vanguard_SunglassesLens"))
+		{
+			bHasSunglassesLens = true;
+			break;
+		}
+	}
+	// EyeShell and the merged outfit otherwise share priority zero. Drawing the
+	// lens after the face prevents eye occlusion translucency appearing over it.
+	// Use the smallest offset and reset it on regeneration without sunglasses.
+	Outfit.SetTranslucentSortPriority(Face.TranslucencySortPriority + (bHasSunglassesLens ? 1 : 0));
+}
 
 bool AppearanceVisualSafety::HasRenderableGeometry(const USkeletalMesh* Mesh)
 {

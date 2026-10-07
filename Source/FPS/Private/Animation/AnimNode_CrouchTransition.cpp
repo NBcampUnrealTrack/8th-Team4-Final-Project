@@ -1,4 +1,5 @@
 #include "Animation/AnimNode_CrouchTransition.h"
+#include "CrouchReversalSampling.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
 #include "Animation/AnimSequence.h"
@@ -16,7 +17,7 @@ FAnimNode_CrouchTransition::FAnimNode_CrouchTransition()
 void FAnimNode_CrouchTransition::Initialize_AnyThread(const FAnimationInitializeContext& Context)
 {
  FAnimNode_SkeletalControlBase::Initialize_AnyThread(Context);
- bInitializedState=false;bCaptureStart=false;ActiveClip=nullptr;LastPose.Reset();StartPose.Reset();CachedBoneValid.Reset();Elapsed=Duration=0;MovementWeight=1;
+ bInitializedState=false;bCaptureStart=false;bMatchReversalPose=false;ActiveClip=nullptr;LastPose.Reset();StartPose.Reset();StartSamplePose.Reset();CachedBoneValid.Reset();Elapsed=Duration=0;MovementWeight=1;
 }
 void FAnimNode_CrouchTransition::PreUpdate(const UAnimInstance* Instance)
 {
@@ -42,13 +43,15 @@ void FAnimNode_CrouchTransition::UpdateInternal(const FAnimationUpdateContext& C
  if(!bInitializedState||!bEligible)
  {
   // Spawn/reinitialize already crouched: show that pose without a fake entry.
-  bInitializedState=true;bPreviousCrouched=bCrouched;ActiveClip=nullptr;Duration=0;bCaptureStart=false;return;
+  bInitializedState=true;bPreviousCrouched=bCrouched;ActiveClip=nullptr;Duration=0;bCaptureStart=false;bMatchReversalPose=false;return;
  }
  if(bCrouched!=bPreviousCrouched)
  {
-  const float ReversePhase=ActiveClip&&Duration>0?1.f-FMath::Clamp((StartTime+Elapsed)/ActiveClip->GetPlayLength(),0.f,1.f):0.f;
+  // The opposite clip is not a time inverse. Resolve its starting sample from
+  // the last visible pose during evaluation, where compact bone data is valid.
+  bMatchReversalPose=ActiveClip&&Duration>0;
   ActiveClip=bCrouched?EnterClip:ExitClip;
-  StartTime=ReversePhase*ActiveClip->GetPlayLength();
+  StartTime=0.f;
   Duration=FMath::Max(.12f,ActiveClip->GetPlayLength()-StartTime);
   Elapsed=0;bCaptureStart=true;bPreviousCrouched=bCrouched;
  }
@@ -62,13 +65,14 @@ void FAnimNode_CrouchTransition::InitializeBoneReferences(const FBoneContainer& 
 {
  // Compact-pose indices change with LOD. Preserve animation history by bone
  // name so a mid-transition LOD change cannot drop straight into its endpoint.
- TMap<FName,FTransform> OldLast,OldStart;
+ TMap<FName,FTransform> OldLast,OldStart,OldSample;
  for(int32 I=0;I<LowerNames.Num();++I)
  {
   if(LastPose.IsValidIndex(I))OldLast.Add(LowerNames[I],LastPose[I]);
   if(StartPose.IsValidIndex(I))OldStart.Add(LowerNames[I],StartPose[I]);
+  if(StartSamplePose.IsValidIndex(I))OldSample.Add(LowerNames[I],StartSamplePose[I]);
  }
- Pelvis.Initialize(Bones);Spine.Initialize(Bones);LowerBones.Reset();LowerNames.Reset();CachedBoneValid.Reset();LastPose.Reset();StartPose.Reset();
+ Pelvis.Initialize(Bones);Spine.Initialize(Bones);LowerBones.Reset();LowerNames.Reset();CachedBoneValid.Reset();LastPose.Reset();StartPose.Reset();StartSamplePose.Reset();
  const auto& Ref=Bones.GetReferenceSkeleton();
  for(int32 I=0;I<Bones.GetCompactPoseNumBones();++I)
  {
@@ -81,8 +85,8 @@ void FAnimNode_CrouchTransition::InitializeBoneReferences(const FBoneContainer& 
   {
    const FName Name=Ref.GetBoneName(Bones.MakeMeshPoseIndex(Compact).GetInt());
    LowerBones.Add(Compact);LowerNames.Add(Name);
-   const auto* Last=OldLast.Find(Name);const auto* Start=OldStart.Find(Name);
-   CachedBoneValid.Add(Last&&Start);LastPose.Add(Last?*Last:FTransform::Identity);StartPose.Add(Start?*Start:FTransform::Identity);
+   const auto* Last=OldLast.Find(Name);const auto* Start=OldStart.Find(Name);const auto* Sample=OldSample.Find(Name);
+   CachedBoneValid.Add(Last&&Start&&Sample);LastPose.Add(Last?*Last:FTransform::Identity);StartPose.Add(Start?*Start:FTransform::Identity);StartSamplePose.Add(Sample?*Sample:FTransform::Identity);
   }
  }
 }
@@ -94,14 +98,16 @@ void FAnimNode_CrouchTransition::EvaluateSkeletalControl_AnyThread(FComponentSpa
 {
  const auto& Bones=Output.Pose.GetPose().GetBoneContainer();
  const auto Hip=Pelvis.GetCompactPoseIndex(Bones),Chest=Spine.GetCompactPoseIndex(Bones);
- if(LastPose.Num()!=LowerBones.Num()||CachedBoneValid.Num()!=LowerBones.Num())
+ if(LastPose.Num()!=LowerBones.Num()||StartSamplePose.Num()!=LowerBones.Num()||CachedBoneValid.Num()!=LowerBones.Num())
  {
-  LastPose.SetNum(LowerBones.Num());StartPose.SetNum(LowerBones.Num());CachedBoneValid.Init(false,LowerBones.Num());
+  LastPose.SetNum(LowerBones.Num());StartPose.SetNum(LowerBones.Num());StartSamplePose.SetNum(LowerBones.Num());CachedBoneValid.Init(false,LowerBones.Num());
  }
+ TArray<int32,TInlineAllocator<16>> MissingSampleBones;
  for(int32 I=0;I<LowerBones.Num();++I)if(!CachedBoneValid[I])
  {
-  const auto Bone=LowerBones[I];LastPose[I]=StartPose[I]=Bone==Hip?Output.Pose.GetComponentSpaceTransform(Bone):Output.Pose.GetLocalSpaceTransform(Bone);CachedBoneValid[I]=true;
+  const auto Bone=LowerBones[I];LastPose[I]=StartPose[I]=StartSamplePose[I]=Bone==Hip?Output.Pose.GetComponentSpaceTransform(Bone):Output.Pose.GetLocalSpaceTransform(Bone);CachedBoneValid[I]=true;MissingSampleBones.Add(I);
  }
+ const bool bStartingTransition=bCaptureStart;
  if(bCaptureStart){StartPose=LastPose;bCaptureStart=false;}
  if(!bEligible||!ActiveClip||Duration<=0||StartPose.Num()!=LowerBones.Num())
  {
@@ -110,17 +116,64 @@ void FAnimNode_CrouchTransition::EvaluateSkeletalControl_AnyThread(FComponentSpa
  }
  FPoseContext Sample(Output.AnimInstanceProxy);
  FAnimationPoseData SampleData(Sample);
+ if(bMatchReversalPose)
+ {
+  const float ClipLength=ActiveClip->GetPlayLength();
+  StartTime=FPSCrouchReversal::FindPoseTime(ClipLength,[&](float Time)
+  {
+   ActiveClip->GetAnimationPose(SampleData,FAnimExtractContext(double(FMath::Clamp(Time,0.f,ClipLength)),false));
+   FCSPose<FCompactPose> CandidateCS;CandidateCS.InitPose(Sample.Pose);
+   double Error=0.0;
+   int32 RotationCount=0;
+   double RotationError=0.0;
+   for(int32 I=0;I<LowerBones.Num();++I)
+   {
+    const auto Bone=LowerBones[I];
+    if(Bone==Hip)
+    {
+     // Component-space pelvis translation captures actual crouch depth.
+     Error+=FVector::DistSquared(StartPose[I].GetTranslation(),CandidateCS.GetComponentSpaceTransform(Hip).GetTranslation());
+    }
+    else
+    {
+     // Local leg rotations disambiguate poses at similar pelvis heights. Do
+     // not score bone translations: the output preserves live limb lengths.
+     const double Angle=StartPose[I].GetRotation().AngularDistance(Sample.Pose[Bone].GetRotation());
+     RotationError+=Angle*Angle;
+     ++RotationCount;
+    }
+   }
+   // Normalize by bone count so LOD changes do not multiply leg influence.
+   return Error+(RotationCount>0?100.0*RotationError/RotationCount:0.0);
+  });
+  Duration=FMath::Max(.12f,ClipLength-StartTime);
+  Elapsed=0.f;bMatchReversalPose=false;
+ }
+ if(bStartingTransition||!MissingSampleBones.IsEmpty())
+ {
+  ActiveClip->GetAnimationPose(SampleData,FAnimExtractContext(double(StartTime),false));
+  FCSPose<FCompactPose> InitialCS;InitialCS.InitPose(Sample.Pose);
+  for(int32 I=0;I<LowerBones.Num();++I)if(bStartingTransition||MissingSampleBones.Contains(I))
+  {
+   const auto Bone=LowerBones[I];
+   StartSamplePose[I]=Bone==Hip?InitialCS.GetComponentSpaceTransform(Bone):Sample.Pose[Bone];
+  }
+ }
  ActiveClip->GetAnimationPose(SampleData,FAnimExtractContext(double(FMath::Min(StartTime+Elapsed,ActiveClip->GetPlayLength())),false));
  FCSPose<FCompactPose> SampleCS;SampleCS.InitPose(Sample.Pose);
- const float In=FMath::SmoothStep(0.f,FMath::Min(.16f,Duration),Elapsed);
- const float Tail=1.f-FMath::SmoothStep(FMath::Max(0.f,Duration-.22f),Duration,Elapsed);
+ const float In=FPSCrouchReversal::BlendIn(Elapsed,Duration);
+ const float Tail=FPSCrouchReversal::BlendOut(Elapsed,Duration);
  const FTransform OriginalHip=Output.Pose.GetComponentSpaceTransform(Hip);
  FTransform NewHip=OriginalHip;
  TMap<int32,FTransform> Corrected;
  for(int32 I=0;I<LowerBones.Num();++I)
  {
   const auto Bone=LowerBones[I];const FTransform Current=Bone==Hip?OriginalHip:Output.Pose.GetLocalSpaceTransform(Bone);
-  FTransform Animated;Animated.Blend(StartPose[I],Bone==Hip?SampleCS.GetComponentSpaceTransform(Bone):Sample.Pose[Bone],In);
+  FTransform Animated=Bone==Hip?SampleCS.GetComponentSpaceTransform(Bone):Sample.Pose[Bone];
+  Animated.SetTranslation(FPSCrouchReversal::BlendCapturedSample(StartPose[I].GetTranslation(),StartSamplePose[I].GetTranslation(),Animated.GetTranslation(),In));
+  const FQuat RotationOffset=StartPose[I].GetRotation()*StartSamplePose[I].GetRotation().Inverse();
+  Animated.SetRotation(FQuat::Slerp(RotationOffset,FQuat::Identity,In)*Animated.GetRotation());
+  Animated.SetScale3D(FPSCrouchReversal::BlendCapturedSample(StartPose[I].GetScale3D(),StartSamplePose[I].GetScale3D(),Animated.GetScale3D(),In));
   // The first frame is the last visible pose, including rapid reversal. Moving
   // players then blend into the live walk pose; no movement input is blocked.
   const float Weight=FMath::Lerp(1.f,MovementWeight,In)*Tail;
