@@ -1,11 +1,7 @@
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "CommonButtonBase.h"
-#include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
 #include "Components/PanelSlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
@@ -14,36 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "TimerManager.h"
-
-namespace SurrenderVoteUI
-{
-	static const FLinearColor RowBackgroundA(0.008f, 0.026f, 0.030f, 0.98f);
-	static const FLinearColor RowBackgroundB(0.012f, 0.038f, 0.043f, 0.98f);
-	static const FLinearColor PrimaryText(0.96f, 0.98f, 0.99f, 1.00f);
-	static const FLinearColor PendingText(1.00f, 0.78f, 0.28f, 1.00f);
-	static const FLinearColor PendingBadge(0.18f, 0.125f, 0.025f, 0.96f);
-	static const FLinearColor ApproveText(0.12f, 1.00f, 0.74f, 1.00f);
-	static const FLinearColor ApproveBadge(0.020f, 0.260f, 0.190f, 0.98f);
-	static const FLinearColor RejectText(1.00f, 0.38f, 0.38f, 1.00f);
-	static const FLinearColor RejectBadge(0.285f, 0.035f, 0.045f, 0.98f);
-
-	static void ConfigureText(UTextBlock* Text, const int32 FontSize, const FLinearColor& Color, const bool bBold)
-	{
-		if (!IsValid(Text))
-		{
-			return;
-		}
-
-		Text->SetColorAndOpacity(FSlateColor(Color));
-		FSlateFontInfo Font = Text->GetFont();
-		Font.Size = FontSize;
-		if (bBold)
-		{
-			Font.TypefaceFontName = TEXT("Bold");
-		}
-		Text->SetFont(Font);
-	}
-}
+#include "UI/InGame/Menu/ShooterSurrenderVoterRow.h"
 
 UShooterSurrenderVoteScreen::UShooterSurrenderVoteScreen()
 {
@@ -143,122 +110,39 @@ void UShooterSurrenderVoteScreen::RebuildVoterRows()
 {
 	Panel_Voters->ClearChildren();
 	VoterNames.Reset();
-	VoterNameTexts.Reset();
-	VoterStatusTexts.Reset();
-	VoterStatusBadges.Reset();
+	VoterRows.Reset();
 
-	if (!WidgetTree)
+	if (!ensure(VoterRowClass))
 	{
 		return;
 	}
 
 	VoterNames.Reserve(VoteState.Voters.Num());
-	VoterNameTexts.Reserve(VoteState.Voters.Num());
-	VoterStatusTexts.Reserve(VoteState.Voters.Num());
-	VoterStatusBadges.Reserve(VoteState.Voters.Num());
+	VoterRows.Reserve(VoteState.Voters.Num());
 
-	for (int32 Index = 0; Index < VoteState.Voters.Num(); ++Index)
+	for (const FSurrenderVoterState& VoterState : VoteState.Voters)
 	{
-		const FSurrenderVoterState& VoterState = VoteState.Voters[Index];
-
-		UBorder* RowBorder = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(),
-			*FString::Printf(TEXT("VoteRow_%d"), Index));
-		RowBorder->SetBrushColor(
-			Index % 2 == 0
-				? SurrenderVoteUI::RowBackgroundA
-				: SurrenderVoteUI::RowBackgroundB);
-		RowBorder->SetPadding(FMargin(14.0f, 10.0f));
-
-		UPanelSlot* RowPanelSlot = Panel_Voters->AddChild(RowBorder);
-		if (UVerticalBoxSlot* VerticalSlot = Cast<UVerticalBoxSlot>(RowPanelSlot))
+		// 생성에 실패해도 Voters 와 인덱스를 맞추려고 null 도 넣는다
+		UShooterSurrenderVoterRow* Row = CreateWidget<UShooterSurrenderVoterRow>(this, VoterRowClass);
+		if (UVerticalBoxSlot* VerticalSlot = Cast<UVerticalBoxSlot>(Panel_Voters->AddChild(Row)))
 		{
 			VerticalSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
-			VerticalSlot->SetHorizontalAlignment(HAlign_Fill);
-			VerticalSlot->SetVerticalAlignment(VAlign_Center);
 		}
-
-		UHorizontalBox* RowContent = WidgetTree->ConstructWidget<UHorizontalBox>(
-			UHorizontalBox::StaticClass(),
-			*FString::Printf(TEXT("VoteRowContent_%d"), Index));
-		RowBorder->SetContent(RowContent);
-
-		UTextBlock* PlayerNameText = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			*FString::Printf(TEXT("VotePlayerName_%d"), Index));
-		PlayerNameText->SetText(FText::FromString(VoterState.PlayerName));
-		SurrenderVoteUI::ConfigureText(PlayerNameText, 14, SurrenderVoteUI::PrimaryText, true);
-		if (UHorizontalBoxSlot* NameSlot = Cast<UHorizontalBoxSlot>(RowContent->AddChild(PlayerNameText)))
-		{
-			FSlateChildSize Fill;
-			Fill.SizeRule = ESlateSizeRule::Fill;
-			Fill.Value = 1.0f;
-			NameSlot->SetSize(Fill);
-			NameSlot->SetVerticalAlignment(VAlign_Center);
-			NameSlot->SetPadding(FMargin(0.0f, 0.0f, 12.0f, 0.0f));
-		}
-
-		UBorder* StatusBadge = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(),
-			*FString::Printf(TEXT("VoteStatusBadge_%d"), Index));
-		StatusBadge->SetBrushColor(SurrenderVoteUI::PendingBadge);
-		StatusBadge->SetPadding(FMargin(16.0f, 6.0f));
-		if (UHorizontalBoxSlot* BadgeSlot = Cast<UHorizontalBoxSlot>(RowContent->AddChild(StatusBadge)))
-		{
-			BadgeSlot->SetVerticalAlignment(VAlign_Center);
-		}
-
-		UTextBlock* StatusText = WidgetTree->ConstructWidget<UTextBlock>(
-			UTextBlock::StaticClass(),
-			*FString::Printf(TEXT("VoteStatusText_%d"), Index));
-		StatusText->SetText(NSLOCTEXT("ShooterSurrender", "Pending", "대기"));
-		StatusText->SetJustification(ETextJustify::Center);
-		SurrenderVoteUI::ConfigureText(StatusText, 12, SurrenderVoteUI::PendingText, true);
-		StatusBadge->SetContent(StatusText);
 
 		VoterNames.Add(VoterState.PlayerName);
-		VoterNameTexts.Add(PlayerNameText);
-		VoterStatusTexts.Add(StatusText);
-		VoterStatusBadges.Add(StatusBadge);
+		VoterRows.Add(Row);
 	}
 }
 
 void UShooterSurrenderVoteScreen::RefreshVoterRows()
 {
-	const int32 RowCount = FMath::Min3(
-		VoteState.Voters.Num(),
-		VoterStatusTexts.Num(),
-		VoterStatusBadges.Num());
+	const int32 RowCount = FMath::Min(VoteState.Voters.Num(), VoterRows.Num());
 
 	for (int32 Index = 0; Index < RowCount; ++Index)
 	{
-		const FSurrenderVoterState& VoterState = VoteState.Voters[Index];
-
-		if (VoterNameTexts.IsValidIndex(Index) && IsValid(VoterNameTexts[Index]))
+		if (IsValid(VoterRows[Index]))
 		{
-			VoterNameTexts[Index]->SetText(FText::FromString(VoterState.PlayerName));
-		}
-
-		UTextBlock* StatusText = VoterStatusTexts[Index];
-		UBorder* StatusBadge = VoterStatusBadges[Index];
-
-		switch (VoterState.Choice)
-		{
-		case ESurrenderVoteChoice::Approve:
-			StatusText->SetText(NSLOCTEXT("ShooterSurrender", "Approved", "찬성"));
-			StatusText->SetColorAndOpacity(FSlateColor(SurrenderVoteUI::ApproveText));
-			StatusBadge->SetBrushColor(SurrenderVoteUI::ApproveBadge);
-			break;
-		case ESurrenderVoteChoice::Reject:
-			StatusText->SetText(NSLOCTEXT("ShooterSurrender", "Rejected", "반대"));
-			StatusText->SetColorAndOpacity(FSlateColor(SurrenderVoteUI::RejectText));
-			StatusBadge->SetBrushColor(SurrenderVoteUI::RejectBadge);
-			break;
-		default:
-			StatusText->SetText(NSLOCTEXT("ShooterSurrender", "Pending", "대기"));
-			StatusText->SetColorAndOpacity(FSlateColor(SurrenderVoteUI::PendingText));
-			StatusBadge->SetBrushColor(SurrenderVoteUI::PendingBadge);
-			break;
+			VoterRows[Index]->SetVoterState(VoteState.Voters[Index]);
 		}
 	}
 }

@@ -5,7 +5,6 @@
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterSurrenderVoteScreen.generated.h"
 
-class UBorder;
 class UPanelWidget;
 class UShooterSurrenderVoterRow;
 class UTextBlock;
@@ -63,19 +62,12 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> Btn_Reject;
 
-	// 기존 수동 WBP와의 에셋 호환을 위해 필드는 유지한다.
-	// 현재 투표자 행은 이 화면이 직접 구성하므로 런타임 생성에 사용하지 않는다.
+	// 투표자 행 레이아웃은 이 WBP 에서 잡는다
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Surrender")
 	TSubclassOf<UShooterSurrenderVoterRow> VoterRowClass;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextBlock>> VoterNameTexts;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextBlock>> VoterStatusTexts;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UBorder>> VoterStatusBadges;
+	TArray<TObjectPtr<UShooterSurrenderVoterRow>> VoterRows;
 
 	FSurrenderVoteState VoteState;
 	TArray<FString> VoterNames;
