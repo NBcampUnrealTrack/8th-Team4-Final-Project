@@ -2,6 +2,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
@@ -166,6 +167,13 @@ float UShooterAnimInstance::GetIdlePostureSourceWeight() const
 	return 1.f - FMath::Clamp(GetSlotMontageGlobalWeight(TEXT("DefaultSlot")), 0.f, 1.f);
 }
 
+float UShooterAnimInstance::GetPreviewAwareFinalGripAlpha(float GameplayAlpha) const
+{
+	const AActor* Owner = GetOwningActor();
+	return !bFirstPersonAnimation && Owner && Owner->ActorHasTag(CharacterPresentationTags::ClassSelectionPreview)
+		? 1.f : GameplayAlpha;
+}
+
 float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const
 {
 	const float BaseWeight = GetIdlePostureSourceWeight();
@@ -301,7 +309,7 @@ void UShooterAnimInstance::UpdateWeaponValues()
 	bVanguardAnimationClass = AnimationClass == EDominationCombatClass::Vanguard;
 	bRangerAnimationClass = AnimationClass == EDominationCombatClass::Ranger;
 	bTrooperAnimationClass = AnimationClass == EDominationCombatClass::Trooper;
-	bAiming = IsValid(Combat) && Combat->bAiming;
+	bAiming = IsValid(Combat) && Combat->IsAiming();
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
 	bIsCycling = IsValid(Combat) && Combat->IsCycling();

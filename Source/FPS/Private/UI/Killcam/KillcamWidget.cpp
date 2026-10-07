@@ -11,6 +11,7 @@
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Player/ShooterPlayerState.h"
+#include "UI/InGame/Weapons/ShooterScopeWidget.h"
 #include "Weapon/WeaponBase.h"
 
 void UKillcamWidget::NativeConstruct()
@@ -61,7 +62,8 @@ void UKillcamWidget::NativeDestruct()
 void UKillcamWidget::HideViewportWidget(UWidget* Widget, ULocalPlayer* Player)
 {
 	if (!IsValid(Widget) || Widget == this || Widget->GetWorld() != GetWorld()
-		|| (Player && Player != GetOwningLocalPlayer()) || HiddenWidgets.Contains(Widget))
+		|| (Player && Player != GetOwningLocalPlayer()) || HiddenWidgets.Contains(Widget)
+		|| Widget->IsA<UShooterScopeWidget>())
 	{
 		return;
 	}

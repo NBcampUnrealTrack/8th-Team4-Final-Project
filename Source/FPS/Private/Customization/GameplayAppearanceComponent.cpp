@@ -358,6 +358,7 @@ void UGameplayAppearanceComponent::BeginMutableUpdate(uint32 Serial, FReplicated
             const auto Materials = Instance->GetSkeletalMeshComponentOverrideMaterials(Names[Index]);
             for (int32 Slot = 0; Slot < Materials.Num(); ++Slot) Targets[Index]->SetMaterial(Slot, Materials[Slot]);
         }
+        AppearanceVisualSafety::UpdateSunglassesDrawOrder(*Self->Face, *Self->Outfit);
         FollowPose(Self->Body, Driver);
         if (auto* Pose = Cast<UAppearancePoseAnimInstance>(Self->Body->GetAnimInstance()))
             Pose->bPreserveWeaponHandRelationship = true;
@@ -403,6 +404,7 @@ void UGameplayAppearanceComponent::BeginMutableUpdate(uint32 Serial, FReplicated
         }
         Self->RefreshLODSynchronization();
         for (auto* Target : Targets) Target->SetVisibility(true);
+        Self->RefreshRenderVisibility();
         Self->Live = Self->Pending;
         Self->AppliedRevision = Snapshot.Revision; Self->Failure.Reset();
         Self->AppliedRequestSerial = Serial;
@@ -422,9 +424,34 @@ void UGameplayAppearanceComponent::TickComponent(float Delta, ELevelTick Tick, F
     Super::TickComponent(Delta, Tick, Function);
     const auto* Character = Cast<AShooterCharacter>(GetOwner());
     if (!Character || !Body) return;
+    RefreshRenderVisibility();
     const bool OwnerHidden = Character->GetMesh()->bOwnerNoSee;
     for (auto* Mesh : {Body.Get(), Face.Get(), Outfit.Get()}) Mesh->SetOwnerNoSee(OwnerHidden);
     for (UGroomComponent* Groom : Grooms) Groom->SetOwnerNoSee(OwnerHidden);
+}
+
+void UGameplayAppearanceComponent::RefreshRenderVisibility()
+{
+    const TArray<USkeletalMeshComponent*, TInlineAllocator<4>> Meshes =
+        {Body.Get(), Face.Get(), Outfit.Get(), BindingSurface.Get()};
+    for (int32 Index = 0; Index < Meshes.Num(); ++Index)
+    {
+        auto* Mesh = Meshes[Index];
+        if (!IsValid(Mesh) || !Mesh->IsRegistered() || !Mesh->GetSkeletalMeshAsset()) continue;
+        const uint8 Bit = uint8(1u << Index);
+        if (!Mesh->IsVisible())
+        {
+            PendingRenderRecovery |= Bit;
+        }
+        else if (PendingRenderRecovery & Bit)
+        {
+            // SetSkeletalMesh while a level collection is hidden can skip the
+            // skeletal MeshObject allocation. Collection visibility alone cannot
+            // recreate that resource (unlike an ordinary SetVisibility call).
+            Mesh->MarkRenderStateDirty();
+            PendingRenderRecovery &= ~Bit;
+        }
+    }
 }
 
 void UGameplayAppearanceComponent::EndPlay(const EEndPlayReason::Type Reason)

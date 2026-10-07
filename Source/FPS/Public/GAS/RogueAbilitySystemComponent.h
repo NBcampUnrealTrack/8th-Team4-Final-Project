@@ -9,6 +9,7 @@
 #include "RogueAbilitySystemComponent.generated.h"
 
 class URogueAbilitySet;
+class AWeaponBase;
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCooldownTimeChanged, FGameplayTag /*CooldownTag*/);
 
@@ -27,6 +28,10 @@ public:
 	// 떼짐 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
 	void AbilityInputTagReleased(const FGameplayTag& InputTag);
+
+	// 실제 무기 전환은 이전 무기의 ADS와 그 입력만 정리한다.
+	void CancelADSAbilityForWeapon(const AWeaponBase* Weapon);
+	void ClearAbilityInput();
 
 	// 목록의 어빌리티를 부여 서버 전용.
 	void GrantAbilitySet(const URogueAbilitySet* AbilitySet);

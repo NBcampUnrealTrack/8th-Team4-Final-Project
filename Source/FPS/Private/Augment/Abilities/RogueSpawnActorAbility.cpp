@@ -41,8 +41,9 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 	FRotator EyeRotation;
 	Avatar->GetActorEyesViewPoint(EyeLocation, EyeRotation);
 
-	const FTransform SpawnTransform(
-		EyeRotation, EyeLocation + EyeRotation.Vector() * SpawnForwardOffset);
+	const FTransform SpawnTransform = bSpawnAtAimPoint
+		? ResolveAimSpawnTransform(Avatar, EyeLocation, EyeRotation)
+		: FTransform(EyeRotation, EyeLocation + EyeRotation.Vector() * SpawnForwardOffset);
 
 	ARogueAugmentActor* Spawned = World->SpawnActorDeferred<ARogueAugmentActor>(
 		ActorClass, SpawnTransform, Avatar, Cast<APawn>(Avatar),
@@ -56,4 +57,32 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 	Spawned->InitializePayload(Payload);
 	Spawned->SetUsedInputTag(UsedInputTag);
 	Spawned->FinishSpawning(SpawnTransform);
+}
+
+FTransform URogueSpawnActorAbility::ResolveAimSpawnTransform(
+	const AActor* Avatar, const FVector& EyeLocation, const FRotator& EyeRotation) const
+{
+	constexpr float GroundTraceDistance = 10000.f;
+
+	const UWorld* World = Avatar->GetWorld();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RogueSpawnAim), false, Avatar);
+	TArray<AActor*> Attached;
+	Avatar->GetAttachedActors(Attached, true, true);
+	Params.AddIgnoredActors(Attached);
+
+	const FVector AimEnd = EyeLocation + EyeRotation.Vector() * MaxAimDistance;
+	FVector Location = AimEnd;
+
+	FHitResult Hit;
+	if (World->LineTraceSingleByChannel(Hit, EyeLocation, AimEnd, ECC_Visibility, Params))
+	{
+		Location = Hit.ImpactPoint;
+	}
+	else if (World->LineTraceSingleByChannel(
+		Hit, AimEnd, AimEnd - FVector(0.f, 0.f, GroundTraceDistance), ECC_Visibility, Params))
+	{
+		Location = Hit.ImpactPoint;
+	}
+
+	return FTransform(FRotator(0.f, EyeRotation.Yaw, 0.f), Location);
 }

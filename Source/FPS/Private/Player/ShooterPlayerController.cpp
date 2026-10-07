@@ -94,6 +94,11 @@ void AShooterPlayerController::BeginPlay()
 	{
 		return;
 	}
+	OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().AddUObject(this, &ThisClass::HandleViewTargetBlendComplete);
+	}
 
 	// FPS 마우스 입력은 보간/가속 없이 선형 입력으로 사용한다.
 	if (UInputSettings* EngineInputSettings = GetMutableDefault<UInputSettings>())
@@ -121,6 +126,16 @@ void AShooterPlayerController::BeginPlay()
 	InitializeRuntimeInputMappings();
 	BindApplicationActivation();
 
+	// Modified: 이전 화면(커스터마이징 등)이 FInputModeUIOnly로 남긴 GameViewportClient의 bIgnoreInput(true)을 게임플레이 시작 전에 해제한다.
+	// 이 값이 true로 남으면 Slate에는 키/마우스가 도착해도 게임(이동/시점/메뉴) 입력이 전부 무시된다. CommonUI는 이 값을 건드리지 않는다.
+	if (const ULocalPlayer* ResetLocalPlayer = GetLocalPlayer())
+	{
+		if (UGameViewportClient* ResetViewportClient = ResetLocalPlayer->ViewportClient)
+		{
+			ResetViewportClient->SetIgnoreInput(false);
+		}
+	}
+
 	if (GetTeamMatchUIInitComponent())
 	{
 		SetSystemMappingContextEnabled(true);
@@ -137,6 +152,11 @@ void AShooterPlayerController::BeginPlay()
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().RemoveAll(this);
+	}
     GetWorldTimerManager().ClearTimer(AppearanceSubmitTimer);
 	if (HasAuthority())
 	{
@@ -209,8 +229,6 @@ void AShooterPlayerController::UnbindApplicationActivation()
 
 void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
 {
-	// [INPUTDBG] 알트탭 활성/비활성 이벤트 기록
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ApplicationActivation Active=%d Local=%d Controller=%s"), bIsActive, IsLocalController(), *GetNameSafe(this));
 	if (!bIsActive || !IsLocalController())
 	{
 		return;
@@ -225,7 +243,6 @@ void AShooterPlayerController::ReapplyCommonUIInputConfig()
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!LocalPlayer)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig skipped: LocalPlayer null"));
 		return;
 	}
 
@@ -234,15 +251,10 @@ void AShooterPlayerController::ReapplyCommonUIInputConfig()
 	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
 	if (!Viewport || !Viewport->IsForegroundWindow())
 	{
-		// [INPUTDBG] 전경 창이 아니라서 복구가 건너뛰어지는 경우(알트탭 직후 타이밍 문제 후보)
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig skipped: Viewport=%d Foreground=%d"),
-			Viewport != nullptr, Viewport ? Viewport->IsForegroundWindow() : false);
 		return;
 	}
-
-	UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>());
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] ReapplyCommonUIInputConfig: ShooterActionRouter=%d"), Router != nullptr);
-	if (Router)
+	
+	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
 	{
 		Router->RecalculateActiveInputConfig();
 	}
@@ -448,12 +460,8 @@ void AShooterPlayerController::SetupInputComponent()
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EnhancedInputComponent || !InputConfig)
 	{
-		// [INPUTDBG] 액션 바인딩이 통째로 건너뛰어지면 조작이 전혀 안 되므로 반드시 기록
-		UE_LOG(LogTemp, Error, TEXT("[INPUTDBG] SetupInputComponent: action binding SKIPPED %s EnhancedInputComponent=%d InputConfig=%d"),
-			*GetNameSafe(this), EnhancedInputComponent != nullptr, InputConfig != nullptr);
 		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetupInputComponent: action binding OK %s Local=%d"), *GetNameSafe(this), IsLocalController());
 
 	if (InputConfig->MoveAction)
 	{
@@ -1154,7 +1162,40 @@ void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerSt
 
 void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 {
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			// The owning Pawn may still be the spectator; invalidate first, restore on actual possession.
+			Killcam->CancelForRespawn();
+		}
+	}
 	HideSpectatorWidget();
+}
+
+void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
+{
+	if (!IsLocalController() || NewPawn == PreviousPawn || GetPawn() != NewPawn
+		|| !UKillcamReplaySubsystem::IsLiveWorldActor(NewPawn) || !NewPawn->IsA<AShooterCharacter>())
+	{
+		return;
+	}
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			Killcam->HandleOwnedPawnChanged(NewPawn);
+		}
+	}
+	if (!bKillcamViewTargetSuppressed)
+	{
+		SetViewTarget(NewPawn);
+	}
+}
+
+void AShooterPlayerController::HandleViewTargetBlendComplete()
+{
+	OnViewPresentationChanged.Broadcast();
 }
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
@@ -1171,7 +1212,12 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 		return;
 	}
 
+	AActor* PreviousViewTarget = GetViewTarget();
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
+	if (GetViewTarget() != PreviousViewTarget)
+	{
+		OnViewPresentationChanged.Broadcast();
+	}
 }
 
 void AShooterPlayerController::UpdateHiddenComponents(
@@ -1244,6 +1290,7 @@ void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppre
 		PendingViewTarget.Reset();
 		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
 	}
+	OnViewPresentationChanged.Broadcast();
 }
 
 void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
@@ -1254,6 +1301,7 @@ void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
 	}
 
 	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+	OnViewPresentationChanged.Broadcast();
 }
 
 AActor* AShooterPlayerController::ConsumePendingViewTarget()
@@ -1892,9 +1940,6 @@ void AShooterPlayerController::InitializeRuntimeInputMappings()
 {
 	if (!IsLocalController() || !IsValid(InputConfig))
 	{
-		// [INPUTDBG] 입력 매핑 초기화가 조용히 건너뛰어지는 경우를 기록(로컬 컨트롤러가 아니면 정상)
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] InitializeRuntimeInputMappings skipped: %s Local=%d InputConfigValid=%d"),
-			*GetNameSafe(this), IsLocalController(), IsValid(InputConfig));
 		return;
 	}
 
@@ -2003,9 +2048,6 @@ void AShooterPlayerController::RebuildRuntimeInputMappings()
 		: nullptr;
 	if (!IsValid(InputSubsystem))
 	{
-		// [INPUTDBG] 입력 서브시스템이 없어 매핑 컨텍스트가 하나도 추가되지 않는 경우(이러면 조작이 전혀 안 된다)
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] RebuildRuntimeInputMappings FAILED: %s LocalPlayer=%d EnhancedInputSubsystem=0"),
-			*GetNameSafe(this), IsValid(LocalPlayer));
 		return;
 	}
 
@@ -2042,11 +2084,6 @@ void AShooterPlayerController::RebuildRuntimeInputMappings()
 	{
 		InputSubsystem->AddMappingContext(RuntimeSystemMappingContext, InputConfig->SystemMappingPriority);
 	}
-
-	// Modified: [INPUTDBG] 매핑 컨텍스트 추가 결과 기록. Default가 0이면 이동/시점/사격 입력이 전혀 동작하지 않는다.
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] RebuildRuntimeInputMappings OK: %s DefaultContext=%d(added=%d) SystemContext=%d SystemEnabled=%d"),
-		*GetNameSafe(this), IsValid(RuntimeDefaultMappingContext), IsValid(RuntimeDefaultMappingContext),
-		IsValid(RuntimeSystemMappingContext), bSystemMappingContextEnabled);
 }
 
 void AShooterPlayerController::HandleInputBindingsChanged()
@@ -2190,16 +2227,12 @@ void AShooterPlayerController::SetMappingContextEnabled(
 {
 	if (!IsLocalController() || !IsValid(MappingContext))
 	{
-		// [INPUTDBG] 매핑 컨텍스트 변경이 조용히 무시되는 경우 기록
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s Local=%d ContextValid=%d"),
-			bEnabled, *GetNameSafe(this), IsLocalController(), IsValid(MappingContext));
 		return;
 	}
 
 	ULocalPlayer* LocalPlayer = GetLocalPlayer();
 	if (!IsValid(LocalPlayer))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s LocalPlayer invalid"), bEnabled, *GetNameSafe(this));
 		return;
 	}
 
@@ -2207,12 +2240,9 @@ void AShooterPlayerController::SetMappingContextEnabled(
 		LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	if (!IsValid(InputSubsystem))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d) ignored: %s EnhancedInputSubsystem invalid"), bEnabled, *GetNameSafe(this));
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] SetMappingContextEnabled(%d): %s Context=%s Priority=%d"),
-		bEnabled, *GetNameSafe(this), *GetNameSafe(MappingContext), Priority);
 	if (bEnabled)
 	{
 		InputSubsystem->AddMappingContext(MappingContext, Priority);
@@ -2271,7 +2301,7 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
-		bAiming = CombatComponent && CombatComponent->bAiming;
+		bAiming = CombatComponent && CombatComponent->IsAiming();
 	}
 
 	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
@@ -2387,8 +2417,6 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 	}
 
 	bIsChatInputOpen = true;
-	// [INPUTDBG] 채팅창이 열린 채 닫히지 않으면 사격/어빌리티 입력이 막히므로 열림/닫힘을 기록
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] BeginChatInput: %s"), *GetNameSafe(this));
 	ChatInputWidget = Widget;
 	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
 }
@@ -2402,7 +2430,6 @@ void AShooterPlayerController::CloseChatInput()
 
 	UShooterChatInputBox* Widget = ChatInputWidget.Get();
 	bIsChatInputOpen = false;
-	UE_LOG(LogTemp, Warning, TEXT("[INPUTDBG] CloseChatInput: %s"), *GetNameSafe(this));
 	ChatInputWidget.Reset();
 
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())

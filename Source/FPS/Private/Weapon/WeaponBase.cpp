@@ -96,7 +96,8 @@ void AWeaponBase::BeginPlay()
 	EffectivePelletCount = PelletCountPerShot;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
-	CurrentReserveAmmo = MaxReserveAmmo;
+	// 초기 복제가 BeginPlay보다 먼저 도착한 클라이언트의 예비탄을 덮어쓰지 않는다.
+	if (HasAuthority()) CurrentReserveAmmo = MaxReserveAmmo;
 	EffectiveMaxReserveAmmo = MaxReserveAmmo;
 	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
@@ -801,6 +802,28 @@ void AWeaponBase::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
 	bInfiniteAmmo = bNewInfiniteAmmo;
 	OnAmmoChanged.Broadcast();
 	ForceNetUpdate();
+}
+
+bool AWeaponBase::CanReceiveReserveAmmo(const int32 Amount) const
+{
+	return HasAuthority() && bUsesAmmo && !bInfiniteAmmo && Amount > 0
+		&& CurrentReserveAmmo >= 0 && CurrentReserveAmmo < MAX_int32;
+}
+
+int32 AWeaponBase::AddReserveAmmo(const int32 Amount)
+{
+	if (!CanReceiveReserveAmmo(Amount))
+	{
+		return 0;
+	}
+
+	const int64 NewReserveAmmo = FMath::Min<int64>(
+		static_cast<int64>(CurrentReserveAmmo) + Amount, static_cast<int64>(MAX_int32));
+	const int32 AppliedAmount = static_cast<int32>(NewReserveAmmo - CurrentReserveAmmo);
+	CurrentReserveAmmo = static_cast<int32>(NewReserveAmmo);
+	OnAmmoChanged.Broadcast();
+	ForceNetUpdate();
+	return AppliedAmount;
 }
 
 bool AWeaponBase::CanReload() const

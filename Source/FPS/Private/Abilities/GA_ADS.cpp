@@ -11,6 +11,7 @@
 UGA_ADS::UGA_ADS()
 {
 	ActivationOwnedTags.AddTag(RogueTags::State_Combat_IsAiming);
+	ActivationBlockedTags.AddTag(RogueTags::State_Combat_IsDead);
 }
 
 bool UGA_ADS::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -38,12 +39,12 @@ void UGA_ADS::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGa
 	}
 
 	AimingCombatComponent = GetCombatComponent();
-
-	AimingWeapon->SetADS(true);
-	if (AimingCombatComponent)
+	if (!IsValid(AimingCombatComponent))
 	{
-		AimingCombatComponent->SetAiming(true);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
 	}
+	AimingCombatComponent->SetAiming(true, AimingWeapon);
 
 	// 스나이퍼로 조준 중 공중에 뜨면(점프/낙하) 즉시 줌을 풀어야 한다 - 이동 컴포넌트를 직접 보지
 	// 않고 State_Movement_InAir 태그 변화만 구독한다(GAS 설계 원칙 - 어빌리티는 태그로만 판단).
@@ -113,14 +114,14 @@ void UGA_ADS::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGamepla
 		UtilityHeldTagEventHandle.Reset();
 	}
 
-	// 정상 종료/취소/다른 어빌리티에 의한 교체 등 어떤 경로로 끝나든 조준은 반드시 꺼야 한다.
-	if (AimingWeapon)
+	// 이 능력이 조준을 시작한 무기만 정리한다. 아바타/무기가 바뀌어도 새 ADS는 건드리지 않는다.
+	if (IsValid(AimingCombatComponent) && AimingWeapon)
+	{
+		AimingCombatComponent->SetAiming(false, AimingWeapon);
+	}
+	else if (IsValid(AimingWeapon))
 	{
 		AimingWeapon->SetADS(false);
-	}
-	if (AimingCombatComponent)
-	{
-		AimingCombatComponent->SetAiming(false);
 	}
 	AimingWeapon = nullptr;
 	AimingCombatComponent = nullptr;

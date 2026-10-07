@@ -23,4 +23,15 @@ protected:
 	// 시전자의 전방으로 SpawnForwardOffset 만큼 떨어진 위치에 스폰
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn", meta = (ClampMin = "0.0"))
 	float SpawnForwardOffset = 100.f;
+
+	// 켜면 조준점(최대 MaxAimDistance)에 스폰. 닿지 않으면 최대 사거리 지점의 지면
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn")
+	bool bSpawnAtAimPoint = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn",
+		meta = (EditCondition = "bSpawnAtAimPoint", EditConditionHides, ClampMin = "0.0", Units = "cm"))
+	float MaxAimDistance = 4000.f;
+
+private:
+	FTransform ResolveAimSpawnTransform(const AActor* Avatar, const FVector& EyeLocation, const FRotator& EyeRotation) const;
 };
