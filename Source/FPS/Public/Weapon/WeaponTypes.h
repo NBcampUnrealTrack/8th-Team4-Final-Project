@@ -21,7 +21,7 @@ enum class EWeaponSlot : uint8
 
 // 탄퍼짐/반동 튜닝 값 한 세트. 기획(밸런스) 담당자가 코드/블루프린트를 열지 않고도
 // DataTable 행만 수정해서 에디터에서 바로 테스트할 수 있도록 분리한 값들이다.
-// AWeaponBase::SpreadRecoilTable + SpreadRecoilRowName이 지정되면 BeginPlay 시 이 값들로
+// UWeaponAimComponent::SpreadRecoilTable + SpreadRecoilRowName이 지정되면 BeginPlay 시 이 값들로
 // BaseSpreadDegrees 등 개별 프로퍼티를 덮어쓴다. 미지정 시에는 무기 블루프린트에 직접
 // 설정된 기존 값을 그대로 쓴다(하위 호환 fallback).
 USTRUCT(BlueprintType)
@@ -39,12 +39,20 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float MaxBloomDegrees = 5.f;
 
-	// 사격을 멈춘 뒤 이 시간(초)이 지나야 ConsecutiveShotCount 감소가 시작된다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	// 실제 발사 간격이 끝난 뒤 블룸 회복까지의 여유 시간(초). 연사 틱의 작은 지연을 흡수한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", Units = "s"))
+	float BloomRecoveryDelay = 0.05f;
+
+	// 최대 블룸에서 0까지 걸리는 회복 시간(초). 작은 블룸은 같은 속도로 더 빨리 회복한다.
+	// 0이면 위 대기 시간이 지난 시점에 사격 블룸만 즉시 0이 된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", Units = "s"))
+	float BloomRecoveryTime = 0.15f;
+
+	// 기존 BP/DT 직렬화 호환용. 새 회복 계산에는 사용하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use BloomRecoveryDelay; measured after the shot interval."))
 	float SpreadDecayDelay = 0.3f;
 
-	// 초당 감소하는 연속 사격 카운트
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use BloomRecoveryTime; seconds from maximum bloom to zero."))
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
 	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). 정지(브레이킹 성공) 중에는
@@ -57,7 +65,7 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	float CrouchSpreadMultiplier = 0.7f;
 
 	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
-	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
+	// X채널=Yaw, Y채널=Pitch. WeaponAimComponent::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	TObjectPtr<UCurveVector> RecoilCurve;
 

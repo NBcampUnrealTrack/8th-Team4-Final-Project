@@ -1,6 +1,10 @@
 ﻿#include "Animation/ShooterAnimInstance.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimNode_ReloadHandContact.h"
+#include "AnimationRuntime.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
 #include "Character/ShooterCharacter.h"
 #include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
@@ -16,6 +20,19 @@
 #include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
+
+namespace
+{
+	const TCHAR* const PistolReloadMagazineMesh =
+		TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/WK-11_Viper/Magazine/SKM_Mag_WK-11_Viper.SKM_Mag_WK-11_Viper");
+	const FName ReloadMagazineBone(TEXT("Magazine"));
+	const FName ReloadMagazineHand(TEXT("hand_l"));
+	// The pistol's magazine counts as out once its bone has left the seated reference pose this far (cm).
+	constexpr double ReloadMagazineOutDistance = 1.5;
+	// Magazine bone in the magazine mesh's component frame (bind pose): the mesh keeps the pistol's axes, so the
+	// bone carries the pistol's seated magazine rotation, just above the mesh origin.
+	const FTransform ReloadMagazineBoneInMesh(FQuat(-0.56841, -0.420607, 0.56841, 0.420607).GetNormalized(), FVector(0., 0.1317, 0.3989));
+}
 
 void UShooterAnimInstance::NativeInitializeAnimation()
 {
@@ -64,6 +81,7 @@ void UShooterAnimInstance::RestoreSupportAnchor()
 
 void UShooterAnimInstance::NativeUninitializeAnimation()
 {
+	ReleaseReloadMagazine();
 	UnbindHolsterMontageSource();
 	RestoreSupportAnchor();
 	UnregisterSupportAnchor();
@@ -160,6 +178,109 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			}
 		}
 	}
+	UpdateReloadMagazine();
+}
+
+void UShooterAnimInstance::UpdateReloadMagazine()
+{
+	USkeletalMeshComponent* Gun = nullptr;
+	bool bOut = false;
+	const UWorld* World = GetWorld();
+	if (!bFirstPersonAnimation && ShooterCharacter && GetSkelMeshComponent() == ShooterCharacter->GetMesh()
+		&& World && World->GetNetMode() != NM_DedicatedServer
+		&& IsValid(CurrentWeapon) && CurrentWeaponType.MatchesTagExact(RogueTags::Weapon_Type_Pistol))
+	{
+		Gun = CurrentWeapon->GetMesh3P();
+		const USkeletalMesh* GunMesh = Gun ? Gun->GetSkeletalMeshAsset() : nullptr;
+		const int32 Bone = GunMesh ? Gun->GetBoneIndex(ReloadMagazineBone) : INDEX_NONE;
+		if (Bone != INDEX_NONE && Gun->GetComponentSpaceTransforms().IsValidIndex(Bone) && Gun->IsVisible())
+		{
+			const FTransform Seated = FAnimationRuntime::GetComponentSpaceTransformRefPose(GunMesh->GetRefSkeleton(), Bone);
+			bOut = FVector::Dist(Gun->GetComponentSpaceTransforms()[Bone].GetLocation(), Seated.GetLocation()) > ReloadMagazineOutDistance;
+		}
+	}
+
+	// Weapon swapped, or the magazine is seated again: show the pistol's own magazine.
+	USkeletalMeshComponent* Hidden = HiddenMagazineGun.Get();
+	if (Hidden && (Hidden != Gun || !bOut))
+	{
+		Hidden->UnHideBoneByName(ReloadMagazineBone);
+		HiddenMagazineGun.Reset();
+	}
+
+	USkeletalMeshComponent* Magazine = ReloadMagazine.Get();
+	if (!bOut)
+	{
+		if (Magazine && Magazine->IsVisible())
+		{
+			Magazine->SetVisibility(false);
+		}
+		return;
+	}
+
+	if (!Magazine)
+	{
+		USkeletalMesh* Mesh = bReloadMagazineMissing ? nullptr : LoadObject<USkeletalMesh>(nullptr, PistolReloadMagazineMesh);
+		if (!Mesh)
+		{
+			if (!bReloadMagazineMissing)
+			{
+				UE_LOG(LogShooterAnimation, Warning, TEXT("Reload magazine mesh not found: %s"), PistolReloadMagazineMesh);
+				bReloadMagazineMissing = true;
+			}
+			return;
+		}
+		Magazine = NewObject<USkeletalMeshComponent>(ShooterCharacter,
+			MakeUniqueObjectName(ShooterCharacter, USkeletalMeshComponent::StaticClass(), TEXT("ReloadMagazine")));
+		Magazine->SetSkeletalMeshAsset(Mesh);
+		Magazine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Magazine->SetGenerateOverlapEvents(false);
+		Magazine->SetCanEverAffectNavigation(false);
+		Magazine->bReceivesDecals = false;
+		Magazine->SetVisibility(false);
+		Magazine->RegisterComponent();
+		ReloadMagazine = Magazine;
+	}
+
+	// The gun hangs from the visible body's right hand. That body's left hand is placed relative to it
+	// so that its hand_l frame matches the contact node's target, so the magazine follows that bone.
+	USkeletalMeshComponent* Body = Cast<USkeletalMeshComponent>(Gun->GetAttachParent());
+	if (!Body || Body->GetBoneIndex(ReloadMagazineHand) == INDEX_NONE)
+	{
+		Body = GetSkelMeshComponent();
+	}
+	if (Magazine->GetAttachParent() != Body || Magazine->GetAttachSocketName() != ReloadMagazineHand)
+	{
+		Magazine->AttachToComponent(Body, FAttachmentTransformRules::KeepRelativeTransform, ReloadMagazineHand);
+	}
+	Magazine->SetRelativeTransform(ReloadMagazineBoneInMesh.Inverse() * ReloadHandContact::PistolHandInMagazine().Inverse());
+	Magazine->SetOwnerNoSee(Gun->bOwnerNoSee);
+	Magazine->SetOnlyOwnerSee(Gun->bOnlyOwnerSee);
+	Magazine->SetCastHiddenShadow(Gun->bCastHiddenShadow);
+	if (!Magazine->IsVisible())
+	{
+		Magazine->SetVisibility(true);
+	}
+	if (HiddenMagazineGun.Get() != Gun)
+	{
+		Gun->HideBoneByName(ReloadMagazineBone, PBO_None);
+		HiddenMagazineGun = Gun;
+	}
+}
+
+void UShooterAnimInstance::ReleaseReloadMagazine()
+{
+	if (USkeletalMeshComponent* Hidden = HiddenMagazineGun.Get())
+	{
+		Hidden->UnHideBoneByName(ReloadMagazineBone);
+	}
+	HiddenMagazineGun.Reset();
+	USkeletalMeshComponent* Magazine = ReloadMagazine.Get();
+	if (Magazine && !Magazine->IsBeingDestroyed() && !IsGarbageCollecting())
+	{
+		Magazine->DestroyComponent();
+	}
+	ReloadMagazine.Reset();
 }
 
 float UShooterAnimInstance::GetIdlePostureSourceWeight() const

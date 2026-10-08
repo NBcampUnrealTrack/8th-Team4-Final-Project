@@ -12,6 +12,7 @@ class APawn;
 class FViewport;
 class UCombatComponent;
 class UImage;
+class UShooterGameUserSettings;
 class UWidgetAnimation;
 
 /**
@@ -72,6 +73,8 @@ protected:
 
 	// 현재 탄퍼짐/FOV/뷰포트 기준으로 4방향 크로스헤어 간격을 다시 계산해 적용한다.
 	void RefreshSpreadOffsets();
+
+	void HandleCrosshairSettingsChanged();
 
 	void HandleViewportResized(FViewport* Viewport, uint32 Unused);
 
@@ -185,6 +188,7 @@ private:
 	// OnCrosshairSpreadInputsChanged 구독 해제용으로 현재 구독 중인 CombatComponent를 기억해둔다.
 	TWeakObjectPtr<UCombatComponent> CachedCombat;
 	FDelegateHandle CrosshairSpreadInputsHandle;
+	TWeakObjectPtr<UShooterGameUserSettings> CachedCrosshairSettings;
 	FDelegateHandle CrosshairSettingsHandle;
 	FDelegateHandle ViewportResizedHandle;
 

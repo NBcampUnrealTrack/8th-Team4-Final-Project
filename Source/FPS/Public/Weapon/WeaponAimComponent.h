@@ -8,9 +8,10 @@
 
 class UCurveVector;
 class UDataTable;
+struct FWeaponSpreadRecoilRow;
 
 // ADS 상태 + 탄퍼짐(블룸) + 반동을 전담한다. 전투 시스템 명세서 3.3.1 원칙이 테스트 후 개정되어,
-// 반동은 지향 사격/ADS 공용으로 항상 생성되고 탄퍼짐만 bIsADS로 배타적으로 갈린다(ADS 중엔 0 고정).
+// 반동은 지향 사격/ADS 공용이며, 사격 블룸은 지향 사격 전용이다. ADS에도 이동/공중 페널티는 적용된다.
 // 이 셋이 bIsADS를 기준으로 얽혀 있는 한 묶음의 개념이라 하나의 컴포넌트로 분리했다. AWeaponBase는 "언제" 갱신할지(Fire()/Tick() 호출 시점)만
 // 알려주고, AWeaponBase의 기존 public 함수(SetADS/IsADS/GetCurrentSpreadDegrees 등)는 전부 이
 // 컴포넌트로 위임하는 얇은 껍데기로 남아 있어 외부 호출부(GA_ADS/CombatComponent/ShooterReticle
@@ -55,6 +56,9 @@ public:
 	float GetBaseSpreadDegrees() const { return BaseSpreadDegrees; }
 	// 지금 이 순간 실제로 적용 중인 탄퍼짐 각도(도). ADS/연사 블룸/이동 배율/증강까지 전부 반영된 최종값.
 	float GetCurrentSpreadDegrees() const;
+	// 마지막 실제 지향 발사 이후의 게임 시간으로 평가한다. 틱 순서나 UI 갱신에 의존하지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Spread")
+	float GetCurrentBloomDegrees() const;
 
 	// --- 반동 ---
 	void SetEffectiveRecoilMultiplier(float NewMultiplier);
@@ -62,11 +66,11 @@ public:
 	// 반동이 완전히 사라진다(예: 스나이퍼). AWeaponBase::BeginPlay가 무기 태그를 보고 호출한다.
 	void SetRecoilYawMultiplier(float NewMultiplier);
 
-	// AWeaponBase::Tick()에서 매 프레임 호출한다. 탄퍼짐 감쇠 + ADS 반동 생성/회복을 전부 처리한다.
+	// AWeaponBase::Tick()에서 매 프레임 호출한다. 블룸 읽기값과 반동 생성/회복을 갱신한다.
 	void TickAim(float DeltaTime);
-	// AWeaponBase::Fire() 성공 시(AdvanceFireCounters) 호출한다. 지향 사격일 때만 블룸을 늘리고,
-	// ADS/지향 공용으로 TimeSinceLastShot을 리셋한다(스프레드 감쇠, 반동 생성/회복 타이밍의 기준).
-	void NotifyShotFired();
+	// 실제 탄 판정이 끝난 성공한 발사만 알린다. 블룸 증가는 다음 탄부터 반영된다.
+	// ShotInterval은 그 발사에 사용한 실효 RPM의 간격이다. 입력 해제로 초기화하지 않는다.
+	void NotifyShotFired(float ShotInterval = 0.f);
 	// GA_Reload 진입/무기 교체 등 AWeaponBase가 반동을 즉시 0으로 되돌려야 할 때 호출한다.
 	void ResetRecoilState();
 
@@ -76,9 +80,10 @@ protected:
 	// SpreadRecoilTable + SpreadRecoilRowName이 지정된 경우, 해당 행의 값으로 아래 탄퍼짐/반동
 	// 튜닝 값들을 덮어쓴다. BeginPlay에서 호출된다.
 	void ApplySpreadRecoilTuningTable();
+	void ApplySpreadRecoilTuning(const FWeaponSpreadRecoilRow& Tuning);
 
 	float CalculateCurrentSpreadDegrees() const;
-	void TickSpreadDecay(float DeltaTime);
+	void UpdateLegacyShotCount();
 
 	// 사격 유지 구간(TimeSinceLastShot < RecoilRecoveryDelay)에 매 프레임 호출된다(ADS 여부 무관 - 지향
 	// 사격/ADS 공용). RecoilCurve(UCurveVector, X=Yaw/Y=Pitch)를 FiringElapsedTime으로 계속 evaluate해
@@ -160,29 +165,38 @@ protected:
 	bool bIsADS = false;
 
 	// --- 탄퍼짐 튜닝 값 ---
+	// DT와 공통인 기본값은 생성자에서 FWeaponSpreadRecoilRow로 초기화한다.
 	// 무기 기본 탄퍼짐 각도. SpreadRecoilTable 미지정 시 사용되는 기본값(=fallback).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float BaseSpreadDegrees = 1.f;
+	float BaseSpreadDegrees;
 
 	// 현재 적용 중인 실제 기본 탄퍼짐 각도. SetEffectiveSpreadDegrees로만 갱신되며, 기본값은
 	// (SpreadRecoilTable 적용 이후의) BaseSpreadDegrees와 동일하게 초기화된다.
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float EffectiveBaseSpreadDegrees = 1.f;
+	float EffectiveBaseSpreadDegrees;
 
 	// 연속 사격 시 사격당 누적되는 탄퍼짐 각도
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float BloomPerShotDegrees = 0.2f;
+	float BloomPerShotDegrees;
 
 	// 연사 블룸 누적 최대치
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float MaxBloomDegrees = 5.f;
+	float MaxBloomDegrees;
 
-	// 사격을 멈춘 뒤 이 시간(초)이 지나야 ConsecutiveShotCount 감소가 시작된다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	// 실제 발사 간격이 끝난 뒤 블룸 회복까지의 여유 시간(초). 연사 틱의 작은 지연을 흡수한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", Units = "s"))
+	float BloomRecoveryDelay;
+
+	// 최대 블룸에서 0까지 걸리는 회복 시간(초). 작은 블룸은 같은 속도로 더 빨리 회복한다.
+	// 0이면 위 대기 시간이 지난 시점에 사격 블룸만 즉시 0이 된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", Units = "s"))
+	float BloomRecoveryTime;
+
+	// 기존 BP/DT 직렬화 호환용. 새 회복 계산에는 사용하지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use BloomRecoveryDelay; measured after the shot interval."))
 	float SpreadDecayDelay = 0.3f;
 
-	// 초당 감소하는 연속 사격 카운트 (예: 5 = 초당 5발씩 감소)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use BloomRecoveryTime; seconds from maximum bloom to zero."))
 	float ConsecutiveShotDecayPerSecond = 5.f;
 
 	// 이동 상태 탄퍼짐 배율. SetMovementSpreadMultiplier로만 갱신된다.
@@ -208,7 +222,7 @@ protected:
 	// ADS 중 이동으로 브레이킹(정지)에 실패했을 때 적용되는 탄퍼짐(도). SpreadRecoilTable 미지정 시
 	// 사용되는 기본값(=fallback).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
-	float MovingADSSpreadDegrees = 2.f;
+	float MovingADSSpreadDegrees;
 
 	// SetIsStationary로만 갱신된다. true면 ADS 탄퍼짐이 0으로 고정(브레이킹 성공), false면
 	// MovingADSSpreadDegrees가 적용된다(브레이킹 실패, 이동 중 조준).
@@ -218,14 +232,14 @@ protected:
 	// 앉아서 쏠 때 탄퍼짐에 곱해지는 배율(1=영향 없음). 공중 페널티에는 적용되지 않는다.
 	// SpreadRecoilTable 미지정 시 사용되는 기본값(=fallback).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float CrouchSpreadMultiplier = 0.7f;
+	float CrouchSpreadMultiplier;
 
 	// SetIsCrouching으로만 갱신된다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
 	bool bIsCrouching = false;
 
-	// 연속 사격 횟수. 탄퍼짐 블룸 계산에 사용.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	// 기존 BP 읽기 호환용: 남은 블룸의 발수 환산값(올림). 실제 발사 횟수/탄퍼짐 원본이 아니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Spread|Legacy", meta = (DeprecatedProperty, DeprecationMessage = "Use GetCurrentBloomDegrees for continuous bloom."))
 	int32 ConsecutiveShotCount = 0;
 
 	// --- 반동 튜닝 값 (전투 시스템 명세서 2.1/2.2) ---
@@ -239,25 +253,25 @@ protected:
 	// 매 프레임 Yaw 델타에 추가되는 무작위 편차 범위(도, ±). Pitch는 커브값을 그대로 따르는 결정론적
 	// 패턴으로 남겨 학습 가능하게 하고, Yaw만 소폭 랜덤화해 완전한 예측 사격을 막는다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilRandomness = 0.f;
+	float RecoilRandomness;
 
 	// 누적 가능한 최대 상방 반동(도). 초과분은 Clamp - 연사 중 반동이 무한정 커지지 않고 이 이상은
 	// 좌우 흔들림(RecoilRandomness)만 남는 상한선 역할을 한다. Yaw에는 상한이 없다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilMaxPitch = 10.f;
+	float RecoilMaxPitch;
 
 	// RecoilCurve의 Yaw(X채널) 결과에 곱해지는 배율. 0으로 두면 이 무기는 좌우 반동이 전혀 없고
 	// Pitch(상하) 반동만 남는다 - 예: 스나이퍼는 X축 반동을 없애고 싶을 때 0으로 설정.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilYawMultiplier = 1.f;
+	float RecoilYawMultiplier;
 
 	// 사격 중단 후 이 시간(초)이 지나야 반동 복귀가 시작된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilRecoveryDelay = 0.15f;
+	float RecoilRecoveryDelay;
 
 	// 반동 복귀 FInterpTo 속도
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Recoil")
-	float RecoilRecoverySpeed = 10.f;
+	float RecoilRecoverySpeed;
 
 	// 현재 적용 중인 실제 반동 배율. SetEffectiveRecoilMultiplier로만 갱신되며, RecoilCurve 샘플링
 	// 값에 곱해진다. 기본값 1이면 배율 없음(원본 커브 그대로).
@@ -265,8 +279,12 @@ protected:
 	float EffectiveRecoilMultiplier = 1.f;
 
 private:
+	// 반동 전용 시계. 블룸 회복은 별도의 게임 시간으로 평가한다.
 	float TimeSinceLastShot = 1000.f;
-	float ConsecutiveShotDecayAccumulator = 0.f;
+
+	// 지향 사격 직후의 제한된 블룸과 회복 시작 시각. 최대치를 넘는 누적은 저장하지 않는다.
+	float BloomAtLastShot = 0.f;
+	double BloomRecoveryStartTime = 0.0;
 
 	float AccumulatedRecoilPitch = 0.f;
 	float AccumulatedRecoilYaw = 0.f;
@@ -275,8 +293,6 @@ private:
 	float FiringElapsedTime = 0.f;
 	// 직전 프레임에 evaluate한 RecoilCurve 값(X=Yaw, Y=Pitch, Pitch는 RecoilMaxPitch로 Clamp된 값).
 	FVector2D PrevRecoilOffset = FVector2D::ZeroVector;
-	// 지금 ADS 반동을 생성 중인지(사격 유지 구간). 새 버스트 시작 감지에 쓰인다. 탄퍼짐 블룸
-	// 카운터(ConsecutiveShotCount)와는 별개로 관리해서, ADS 중 사격 후 지향 사격으로 전환해도
-	// 그동안 쌓인 블룸이 갑자기 튀어나오지 않는다.
+	// 지금 반동을 생성 중인지(사격 유지 구간). 새 버스트 시작 감지에 쓰며 블룸과 독립적이다.
 	bool bRecoilBurstActive = false;
 };
