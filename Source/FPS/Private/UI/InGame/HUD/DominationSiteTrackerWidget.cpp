@@ -33,12 +33,13 @@ void UDominationSiteTrackerWidget::NativeConstruct()
 	HandleActivePointChanged(DominationGameState->GetActivePointId());
 	HandleCaptureStateChanged(DominationGameState->GetCaptureState());
 	BP_OnRoundScoreChanged(DominationGameState->GetTeamAScore(), DominationGameState->GetTeamBScore());
+	RefreshRelativeScore(true);
 	BP_OnTransitionStateChanged(IsPointTransitioning());
 
 	GetWorld()->GetTimerManager().SetTimer(
 		LocalCaptureZoneTimerHandle,
 		this,
-		&ThisClass::RefreshLocalCaptureZoneState,
+		&ThisClass::RefreshLocalState,
 		LocalCaptureZoneUpdateInterval,
 		true);
 }
@@ -179,6 +180,8 @@ void UDominationSiteTrackerWidget::HandleTeamScoreChanged(const EGameTeam, const
 	{
 		BP_OnRoundScoreChanged(DominationGameState->GetTeamAScore(), DominationGameState->GetTeamBScore());
 	}
+
+	RefreshRelativeScore(true);
 }
 
 void UDominationSiteTrackerWidget::HandleObjectiveFlowStateChanged()
@@ -243,4 +246,36 @@ void UDominationSiteTrackerWidget::RefreshLocalCaptureZoneState()
 	bHasLocalCaptureZoneState = true;
 	bLocalPlayerInsideActivePoint = bShouldShow;
 	BP_OnLocalCaptureZoneChanged(bShouldShow);
+}
+
+void UDominationSiteTrackerWidget::RefreshLocalState()
+{
+	RefreshLocalCaptureZoneState();
+	// 위젯이 만들어질 때 내 팀이 아직 복제 전일 수 있어 도착하면 다시 보낸다
+	RefreshRelativeScore(false);
+}
+
+void UDominationSiteTrackerWidget::RefreshRelativeScore(const bool bForce)
+{
+	const ADominationGameState* DominationGameState = BoundGameState.Get();
+	if (!IsValid(DominationGameState))
+	{
+		return;
+	}
+
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const EGameTeam LocalTeam = IsValid(LocalPlayerState) ? LocalPlayerState->GetTeam() : EGameTeam::None;
+	if (!bForce && LocalTeam == CachedLocalTeam)
+	{
+		return;
+	}
+	CachedLocalTeam = LocalTeam;
+
+	// 팀을 아직 모르면 TeamA 를 우리 팀 자리에 둔다
+	const bool bLocalIsTeamB = LocalTeam == EGameTeam::TeamB;
+	const int32 TeamAScore = DominationGameState->GetTeamAScore();
+	const int32 TeamBScore = DominationGameState->GetTeamBScore();
+	BP_OnRelativeScoreChanged(
+		bLocalIsTeamB ? TeamBScore : TeamAScore,
+		bLocalIsTeamB ? TeamAScore : TeamBScore);
 }
