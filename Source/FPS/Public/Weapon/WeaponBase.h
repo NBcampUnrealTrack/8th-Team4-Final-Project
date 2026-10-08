@@ -282,6 +282,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetTraceRange() const { return TraceRange; }
 
+	// 일반 사격과 같은 채널/정밀도/사거리의 읽기 전용 조준 피드백 설정. 발사 상태는 바꾸지 않는다.
+	bool GetAimTraceSettings(FHitscanTraceSettings& OutTraceSettings) const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
 
@@ -368,6 +371,7 @@ protected:
 
 	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;
+	float GetPhysicalTraceRange(bool bHeavyAttack, bool bAllowLoadDamageData = true) const;
 	FVector CalculateTraceDirection(const FVector& AimDirection) const;
 	void ResolveHitscanShot(
 		const FVector& TraceStart,

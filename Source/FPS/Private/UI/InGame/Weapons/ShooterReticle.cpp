@@ -107,12 +107,6 @@ void UShooterReticle::NativeOnInitialized()
 		Image_KillEffect->SetVisibility(ESlateVisibility::Hidden);
 	}
 
-	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
-	{
-		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
-		PC->OnKillEffect.AddUObject(this, &ThisClass::HandleKillEffect);
-	}
-
 	// 페이드 애니메이션이 끝나는 시점에 히트마커 상태를 종료한다.
 	if (Anim_HitMarker)
 	{
@@ -139,6 +133,13 @@ void UShooterReticle::NativeConstruct()
 	{
 		PC->OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
 		HandlePossessedPawnChanged(nullptr, PC->GetPawn());
+	}
+
+	if (AShooterPlayerController* PC = Cast<AShooterPlayerController>(GetOwningPlayer()))
+	{
+		PC->OnHitMarker.AddUObject(this, &ThisClass::HandleHitMarker);
+		PC->OnKillEffect.AddUObject(this, &ThisClass::HandleKillEffect);
+		ViewPresentationHandle = PC->OnViewPresentationChanged.AddUObject(this, &ThisClass::RefreshCrosshairColor);
 	}
 
 	// 설정 변경 이벤트 한 번으로 색상과 동적 간격을 갱신한다.
@@ -175,24 +176,50 @@ void UShooterReticle::BindToCombatComponent(UCombatComponent* NewCombat)
 	if (UCombatComponent* OldCombat = CachedCombat.Get())
 	{
 		OldCombat->OnCrosshairSpreadInputsChanged.Remove(CrosshairSpreadInputsHandle);
+		OldCombat->OnCrosshairTargetChanged.Remove(CrosshairTargetHandle);
 	}
 	CrosshairSpreadInputsHandle.Reset();
+	CrosshairTargetHandle.Reset();
 
 	CachedCombat = NewCombat;
 
 	if (NewCombat)
 	{
 		CrosshairSpreadInputsHandle = NewCombat->OnCrosshairSpreadInputsChanged.AddUObject(this, &ThisClass::RefreshSpreadOffsets);
+		CrosshairTargetHandle = NewCombat->OnCrosshairTargetChanged.AddUObject(this, &ThisClass::HandleCrosshairTargetChanged);
 	}
 
 	// 구독 직후에는 CombatComponent가 "값이 안 바뀌었다"고 판단해 알리지 않을 수 있으므로 한 번 직접 갱신한다.
 	RefreshSpreadOffsets();
+	RefreshCrosshairColor();
 }
 
 void UShooterReticle::HandleCrosshairSettingsChanged()
 {
+	RefreshCrosshairColor();
+	RefreshSpreadOffsets();
+}
+
+void UShooterReticle::HandleCrosshairTargetChanged(bool /*bAimingAtEnemy*/)
+{
+	RefreshCrosshairColor();
+}
+
+void UShooterReticle::RefreshCrosshairColor()
+{
 	const UShooterGameUserSettings* Settings = CachedCrosshairSettings.Get();
-	const FLinearColor Color = Settings ? Settings->GetCrosshairColor() : FLinearColor::White;
+	FLinearColor Color = Settings ? Settings->GetCrosshairColor() : FLinearColor::White;
+	const UCombatComponent* Combat = CachedCombat.Get();
+	const APlayerController* PC = GetOwningPlayer();
+	if (Settings && Settings->IsEnemyCrosshairColorEnabled() && Combat && Combat->IsAimingAtEnemy()
+		&& PC && PC->IsLocalController() && PC->GetPawn() == Combat->GetOwner()
+		&& PC->GetViewTarget() == Combat->GetOwner())
+	{
+		// 저장된 RGBA는 그대로 두고 화면에 표시하는 RGB만 바꾼다.
+		const float SavedAlpha = Color.A;
+		Color = EnemyCrosshairColor;
+		Color.A = SavedAlpha;
+	}
 	UImage* CrosshairImages[] = { Image_Center.Get(), Image_Top.Get(), Image_Bottom.Get(), Image_Left.Get(), Image_Right.Get() };
 	for (UImage* ReticleImage : CrosshairImages)
 	{
@@ -202,7 +229,6 @@ void UShooterReticle::HandleCrosshairSettingsChanged()
 		}
 	}
 
-	RefreshSpreadOffsets();
 }
 
 void UShooterReticle::HandleViewportResized(FViewport* Viewport, uint32 Unused)
@@ -232,9 +258,11 @@ void UShooterReticle::NativeDestruct()
 	{
 		PC->OnHitMarker.RemoveAll(this);
 		PC->OnKillEffect.RemoveAll(this);
+		PC->OnViewPresentationChanged.Remove(ViewPresentationHandle);
 		PC->OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
 	}
 
+	ViewPresentationHandle.Reset();
 	BindToCombatComponent(nullptr);
 
 	if (UShooterGameUserSettings* Settings = CachedCrosshairSettings.Get())

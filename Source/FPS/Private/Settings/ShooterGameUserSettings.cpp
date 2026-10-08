@@ -164,6 +164,7 @@ void UShooterGameUserSettings::SetToDefaults()
 	ScreenBrightness = GetDefaultScreenBrightness();
 
 	bDynamicCrosshair = true;
+	bEnableEnemyCrosshairColor = false;
 	CrosshairColor = FLinearColor::White;
 	CrosshairThickness = -0.5f;
 	CrosshairGap = -0.25f;
@@ -198,6 +199,7 @@ void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 	const bool bPreviousToggleADS = bToggleADS;
 	const bool bPreviousToggleCrouch = bToggleCrouch;
 	const bool bPreviousDynamicCrosshair = bDynamicCrosshair;
+	const bool bPreviousEnemyCrosshairColor = bEnableEnemyCrosshairColor;
 	const FLinearColor PreviousCrosshairColor = CrosshairColor;
 	Super::LoadSettings(bForceReload);
 
@@ -209,7 +211,8 @@ void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 
 	SetScreenBrightness(ScreenBrightness);
 	CrosshairColor = ShooterGameUserSettingsConstants::NormalizeCrosshairColor(CrosshairColor);
-	if (PreviousCrosshairColor != CrosshairColor || bPreviousDynamicCrosshair != bDynamicCrosshair)
+	if (PreviousCrosshairColor != CrosshairColor || bPreviousDynamicCrosshair != bDynamicCrosshair
+		|| bPreviousEnemyCrosshairColor != bEnableEnemyCrosshairColor)
 	{
 		OnCrosshairSettingsChanged.Broadcast();
 	}
@@ -363,6 +366,17 @@ void UShooterGameUserSettings::SetCrosshairColor(const FLinearColor NewColor)
 	}
 
 	CrosshairColor = NormalizedColor;
+	OnCrosshairSettingsChanged.Broadcast();
+}
+
+void UShooterGameUserSettings::SetEnemyCrosshairColorEnabled(const bool bEnabled)
+{
+	if (bEnableEnemyCrosshairColor == bEnabled)
+	{
+		return;
+	}
+
+	bEnableEnemyCrosshairColor = bEnabled;
 	OnCrosshairSettingsChanged.Broadcast();
 }
 

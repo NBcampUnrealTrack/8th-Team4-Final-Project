@@ -219,6 +219,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Crosshair")
 	void SetCrosshairColor(FLinearColor Color);
 
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Crosshair")
+	bool IsEnemyCrosshairColorEnabled() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Crosshair")
+	void SetEnemyCrosshairColorEnabled(bool bEnabled);
+
 	// ----- Audio -----
 	UFUNCTION(BlueprintPure, Category = "UI|Options|Audio")
 	float GetAudioVolume(EShooterAudioChannel Channel) const;
@@ -317,7 +323,7 @@ private:
 	void CommitVoiceChatPercent(const FText& Text, ETextCommit::Type CommitMethod, bool bMicrophone, FName OptionName);
 	void HandleAudioVolumeChangedInternal(float Value, EShooterAudioChannel Channel, FName OptionName);
 	void HandleVoiceChatVolumeChangedInternal(float Value, bool bMicrophone, FName OptionName);
-	void RefreshCrosshairColorUI(bool bRefreshText);
+	void RefreshCrosshairOptionsUI(bool bRefreshText);
 	void HandleCrosshairSettingsChanged();
 	void SetCrosshairColorChannel(int32 Channel, float Value, bool bFromText);
 	void ChangeCrosshairColorText(int32 Channel, const FText& Text);
@@ -372,6 +378,7 @@ private:
 	UFUNCTION() void HandleADSModeChanged();
 	UFUNCTION() void HandleCrouchModeChanged();
 	UFUNCTION() void HandleDynamicCrosshairToggle();
+	UFUNCTION() void HandleEnemyCrosshairColorToggle();
 	UFUNCTION() void HandleMasterMuteToggle();
 	UFUNCTION() void HandleVoiceChatToggle();
 	UFUNCTION() void HandleResetKeyBindings();

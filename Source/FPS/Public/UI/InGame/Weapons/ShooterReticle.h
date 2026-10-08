@@ -16,7 +16,7 @@ class UShooterGameUserSettings;
 class UWidgetAnimation;
 
 /**
- * 크로스헤어 탄퍼짐(Spread)만 표현한다.
+ * 크로스헤어 탄퍼짐(Spread)과 조준 대상에 따른 표시 색상을 표현한다.
  * GetSpreadDegrees()가 장착 무기의 AWeaponBase::GetCurrentSpreadDegrees()를 읽는다.
  * 폴링하지 않는다 - CombatComponent::OnCrosshairSpreadInputsChanged(무기/탄퍼짐/FOV 변경),
  * 크로스헤어 설정 변경, 뷰포트 크기 변경 시점에만 4방향 간격을 다시 계산한다.
@@ -75,6 +75,8 @@ protected:
 	void RefreshSpreadOffsets();
 
 	void HandleCrosshairSettingsChanged();
+	void HandleCrosshairTargetChanged(bool bAimingAtEnemy);
+	void RefreshCrosshairColor();
 
 	void HandleViewportResized(FViewport* Viewport, uint32 Unused);
 
@@ -116,6 +118,10 @@ protected:
 	TObjectPtr<UImage> Image_Right;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Center;
+
+	// 적 조준 중 표시할 RGB. 알파는 사용자가 저장한 크로스헤어 색상을 따른다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Crosshair", meta = (HideAlphaChannel))
+	FLinearColor EnemyCrosshairColor = FLinearColor::Red;
 
 	// 크로스헤어와 같은 위치(중앙)에 겹쳐서 뜨는 히트마커. HitMarkerOpacity로 반투명 처리해서
 	// 겹쳐도 크로스헤어가 뒤로 비쳐 보이게 한다(오버워치 스타일).
@@ -188,6 +194,8 @@ private:
 	// OnCrosshairSpreadInputsChanged 구독 해제용으로 현재 구독 중인 CombatComponent를 기억해둔다.
 	TWeakObjectPtr<UCombatComponent> CachedCombat;
 	FDelegateHandle CrosshairSpreadInputsHandle;
+	FDelegateHandle CrosshairTargetHandle;
+	FDelegateHandle ViewPresentationHandle;
 	TWeakObjectPtr<UShooterGameUserSettings> CachedCrosshairSettings;
 	FDelegateHandle CrosshairSettingsHandle;
 	FDelegateHandle ViewportResizedHandle;

@@ -877,12 +877,15 @@ bool UShooterOptionsScreen::IsDynamicCrosshairEnabled() const
 void UShooterOptionsScreen::SetDynamicCrosshairEnabled(const bool bEnabled)
 {
 	UShooterGameUserSettings* Settings = GetGameUserSettings();
-	if (!IsValid(Settings))
+	if (!IsValid(Settings) || Settings->IsDynamicCrosshairEnabled() == bEnabled)
 	{
 		return;
 	}
 
-	Settings->SetDynamicCrosshairEnabled(bEnabled);
+	{
+		TGuardValue<bool> RefreshGuard(bRefreshingUI, true);
+		Settings->SetDynamicCrosshairEnabled(bEnabled);
+	}
 	OnSettingsChanged.Broadcast();
 }
 
@@ -904,13 +907,34 @@ void UShooterOptionsScreen::SetCrosshairColor(const FLinearColor Color)
 		// 입력 중에는 숫자 문자열과 커서를 유지한다. 확정/슬라이더 조작 시 정규화한다.
 		if (bEditingCrosshairText)
 		{
-			RefreshCrosshairColorUI(false);
+			RefreshCrosshairOptionsUI(false);
 		}
 		else
 		{
 			OnSettingsChanged.Broadcast();
 		}
 	}
+}
+
+bool UShooterOptionsScreen::IsEnemyCrosshairColorEnabled() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return IsValid(Settings) && Settings->IsEnemyCrosshairColorEnabled();
+}
+
+void UShooterOptionsScreen::SetEnemyCrosshairColorEnabled(const bool bEnabled)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings) || Settings->IsEnemyCrosshairColorEnabled() == bEnabled)
+	{
+		return;
+	}
+
+	{
+		TGuardValue<bool> RefreshGuard(bRefreshingUI, true);
+		Settings->SetEnemyCrosshairColorEnabled(bEnabled);
+	}
+	OnSettingsChanged.Broadcast();
 }
 
 float UShooterOptionsScreen::GetAudioVolume(const EShooterAudioChannel Channel) const
@@ -1244,6 +1268,7 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_CrouchModePrev", HandleCrouchModeChanged);
 	BIND_CLICK("Btn_CrouchModeNext", HandleCrouchModeChanged);
 	BIND_CLICK("Btn_DynamicCrosshairToggle", HandleDynamicCrosshairToggle);
+	BIND_CLICK("Btn_EnemyCrosshairColorToggle", HandleEnemyCrosshairColorToggle);
 	BIND_CLICK("Btn_MasterMuteToggle", HandleMasterMuteToggle);
 	BIND_CLICK("Btn_VoiceChatToggle", HandleVoiceChatToggle);
 	BIND_CLICK("Btn_ResetKeyBindings", HandleResetKeyBindings);
@@ -1471,6 +1496,7 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_CrosshairGreen"), TEXT("G · 초록"), TEXT("G · Green"));
 	Set(TEXT("TXT_Label_CrosshairBlue"), TEXT("B · 파랑"), TEXT("B · Blue"));
 	Set(TEXT("TXT_Label_CrosshairAlpha"), TEXT("A · 불투명도"), TEXT("A · Opacity"));
+	Set(TEXT("TXT_Label_EnemyCrosshairColor"), TEXT("적 조준 시 색상 변경"), TEXT("Enemy Aim Color"));
 
 	Set(TEXT("TXT_Label_Overall"), TEXT("전체 품질"), TEXT("Overall Quality"));
 	Set(TEXT("TXT_Label_ViewDistance"), TEXT("시야 거리"), TEXT("View Distance"));
@@ -1924,7 +1950,7 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 3);
 	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 3);
 	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 3);
-	RefreshCrosshairColorUI(!bEditingCrosshairText);
+	RefreshCrosshairOptionsUI(!bEditingCrosshairText);
 
 	const auto SetVolumeSlider = [this](const FName SliderName, const FName TextName, const float Value)
 	{
@@ -2053,7 +2079,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"),
 		TEXT("VoiceChat"), TEXT("VoiceChatMicrophoneVolume"), TEXT("VoiceChatOutputVolume"),
 		TEXT("Language"),
-		TEXT("CrosshairRed"), TEXT("CrosshairGreen"), TEXT("CrosshairBlue"), TEXT("CrosshairAlpha"),
+		TEXT("CrosshairRed"), TEXT("CrosshairGreen"), TEXT("CrosshairBlue"), TEXT("CrosshairAlpha"), TEXT("EnemyCrosshairColor"),
 	};
 
 	// SetBrushFromTexture는 리소스만 교체해 DrawAs/Margin 등 브러시 설정을 보존한다.
@@ -2207,6 +2233,7 @@ void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY
 void UShooterOptionsScreen::HandleADSModeChanged() { ActiveOption = TEXT("ADSMode"); SetADSToggleEnabled(!IsADSToggleEnabled()); }
 void UShooterOptionsScreen::HandleCrouchModeChanged() { ActiveOption = TEXT("CrouchMode"); SetCrouchToggleEnabled(!IsCrouchToggleEnabled()); }
 void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); }
+void UShooterOptionsScreen::HandleEnemyCrosshairColorToggle() { ActiveOption = TEXT("EnemyCrosshairColor"); SetEnemyCrosshairColorEnabled(!IsEnemyCrosshairColorEnabled()); }
 void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); }
 void UShooterOptionsScreen::HandleVoiceChatToggle() { ActiveOption = TEXT("VoiceChat"); SetVoiceChatEnabled(!IsVoiceChatEnabled()); }
 void UShooterOptionsScreen::HandleResetKeyBindings()
@@ -2222,9 +2249,10 @@ void UShooterOptionsScreen::HandleResetKeyBindings()
 	OnSettingsChanged.Broadcast();
 }
 
-void UShooterOptionsScreen::RefreshCrosshairColorUI(const bool bRefreshText)
+void UShooterOptionsScreen::RefreshCrosshairOptionsUI(const bool bRefreshText)
 {
 	TGuardValue<bool> RefreshGuard(bRefreshingUI, true);
+	SetToggleVisual(TEXT("Btn_EnemyCrosshairColorToggle"), TEXT("TXT_EnemyCrosshairColorValue"), IsEnemyCrosshairColorEnabled());
 	const FLinearColor Color = GetCrosshairColor();
 	const TCHAR* ChannelNames[] = { TEXT("Red"), TEXT("Green"), TEXT("Blue"), TEXT("Alpha") };
 	const float Values[] = { Color.R, Color.G, Color.B, Color.A };
@@ -2263,7 +2291,7 @@ void UShooterOptionsScreen::HandleCrosshairSettingsChanged()
 {
 	if (!bRefreshingUI)
 	{
-		RefreshCrosshairColorUI(!bEditingCrosshairText);
+		RefreshCrosshairOptionsUI(!bEditingCrosshairText);
 	}
 }
 
@@ -2310,7 +2338,7 @@ void UShooterOptionsScreen::CommitCrosshairColorText(const int32 Channel, const 
 	}
 	if (CommitMethod == ETextCommit::OnCleared)
 	{
-		RefreshCrosshairColorUI(true);
+		RefreshCrosshairOptionsUI(true);
 		return;
 	}
 	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
@@ -2325,7 +2353,7 @@ void UShooterOptionsScreen::CommitCrosshairColorText(const int32 Channel, const 
 	}
 	else
 	{
-		RefreshCrosshairColorUI(true);
+		RefreshCrosshairOptionsUI(true);
 	}
 }
 

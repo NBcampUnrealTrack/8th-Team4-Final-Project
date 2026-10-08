@@ -82,7 +82,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Gameplay")
 	void SetDynamicCrosshairEnabled(bool bEnabled);
 
-	// 색상/동적 크로스헤어 변경은 Tick 없이 이 이벤트로 반영한다.
+	// 크로스헤어 옵션 변경은 Tick 없이 이 이벤트로 반영한다.
 	FOnShooterCrosshairSettingsChanged OnCrosshairSettingsChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
@@ -90,6 +90,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
 	void SetCrosshairColor(FLinearColor NewColor);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	bool IsEnemyCrosshairColorEnabled() const { return bEnableEnemyCrosshairColor; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetEnemyCrosshairColorEnabled(bool bEnabled);
 
 	// 십자선 두께. 머티리얼의 CrossHairThickness 파라미터를 그대로 받는다(음수일수록 두꺼움).
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
@@ -207,6 +213,9 @@ protected:
 
 	UPROPERTY(Config)
 	bool bDynamicCrosshair = true;
+
+	UPROPERTY(Config)
+	bool bEnableEnemyCrosshairColor = false;
 
 	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FLinearColor CrosshairColor = FLinearColor::White;
