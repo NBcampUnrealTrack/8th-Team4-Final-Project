@@ -66,6 +66,9 @@
 #include "Player/ShooterSpectatorPawn.h"
 #include "Weapon/WeaponBase.h"
 #include "UObject/UObjectGlobals.h"
+#include "Engine/Engine.h"
+#include "Trailer/TrailerCameraActor.h"
+#include "Trailer/TrailerCameraSubsystem.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
@@ -1182,6 +1185,17 @@ void AShooterPlayerController::HandleViewTargetBlendComplete()
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
 {
+	// Modified: 트레일러 카메라가 켜져 있는 동안 서버의 관전 대상 전환(ClientSetViewTarget)이 시점을 빼앗지 못하게 막는다.
+#if !UE_BUILD_SHIPPING
+	if (const UTrailerCameraSubsystem* TrailerCamera = UTrailerCameraSubsystem::Get(this))
+	{
+		if (TrailerCamera->IsActive() && NewViewTarget != TrailerCamera->GetCamera())
+		{
+			return;
+		}
+	}
+#endif
+
 	if (bKillcamViewTargetSuppressed)
 	{
 		const bool bUsableCandidate = NewViewTarget != this
@@ -2910,4 +2924,197 @@ ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() c
 	}
 
 	return nullptr;
+}
+
+// Modified: 트레일러 촬영용 카메라(개발 전용). 쉬핑 빌드에서는 모든 함수가 아무 일도 하지 않는다.
+namespace
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* FindTrailerCamera(const APlayerController* PlayerController)
+	{
+		const UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(PlayerController);
+		return Subsystem ? Subsystem->GetCamera() : nullptr;
+	}
+
+	void ShowTrailerMessage(const FString& Message)
+	{
+		UE_LOG(LogTemp, Display, TEXT("%s"), *Message);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, Message);
+		}
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamOn()
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// 살아있는 캐릭터가 있으면 서버가 기존 관전 흐름으로 옮긴 뒤 ClientTrailerCamActivate로 카메라를 켠다.
+	if (GetPawn<AShooterCharacter>())
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 관전 상태로 이동 후 카메라를 켭니다."));
+		ServerTrailerCamEnterSpectator();
+		return;
+	}
+
+	ClientTrailerCamActivate_Implementation();
+#endif
+}
+
+void AShooterPlayerController::ServerTrailerCamEnterSpectator_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	if (UWorld* World = GetWorld())
+	{
+		if (AShooterGameMode* GameMode = World->GetAuthGameMode<AShooterGameMode>())
+		{
+			GameMode->EnterSpectatorForTrailerCamera(this);
+		}
+	}
+
+	// 서버가 보낸 관전 대상 시점 전환보다 뒤에 도착하도록 같은 연결에서 순서대로 보낸다.
+	ClientTrailerCamActivate();
+#endif
+}
+
+void AShooterPlayerController::ClientTrailerCamActivate_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// 관전 UI는 촬영에 방해되므로 숨긴다.
+	HideSpectatorWidget();
+
+	UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this);
+	if (Subsystem && Subsystem->Activate(this))
+	{
+		ShowTrailerMessage(Subsystem->GetCamera()->DescribeState());
+	}
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라를 만들지 못했습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamOff()
+{
+#if !UE_BUILD_SHIPPING
+	if (UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this))
+	{
+		Subsystem->Deactivate(this);
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라를 껐습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamMode(const FString& ModeName)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (ModeName.Equals(TEXT("free"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Free); }
+	else if (ModeName.Equals(TEXT("follow"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Follow); }
+	else if (ModeName.Equals(TEXT("orbit"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Orbit); }
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 모드는 Free / Follow / Orbit 중 하나입니다."));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamTarget(const FString& Arg)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (Arg.IsEmpty() || Arg.Equals(TEXT("next"), ESearchCase::IgnoreCase)) { Camera->CycleTarget(1); }
+	else if (Arg.Equals(TEXT("prev"), ESearchCase::IgnoreCase)) { Camera->CycleTarget(-1); }
+	else if (Arg.IsNumeric()) { Camera->SetTargetIndex(FCString::Atoi(*Arg)); }
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 대상은 next / prev / 번호(0부터)로 지정하세요."));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamSet(const FString& Name, const float Value)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (!Camera->SetParameter(Name, Value))
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 이름: distance, height, side, lookheight, orbitspeed, speed, look, smooth, focal, aperture, dof"));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamInfo()
+{
+#if !UE_BUILD_SHIPPING
+	if (const ATrailerCameraActor* Camera = FindTrailerCamera(this))
+	{
+		ShowTrailerMessage(Camera->DescribeState());
+	}
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamHud(const FString& Arg)
+{
+#if !UE_BUILD_SHIPPING
+	UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this);
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	bool bHide = !Subsystem->IsHudHidden();
+	if (Arg.Equals(TEXT("on"), ESearchCase::IgnoreCase) || Arg.Equals(TEXT("hide"), ESearchCase::IgnoreCase) || Arg == TEXT("1")) { bHide = true; }
+	else if (Arg.Equals(TEXT("off"), ESearchCase::IgnoreCase) || Arg.Equals(TEXT("show"), ESearchCase::IgnoreCase) || Arg == TEXT("0")) { bHide = false; }
+
+	Subsystem->SetHudHidden(bHide);
+	UE_LOG(LogTemp, Display, TEXT("[TrailerCam] HUD %s"), bHide ? TEXT("숨김") : TEXT("표시"));
+	if (!bHide)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] HUD 표시"));
+	}
+#endif
 }

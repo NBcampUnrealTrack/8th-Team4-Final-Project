@@ -210,6 +210,39 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientExitSpectatorMode();
 
+	// 트레일러 촬영용 카메라(개발 전용, 쉬핑 빌드에서는 동작하지 않음).
+	// TrailerCamOn: 서버에서 관전 상태로 옮긴 뒤 시네마 카메라로 시점을 바꾼다. TrailerCamOff: 카메라를 지우고 시점을 되돌린다.
+	UFUNCTION(Exec)
+	void TrailerCamOn();
+
+	UFUNCTION(Exec)
+	void TrailerCamOff();
+
+	// ModeName: Free / Follow / Orbit
+	UFUNCTION(Exec)
+	void TrailerCamMode(const FString& ModeName);
+
+	// Arg: next / prev / 번호(0부터, 본인 제외 플레이어 순서)
+	UFUNCTION(Exec)
+	void TrailerCamTarget(const FString& Arg);
+
+	// Name: distance, height, side, lookheight, orbitspeed, speed, look, smooth, focal, aperture, dof
+	UFUNCTION(Exec)
+	void TrailerCamSet(const FString& Name, float Value);
+
+	UFUNCTION(Exec)
+	void TrailerCamInfo();
+
+	// Arg: on(HUD 숨김) / off(HUD 표시) / 비우면 전환
+	UFUNCTION(Exec)
+	void TrailerCamHud(const FString& Arg);
+
+	UFUNCTION(Server, Reliable)
+	void ServerTrailerCamEnterSpectator();
+
+	UFUNCTION(Client, Reliable)
+	void ClientTrailerCamActivate();
+
 	virtual void SetViewTarget(
 		AActor* NewViewTarget,
 		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
