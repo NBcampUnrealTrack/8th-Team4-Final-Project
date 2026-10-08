@@ -680,7 +680,7 @@ void AWeaponBase::AdvanceFireCounters()
 {
 	if (Aim)
 	{
-		Aim->NotifyShotFired();
+		Aim->NotifyShotFired(LastFireInterval);
 	}
 }
 

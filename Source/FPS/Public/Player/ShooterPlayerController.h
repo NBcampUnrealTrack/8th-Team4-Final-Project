@@ -48,9 +48,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPin
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. Type으로 부위별(바디/쉴드/헤드샷) 색상을,
 // bKill로 처치 강조(빨간색)를 결정한다.
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/, bool /*bKill*/);
-// 크로스헤어(UShooterReticle)가 구독해서 중앙 킬 이펙트(해골 등)를 재생. ClientPlayKillSound와 같은 시점에
-// 발신되며, ShooterGameMode가 자살/팀킬을 걸러낸 뒤의 확정된 처치에만 발신하므로 OnHitMarker의 bKill보다
-// 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
+// 서버가 자살/팀킬을 제외한 처치를 확정하면 중앙 킬 이펙트를 재생한다.
+// 전적·킬 사운드 사용 여부와 별도로 전달한다.
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnShooterViewPresentationChanged);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
@@ -205,7 +204,11 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill, bool bPlaySound);
 
-	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드 + 중앙 킬 이펙트(OnKillEffect)를 재생.
+	// 처치자 본인에게 중앙 킬 이펙트를 재생한다. CQB의 전적·사운드 억제와 독립적이다.
+	UFUNCTION(Client, Reliable)
+	void ClientPlayKillEffect();
+
+	// 처치자 본인에게 일반/연속킬 사운드를 재생한다.
 	// KillStreak: 이번 킬이 몇 연속킬인지(1=일반 킬, 2=더블킬, 3=트리플킬, 4 이상=쿼드라킬).
 	UFUNCTION(Client, Reliable)
 	void ClientPlayKillSound(int32 KillStreak);

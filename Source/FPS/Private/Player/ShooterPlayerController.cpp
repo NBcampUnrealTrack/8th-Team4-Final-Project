@@ -1078,6 +1078,11 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 	}
 }
 
+void AShooterPlayerController::ClientPlayKillEffect_Implementation()
+{
+	OnKillEffect.Broadcast();
+}
+
 void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 KillStreak)
 {
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
@@ -1107,8 +1112,6 @@ void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 Ki
 	}
 
 	PlayCombatFeedbackSound(*SoundRef);
-
-	OnKillEffect.Broadcast();
 }
 
 void AShooterPlayerController::PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation)

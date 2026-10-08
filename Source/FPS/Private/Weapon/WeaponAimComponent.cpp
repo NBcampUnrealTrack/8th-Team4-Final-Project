@@ -4,6 +4,7 @@
 
 #include "Curves/CurveVector.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Weapon/WeaponTypes.h"
 
@@ -40,8 +41,8 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 	BaseSpreadDegrees = Row->BaseSpreadDegrees;
 	BloomPerShotDegrees = Row->BloomPerShotDegrees;
 	MaxBloomDegrees = Row->MaxBloomDegrees;
-	SpreadDecayDelay = Row->SpreadDecayDelay;
-	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
+	BloomRecoveryDelay = Row->BloomRecoveryDelay;
+	BloomRecoveryTime = Row->BloomRecoveryTime;
 	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
 	CrouchSpreadMultiplier = Row->CrouchSpreadMultiplier;
 
@@ -139,26 +140,56 @@ float UWeaponAimComponent::GetCurrentSpreadDegrees() const
 	return CalculateCurrentSpreadDegrees();
 }
 
+float UWeaponAimComponent::GetCurrentBloomDegrees() const
+{
+	const float MaxBloom = FMath::Max(0.f, MaxBloomDegrees);
+	const float StoredBloom = FMath::Clamp(BloomAtLastShot, 0.f, MaxBloom);
+	const UWorld* World = GetWorld();
+	if (StoredBloom <= 0.f || !World)
+	{
+		return StoredBloom;
+	}
+
+	const double RecoveryElapsed = World->GetTimeSeconds() - BloomRecoveryStartTime;
+	if (RecoveryElapsed < 0.0)
+	{
+		return StoredBloom;
+	}
+	if (BloomRecoveryTime <= 0.f)
+	{
+		return 0.f;
+	}
+
+	// 최대 블룸 기준의 일정한 회복 속도. 작은 점사는 더 빨리, 최대 연사도 정해진 시간에 끝난다.
+	const float RecoveryFraction = static_cast<float>(FMath::Clamp(
+		RecoveryElapsed / static_cast<double>(BloomRecoveryTime), 0.0, 1.0));
+	return FMath::Max(0.f, StoredBloom - MaxBloom * RecoveryFraction);
+}
+
 void UWeaponAimComponent::TickAim(const float DeltaTime)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(UWeaponAimComponent::TickAim);
 
 	TimeSinceLastShot += DeltaTime;
 
-	TickSpreadDecay(DeltaTime);
+	UpdateLegacyShotCount();
 	TickProceduralRecoilGeneration(DeltaTime);
 	TickRecoilRecovery(DeltaTime);
 }
 
-void UWeaponAimComponent::NotifyShotFired()
+void UWeaponAimComponent::NotifyShotFired(const float ShotInterval)
 {
-	// 3.3.1 개정 원칙: 탄퍼짐 블룸은 지향 사격 전용이다. ADS 중에는 늘리지 않는다 - 안 그러면
-	// ADS 중 사격이 화면엔 안 보이게(스프레드 0 고정) 블룸을 몰래 쌓다가, ADS를 풀자마자
-	// 그 값이 한꺼번에 튀어나와 크로스헤어가 갑자기 벌어져 보인다.
 	if (!bIsADS)
 	{
-		ConsecutiveShotCount++;
+		// 이미 회복된 현재 값에 한 발분만 더한다. 최대치 이후 발수는 회복 부채로 남기지 않는다.
+		BloomAtLastShot = FMath::Clamp(GetCurrentBloomDegrees() + FMath::Max(0.f, BloomPerShotDegrees),
+			0.f, FMath::Max(0.f, MaxBloomDegrees));
+		const UWorld* World = GetWorld();
+		BloomRecoveryStartTime = (World ? World->GetTimeSeconds() : 0.0)
+			+ FMath::Max(0.f, ShotInterval) + FMath::Max(0.f, BloomRecoveryDelay);
 	}
+	// ADS 발사는 지향 블룸을 누적하거나 회복을 붙잡지 않는다. 반동 시계는 모든 발사에 반응한다.
+	UpdateLegacyShotCount();
 	TimeSinceLastShot = 0.f;
 }
 
@@ -187,7 +218,7 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 	}
 	else
 	{
-		const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
+		const float BloomDegrees = GetCurrentBloomDegrees();
 		SpreadDegrees = (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
 	}
 
@@ -217,20 +248,10 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 	return SpreadDegrees;
 }
 
-void UWeaponAimComponent::TickSpreadDecay(float DeltaTime)
+void UWeaponAimComponent::UpdateLegacyShotCount()
 {
-	if (ConsecutiveShotCount <= 0 || TimeSinceLastShot < SpreadDecayDelay)
-	{
-		return;
-	}
-
-	ConsecutiveShotDecayAccumulator += ConsecutiveShotDecayPerSecond * DeltaTime;
-
-	while (ConsecutiveShotDecayAccumulator >= 1.f && ConsecutiveShotCount > 0)
-	{
-		ConsecutiveShotCount--;
-		ConsecutiveShotDecayAccumulator -= 1.f;
-	}
+	ConsecutiveShotCount = BloomPerShotDegrees > KINDA_SMALL_NUMBER
+		? FMath::CeilToInt(GetCurrentBloomDegrees() / BloomPerShotDegrees) : 0;
 }
 
 void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
