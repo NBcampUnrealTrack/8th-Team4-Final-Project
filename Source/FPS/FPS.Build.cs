@@ -44,7 +44,6 @@ public class FPS : ModuleRules
 			"InMemoryNetworkReplayStreaming"
 		});
 
-
 		AddEngineThirdPartyPrivateStaticDependencies(Target, "Steamworks");
 	}
 }

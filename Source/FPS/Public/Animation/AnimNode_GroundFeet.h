@@ -25,8 +25,6 @@ struct FPS_API FAnimNode_GroundFeet : public FAnimNode_SkeletalControlBase
  virtual void InitializeBoneReferences(const FBoneContainer& Bones) override;
  virtual void EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output,TArray<FBoneTransform>& Out) override;
 private:
- friend struct FGroundFeetTestAccess;
- friend struct FGroundFeetWorldTestAccess;
  FBoneReference Knees[2],Thighs[2];
  float ReferenceFootZ[2]={0,0};
  FVector BendDirection[2]={FVector::RightVector,FVector::RightVector};

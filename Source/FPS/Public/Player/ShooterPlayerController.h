@@ -37,6 +37,7 @@ class USoundMix;
 struct FInputActionValue;
 struct FStreamableHandle;
 struct FEnhancedActionKeyMapping;
+struct FUIInputConfig;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
@@ -88,6 +89,7 @@ public:
     void SubmitSavedAppearances();
     virtual void AcknowledgePossession(APawn* NewPawn) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void FlushPressedKeys() override;
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
 	FOnHitMarker OnHitMarker;
@@ -431,6 +433,9 @@ private:
 		FName ContextId,
 		TArray<FShooterInputBindingEntry>& OutBindings) const;
 	void HandleInputBindingsChanged();
+	void ResetInputModeState();
+	void HandleUIInputConfigChanged(const FUIInputConfig Config);
+	TSet<FGameplayTag> PressedAbilityInputTags;
 	static FName MakeInputBindingId(
 		FName ContextId,
 		const FEnhancedActionKeyMapping& Mapping,
@@ -455,7 +460,7 @@ private:
 	void Input_SprintPressed();
 	void Input_SprintReleased();
 	void Input_CrouchPressed();
-	void Input_CrouchReleased();
+	void Input_CrouchReleased(bool bCanceled = false);
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_OpenChat();
@@ -466,7 +471,7 @@ private:
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
-	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag, bool bCanceled = false);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
 	bool IsInSpectatorFlow() const;
 	void ShowSpectatorWidget(APlayerState* ViewTargetPlayerState);

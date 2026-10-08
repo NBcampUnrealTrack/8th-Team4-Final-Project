@@ -176,6 +176,7 @@ void UShooterGameUserSettings::SetToDefaults()
 	Language = EShooterOptionsLanguage::Korean;
 	SetScreenResolution(GetMaxSupportedResolution());
 	SetFrameRateLimit(GetDefaultFrameRateLimit());
+	ResetInputModes();
 	ApplyScreenBrightness();
 	OnAudioSettingsChanged.Broadcast();
 	OnCrosshairSettingsChanged.Broadcast();
@@ -184,6 +185,8 @@ void UShooterGameUserSettings::SetToDefaults()
 
 void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 {
+	const bool bPreviousToggleADS = bToggleADS;
+	const bool bPreviousToggleCrouch = bToggleCrouch;
 	Super::LoadSettings(bForceReload);
 
 	// 저장된 품질은 유지하고, 첫 실행에만 Medium을 기본값으로 사용한다.
@@ -193,6 +196,40 @@ void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 	}
 
 	SetScreenBrightness(ScreenBrightness);
+	if (bPreviousToggleADS != bToggleADS || bPreviousToggleCrouch != bToggleCrouch)
+	{
+		OnInputModesChanged.Broadcast();
+	}
+}
+
+void UShooterGameUserSettings::SetADSToggleEnabled(const bool bEnabled)
+{
+	if (bToggleADS != bEnabled)
+	{
+		bToggleADS = bEnabled;
+		OnInputModesChanged.Broadcast();
+	}
+}
+
+void UShooterGameUserSettings::SetCrouchToggleEnabled(const bool bEnabled)
+{
+	if (bToggleCrouch != bEnabled)
+	{
+		bToggleCrouch = bEnabled;
+		OnInputModesChanged.Broadcast();
+	}
+}
+
+void UShooterGameUserSettings::ResetInputModes()
+{
+	if (!bToggleADS && !bToggleCrouch)
+	{
+		return;
+	}
+
+	bToggleADS = false;
+	bToggleCrouch = false;
+	OnInputModesChanged.Broadcast();
 }
 
 void UShooterGameUserSettings::ValidateSettings()
