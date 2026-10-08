@@ -35,3 +35,4 @@ AGENTS.md
 .mcp.json
 .narshamcp/
 packed/
+node_modules/

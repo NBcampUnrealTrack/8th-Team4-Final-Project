@@ -28,8 +28,13 @@ protected:
 private:
 	void UpdateHealth(APawn* Pawn, UTextBlock* Text, UProgressBar* Bar) const;
 	void UpdateReticle();
-	void HideViewportWidget(UWidget* Widget, ULocalPlayer* Player);
-	void RestoreViewportWidget(UWidget* Widget);
+	bool IsScoreboardOrMenuActive() const;
+	void UpdateOverlayVisibility();
+	void EnsureSkipHint();
+	void UpdateSkipHint();
+	static UWidget* ResolveHideTarget(UWidget* Widget);
+	void HideViewportWidget(UWidget* ViewportWidget, ULocalPlayer* Player);
+	void RestoreViewportWidget(UWidget* ViewportWidget);
 	TMap<TWeakObjectPtr<UWidget>, ESlateVisibility> HiddenWidgets;
 
 	UPROPERTY(meta = (BindWidget))
@@ -50,11 +55,22 @@ private:
 	TObjectPtr<UImage> Image_Weapon;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Reticle;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_SniperScope;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_SkipHint;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Killcam|Skip")
+	FText SkipHintText = NSLOCTEXT("Killcam", "SkipHint", "CLICK TO SKIP");
 
 	UPROPERTY(EditDefaultsOnly, Category = "Killcam|Reticle")
 	TMap<FGameplayTag, FSlateBrush> WeaponReticles;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Killcam|Reticle")
+	FSlateBrush SniperScopeBrush;
+
 	FGameplayTag DisplayedReticleTag;
+	bool bDisplayedSniperScope = false;
 
 	TWeakObjectPtr<APawn> ReplayKiller;
 	TWeakObjectPtr<APawn> ReplayVictim;

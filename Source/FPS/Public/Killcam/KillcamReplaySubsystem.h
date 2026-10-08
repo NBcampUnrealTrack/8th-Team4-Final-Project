@@ -27,6 +27,8 @@ public:
 	void SetUpForWorld(UWorld* World);
 	void ReleaseWorld(UWorld* World);
 	bool IsPlaying() const;
+	bool CanSkipPlayback() const;
+	void SkipPlayback();
 	void CancelForRespawn();
 	void HandleOwnedPawnChanged(APawn* NewPawn);
 
@@ -34,7 +36,12 @@ private:
 	UFUNCTION()
 	void HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent);
 
+	UFUNCTION()
+	void HandleMatchStateChanged();
+
 	void BindGameState();
+	void UnbindGameState();
+	bool IsMatchEnded() const;
 	void RetrySetup();
 	bool IsSetUpComplete() const;
 	float GetRequiredBufferSeconds() const;
@@ -80,6 +87,9 @@ private:
 	UPROPERTY(Config)
 	float ReplayBufferSeconds = 10.0f;
 
+	UPROPERTY(Config)
+	float SkipInputGraceSeconds = 0.3f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UKillcamWidget> PlaybackWidget;
 
@@ -102,6 +112,7 @@ private:
 	FTimerHandle SetupRetryTimerHandle;
 	float SetupRetryElapsed = 0.0f;
 	float DeathDemoTime = 0.0f;
+	double PlaybackShownRealTime = 0.0;
 	bool bPlaying = false;
 	bool bPlaybackRequestPending = false;
 	uint64 PlaybackGeneration = 0;

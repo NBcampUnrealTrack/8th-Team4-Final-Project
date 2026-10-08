@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/SpectatorPawn.h"
+#include "GameMode/State/BaseTeamMatchGameState.h"
 #include "Killcam/KillcamCameraActor.h"
 #include "NetworkReplayStreaming.h"
 #include "Player/ShooterPlayerController.h"
@@ -151,11 +152,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 	World->GetTimerManager().ClearTimer(PlaybackTimerHandle);
 	World->GetTimerManager().ClearTimer(SetupRetryTimerHandle);
 	CancelPlayback(false);
-
-	if (IsValid(BoundGameState))
-	{
-		BoundGameState->OnPlayerEliminated.RemoveDynamic(this, &ThisClass::HandlePlayerEliminated);
-	}
+	UnbindGameState();
 
 	UDemoNetDriver* RecordingDriver = World->GetDemoNetDriver();
 	if (IsValid(RecordingDriver) && RecordingDriver->IsRecording())
@@ -180,6 +177,21 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 bool UKillcamReplaySubsystem::IsPlaying() const
 {
 	return bPlaying;
+}
+
+bool UKillcamReplaySubsystem::CanSkipPlayback() const
+{
+	const UWorld* World = SourceWorld.Get();
+	return bPlaying && IsValid(PlaybackCamera) && IsValid(World)
+		&& World->GetRealTimeSeconds() - PlaybackShownRealTime >= SkipInputGraceSeconds;
+}
+
+void UKillcamReplaySubsystem::SkipPlayback()
+{
+	if (CanSkipPlayback())
+	{
+		StopPlayback();
+	}
 }
 
 void UKillcamReplaySubsystem::CancelForRespawn()
@@ -234,7 +246,7 @@ bool UKillcamReplaySubsystem::CanPlayForCurrentLife() const
 void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEvent& EliminationEvent)
 {
 	AShooterPlayerController* PlayerController = GetPlayerController();
-	if (bPlaybackRequestPending || bPlaying || !IsValid(PlayerController)
+	if (bPlaybackRequestPending || bPlaying || IsMatchEnded() || !IsValid(PlayerController)
 		|| PlayerController->GetPlayerState<AShooterPlayerState>() != EliminationEvent.VictimPlayerState
 		|| !IsValid(EliminationEvent.KillerPlayerState)
 		|| EliminationEvent.KillerPlayerState == EliminationEvent.VictimPlayerState)
@@ -301,15 +313,44 @@ void UKillcamReplaySubsystem::BindGameState()
 		return;
 	}
 
-	if (IsValid(BoundGameState))
-	{
-		BoundGameState->OnPlayerEliminated.RemoveDynamic(this, &ThisClass::HandlePlayerEliminated);
-	}
+	UnbindGameState();
 
 	BoundGameState = GameState;
 	if (IsValid(BoundGameState))
 	{
 		BoundGameState->OnPlayerEliminated.AddUniqueDynamic(this, &ThisClass::HandlePlayerEliminated);
+		if (ABaseTeamMatchGameState* MatchGameState = Cast<ABaseTeamMatchGameState>(BoundGameState))
+		{
+			MatchGameState->OnMatchStateChanged.AddUniqueDynamic(this, &ThisClass::HandleMatchStateChanged);
+		}
+	}
+}
+
+void UKillcamReplaySubsystem::UnbindGameState()
+{
+	if (!IsValid(BoundGameState))
+	{
+		return;
+	}
+
+	BoundGameState->OnPlayerEliminated.RemoveDynamic(this, &ThisClass::HandlePlayerEliminated);
+	if (ABaseTeamMatchGameState* MatchGameState = Cast<ABaseTeamMatchGameState>(BoundGameState))
+	{
+		MatchGameState->OnMatchStateChanged.RemoveDynamic(this, &ThisClass::HandleMatchStateChanged);
+	}
+}
+
+bool UKillcamReplaySubsystem::IsMatchEnded() const
+{
+	const ABaseTeamMatchGameState* MatchGameState = Cast<ABaseTeamMatchGameState>(BoundGameState);
+	return IsValid(MatchGameState) && MatchGameState->GetMatchWinner() != EGameTeam::None;
+}
+
+void UKillcamReplaySubsystem::HandleMatchStateChanged()
+{
+	if (IsMatchEnded() && (bPlaying || bPlaybackRequestPending))
+	{
+		CancelPlayback(false);
 	}
 }
 
@@ -364,6 +405,11 @@ void UKillcamReplaySubsystem::StartPlayback(const uint64 Generation,
 {
 	if (!IsCurrentRequest(Generation, RequestWorld, VictimPawn))
 	{
+		return;
+	}
+	if (IsMatchEnded())
+	{
+		CancelPlayback(false);
 		return;
 	}
 	if (!CanPlayForCurrentLife())
@@ -471,6 +517,7 @@ void UKillcamReplaySubsystem::HandlePlaybackReady(const bool bWasSuccessful, con
 
 	if (UWorld* World = SourceWorld.Get())
 	{
+		PlaybackShownRealTime = World->GetRealTimeSeconds();
 		World->GetTimerManager().SetTimer(
 			PlaybackTimerHandle,
 			FTimerDelegate::CreateWeakLambda(this, [this, Generation, RequestWorld, VictimPawn, PlaybackDriver]()

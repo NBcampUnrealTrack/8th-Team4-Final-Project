@@ -304,7 +304,31 @@ void URogueGameplayAbility::FinishDeliver()
 
 void URogueGameplayAbility::BeginRepeatDeliver()
 {
-	if (RepeatCueTag.IsValid())
+	if (RepeatCueEffect)
+	{
+		if (HasAuthority(&CurrentActivationInfo))
+		{
+			const FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(
+				CurrentSpecHandle,
+				CurrentActorInfo,
+				CurrentActivationInfo,
+				RepeatCueEffect,
+				GetAbilityLevel());
+
+			if (SpecHandle.IsValid())
+			{
+				SpecHandle.Data->SetSetByCallerMagnitude(
+					RogueTags::Data_Magnitude_Duration,
+					RepeatDuration);
+				RepeatCueEffectHandle = ApplyGameplayEffectSpecToOwner(
+					CurrentSpecHandle,
+					CurrentActorInfo,
+					CurrentActivationInfo,
+					SpecHandle);
+			}
+		}
+	}
+	else if (RepeatCueTag.IsValid())
 	{
 		K2_AddGameplayCueWithParams(RepeatCueTag, MakeCueParams(), /*bRemoveOnAbilityEnd*/ true);
 	}
@@ -468,6 +492,18 @@ void URogueGameplayAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 			ASC->RemoveLooseGameplayTag(RogueTags::State_Combat_UtilityHeld, 1,
 				EGameplayTagReplicationState::TagOnly);
 		}
+	}
+
+	if (RepeatCueEffectHandle.IsValid())
+	{
+		if (HasAuthority(&ActivationInfo))
+		{
+			if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+			{
+				ASC->RemoveActiveGameplayEffect(RepeatCueEffectHandle);
+			}
+		}
+		RepeatCueEffectHandle.Invalidate();
 	}
 
 	ActivePayload = FRogueEffectPayload();

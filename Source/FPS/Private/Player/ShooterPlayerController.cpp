@@ -2679,6 +2679,16 @@ void AShooterPlayerController::Input_AdjustADSZoom(const FInputActionValue& Valu
 
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag))
+	{
+		const bool bFreshPress = !bPrimaryInputHeld;
+		bPrimaryInputHeld = true;
+		if (TryHandleKillcamSkipInput(bFreshPress))
+		{
+			return;
+		}
+	}
+
 	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
 	{
 		if (HasAuthority())
@@ -2705,6 +2715,11 @@ void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, co
 
 void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag))
+	{
+		bPrimaryInputHeld = false;
+	}
+
 	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
 	{
 		return;
@@ -2738,6 +2753,24 @@ bool AShooterPlayerController::IsSpectatorCycleInput(const FGameplayTag InputTag
 		TEXT("InputTag.Ability.Primary"),
 		false);
 	return PrimaryInputTag.IsValid() && InputTag.MatchesTagExact(PrimaryInputTag);
+}
+
+bool AShooterPlayerController::TryHandleKillcamSkipInput(const bool bFreshPress)
+{
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UKillcamReplaySubsystem* Killcam = IsValid(LocalPlayer)
+		? LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>()
+		: nullptr;
+	if (!IsValid(Killcam) || !Killcam->IsPlaying())
+	{
+		return false;
+	}
+
+	if (bFreshPress)
+	{
+		Killcam->SkipPlayback();
+	}
+	return true;
 }
 
 bool AShooterPlayerController::IsInSpectatorFlow() const

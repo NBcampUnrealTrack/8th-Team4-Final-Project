@@ -3,6 +3,7 @@
 #include "GAS/CueNotify/RogueFxLoopingCueNotify.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
@@ -150,6 +151,7 @@ void ARogueFxLoopingCueNotify::SpawnOnWeapon(AActor* Target)
 		return;
 	}
 
+	const bool bIsReplay = Target->GetWorld() && Target->GetWorld()->IsPlayingReplay();
 	const APawn* Pawn = Cast<APawn>(Target);
 	const FRotator AimRotation = Pawn ? Pawn->GetBaseAimRotation() : Target->GetActorRotation();
 
@@ -157,13 +159,11 @@ void ARogueFxLoopingCueNotify::SpawnOnWeapon(AActor* Target)
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Meshes); ++Index)
 	{
 		USkeletalMeshComponent* Mesh = Meshes[Index];
-		if (!IsValid(Mesh))
+		const bool bFirstPerson = (Index == 0);
+		if (!IsValid(Mesh) || (bIsReplay && !bFirstPerson))
 		{
 			continue;
 		}
-
-		// 1인칭은 본인만, 3인칭은 본인 제외
-		const bool bFirstPerson = (Index == 0);
 
 		for (const FRogueFxCueEntry& Entry : Particles)
 		{
@@ -176,8 +176,8 @@ void ARogueFxLoopingCueNotify::SpawnOnWeapon(AActor* Target)
 						EAttachLocation::KeepRelativeOffset, false))
 				{
 					Spawned->SetWorldRotation(AimRotation);
-					Spawned->SetOnlyOwnerSee(bFirstPerson);
-					Spawned->SetOwnerNoSee(!bFirstPerson);
+					Spawned->SetOnlyOwnerSee(!bIsReplay && bFirstPerson);
+					Spawned->SetOwnerNoSee(!bIsReplay && !bFirstPerson);
 					SpawnedParticles.Add(Spawned);
 				}
 			}
@@ -190,8 +190,8 @@ void ARogueFxLoopingCueNotify::SpawnOnWeapon(AActor* Target)
 				{
 					Spawned->SetRelativeScale3D(ScaleVector);
 					Spawned->SetWorldRotation(AimRotation);
-					Spawned->SetOnlyOwnerSee(bFirstPerson);
-					Spawned->SetOwnerNoSee(!bFirstPerson);
+					Spawned->SetOnlyOwnerSee(!bIsReplay && bFirstPerson);
+					Spawned->SetOwnerNoSee(!bIsReplay && !bFirstPerson);
 					if (Entry.bOverrideColor)
 					{
 						Spawned->SetVariableLinearColor(TEXT("User.Color"), Entry.Color);

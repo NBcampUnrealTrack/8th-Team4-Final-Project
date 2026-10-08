@@ -2,6 +2,8 @@
 
 #include "Engine/World.h"
 #include "GameMode/State/BaseRoundGameState.h"
+#include "GameMode/State/DominationGameState.h"
+#include "GameMode/State/LobbyGameState.h"
 #include "GameMode/Types/RoundTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerState.h"
@@ -137,6 +139,18 @@ EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
 		return RequestedAudience;
 	}
 
+	if (World->GetGameState<ALobbyGameState>())
+	{
+		return EVoiceChatAudience::Everyone;
+	}
+
+	if (const ADominationGameState* DominationGameState = World->GetGameState<ADominationGameState>())
+	{
+		return DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
+			? EVoiceChatAudience::Team
+			: EVoiceChatAudience::Everyone;
+	}
+
 	const ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();
 	if (!IsValid(RoundGameState))
 	{
@@ -150,7 +164,7 @@ EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
 	case EGameFlowPhase::MatchEnded:
 		return EVoiceChatAudience::Everyone;
 	default:
-		return RequestedAudience;
+		return EVoiceChatAudience::Team;
 	}
 }
 

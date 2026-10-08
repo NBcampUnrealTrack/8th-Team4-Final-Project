@@ -172,6 +172,10 @@ protected:
 		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides, Categories = "GameplayCue"))
 	FGameplayTag RepeatCueTag;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation",
+		meta = (EditCondition = "RepeatDuration > 0", EditConditionHides))
+	TSubclassOf<UGameplayEffect> RepeatCueEffect;
+
 	// 부여되거나 부활해 아바타가 연결되면 자동 발동 (주기 발동 증강용)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Activation")
 	bool bActivateOnAvatarSet = false;
@@ -238,6 +242,7 @@ private:
 	void RepeatDeliver();
 
 	FTimerHandle RepeatTimer;
+	FActiveGameplayEffectHandle RepeatCueEffectHandle;
 
 	// 내가 얹은 UtilityHeld 를 아직 안 걷었는지
 	bool bHoldTagApplied = false;

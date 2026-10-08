@@ -459,6 +459,7 @@ private:
 	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
 	bool IsInSpectatorFlow() const;
+	bool TryHandleKillcamSkipInput(bool bFreshPress);
 	void ShowSpectatorWidget(APlayerState* ViewTargetPlayerState);
 	void RefreshSpectatorWidget(APlayerState* ViewTargetPlayerState);
 	void HideSpectatorWidget();
@@ -509,6 +510,7 @@ private:
 	double LastChatMessageServerTime = -1.0;
 	double LastPingServerTime = -1.0;
 	bool bKillcamViewTargetSuppressed = false;
+	bool bPrimaryInputHeld = false;
 	UFUNCTION()
 	void HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn);
 	void HandleViewTargetBlendComplete();
