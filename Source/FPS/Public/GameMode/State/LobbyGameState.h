@@ -21,6 +21,9 @@ class FPS_API ALobbyGameState : public AGameStateBase
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// Logout 시점엔 나간 PlayerState 가 아직 PlayerArray 에 남아 있어, 실제로 빠질 때 다시 알린다
+	virtual void RemovePlayerState(APlayerState* PlayerState) override;
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Lobby")
 	void NotifyLobbyPlayerListChanged();
 

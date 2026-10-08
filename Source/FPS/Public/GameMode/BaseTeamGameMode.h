@@ -18,6 +18,7 @@ class FPS_API ABaseTeamGameMode : public AShooterGameMode
 
 public:
 	ABaseTeamGameMode();
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 
 	UFUNCTION(BlueprintPure, Category = "Game Flow|Team")

@@ -136,7 +136,7 @@ private:
 	int32 MinimumPlayersPerTeam = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Match Start", meta = (AllowPrivateAccess = "true", ClampMin = "1.0"))
-	float ClassSelectionDuration = 15.0f;
+	float ClassSelectionDuration = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Domination|Objective", meta = (AllowPrivateAccess = "true"))
 	FDominationCaptureRules CaptureRules;

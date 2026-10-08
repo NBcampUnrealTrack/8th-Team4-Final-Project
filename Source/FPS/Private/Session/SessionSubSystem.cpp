@@ -14,6 +14,7 @@
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
+#include "TimerManager.h"
 
 namespace SessionSettingKeys
 {
@@ -593,6 +594,25 @@ bool USessionSubSystem::SetRoomJoinable(const bool bIsJoinable)
 	QueueRoomSettingsUpdate();
 
 	return true;
+}
+
+void USessionSubSystem::NotifyRoomMembersChanged()
+{
+	// Steam 로비 인원은 접속·종료 이벤트보다 늦게 반영될 수 있어 잠깐 뒤에 게시한다
+	GetGameInstance()->GetTimerManager().SetTimer(
+		RoomMembersPublishHandle, this, &ThisClass::PublishRoomMembers, 2.0f, false);
+}
+
+void USessionSubSystem::PublishRoomMembers()
+{
+	// 방 이동·시작 처리 중이면 끝날 때까지 미룬다
+	if (IsRoomOperationInProgress())
+	{
+		NotifyRoomMembersChanged();
+		return;
+	}
+
+	QueueRoomSettingsUpdate();
 }
 
 const FString& USessionSubSystem::GetRoomName() const
