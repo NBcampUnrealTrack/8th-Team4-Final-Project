@@ -172,7 +172,7 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  if(auto* C=Controller())Preview->Studio=C->Studio;
  auto HeaderFont=HeadingFont?FSlateFontInfo(HeadingFont,46):FCoreStyle::GetDefaultFontStyle("Bold",46);
  auto Left=SNew(SVerticalBox);
- Left->AddSlot().AutoHeight()[Label(TEXT("DUSTBASE  /  OPERATOR CUSTOMIZATION"),14,Accent)];
+ Left->AddSlot().AutoHeight()[Label(TEXT("DUSTBASE  /  CUSTOMIZATION"),14,Accent)];
  Left->AddSlot().AutoHeight().Padding(0,6)[SNew(STextBlock).Font(HeaderFont).Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?C->ActiveClass.ToString().ToUpper():TEXT(""));})];
  Left->AddSlot().AutoHeight()[Label(TEXT("장비를 정비하고, 나만의 스타일을 완성하세요."),16,CustomizationPresentationTheme::Text)];
  Left->AddSlot().FillHeight(1)[Preview];
@@ -194,7 +194,12 @@ TSharedRef<SWidget> UCustomizationStudioWidget::BuildMutableLevelLayout()
  Right->AddSlot().FillHeight(1)[SNew(SScrollBox)+SScrollBox::Slot()[Edit]];
  Right->AddSlot().AutoHeight().Padding(0,12)
  [SNew(STextBlock).Font(TextFont).ColorAndOpacity(Muted).AutoWrapText(true)
-  .Text_Lambda([this](){auto* C=Controller();return FText::FromString(C?(C->bDirty?TEXT("● 미저장 변경사항\n"):TEXT(""))+C->Status+TEXT("\n")+(C->Studio?C->Studio->GetStatus():TEXT("미리보기 없음")):TEXT("준비 중"));})];
+  .Text_Lambda([this](){auto* C=Controller();if(!C)return FText::FromString(TEXT("준비 중"));
+   FString Text=(C->bDirty?TEXT("● 미저장 변경사항\n"):TEXT(""))+C->Status;
+   // Preview loading and failures stay visible; the "ready" message is not shown.
+   const FString Preview=C->Studio?C->Studio->GetStatus():TEXT("미리보기 없음");
+   if(!Preview.StartsWith(TEXT("미리보기 준비 완료")))Text+=TEXT("\n")+Preview;
+   return FText::FromString(Text);})];
  auto ConflictChoices=SNew(SHorizontalBox)
   +SHorizontalBox::Slot().FillWidth(1).Padding(0,0,4,0)[Action(TEXT("PC 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(true);})]
   +SHorizontalBox::Slot().FillWidth(1)[Action(TEXT("클라우드 저장 사용"),[this](){if(auto* C=Controller())C->ResolveCloudConflict(false);})];

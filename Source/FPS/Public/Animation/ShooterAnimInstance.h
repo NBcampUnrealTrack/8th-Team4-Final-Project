@@ -157,6 +157,14 @@ private:
 	FTransform PreviousSupportRelative = FTransform::Identity;
 	bool bSupportAnchorActive = false;
 
+	// Pistol reload (third person): while the pistol's magazine is out, show a magazine in the support hand
+	// (where the reload contact node holds it) and hide the pistol's own.
+	void UpdateReloadMagazine();
+	void ReleaseReloadMagazine();
+	TWeakObjectPtr<USkeletalMeshComponent> ReloadMagazine;
+	TWeakObjectPtr<USkeletalMeshComponent> HiddenMagazineGun;
+	bool bReloadMagazineMissing = false;
+
 	void CacheReferences();
 	void UpdateMovementValues();
 	void UpdateAimValues(float DeltaSeconds);
