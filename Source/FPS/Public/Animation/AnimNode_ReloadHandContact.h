@@ -7,6 +7,12 @@
 class UAnimMontage;
 struct FReloadContactPlayback;
 
+namespace ReloadHandContact
+{
+ // Support hand (body hand axes) in the pistol's Magazine bone frame while it holds the magazine in a reload.
+ FPS_API FTransform PistolHandInMagazine();
+}
+
 USTRUCT()
 struct FPS_API FReloadHandPath
 {
@@ -34,5 +40,9 @@ private:
  FTransform RightBasis=FTransform::Identity,LeftBasis=FTransform::Identity;
  FGameplayTag CachedWeaponTag;
  bool bAttachmentReady=false;
+ // Idle support hold in the right hand's space, for the start and end of a magazine reload.
+ FTransform IdleHoldInGrip=FTransform::Identity;
+ FGameplayTag IdleHoldTag;
+ bool bHaveIdleHold=false;
  const TArray<FReloadContactPlayback>* Playback=nullptr;
 };

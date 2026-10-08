@@ -110,6 +110,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetIsStationary(bool bNewIsStationary);
 
+	// 앉아 있는지. 앉으면 탄퍼짐에 CrouchSpreadMultiplier가 곱해지도록 Aim 컴포넌트에 위임한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetIsCrouching(bool bNewIsCrouching);
+
 	// 아래 SetEffective* 계열은 전부 같은 규칙: 증강/스탯 보정을 반영해 "지금 이 무기에 실제로
 	// 적용할 값"을 외부(GA_RangedAttack/GA_MeleeAttack/GA_Reload)가 URogueAugmentStatResolver로
 	// 계산해서 꽂아주는 Setter다. AWeaponBase는 누가 어떻게 계산했는지 몰라도 된다.
@@ -278,6 +282,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetTraceRange() const { return TraceRange; }
 
+	// 일반 사격과 같은 채널/정밀도/사거리의 읽기 전용 조준 피드백 설정. 발사 상태는 바꾸지 않는다.
+	bool GetAimTraceSettings(FHitscanTraceSettings& OutTraceSettings) const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
 
@@ -364,6 +371,7 @@ protected:
 
 	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;
+	float GetPhysicalTraceRange(bool bHeavyAttack, bool bAllowLoadDamageData = true) const;
 	FVector CalculateTraceDirection(const FVector& AimDirection) const;
 	void ResolveHitscanShot(
 		const FVector& TraceStart,

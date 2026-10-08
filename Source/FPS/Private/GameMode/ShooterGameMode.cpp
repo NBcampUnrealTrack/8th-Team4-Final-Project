@@ -71,6 +71,17 @@ void AShooterGameMode::HandlePlayerEliminated(
     const IRogueCombatFeedbackPolicy* FeedbackPolicy = RogueCombatFeedbackPolicy::Resolve(
         IsValid(VictimPawn) ? static_cast<AActor*>(VictimPawn) : static_cast<AActor*>(EliminatedController));
     const bool bUsesStandardEliminationFeedback = !FeedbackPolicy || FeedbackPolicy->UsesStandardEliminationFeedback();
+    const bool bIsEnemyElimination = IsValid(KillerPlayerState)
+        && KillerPlayerState != VictimPlayerState
+        && (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam());
+    AShooterPlayerController* KillerController = bIsEnemyElimination
+        ? Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()) : nullptr;
+
+    // 중앙 킬 이펙트는 CQB의 전적·킬로그·연속킬 사운드 억제와 별도로 전달한다.
+    if (KillerController && (!FeedbackPolicy || FeedbackPolicy->CountsAsCombatKill()))
+    {
+        KillerController->ClientPlayKillEffect();
+    }
 
     if (bUsesStandardEliminationFeedback)
     {
@@ -79,15 +90,12 @@ void AShooterGameMode::HandlePlayerEliminated(
             VictimPlayerState->ServerAddDeath();
         }
 
-        if (IsValid(KillerPlayerState)
-            && KillerPlayerState != VictimPlayerState
-            && (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
+        if (bIsEnemyElimination)
         {
             KillerPlayerState->ServerAddKill();
 
             const int32 KillStreak = KillerPlayerState->ServerRegisterKillStreak();
-            if (AShooterPlayerController* KillerController =
-                Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
+            if (KillerController)
             {
                 KillerController->ClientPlayKillSound(KillStreak);
             }

@@ -89,6 +89,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Site Tracker", meta = (DisplayName = "라운드 점수 변경"))
 	void BP_OnRoundScoreChanged(int32 TeamAScore, int32 TeamBScore);
 
+	// 내 팀 기준 점수. 점수나 내 팀이 바뀔 때 호출. 왼쪽에 Ally, 오른쪽에 Enemy 를 그리면 된다
+	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Site Tracker", meta = (DisplayName = "내 팀 기준 점수 변경"))
+	void BP_OnRelativeScoreChanged(int32 AllyScore, int32 EnemyScore);
+
 	// 로컬 플레이어가 활성 거점 구역에 들어오거나 나갈 때 호출. Blueprint는 여기서 강조 크기를 키우거나 줄이면 된다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Site Tracker", meta = (DisplayName = "로컬 점령 구역 진입 상태 변경"))
 	void BP_OnLocalCaptureZoneChanged(bool bShouldShow);
@@ -115,12 +119,16 @@ private:
 
 	void RefreshActiveCapturePoint();
 	void RefreshLocalCaptureZoneState();
+	void RefreshLocalState();
+	// bForce 가 false 면 내 팀이 바뀌었을 때만 보낸다
+	void RefreshRelativeScore(bool bForce);
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
 	FTimerHandle LocalCaptureZoneTimerHandle;
 	bool bHasLocalCaptureZoneState = false;
 	bool bLocalPlayerInsideActivePoint = false;
+	EGameTeam CachedLocalTeam = EGameTeam::None;
 
 	static constexpr float LocalCaptureZoneUpdateInterval = 0.1f;
 };

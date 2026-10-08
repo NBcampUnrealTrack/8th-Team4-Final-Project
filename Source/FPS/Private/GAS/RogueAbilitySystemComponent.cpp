@@ -27,7 +27,8 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 	SetIsReplicatedByDefault(true);
 }
 
-void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
+void URogueAbilitySystemComponent::AbilityInputTagPressed(
+	const FGameplayTag& InputTag, const bool bToggleADS, const bool bIsNewPress)
 {
 	if (!ensure(InputTag.IsValid()))
 	{
@@ -45,6 +46,21 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 	{
 		ABILITYLIST_SCOPE_LOCK();
 
+		// 같은 입력에 ADS 스펙이 여러 개여도 해제 클릭으로 다른 ADS를 켜지 않는다.
+		bool bToggleOffADS = false;
+		if (bToggleADS && bIsNewPress)
+		{
+			for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+			{
+				if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag)
+					&& Spec.Ability && Spec.Ability->IsA<UGA_ADS>() && Spec.IsActive())
+				{
+					bToggleOffADS = true;
+					break;
+				}
+			}
+		}
+
 		for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
 		{
 			if (!Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -53,6 +69,20 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 			}
 
 			++MatchedSpecCount;
+
+			// 같은 입력 태그를 쓰는 다른 어빌리티의 홀드 동작은 그대로 둔다.
+			if (bToggleADS && Spec.Ability && Spec.Ability->IsA<UGA_ADS>())
+			{
+				if (!bIsNewPress)
+				{
+					continue;
+				}
+				if (bToggleOffADS)
+				{
+					ReleaseAbilityInput(Spec);
+					continue;
+				}
+			}
 
 			if (Spec.IsActive())
 			{
@@ -134,7 +164,8 @@ void URogueAbilitySystemComponent::ReportInputResult(
 		*InputTag.ToString(), CandidateCount);
 }
 
-void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
+void URogueAbilitySystemComponent::AbilityInputTagReleased(
+	const FGameplayTag& InputTag, const bool bPreserveADS)
 {
 	if (!ensure(InputTag.IsValid()))
 	{
@@ -150,19 +181,41 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 			continue;
 		}
 
-		Spec.InputPressed = false;
-
-		if (!Spec.IsActive())
+		if (bPreserveADS && Spec.Ability && Spec.Ability->IsA<UGA_ADS>())
 		{
 			continue;
 		}
 
-		AbilitySpecInputReleased(Spec);
-
-		// WaitInputRelease 태스크는 이 복제 이벤트를 기다림
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
-			Spec.Handle, GetInstanceActivationPredictionKey(Spec));
+		ReleaseAbilityInput(Spec);
 	}
+}
+
+void URogueAbilitySystemComponent::ReleaseADSInput()
+{
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		if (!Spec.Ability || !Spec.Ability->IsA<UGA_ADS>())
+		{
+			continue;
+		}
+		ReleaseAbilityInput(Spec);
+	}
+}
+
+void URogueAbilitySystemComponent::ReleaseAbilityInput(FGameplayAbilitySpec& Spec)
+{
+	// 호출부가 어빌리티 목록을 잠근 상태에서 입력 해제를 처리한다.
+	Spec.InputPressed = false;
+	if (!Spec.IsActive())
+	{
+		return;
+	}
+
+	AbilitySpecInputReleased(Spec);
+	// WaitInputRelease 태스크는 이 복제 이벤트를 기다린다.
+	InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
+		Spec.Handle, GetInstanceActivationPredictionKey(Spec));
 }
 
 void URogueAbilitySystemComponent::CancelADSAbilityForWeapon(const AWeaponBase* Weapon)

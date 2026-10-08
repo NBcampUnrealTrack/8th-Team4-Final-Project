@@ -21,6 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCurrentWeaponChanged, AWeaponBase
 // 크로스헤어 간격 계산에 쓰이는 값(장착 무기, 탄퍼짐 각도, 카메라 FOV) 중 하나라도 바뀌었을 때만 브로드캐스트된다.
 // UShooterReticle이 NativeTick 폴링 대신 이 델리게이트를 구독한다.
 DECLARE_MULTICAST_DELEGATE(FOnCrosshairSpreadInputsChanged);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCrosshairTargetChanged, bool);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAimingStateChanged, bool);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -119,6 +120,10 @@ public:
 
 	// 구독자가 있을 때만(=로컬 크로스헤어 위젯이 붙은 Pawn) 매 틱 값 변화를 비교한다.
 	FOnCrosshairSpreadInputsChanged OnCrosshairSpreadInputsChanged;
+
+	// 로컬 중앙 조준점의 적 여부가 바뀔 때만 알린다. 서버 복제 상태가 아니다.
+	FOnCrosshairTargetChanged OnCrosshairTargetChanged;
+	bool IsAimingAtEnemy() const { return bAimingAtEnemy; }
 
 	FOnAimingStateChanged OnAimingStateChanged;
 
@@ -229,6 +234,9 @@ private:
 	void RefreshMainHUDSuppressionState();
 	// 크로스헤어 입력값(무기/탄퍼짐/FOV)이 직전 브로드캐스트 이후 바뀌었으면 OnCrosshairSpreadInputsChanged를 알린다.
 	void BroadcastCrosshairSpreadInputsIfChanged();
+	void UpdateCrosshairTarget();
+	void SetAimingAtEnemy(bool bNewAimingAtEnemy);
+	bool bAimingAtEnemy = false;
 
 	// 마지막으로 OnCrosshairSpreadInputsChanged에 실어 보낸 값. 같은 값의 중복 브로드캐스트를 막는다.
 	TWeakObjectPtr<AWeaponBase> LastCrosshairWeapon;

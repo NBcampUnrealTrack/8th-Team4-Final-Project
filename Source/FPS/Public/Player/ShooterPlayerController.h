@@ -37,6 +37,7 @@ class USoundMix;
 struct FInputActionValue;
 struct FStreamableHandle;
 struct FEnhancedActionKeyMapping;
+struct FUIInputConfig;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
@@ -47,9 +48,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPin
 // 크로스헤어(UShooterReticle)가 구독해서 히트마커 표시. Type으로 부위별(바디/쉴드/헤드샷) 색상을,
 // bKill로 처치 강조(빨간색)를 결정한다.
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnHitMarker, ERogueHitMarkerType /*Type*/, bool /*bKill*/);
-// 크로스헤어(UShooterReticle)가 구독해서 중앙 킬 이펙트(해골 등)를 재생. ClientPlayKillSound와 같은 시점에
-// 발신되며, ShooterGameMode가 자살/팀킬을 걸러낸 뒤의 확정된 처치에만 발신하므로 OnHitMarker의 bKill보다
-// 이 이벤트가 킬 이펙트 트리거로 더 정확하다.
+// 서버가 자살/팀킬을 제외한 처치를 확정하면 중앙 킬 이펙트를 재생한다.
+// 전적·킬 사운드 사용 여부와 별도로 전달한다.
 DECLARE_MULTICAST_DELEGATE(FOnKillEffect);
 DECLARE_MULTICAST_DELEGATE(FOnShooterViewPresentationChanged);
 DECLARE_MULTICAST_DELEGATE(FOnSurrenderVoteStateChanged);
@@ -88,6 +88,7 @@ public:
     void SubmitSavedAppearances();
     virtual void AcknowledgePossession(APawn* NewPawn) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void FlushPressedKeys() override;
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
 	FOnHitMarker OnHitMarker;
@@ -134,18 +135,6 @@ public:
 
 	// 방 화면이 Activated/Deactivated 쌍으로 구독
 	FSimpleMulticastDelegate OnLobbyStartFailed;
-
-	// 콘솔(~)에서 바로 테스트할 수 있는 임시 진입점. 정식 설정 메뉴가 생기면 그 UI가
-	// UShooterGameUserSettings::SetDynamicCrosshairEnabled를 직접 불러도 된다 - 이 함수는
-	// 그 위에 얹은 토글 편의 기능일 뿐이다.
-	UFUNCTION(Exec)
-	void ToggleDynamicCrosshair();
-
-	// TEMP 디버그: 데미지 파이프라인을 거치지 않고 피격 방향 인디케이터만 강제로 발동시킨다.
-	// 콘솔(~)에서 "TestHitIndicator" 입력 - 인디케이터 UI(회전/페이드)만 따로 검증할 때 쓴다.
-	// 실제 데미지 파이프라인이 정상화되면 이 함수는 지워도 된다.
-	UFUNCTION(Exec)
-	void TestHitIndicator();
 
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Loading")
 	void ShowLoadingScreen(float InitialProgress = 0.0f);
@@ -203,7 +192,11 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayHitMarker(ERogueHitMarkerType Type, bool bKill, bool bPlaySound);
 
-	// 서버가 킬을 확정한 직후 처치자 본인에게만 알려 킬 사운드 + 중앙 킬 이펙트(OnKillEffect)를 재생.
+	// 처치자 본인에게 중앙 킬 이펙트를 재생한다. CQB의 전적·사운드 억제와 독립적이다.
+	UFUNCTION(Client, Reliable)
+	void ClientPlayKillEffect();
+
+	// 처치자 본인에게 일반/연속킬 사운드를 재생한다.
 	// KillStreak: 이번 킬이 몇 연속킬인지(1=일반 킬, 2=더블킬, 3=트리플킬, 4 이상=쿼드라킬).
 	UFUNCTION(Client, Reliable)
 	void ClientPlayKillSound(int32 KillStreak);
@@ -266,6 +259,16 @@ public:
 	// UI.Layer.Modal에 막 Push된 입력창을 열린 채팅으로 등록한다. 인게임은 Input_OpenChat이,
 	// Enhanced Input이 오지 않는 대기방(Menu 입력 모드)은 UShooterRoomScreen이 Enter를 받아 호출한다.
 	void BeginChatInput(UShooterChatInputBox* Widget);
+
+	// 인게임 채팅 입력창을 연다(Enter와 같은 동작). 클래스 선택창처럼 Menu 입력 모드라 Enhanced Input의
+	// OpenChatAction이 오지 않는 화면이 Enter를 직접 받아 호출한다.
+	// ScreenOffset: 입력창 WBP는 인게임 HUD 기준으로 배치돼 있어, 다른 화면에서 열 때만 이만큼 옮긴다
+	// (px, +Y가 아래). 입력창 위젯이 재사용될 수 있어 인게임에서는 매번 0으로 되돌린다.
+	void OpenChatInput(const FVector2D& ScreenOffset = FVector2D::ZeroVector);
+
+	// false면 전체(Match) 채널을 쓸 수 없다 - 팀/귓말만 남는다. 열 때 Match였으면 Team으로 바꾸고 Tab
+	// 순환에서도 Match를 건너뛴다. 클래스 선택창이 떠 있는 동안 false로 둔다.
+	void SetMatchChatChannelAllowed(bool bAllowed);
 
 	// 귓속말 자동완성에서 이름을 확정하는 즉시(전송 전) 호출한다. 채널을 바로 Whisper로 잠그고
 	// 최근 귓말 큐를 갱신해, 그 뒤로는 "/w 이름" 없이 메시지만 쳐도 이 사람에게 간다.
@@ -421,6 +424,9 @@ private:
 		FName ContextId,
 		TArray<FShooterInputBindingEntry>& OutBindings) const;
 	void HandleInputBindingsChanged();
+	void ResetInputModeState();
+	void HandleUIInputConfigChanged(const FUIInputConfig Config);
+	TSet<FGameplayTag> PressedAbilityInputTags;
 	static FName MakeInputBindingId(
 		FName ContextId,
 		const FEnhancedActionKeyMapping& Mapping,
@@ -445,7 +451,7 @@ private:
 	void Input_SprintPressed();
 	void Input_SprintReleased();
 	void Input_CrouchPressed();
-	void Input_CrouchReleased();
+	void Input_CrouchReleased(bool bCanceled = false);
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_OpenChat();
@@ -456,7 +462,7 @@ private:
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
-	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag, bool bCanceled = false);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
 	bool IsInSpectatorFlow() const;
 	bool TryHandleKillcamSkipInput(bool bFreshPress);
@@ -493,6 +499,7 @@ private:
 
 	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
 	bool bIsChatInputOpen = false;
+	bool bMatchChatChannelAllowed = true;
 	bool bFullMapOpen = false;
 	EChatChannel CurrentChatChannel = EChatChannel::Team;
 

@@ -45,8 +45,8 @@ class FPS_API UWeaponDamageData : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	// 무기 태그로 조회
-	static const FWeaponDamageEntry* FindEntry(FGameplayTag WeaponTag);
+	// 무기 태그로 조회. false이면 로드된 데이터만 조용히 조회한다.
+	static const FWeaponDamageEntry* FindEntry(FGameplayTag WeaponTag, bool bAllowSynchronousLoad = true);
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

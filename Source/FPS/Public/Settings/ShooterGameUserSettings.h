@@ -27,9 +27,9 @@ enum class EShooterOptionsLanguage : uint8
 
 DECLARE_MULTICAST_DELEGATE(FOnShooterAudioSettingsChanged);
 DECLARE_MULTICAST_DELEGATE(FOnShooterInputBindingsChanged);
+DECLARE_MULTICAST_DELEGATE(FOnShooterInputModesChanged);
 
-// 크로스헤어 커스터마이징이 바뀔 때마다 발신. UShooterReticle이 구독해서 Dynamic Material
-// Instance 파라미터를 즉시 다시 적용한다(설정 화면에서 슬라이더 움직이는 동안 바로 미리보기됨).
+// 크로스헤어 설정이 바뀌면 게임 HUD와 옵션 미리보기를 즉시 갱신한다.
 DECLARE_MULTICAST_DELEGATE(FOnShooterCrosshairSettingsChanged);
 
 /** Setters change session values; the caller chooses when to SaveSettings. */
@@ -74,6 +74,7 @@ public:
 	// The local runtime applies audio changes independently of any options widget.
 	FOnShooterAudioSettingsChanged OnAudioSettingsChanged;
 	FOnShooterInputBindingsChanged OnInputBindingsChanged;
+	FOnShooterInputModesChanged OnInputModesChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Gameplay")
 	bool IsDynamicCrosshairEnabled() const { return bDynamicCrosshair; }
@@ -81,16 +82,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Gameplay")
 	void SetDynamicCrosshairEnabled(bool bEnabled);
 
-	// 크로스헤어 외형(M_UI_Base_ReticleBuilder 계열 머티리얼) 커스터마이징. 설정 화면에서
-	// 슬라이더/컬러피커가 바뀔 때마다 호출되고, UShooterReticle이 OnCrosshairSettingsChanged로
-	// 구독해서 즉시 미리보기에 반영한다.
+	// 크로스헤어 옵션 변경은 Tick 없이 이 이벤트로 반영한다.
 	FOnShooterCrosshairSettingsChanged OnCrosshairSettingsChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
-	FLinearColor GetCrosshairColor() const { return CrosshairColor; }
+	FLinearColor GetCrosshairColor() const;
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
 	void SetCrosshairColor(FLinearColor NewColor);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
+	bool IsEnemyCrosshairColorEnabled() const { return bEnableEnemyCrosshairColor; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Crosshair")
+	void SetEnemyCrosshairColorEnabled(bool bEnabled);
 
 	// 십자선 두께. 머티리얼의 CrossHairThickness 파라미터를 그대로 받는다(음수일수록 두꺼움).
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Crosshair")
@@ -136,6 +141,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
 	void SetInvertVerticalLookEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
+	bool IsADSToggleEnabled() const { return bToggleADS; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
+	void SetADSToggleEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
+	bool IsCrouchToggleEnabled() const { return bToggleCrouch; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
+	void SetCrouchToggleEnabled(bool bEnabled);
+
+	void ResetInputModes();
 
 	/** Applies the saved X/Y sensitivity, invert-Y and ADS multiplier in one place. */
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
@@ -195,10 +214,11 @@ protected:
 	UPROPERTY(Config)
 	bool bDynamicCrosshair = true;
 
-	// M_UI_Base_ReticleBuilder 계열 머티리얼 파라미터를 그대로 저장한다. 기본값은
-	// MI_UI_Reticles_BaseInstance의 기본값과 맞춰뒀다.
 	UPROPERTY(Config)
-	FLinearColor CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.4f);
+	bool bEnableEnemyCrosshairColor = false;
+
+	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	FLinearColor CrosshairColor = FLinearColor::White;
 
 	UPROPERTY(Config, meta = (ClampMin = "-1.0", ClampMax = "0.0"))
 	float CrosshairThickness = -0.5f;
@@ -220,6 +240,12 @@ protected:
 
 	UPROPERTY(Config)
 	bool bInvertVerticalLook = false;
+
+	UPROPERTY(Config)
+	bool bToggleADS = false;
+
+	UPROPERTY(Config)
+	bool bToggleCrouch = false;
 
 	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MasterVolume = 1.0f;

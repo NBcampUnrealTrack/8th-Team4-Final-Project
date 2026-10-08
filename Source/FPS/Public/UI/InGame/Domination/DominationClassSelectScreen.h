@@ -51,6 +51,9 @@ public:
 protected:
 	virtual void NativeOnActivated() override;
 	virtual void NativeOnDeactivated() override;
+	// Menu 입력 모드라 Enhanced Input의 OpenChatAction이 PC까지 오지 않는다. 대기방(UShooterRoomScreen)처럼
+	// Enter를 여기서 가로채 채팅을 연다. 선택창에서는 팀/귓말만 허용한다.
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -139,6 +142,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Class Selection")
 	FVector PreviewStageSpawnLocation = FVector(500000.0f, 500000.0f, 0.0f);
 	
+	// 채팅 입력창 WBP는 인게임 HUD 배치 기준으로 위치가 잡혀 있어 선택창의 채팅 로그와 어긋날 수 있다.
+	// WBP를 건드리면 인게임도 같이 바뀌므로, 선택창에서 열 때만 이만큼 옮긴다(px, +Y가 아래).
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Chat")
+	FVector2D ChatInputScreenOffset = FVector2D::ZeroVector;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")
 	TObjectPtr<USoundBase> ClassSelectBGM;
 	UPROPERTY(EditDefaultsOnly, Category = "Domination|Audio")

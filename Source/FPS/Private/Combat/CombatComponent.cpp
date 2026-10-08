@@ -6,16 +6,24 @@
 #include "Customization/FirstPersonAppearanceComponent.h"
 
 #include "Camera/CameraComponent.h"
+#include "CollisionQueryParams.h"
+#include "Components/DominationSandstormComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "GAS/RogueTargetFilter.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
+#include "Training/TrainingPlayerComponent.h"
+#include "Training/CQB/CQBTrainingAIComponent.h"
+#include "Training/CQB/CQBTrainingSpawner.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCombatComponent, Log, All);
@@ -56,6 +64,7 @@ void UCombatComponent::BeginPlay()
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SetAimingAtEnemy(false);
 	// 스왑 타이머 등 이 컴포넌트가 건 타이머를 한 번에 정리한다.
 	if (UWorld* World = GetWorld())
 	{
@@ -84,6 +93,7 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UpdateMovementSpreadMultiplier();
 	UpdateCameraZoom(DeltaTime);
 	BroadcastCrosshairSpreadInputsIfChanged();
+	UpdateCrosshairTarget();
 
 	// 스왑 타이머가 완료 콜백(FinishCycling) 없이 사라지면 bIsCycling이 true로 굳어
 	// IsWeaponReady()가 계속 false가 되고 사격/재장전이 영구히 막힌다 - 부활 직후
@@ -124,6 +134,8 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	// 대상은 아니다(스프린트는 지상이라 ADS 자체가 대부분 불가능/취소되므로 별개로 취급).
 	const bool bIsFalling = Movement->IsFalling();
 	Weapon->SetIsAirborne(bIsFalling);
+	// 이동 탄퍼짐을 무시하는 무기(샷건 등)도 앉기 보정은 받아야 해서 아래 조기 반환보다 먼저 넘긴다.
+	Weapon->SetIsCrouching(Movement->IsCrouching());
 
 	// 이동 탄퍼짐을 무시하는 무기(예: 산탄총)는 항상 정지(브레이킹 성공) + 배율 1로 취급한다 -
 	// MovingSpreadPenaltyDegrees/MovingADSSpreadDegrees/걷기·뛰기 배율이 전부 빠지고 공중 페널티만 남는다.
@@ -232,6 +244,83 @@ void UCombatComponent::BroadcastCrosshairSpreadInputsIfChanged()
 	LastCrosshairSpreadDegrees = SpreadDegrees;
 	LastCrosshairFieldOfView = FieldOfView;
 	OnCrosshairSpreadInputsChanged.Broadcast();
+}
+
+void UCombatComponent::UpdateCrosshairTarget()
+{
+	// 상대가 움직여 조준점에 들어올 수 있으므로 탐지만 갱신하고 UI에는 변화만 전달한다.
+	if (!OnCrosshairTargetChanged.IsBound())
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const AWeaponBase* Weapon = CurrentWeapon.Get();
+	const APlayerController* Controller = IsValid(OwnerPawn)
+		? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	UWorld* World = GetWorld();
+	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
+		|| !IsValid(Controller) || !Controller->IsLocalController()
+		|| Controller->GetPawn() != OwnerPawn || Controller->GetViewTarget() != OwnerPawn
+		|| !IsValid(Weapon) || !IsValid(World) || !IsValid(Settings)
+		|| !Settings->IsEnemyCrosshairColorEnabled() || !URogueTargetFilter::IsAlive(OwnerPawn))
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	FHitscanTraceSettings TraceSettings;
+	if (!Weapon->GetAimTraceSettings(TraceSettings))
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(CrosshairTarget), TraceSettings.bTraceComplex, OwnerPawn);
+	QueryParams.AddIgnoredActor(Weapon);
+	FHitResult Hit;
+	const bool bBlockingHit = World->LineTraceSingleByChannel(Hit, ViewLocation,
+		ViewLocation + ViewRotation.Vector() * TraceSettings.MaximumRangeCentimeters,
+		TraceSettings.TraceChannel, QueryParams);
+	const ACharacter* Target = bBlockingHit ? Cast<ACharacter>(Hit.GetActor()) : nullptr;
+	bool bEnemy = false;
+	if (IsValid(Target) && URogueTargetFilter::IsAlive(Target))
+	{
+		const ERogueTargetRelation Relation = URogueTargetFilter::GetRelation(OwnerPawn, Target);
+		bEnemy = Relation == ERogueTargetRelation::Hostile;
+		if (Relation == ERogueTargetRelation::TeamUnknown)
+		{
+			// 팀이 없는 CQB AI도 현재 참가 중인 훈련의 살아 있는 적이면 표시한다.
+			const UCQBTrainingAIComponent* CQB = Target->FindComponentByClass<UCQBTrainingAIComponent>();
+			const ACQBTrainingSpawner* Spawner = IsValid(CQB) ? CQB->GetTrainingSpawner() : nullptr;
+			const UTrainingPlayerComponent* Training = Controller->FindComponentByClass<UTrainingPlayerComponent>();
+			bEnemy = IsValid(CQB) && CQB->IsAlive()
+				&& IsValid(Spawner) && Spawner->IsTrainingRunning()
+				&& IsValid(Training) && Training->IsCQBTrainingActiveWith(*Spawner);
+		}
+	}
+	if (bEnemy)
+	{
+		// 폭풍의 기존 적 표시 거리 밖에서 색상으로 위치를 드러내지 않는다.
+		const UDominationSandstormComponent* Sandstorm = Controller->FindComponentByClass<UDominationSandstormComponent>();
+		bEnemy = !IsValid(Sandstorm) || Sandstorm->IsEnemyOutlineInRange(*Target);
+	}
+	SetAimingAtEnemy(bEnemy);
+}
+
+void UCombatComponent::SetAimingAtEnemy(const bool bNewAimingAtEnemy)
+{
+	if (bAimingAtEnemy == bNewAimingAtEnemy)
+	{
+		return;
+	}
+	bAimingAtEnemy = bNewAimingAtEnemy;
+	OnCrosshairTargetChanged.Broadcast(bAimingAtEnemy);
 }
 
 void UCombatComponent::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
@@ -617,6 +706,7 @@ void UCombatComponent::CancelAimingForWeapon(AWeaponBase* Weapon)
 
 void UCombatComponent::ResetAiming()
 {
+	SetAimingAtEnemy(false);
 	SetAiming(false);
 	AActor* OwnerActor = GetOwner();
 	if (bDefaultFieldOfViewInitialized && IsValid(OwnerActor) && OwnerActor->Implements<UPlayerInterface>())
@@ -740,6 +830,7 @@ void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 	AActor* OwnerActor = GetOwner();
 	if (CurrentWeapon.Get() != NewWeapon)
 	{
+		SetAimingAtEnemy(false);
 		CancelAimingForWeapon(CurrentWeapon.Get());
 		SetAiming(false);
 	}
@@ -895,6 +986,7 @@ void UCombatComponent::SetCyclingState(const bool bNewIsCycling)
 
 void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 {
+	SetAimingAtEnemy(false);
 	if (LastWeapon && LastWeapon != CurrentWeapon.Get())
 	{
 		// 이전 무기의 알림은 새 무기에서 시작한 ADS를 취소하지 않는다.
