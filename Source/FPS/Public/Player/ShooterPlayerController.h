@@ -37,6 +37,7 @@ class USoundMix;
 struct FInputActionValue;
 struct FStreamableHandle;
 struct FEnhancedActionKeyMapping;
+struct FUIInputConfig;
 
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
@@ -88,6 +89,7 @@ public:
     void SubmitSavedAppearances();
     virtual void AcknowledgePossession(APawn* NewPawn) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void FlushPressedKeys() override;
 
 	// 크로스헤어가 이 델리게이트를 구독해 히트마커를 표시
 	FOnHitMarker OnHitMarker;
@@ -267,6 +269,16 @@ public:
 	// Enhanced Input이 오지 않는 대기방(Menu 입력 모드)은 UShooterRoomScreen이 Enter를 받아 호출한다.
 	void BeginChatInput(UShooterChatInputBox* Widget);
 
+	// 인게임 채팅 입력창을 연다(Enter와 같은 동작). 클래스 선택창처럼 Menu 입력 모드라 Enhanced Input의
+	// OpenChatAction이 오지 않는 화면이 Enter를 직접 받아 호출한다.
+	// ScreenOffset: 입력창 WBP는 인게임 HUD 기준으로 배치돼 있어, 다른 화면에서 열 때만 이만큼 옮긴다
+	// (px, +Y가 아래). 입력창 위젯이 재사용될 수 있어 인게임에서는 매번 0으로 되돌린다.
+	void OpenChatInput(const FVector2D& ScreenOffset = FVector2D::ZeroVector);
+
+	// false면 전체(Match) 채널을 쓸 수 없다 - 팀/귓말만 남는다. 열 때 Match였으면 Team으로 바꾸고 Tab
+	// 순환에서도 Match를 건너뛴다. 클래스 선택창이 떠 있는 동안 false로 둔다.
+	void SetMatchChatChannelAllowed(bool bAllowed);
+
 	// 귓속말 자동완성에서 이름을 확정하는 즉시(전송 전) 호출한다. 채널을 바로 Whisper로 잠그고
 	// 최근 귓말 큐를 갱신해, 그 뒤로는 "/w 이름" 없이 메시지만 쳐도 이 사람에게 간다.
 	void RegisterWhisperTarget(const FString& PlayerName);
@@ -421,6 +433,9 @@ private:
 		FName ContextId,
 		TArray<FShooterInputBindingEntry>& OutBindings) const;
 	void HandleInputBindingsChanged();
+	void ResetInputModeState();
+	void HandleUIInputConfigChanged(const FUIInputConfig Config);
+	TSet<FGameplayTag> PressedAbilityInputTags;
 	static FName MakeInputBindingId(
 		FName ContextId,
 		const FEnhancedActionKeyMapping& Mapping,
@@ -445,7 +460,7 @@ private:
 	void Input_SprintPressed();
 	void Input_SprintReleased();
 	void Input_CrouchPressed();
-	void Input_CrouchReleased();
+	void Input_CrouchReleased(bool bCanceled = false);
 	void Input_PushToTalkPressed();
 	void Input_PushToTalkReleased();
 	void Input_OpenChat();
@@ -456,7 +471,7 @@ private:
 	void Input_ShowScoreboard();
 	void Input_HideScoreboard();
 	void Input_AbilityPressed(const FInputActionValue& Value, FGameplayTag InputTag);
-	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag);
+	void Input_AbilityReleased(const FInputActionValue& Value, FGameplayTag InputTag, bool bCanceled = false);
 	bool IsSpectatorCycleInput(FGameplayTag InputTag) const;
 	bool IsInSpectatorFlow() const;
 	void ShowSpectatorWidget(APlayerState* ViewTargetPlayerState);
@@ -492,6 +507,7 @@ private:
 
 	TWeakObjectPtr<UShooterChatInputBox> ChatInputWidget;
 	bool bIsChatInputOpen = false;
+	bool bMatchChatChannelAllowed = true;
 	bool bFullMapOpen = false;
 	EChatChannel CurrentChatChannel = EChatChannel::Team;
 

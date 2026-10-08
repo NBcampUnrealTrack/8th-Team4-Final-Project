@@ -295,6 +295,14 @@ void AWeaponBase::SetIsStationary(bool bNewIsStationary)
 	}
 }
 
+void AWeaponBase::SetIsCrouching(bool bNewIsCrouching)
+{
+	if (Aim)
+	{
+		Aim->SetIsCrouching(bNewIsCrouching);
+	}
+}
+
 void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
 {
 	EffectiveMagazineSize = NewMagazineSize;

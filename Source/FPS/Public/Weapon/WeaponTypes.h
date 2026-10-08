@@ -52,6 +52,10 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread")
 	float MovingADSSpreadDegrees = 2.f;
 
+	// 앉아서 쏠 때 탄퍼짐에 곱해지는 배율(1=영향 없음). 공중 페널티에는 적용되지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CrouchSpreadMultiplier = 0.7f;
+
 	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
 	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")

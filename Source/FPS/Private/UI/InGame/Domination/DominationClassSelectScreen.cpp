@@ -11,6 +11,7 @@
 #include "Interfaces/RogueCombatClassSelector.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "TimerManager.h"
 #include "Components/AudioComponent.h"
 #include "Components/Image.h"
@@ -28,6 +29,23 @@ DEFINE_LOG_CATEGORY_STATIC(LogDominationClassSelectScreen, Log, All);
 UDominationClassSelectScreen::UDominationClassSelectScreen()
 {
 	InputConfig = EShooterWidgetInputMode::Menu;
+
+	// 채팅 입력창이 Pop된 뒤 포커스가 돌아올 곳이 화면 자신이어야 Enter 프리뷰를 다시 받는다.
+	SetIsFocusable(true);
+}
+
+FReply UDominationClassSelectScreen::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Enter)
+	{
+		if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+		{
+			PlayerController->OpenChatInput(ChatInputScreenOffset);
+			return FReply::Handled();
+		}
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void UDominationClassSelectScreen::NativeOnActivated()
@@ -64,6 +82,11 @@ void UDominationClassSelectScreen::NativeOnActivated()
 	}
 
 	SpawnPreviewStage();
+
+	if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+	{
+		PlayerController->SetMatchChatChannelAllowed(false);
+	}
 
 	if (IsValid(Button_LockIn))
 	{
@@ -105,6 +128,11 @@ void UDominationClassSelectScreen::NativeOnDeactivated()
 	SelectionFailure = FText::GetEmpty();
 
 	DestroyPreviewStage();
+
+	if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+	{
+		PlayerController->SetMatchChatChannelAllowed(true);
+	}
 
 	ClearSlotEntries();
 	UnbindFromPlayerState();

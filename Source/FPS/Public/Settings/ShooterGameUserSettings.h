@@ -27,6 +27,7 @@ enum class EShooterOptionsLanguage : uint8
 
 DECLARE_MULTICAST_DELEGATE(FOnShooterAudioSettingsChanged);
 DECLARE_MULTICAST_DELEGATE(FOnShooterInputBindingsChanged);
+DECLARE_MULTICAST_DELEGATE(FOnShooterInputModesChanged);
 
 // 크로스헤어 커스터마이징이 바뀔 때마다 발신. UShooterReticle이 구독해서 Dynamic Material
 // Instance 파라미터를 즉시 다시 적용한다(설정 화면에서 슬라이더 움직이는 동안 바로 미리보기됨).
@@ -74,6 +75,7 @@ public:
 	// The local runtime applies audio changes independently of any options widget.
 	FOnShooterAudioSettingsChanged OnAudioSettingsChanged;
 	FOnShooterInputBindingsChanged OnInputBindingsChanged;
+	FOnShooterInputModesChanged OnInputModesChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Gameplay")
 	bool IsDynamicCrosshairEnabled() const { return bDynamicCrosshair; }
@@ -136,6 +138,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
 	void SetInvertVerticalLookEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
+	bool IsADSToggleEnabled() const { return bToggleADS; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
+	void SetADSToggleEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
+	bool IsCrouchToggleEnabled() const { return bToggleCrouch; }
+
+	UFUNCTION(BlueprintCallable, Category = "FPS|Settings|Input")
+	void SetCrouchToggleEnabled(bool bEnabled);
+
+	void ResetInputModes();
 
 	/** Applies the saved X/Y sensitivity, invert-Y and ADS multiplier in one place. */
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
@@ -220,6 +236,12 @@ protected:
 
 	UPROPERTY(Config)
 	bool bInvertVerticalLook = false;
+
+	UPROPERTY(Config)
+	bool bToggleADS = false;
+
+	UPROPERTY(Config)
+	bool bToggleCrouch = false;
 
 	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MasterVolume = 1.0f;
