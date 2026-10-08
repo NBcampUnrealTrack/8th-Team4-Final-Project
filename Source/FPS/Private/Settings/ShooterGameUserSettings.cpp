@@ -27,6 +27,16 @@ namespace ShooterGameUserSettingsConstants
 	constexpr float MinDisplayGamma = 1.2f;
 	constexpr float MaxDisplayGamma = 3.2f;
 
+	FLinearColor NormalizeCrosshairColor(const FLinearColor Color)
+	{
+		const auto NormalizeChannel = [](const float Value)
+		{
+			return FMath::IsFinite(Value) ? FMath::Clamp(Value, 0.f, 1.f) : 1.f;
+		};
+		return FLinearColor(NormalizeChannel(Color.R), NormalizeChannel(Color.G),
+			NormalizeChannel(Color.B), NormalizeChannel(Color.A));
+	}
+
 	float NormalizeScreenBrightness(const float Brightness)
 	{
 		return FMath::IsFinite(Brightness)
@@ -154,7 +164,7 @@ void UShooterGameUserSettings::SetToDefaults()
 	ScreenBrightness = GetDefaultScreenBrightness();
 
 	bDynamicCrosshair = true;
-	CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.4f);
+	CrosshairColor = FLinearColor::White;
 	CrosshairThickness = -0.5f;
 	CrosshairGap = -0.25f;
 	CrosshairOutlineThickness = 0.f;
@@ -187,6 +197,8 @@ void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 {
 	const bool bPreviousToggleADS = bToggleADS;
 	const bool bPreviousToggleCrouch = bToggleCrouch;
+	const bool bPreviousDynamicCrosshair = bDynamicCrosshair;
+	const FLinearColor PreviousCrosshairColor = CrosshairColor;
 	Super::LoadSettings(bForceReload);
 
 	// 저장된 품질은 유지하고, 첫 실행에만 Medium을 기본값으로 사용한다.
@@ -196,6 +208,11 @@ void UShooterGameUserSettings::LoadSettings(const bool bForceReload)
 	}
 
 	SetScreenBrightness(ScreenBrightness);
+	CrosshairColor = ShooterGameUserSettingsConstants::NormalizeCrosshairColor(CrosshairColor);
+	if (PreviousCrosshairColor != CrosshairColor || bPreviousDynamicCrosshair != bDynamicCrosshair)
+	{
+		OnCrosshairSettingsChanged.Broadcast();
+	}
 	if (bPreviousToggleADS != bToggleADS || bPreviousToggleCrouch != bToggleCrouch)
 	{
 		OnInputModesChanged.Broadcast();
@@ -236,6 +253,7 @@ void UShooterGameUserSettings::ValidateSettings()
 {
 	Super::ValidateSettings();
 	ScreenBrightness = ShooterGameUserSettingsConstants::NormalizeScreenBrightness(ScreenBrightness);
+	SetCrosshairColor(CrosshairColor);
 
 	MouseHorizontalSensitivity = FMath::Clamp(
 		MouseHorizontalSensitivity,
@@ -331,14 +349,20 @@ void UShooterGameUserSettings::SetDynamicCrosshairEnabled(const bool bEnabled)
 	OnCrosshairSettingsChanged.Broadcast();
 }
 
+FLinearColor UShooterGameUserSettings::GetCrosshairColor() const
+{
+	return ShooterGameUserSettingsConstants::NormalizeCrosshairColor(CrosshairColor);
+}
+
 void UShooterGameUserSettings::SetCrosshairColor(const FLinearColor NewColor)
 {
-	if (CrosshairColor == NewColor)
+	const FLinearColor NormalizedColor = ShooterGameUserSettingsConstants::NormalizeCrosshairColor(NewColor);
+	if (CrosshairColor == NormalizedColor)
 	{
 		return;
 	}
 
-	CrosshairColor = NewColor;
+	CrosshairColor = NormalizedColor;
 	OnCrosshairSettingsChanged.Broadcast();
 }
 

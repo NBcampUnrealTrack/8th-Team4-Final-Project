@@ -9,6 +9,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/InputKeySelector.h"
+#include "Components/Image.h"
 #include "Components/PanelSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/Slider.h"
@@ -42,6 +43,7 @@ namespace
 		Audio,
 		VoiceChat,
 		Settings,
+		Crosshair,
 		Count
 	};
 
@@ -171,6 +173,8 @@ void UShooterOptionsScreen::NativeOnActivated()
 		}
 
 		Settings->ApplyLanguageCulture();
+		Settings->OnCrosshairSettingsChanged.RemoveAll(this);
+		Settings->OnCrosshairSettingsChanged.AddUObject(this, &UShooterOptionsScreen::HandleCrosshairSettingsChanged);
 	}
 
 	Super::NativeOnActivated();
@@ -179,6 +183,10 @@ void UShooterOptionsScreen::NativeOnActivated()
 
 void UShooterOptionsScreen::NativeOnDeactivated()
 {
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		Settings->OnCrosshairSettingsChanged.RemoveAll(this);
+	}
 	RevertVideoModeInternal(false);
 	Super::NativeOnDeactivated();
 }
@@ -191,6 +199,10 @@ bool UShooterOptionsScreen::NativeOnHandleBackAction()
 
 void UShooterOptionsScreen::NativeDestruct()
 {
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		Settings->OnCrosshairSettingsChanged.RemoveAll(this);
+	}
 	RevertVideoModeInternal(false);
 	Super::NativeDestruct();
 }
@@ -874,6 +886,33 @@ void UShooterOptionsScreen::SetDynamicCrosshairEnabled(const bool bEnabled)
 	OnSettingsChanged.Broadcast();
 }
 
+FLinearColor UShooterOptionsScreen::GetCrosshairColor() const
+{
+	const UShooterGameUserSettings* Settings = GetGameUserSettings();
+	return IsValid(Settings) ? Settings->GetCrosshairColor() : FLinearColor::White;
+}
+
+void UShooterOptionsScreen::SetCrosshairColor(const FLinearColor Color)
+{
+	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
+	{
+		{
+			// 이 화면의 변경은 아래에서 한 번만 갱신한다. HUD 알림은 그대로 전달한다.
+			TGuardValue<bool> RefreshGuard(bRefreshingUI, true);
+			Settings->SetCrosshairColor(Color);
+		}
+		// 입력 중에는 숫자 문자열과 커서를 유지한다. 확정/슬라이더 조작 시 정규화한다.
+		if (bEditingCrosshairText)
+		{
+			RefreshCrosshairColorUI(false);
+		}
+		else
+		{
+			OnSettingsChanged.Broadcast();
+		}
+	}
+}
+
 float UShooterOptionsScreen::GetAudioVolume(const EShooterAudioChannel Channel) const
 {
 	const UShooterGameUserSettings* Settings = GetGameUserSettings();
@@ -1140,6 +1179,19 @@ void UShooterOptionsScreen::BindOptionControls()
 		} \
 	}
 
+#define BIND_TEXT_CHANGED(WidgetName, HandlerName) \
+	if (UWidget* FoundWidget = GetWidgetFromName(TEXT(WidgetName))) \
+	{ \
+		if (UEditableTextBox* TextBox = Cast<UEditableTextBox>(FoundWidget)) \
+		{ \
+			TextBox->OnTextChanged.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+		else if (UEditableText* EditableText = Cast<UEditableText>(FoundWidget)) \
+		{ \
+			EditableText->OnTextChanged.AddUniqueDynamic(this, &UShooterOptionsScreen::HandlerName); \
+		} \
+	}
+
 	BIND_CLICK("Btn_Side_Graphics", HandleSideGraphics);
 	BIND_CLICK("Btn_Side_Display", HandleSideDisplay);
 	BIND_CLICK("Btn_Side_Controls", HandleSideControls);
@@ -1147,6 +1199,7 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_Side_Audio", HandleSideAudio);
 	BIND_CLICK("Btn_Side_VoiceChat", HandleSideVoiceChat);
 	BIND_CLICK("Btn_Side_Settings", HandleSideSettings);
+	BIND_CLICK("Btn_Side_Crosshair", HandleSideCrosshair);
 	BIND_CLICK("Btn_Save", HandleSave);
 	BIND_CLICK("Btn_Back", HandleBack);
 	BIND_CLICK("Btn_Reset", HandleReset);
@@ -1221,6 +1274,20 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_TEXT_COMMIT("TXT_VoiceChatMicrophoneVolumeValue", HandleVoiceChatMicrophoneVolumeCommitted);
 	BIND_TEXT_COMMIT("TXT_VoiceChatOutputVolumeValue", HandleVoiceChatOutputVolumeCommitted);
 
+	BIND_SLIDER("SLD_CrosshairRed", HandleCrosshairRedChanged);
+	BIND_TEXT_CHANGED("TXT_CrosshairRedValue", HandleCrosshairRedTextChanged);
+	BIND_TEXT_COMMIT("TXT_CrosshairRedValue", HandleCrosshairRedCommitted);
+	BIND_SLIDER("SLD_CrosshairGreen", HandleCrosshairGreenChanged);
+	BIND_TEXT_CHANGED("TXT_CrosshairGreenValue", HandleCrosshairGreenTextChanged);
+	BIND_TEXT_COMMIT("TXT_CrosshairGreenValue", HandleCrosshairGreenCommitted);
+	BIND_SLIDER("SLD_CrosshairBlue", HandleCrosshairBlueChanged);
+	BIND_TEXT_CHANGED("TXT_CrosshairBlueValue", HandleCrosshairBlueTextChanged);
+	BIND_TEXT_COMMIT("TXT_CrosshairBlueValue", HandleCrosshairBlueCommitted);
+	BIND_SLIDER("SLD_CrosshairAlpha", HandleCrosshairAlphaChanged);
+	BIND_TEXT_CHANGED("TXT_CrosshairAlphaValue", HandleCrosshairAlphaTextChanged);
+	BIND_TEXT_COMMIT("TXT_CrosshairAlphaValue", HandleCrosshairAlphaCommitted);
+
+#undef BIND_TEXT_CHANGED
 #undef BIND_TEXT_COMMIT
 #undef BIND_SLIDER
 #undef BIND_CLICK
@@ -1310,6 +1377,7 @@ void UShooterOptionsScreen::ApplyOptionStaticStyles()
 			TEXT("SLD_AimSensitivity"), TEXT("SLD_MasterVolume"), TEXT("SLD_MusicVolume"),
 			TEXT("SLD_SfxVolume"), TEXT("SLD_UiVolume"), TEXT("SLD_VoiceVolume"),
 			TEXT("SLD_VoiceChatMicrophoneVolume"), TEXT("SLD_VoiceChatOutputVolume"),
+			TEXT("SLD_CrosshairRed"), TEXT("SLD_CrosshairGreen"), TEXT("SLD_CrosshairBlue"), TEXT("SLD_CrosshairAlpha"),
 		};
 		for (const TCHAR* SliderName : SliderNames)
 		{
@@ -1385,6 +1453,7 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Btn_Side_Audio"), TEXT("오디오 설정"), TEXT("Audio"));
 	Set(TEXT("TXT_Btn_Side_VoiceChat"), TEXT("보이스 채팅"), TEXT("Voice Chat"));
 	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("옵션 설정"), TEXT("Options"));
+	Set(TEXT("TXT_Btn_Side_Crosshair"), TEXT("크로스헤어"), TEXT("Crosshair"));
 
 	Set(TEXT("TXT_Section_GraphicsPreset"), TEXT("GRAPHICS PRESET"), TEXT("GRAPHICS PRESET"));
 	Set(TEXT("TXT_Section_Quality"), TEXT("QUALITY"), TEXT("QUALITY"));
@@ -1396,6 +1465,12 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Section_Voice"), TEXT("GAME VOICE"), TEXT("GAME VOICE"));
 	Set(TEXT("TXT_Section_VoiceChat"), TEXT("VOICE CHAT"), TEXT("VOICE CHAT"));
 	Set(TEXT("TXT_Section_Options"), TEXT("OPTIONS"), TEXT("OPTIONS"));
+	Set(TEXT("TXT_Section_CrosshairPreview"), TEXT("CROSSHAIR PREVIEW"), TEXT("CROSSHAIR PREVIEW"));
+	Set(TEXT("TXT_Section_CrosshairColor"), TEXT("COLOR"), TEXT("COLOR"));
+	Set(TEXT("TXT_Label_CrosshairRed"), TEXT("R · 빨강"), TEXT("R · Red"));
+	Set(TEXT("TXT_Label_CrosshairGreen"), TEXT("G · 초록"), TEXT("G · Green"));
+	Set(TEXT("TXT_Label_CrosshairBlue"), TEXT("B · 파랑"), TEXT("B · Blue"));
+	Set(TEXT("TXT_Label_CrosshairAlpha"), TEXT("A · 불투명도"), TEXT("A · Opacity"));
 
 	Set(TEXT("TXT_Label_Overall"), TEXT("전체 품질"), TEXT("Overall Quality"));
 	Set(TEXT("TXT_Label_ViewDistance"), TEXT("시야 거리"), TEXT("View Distance"));
@@ -1849,6 +1924,7 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 	SetSlider(TEXT("SLD_HorizontalSensitivity"), TEXT("TXT_HorizontalSensitivityValue"), GetMouseHorizontalSensitivity(), 3);
 	SetSlider(TEXT("SLD_VerticalSensitivity"), TEXT("TXT_VerticalSensitivityValue"), GetMouseVerticalSensitivity(), 3);
 	SetSlider(TEXT("SLD_AimSensitivity"), TEXT("TXT_AimSensitivityValue"), GetAimSensitivityMultiplier(), 3);
+	RefreshCrosshairColorUI(!bEditingCrosshairText);
 
 	const auto SetVolumeSlider = [this](const FName SliderName, const FName TextName, const float Value)
 	{
@@ -1916,20 +1992,23 @@ void UShooterOptionsScreen::RefreshTabVisuals()
 		{TEXT("Btn_Side_Audio"), TEXT("SB_SideAccent_Audio")},
 		{TEXT("Btn_Side_VoiceChat"), TEXT("SB_SideAccent_VoiceChat")},
 		{TEXT("Btn_Side_Settings"), TEXT("SB_SideAccent_Settings")},
+		{TEXT("Btn_Side_Crosshair"), TEXT("SB_SideAccent_Crosshair")},
 	};
 
 	// 모든 사이드 탭이 CommonButton일 때만 그룹이 선택을 관리한다. 섞여 있으면 기존 색 경로를 쓴다.
 	if (!SideTabGroup)
 	{
 		TArray<UWidget*> CommonTabs;
+		int32 AvailableTabCount = 0;
 		for (const auto& SideItem : SideItems)
 		{
+			AvailableTabCount += GetWidgetFromName(SideItem.Button) ? 1 : 0;
 			if (UCommonButtonBase* Tab = Cast<UCommonButtonBase>(GetWidgetFromName(SideItem.Button)))
 			{
 				CommonTabs.Add(Tab);
 			}
 		}
-		if (CommonTabs.Num() == static_cast<int32>(UE_ARRAY_COUNT(SideItems)))
+		if (AvailableTabCount > 0 && CommonTabs.Num() == AvailableTabCount)
 		{
 			SideTabGroup = NewObject<UCommonButtonGroupBase>(this);
 			SideTabGroup->SetSelectionRequired(true);
@@ -1974,6 +2053,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"),
 		TEXT("VoiceChat"), TEXT("VoiceChatMicrophoneVolume"), TEXT("VoiceChatOutputVolume"),
 		TEXT("Language"),
+		TEXT("CrosshairRed"), TEXT("CrosshairGreen"), TEXT("CrosshairBlue"), TEXT("CrosshairAlpha"),
 	};
 
 	// SetBrushFromTexture는 리소스만 교체해 DrawAs/Margin 등 브러시 설정을 보존한다.
@@ -2071,6 +2151,8 @@ void UShooterOptionsScreen::HandleSideKeyBindings() { ActiveSideButton = TEXT("B
 void UShooterOptionsScreen::HandleSideAudio() { ActiveSideButton = TEXT("Btn_Side_Audio"); ActiveOption = TEXT("MasterVolume"); ShowOptionsPage(ToPageIndex(EOptionsPage::Audio)); }
 void UShooterOptionsScreen::HandleSideVoiceChat() { ActiveSideButton = TEXT("Btn_Side_VoiceChat"); ActiveOption = TEXT("VoiceChat"); ShowOptionsPage(ToPageIndex(EOptionsPage::VoiceChat)); }
 void UShooterOptionsScreen::HandleSideSettings() { ActiveSideButton = TEXT("Btn_Side_Settings"); ActiveOption = TEXT("Language"); ShowOptionsPage(ToPageIndex(EOptionsPage::Settings)); }
+void UShooterOptionsScreen::HandleSideCrosshair() { ActiveSideButton = TEXT("Btn_Side_Crosshair"); ActiveOption = TEXT("CrosshairRed"); ShowOptionsPage(ToPageIndex(EOptionsPage::Crosshair)); }
+
 void UShooterOptionsScreen::HandleSave() { SaveOptions(); }
 void UShooterOptionsScreen::HandleBack() { RequestClose(); }
 void UShooterOptionsScreen::HandleReset() { ResetAllSettingsToDefaults(); }
@@ -2139,6 +2221,126 @@ void UShooterOptionsScreen::HandleResetKeyBindings()
 	}
 	OnSettingsChanged.Broadcast();
 }
+
+void UShooterOptionsScreen::RefreshCrosshairColorUI(const bool bRefreshText)
+{
+	TGuardValue<bool> RefreshGuard(bRefreshingUI, true);
+	const FLinearColor Color = GetCrosshairColor();
+	const TCHAR* ChannelNames[] = { TEXT("Red"), TEXT("Green"), TEXT("Blue"), TEXT("Alpha") };
+	const float Values[] = { Color.R, Color.G, Color.B, Color.A };
+	for (int32 Channel = 0; Channel < UE_ARRAY_COUNT(ChannelNames); ++Channel)
+	{
+		const FName SliderName(*FString::Printf(TEXT("SLD_Crosshair%s"), ChannelNames[Channel]));
+		if (USlider* Slider = Cast<USlider>(GetWidgetFromName(SliderName)))
+		{
+			Slider->SetMinValue(0.0f);
+			Slider->SetMaxValue(1.0f);
+			Slider->SetStepSize(0.001f);
+			Slider->SetValue(Values[Channel]);
+		}
+		if (bRefreshText)
+		{
+			const FName TextName(*FString::Printf(TEXT("TXT_Crosshair%sValue"), ChannelNames[Channel]));
+			SetOptionText(TextName, FText::FromString(FString::Printf(TEXT("%.3f"), Values[Channel])));
+		}
+	}
+
+	const FName PreviewImages[] =
+	{
+		TEXT("IMG_CrosshairPreview_Center"), TEXT("IMG_CrosshairPreview_Top"),
+		TEXT("IMG_CrosshairPreview_Bottom"), TEXT("IMG_CrosshairPreview_Left"), TEXT("IMG_CrosshairPreview_Right"),
+	};
+	for (const FName ImageName : PreviewImages)
+	{
+		if (UImage* Image = Cast<UImage>(GetWidgetFromName(ImageName)))
+		{
+			Image->SetColorAndOpacity(Color);
+		}
+	}
+}
+
+void UShooterOptionsScreen::HandleCrosshairSettingsChanged()
+{
+	if (!bRefreshingUI)
+	{
+		RefreshCrosshairColorUI(!bEditingCrosshairText);
+	}
+}
+
+void UShooterOptionsScreen::SetCrosshairColorChannel(const int32 Channel, const float Value, const bool bFromText)
+{
+	if (bRefreshingUI || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+
+	FLinearColor Color = GetCrosshairColor();
+	const float Clamped = FMath::Clamp(Value, 0.0f, 1.0f);
+	switch (Channel)
+	{
+	case 0: Color.R = Clamped; ActiveOption = TEXT("CrosshairRed"); break;
+	case 1: Color.G = Clamped; ActiveOption = TEXT("CrosshairGreen"); break;
+	case 2: Color.B = Clamped; ActiveOption = TEXT("CrosshairBlue"); break;
+	case 3: Color.A = Clamped; ActiveOption = TEXT("CrosshairAlpha"); break;
+	default: return;
+	}
+
+	TGuardValue<bool> TextEditGuard(bEditingCrosshairText, bFromText);
+	SetCrosshairColor(Color);
+	if (bFromText)
+	{
+		RefreshOptionRowVisuals();
+	}
+}
+
+void UShooterOptionsScreen::ChangeCrosshairColorText(const int32 Channel, const FText& Text)
+{
+	float Value = 0.0f;
+	if (!bRefreshingUI && TryParseNumber(Text, Value))
+	{
+		SetCrosshairColorChannel(Channel, Value, true);
+	}
+}
+
+void UShooterOptionsScreen::CommitCrosshairColorText(const int32 Channel, const FText& Text, const ETextCommit::Type CommitMethod)
+{
+	if (bRefreshingUI)
+	{
+		return;
+	}
+	if (CommitMethod == ETextCommit::OnCleared)
+	{
+		RefreshCrosshairColorUI(true);
+		return;
+	}
+	if (CommitMethod != ETextCommit::OnEnter && CommitMethod != ETextCommit::OnUserMovedFocus)
+	{
+		return;
+	}
+
+	float Value = 0.0f;
+	if (TryParseNumber(Text, Value))
+	{
+		SetCrosshairColorChannel(Channel, Value, false);
+	}
+	else
+	{
+		RefreshCrosshairColorUI(true);
+	}
+}
+
+void UShooterOptionsScreen::HandleCrosshairRedChanged(const float Value) { SetCrosshairColorChannel(0, Value, false); }
+void UShooterOptionsScreen::HandleCrosshairRedTextChanged(const FText& Text) { ChangeCrosshairColorText(0, Text); }
+void UShooterOptionsScreen::HandleCrosshairRedCommitted(const FText& Text, const ETextCommit::Type CommitMethod) { CommitCrosshairColorText(0, Text, CommitMethod); }
+void UShooterOptionsScreen::HandleCrosshairGreenChanged(const float Value) { SetCrosshairColorChannel(1, Value, false); }
+void UShooterOptionsScreen::HandleCrosshairGreenTextChanged(const FText& Text) { ChangeCrosshairColorText(1, Text); }
+void UShooterOptionsScreen::HandleCrosshairGreenCommitted(const FText& Text, const ETextCommit::Type CommitMethod) { CommitCrosshairColorText(1, Text, CommitMethod); }
+void UShooterOptionsScreen::HandleCrosshairBlueChanged(const float Value) { SetCrosshairColorChannel(2, Value, false); }
+void UShooterOptionsScreen::HandleCrosshairBlueTextChanged(const FText& Text) { ChangeCrosshairColorText(2, Text); }
+void UShooterOptionsScreen::HandleCrosshairBlueCommitted(const FText& Text, const ETextCommit::Type CommitMethod) { CommitCrosshairColorText(2, Text, CommitMethod); }
+void UShooterOptionsScreen::HandleCrosshairAlphaChanged(const float Value) { SetCrosshairColorChannel(3, Value, false); }
+void UShooterOptionsScreen::HandleCrosshairAlphaTextChanged(const FText& Text) { ChangeCrosshairColorText(3, Text); }
+void UShooterOptionsScreen::HandleCrosshairAlphaCommitted(const FText& Text, const ETextCommit::Type CommitMethod) { CommitCrosshairColorText(3, Text, CommitMethod); }
 
 bool UShooterOptionsScreen::TryParseNumber(const FText& Text, float& OutValue) const
 {

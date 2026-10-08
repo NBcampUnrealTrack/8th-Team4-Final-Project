@@ -21,7 +21,7 @@ enum class EWeaponSlot : uint8
 
 // 탄퍼짐/반동 튜닝 값 한 세트. 기획(밸런스) 담당자가 코드/블루프린트를 열지 않고도
 // DataTable 행만 수정해서 에디터에서 바로 테스트할 수 있도록 분리한 값들이다.
-// AWeaponBase::SpreadRecoilTable + SpreadRecoilRowName이 지정되면 BeginPlay 시 이 값들로
+// UWeaponAimComponent::SpreadRecoilTable + SpreadRecoilRowName이 지정되면 BeginPlay 시 이 값들로
 // BaseSpreadDegrees 등 개별 프로퍼티를 덮어쓴다. 미지정 시에는 무기 블루프린트에 직접
 // 설정된 기존 값을 그대로 쓴다(하위 호환 fallback).
 USTRUCT(BlueprintType)
@@ -65,7 +65,7 @@ struct FWeaponSpreadRecoilRow : public FTableRowBase
 	float CrouchSpreadMultiplier = 0.7f;
 
 	// --- 반동 (전투 시스템 명세서 2.1/2.2) ---
-	// X채널=Yaw, Y채널=Pitch. WeaponBase::RecoilCurve 주석 참고.
+	// X채널=Yaw, Y채널=Pitch. WeaponAimComponent::RecoilCurve 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FPS|Weapon|Recoil")
 	TObjectPtr<UCurveVector> RecoilCurve;
 

@@ -11,6 +11,9 @@
 UWeaponAimComponent::UWeaponAimComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
+	ApplySpreadRecoilTuning(FWeaponSpreadRecoilRow{});
+	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
 }
 
 void UWeaponAimComponent::BeginPlay()
@@ -38,20 +41,25 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 		return;
 	}
 
-	BaseSpreadDegrees = Row->BaseSpreadDegrees;
-	BloomPerShotDegrees = Row->BloomPerShotDegrees;
-	MaxBloomDegrees = Row->MaxBloomDegrees;
-	BloomRecoveryDelay = Row->BloomRecoveryDelay;
-	BloomRecoveryTime = Row->BloomRecoveryTime;
-	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
-	CrouchSpreadMultiplier = Row->CrouchSpreadMultiplier;
+	ApplySpreadRecoilTuning(*Row);
+}
 
-	RecoilCurve = Row->RecoilCurve;
-	RecoilRandomness = Row->RecoilRandomness;
-	RecoilMaxPitch = Row->RecoilMaxPitch;
-	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
-	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
-	RecoilYawMultiplier = Row->RecoilYawMultiplier;
+void UWeaponAimComponent::ApplySpreadRecoilTuning(const FWeaponSpreadRecoilRow& Tuning)
+{
+	BaseSpreadDegrees = Tuning.BaseSpreadDegrees;
+	BloomPerShotDegrees = Tuning.BloomPerShotDegrees;
+	MaxBloomDegrees = Tuning.MaxBloomDegrees;
+	BloomRecoveryDelay = Tuning.BloomRecoveryDelay;
+	BloomRecoveryTime = Tuning.BloomRecoveryTime;
+	MovingADSSpreadDegrees = Tuning.MovingADSSpreadDegrees;
+	CrouchSpreadMultiplier = Tuning.CrouchSpreadMultiplier;
+
+	RecoilCurve = Tuning.RecoilCurve;
+	RecoilRandomness = Tuning.RecoilRandomness;
+	RecoilMaxPitch = Tuning.RecoilMaxPitch;
+	RecoilRecoveryDelay = Tuning.RecoilRecoveryDelay;
+	RecoilRecoverySpeed = Tuning.RecoilRecoverySpeed;
+	RecoilYawMultiplier = Tuning.RecoilYawMultiplier;
 }
 
 void UWeaponAimComponent::SetADS(const bool bNewIsADS)

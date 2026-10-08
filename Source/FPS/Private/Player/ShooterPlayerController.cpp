@@ -26,7 +26,6 @@
 #include "Input/CommonUIActionRouterBase.h"
 #include "UI/Foundation/ShooterActionRouter.h"
 #include "GAS/RogueAbilitySystemComponent.h"
-#include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
@@ -728,40 +727,6 @@ void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& 
 	}
 
 	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience, MicrophoneVolume);
-}
-
-void AShooterPlayerController::ToggleDynamicCrosshair()
-{
-	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
-	if (!Settings)
-	{
-		return;
-	}
-
-	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
-	Settings->SaveSettings();
-}
-
-void AShooterPlayerController::TestHitIndicator()
-{
-	AShooterPlayerState* ShooterPS = GetPlayerState<AShooterPlayerState>();
-	URogueHealthComponent* HealthComponent = ShooterPS ? ShooterPS->GetHealthComponent() : nullptr;
-	if (!HealthComponent)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] PlayerState=%s HealthComponent=%s - 둘 중 하나가 없어서 중단."),
-			*GetNameSafe(ShooterPS), *GetNameSafe(HealthComponent));
-		return;
-	}
-
-	// 데미지 파이프라인을 거치지 않고, 실제로 오른쪽에서 맞은 것처럼 방향만 흉내내서
-	// 인디케이터 UI(회전/페이드)가 직접 잘 동작하는지만 검증한다.
-	const APawn* ControlledPawn = GetPawn();
-	const FVector TestDirection = IsValid(ControlledPawn) ? ControlledPawn->GetActorRightVector() : FVector::RightVector;
-
-	UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] 브로드캐스트 시도. 구독자 있음=%s"),
-		HealthComponent->OnHitReactionReceived.IsBound() ? TEXT("true") : TEXT("false"));
-
-	HealthComponent->OnHitReactionReceived.Broadcast(TestDirection);
 }
 
 void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)

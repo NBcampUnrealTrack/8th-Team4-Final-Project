@@ -141,16 +141,17 @@ void UShooterReticle::NativeConstruct()
 		HandlePossessedPawnChanged(nullptr, PC->GetPawn());
 	}
 
-	// 동적 크로스헤어 On/Off 등 설정이 바뀌면 간격을 즉시 다시 계산한다.
+	// 설정 변경 이벤트 한 번으로 색상과 동적 간격을 갱신한다.
 	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
-		CrosshairSettingsHandle = Settings->OnCrosshairSettingsChanged.AddUObject(this, &ThisClass::RefreshSpreadOffsets);
+		CachedCrosshairSettings = Settings;
+		CrosshairSettingsHandle = Settings->OnCrosshairSettingsChanged.AddUObject(this, &ThisClass::HandleCrosshairSettingsChanged);
 	}
 
 	// ComputeSpreadRadius가 뷰포트 크기에 의존하므로 창 크기/해상도 변경 시에도 다시 계산한다.
 	ViewportResizedHandle = FViewport::ViewportResizedEvent.AddUObject(this, &ThisClass::HandleViewportResized);
 
-	RefreshSpreadOffsets();
+	HandleCrosshairSettingsChanged();
 }
 
 void UShooterReticle::HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
@@ -188,6 +189,22 @@ void UShooterReticle::BindToCombatComponent(UCombatComponent* NewCombat)
 	RefreshSpreadOffsets();
 }
 
+void UShooterReticle::HandleCrosshairSettingsChanged()
+{
+	const UShooterGameUserSettings* Settings = CachedCrosshairSettings.Get();
+	const FLinearColor Color = Settings ? Settings->GetCrosshairColor() : FLinearColor::White;
+	UImage* CrosshairImages[] = { Image_Center.Get(), Image_Top.Get(), Image_Bottom.Get(), Image_Left.Get(), Image_Right.Get() };
+	for (UImage* ReticleImage : CrosshairImages)
+	{
+		if (ReticleImage)
+		{
+			ReticleImage->SetColorAndOpacity(Color);
+		}
+	}
+
+	RefreshSpreadOffsets();
+}
+
 void UShooterReticle::HandleViewportResized(FViewport* Viewport, uint32 Unused)
 {
 	RefreshSpreadOffsets();
@@ -220,11 +237,12 @@ void UShooterReticle::NativeDestruct()
 
 	BindToCombatComponent(nullptr);
 
-	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	if (UShooterGameUserSettings* Settings = CachedCrosshairSettings.Get())
 	{
 		Settings->OnCrosshairSettingsChanged.Remove(CrosshairSettingsHandle);
 	}
 	CrosshairSettingsHandle.Reset();
+	CachedCrosshairSettings.Reset();
 
 	FViewport::ViewportResizedEvent.Remove(ViewportResizedHandle);
 	ViewportResizedHandle.Reset();

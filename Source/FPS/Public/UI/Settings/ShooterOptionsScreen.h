@@ -212,6 +212,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI|Options|Gameplay")
 	void SetDynamicCrosshairEnabled(bool bEnabled);
 
+	// ----- Crosshair -----
+	UFUNCTION(BlueprintPure, Category = "UI|Options|Crosshair")
+	FLinearColor GetCrosshairColor() const;
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Options|Crosshair")
+	void SetCrosshairColor(FLinearColor Color);
+
 	// ----- Audio -----
 	UFUNCTION(BlueprintPure, Category = "UI|Options|Audio")
 	float GetAudioVolume(EShooterAudioChannel Channel) const;
@@ -310,6 +317,11 @@ private:
 	void CommitVoiceChatPercent(const FText& Text, ETextCommit::Type CommitMethod, bool bMicrophone, FName OptionName);
 	void HandleAudioVolumeChangedInternal(float Value, EShooterAudioChannel Channel, FName OptionName);
 	void HandleVoiceChatVolumeChangedInternal(float Value, bool bMicrophone, FName OptionName);
+	void RefreshCrosshairColorUI(bool bRefreshText);
+	void HandleCrosshairSettingsChanged();
+	void SetCrosshairColorChannel(int32 Channel, float Value, bool bFromText);
+	void ChangeCrosshairColorText(int32 Channel, const FText& Text);
+	void CommitCrosshairColorText(int32 Channel, const FText& Text, ETextCommit::Type CommitMethod);
 
 	UFUNCTION() void HandleSideGraphics();
 	UFUNCTION() void HandleSideDisplay();
@@ -318,6 +330,7 @@ private:
 	UFUNCTION() void HandleSideAudio();
 	UFUNCTION() void HandleSideVoiceChat();
 	UFUNCTION() void HandleSideSettings();
+	UFUNCTION() void HandleSideCrosshair();
 	UFUNCTION() void HandleSave();
 	UFUNCTION() void HandleBack();
 	UFUNCTION() void HandleReset();
@@ -391,6 +404,18 @@ private:
 	UFUNCTION() void HandleVoiceVolumeChanged(float Value);
 	UFUNCTION() void HandleVoiceChatMicrophoneVolumeChanged(float Value);
 	UFUNCTION() void HandleVoiceChatOutputVolumeChanged(float Value);
+	UFUNCTION() void HandleCrosshairRedChanged(float Value);
+	UFUNCTION() void HandleCrosshairRedTextChanged(const FText& Text);
+	UFUNCTION() void HandleCrosshairRedCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleCrosshairGreenChanged(float Value);
+	UFUNCTION() void HandleCrosshairGreenTextChanged(const FText& Text);
+	UFUNCTION() void HandleCrosshairGreenCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleCrosshairBlueChanged(float Value);
+	UFUNCTION() void HandleCrosshairBlueTextChanged(const FText& Text);
+	UFUNCTION() void HandleCrosshairBlueCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleCrosshairAlphaChanged(float Value);
+	UFUNCTION() void HandleCrosshairAlphaTextChanged(const FText& Text);
+	UFUNCTION() void HandleCrosshairAlphaCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleLanguagePrev();
 	UFUNCTION() void HandleLanguageNext();
 
@@ -485,7 +510,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
 	FLinearColor SegmentInactiveColor = FLinearColor(0.160f, 0.195f, 0.210f, 0.45f);
 
-	// 슬라이더 9개에 한 번만 적용한다.
+	// 슬라이더에 한 번만 적용한다.
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style")
 	bool bOverrideSliderColors = false;
 
@@ -508,6 +533,7 @@ private:
 
 	bool bControlsBound = false;
 	bool bRefreshingUI = false;
+	bool bEditingCrosshairText = false;
 	int32 ActivePage = 0;
 	FName ActiveSideButton = TEXT("Btn_Side_Graphics");
 	FName ActiveOption = TEXT("Overall");
