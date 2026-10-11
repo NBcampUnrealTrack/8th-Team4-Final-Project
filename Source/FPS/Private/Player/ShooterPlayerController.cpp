@@ -296,6 +296,7 @@ void AShooterPlayerController::PreloadCombatFeedbackSounds()
 		AudioSettings->HitMarkerSound_Headshot.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_Kill.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_HeadshotKill.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Confirmation.ToSoftObjectPath(),
 		AudioSettings->LocalKillSound.ToSoftObjectPath(),
 		AudioSettings->DoubleKillSound.ToSoftObjectPath(),
 		AudioSettings->TripleKillSound.ToSoftObjectPath(),
@@ -1008,38 +1009,43 @@ void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHi
 	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
 	check(AudioSettings);
 
-	// 헤드샷 처치는 전용 사운드를 최우선으로, 그 외 처치는 일반 처치 사운드를 우선 재생하고,
-	// 둘 다 없으면 부위별 사운드로 대체한다. 로드 여부가 아니라 "지정돼 있는지(IsNull)"로 고른다 -
-	// 로드는 PlayCombatFeedbackSound가 동기 로드 없이 처리한다.
-	const TSoftObjectPtr<USoundBase>* SoundRef = nullptr;
+	// 처치 전용 타격음이 없으면 부위별 타격음을 사용한다.
+	// 명중 확인음은 아래에서 독립적으로 재생한다.
+	const TSoftObjectPtr<USoundBase>* ImpactSoundRef = nullptr;
 	if (bKill && Type == ERogueHitMarkerType::Headshot && !AudioSettings->HitMarkerSound_HeadshotKill.IsNull())
 	{
-		SoundRef = &AudioSettings->HitMarkerSound_HeadshotKill;
+		ImpactSoundRef = &AudioSettings->HitMarkerSound_HeadshotKill;
 	}
-	if (!SoundRef && bKill && !AudioSettings->HitMarkerSound_Kill.IsNull())
+	if (!ImpactSoundRef && bKill && !AudioSettings->HitMarkerSound_Kill.IsNull())
 	{
-		SoundRef = &AudioSettings->HitMarkerSound_Kill;
+		ImpactSoundRef = &AudioSettings->HitMarkerSound_Kill;
 	}
-	if (!SoundRef)
+	if (!ImpactSoundRef)
 	{
 		switch (Type)
 		{
 		case ERogueHitMarkerType::Headshot:
-			SoundRef = &AudioSettings->HitMarkerSound_Headshot;
+			ImpactSoundRef = &AudioSettings->HitMarkerSound_Headshot;
 			break;
 		case ERogueHitMarkerType::Shield:
 			// 실드 히트 사운드는 뺀다(기획 요청).
 			break;
 		case ERogueHitMarkerType::Body:
 		default:
-			SoundRef = &AudioSettings->HitMarkerSound_Body;
+			ImpactSoundRef = &AudioSettings->HitMarkerSound_Body;
 			break;
 		}
 	}
 
-	if (SoundRef)
+	if (ImpactSoundRef)
 	{
-		PlayCombatFeedbackSound(*SoundRef);
+		PlayCombatFeedbackSound(*ImpactSoundRef);
+	}
+
+	// 같은 에셋을 두 칸에 지정한 경우에는 중복 재생하지 않는다.
+	if (!ImpactSoundRef || *ImpactSoundRef != AudioSettings->HitMarkerSound_Confirmation)
+	{
+		PlayCombatFeedbackSound(AudioSettings->HitMarkerSound_Confirmation);
 	}
 }
 
@@ -1343,7 +1349,6 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		return;
 	}
 
-	int32 RoutedTargetCount = 0;
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		AShooterPlayerController* ListenerController = Cast<AShooterPlayerController>(It->Get());
@@ -1355,7 +1360,6 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
 		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience))
 		{
-			++RoutedTargetCount;
 			ListenerController->ClientReceiveCompressedVoicePacket(
 				PlayerState,
 				CompressedVoiceData,
@@ -1363,11 +1367,6 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 				FMath::Clamp(MicrophoneVolume, 0.0f, 2.0f));
 		}
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Targets=%d"),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num(),
-		RoutedTargetCount);
 }
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
@@ -1397,11 +1396,6 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 	{
 		return;
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Listener=%s Speaker=%s CompressedBytes=%d"),
-		*GetNameSafe(PlayerState),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num());
 
 	if (SteamVoiceComponent)
 	{

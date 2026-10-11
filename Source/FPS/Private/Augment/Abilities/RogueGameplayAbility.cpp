@@ -320,11 +320,15 @@ void URogueGameplayAbility::BeginRepeatDeliver()
 				SpecHandle.Data->SetSetByCallerMagnitude(
 					RogueTags::Data_Magnitude_Duration,
 					RepeatDuration);
-				RepeatCueEffectHandle = ApplyGameplayEffectSpecToOwner(
-					CurrentSpecHandle,
-					CurrentActorInfo,
-					CurrentActivationInfo,
-					SpecHandle);
+
+				if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+				{
+					RepeatCueEffectHandle = ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get(), FPredictionKey());
+					if (RepeatCueEffectHandle.IsValid())
+					{
+						ASC->GetOwner()->ForceNetUpdate();
+					}
+				}
 			}
 		}
 	}
