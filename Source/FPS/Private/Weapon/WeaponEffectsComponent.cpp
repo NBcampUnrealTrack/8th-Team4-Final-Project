@@ -1,4 +1,5 @@
 #include "Weapon/WeaponEffectsComponent.h"
+#include "Audio/CharacterSoundPlayback.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/ActiveMontageInstanceScope.h"
@@ -8,7 +9,6 @@
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 #include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "Weapon/WeaponBase.h"
@@ -47,9 +47,7 @@ void UWeaponEffectsComponent::PlayFireSound() const
 	const auto* Weapon = GetWeaponOwner();
 	if (!FireSound || !Weapon || GetNetMode() == NM_DedicatedServer
 		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife || !Weapon->GetMesh3P()) return;
-	// A single world-space emitter serves owner and observers alike.
-	UGameplayStatics::SpawnSoundAttached(FireSound, Weapon->GetMesh3P(), NAME_None,
-		FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, FireAttenuation);
+	CharacterSoundPlayback::PlayAttached(Weapon, FireSound, Weapon->GetMesh3P(), FireAttenuation);
 }
 
 void UWeaponEffectsComponent::PlayEmptyClipSound()
@@ -69,13 +67,7 @@ void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 		return;
 	}
 
-	UGameplayStatics::SpawnSoundAttached(
-		EmptyClipSound,
-		Weapon->GetMesh3P(),
-		NAME_None,
-		FVector::ZeroVector,
-		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
+	CharacterSoundPlayback::PlayAttached(Weapon, EmptyClipSound, Weapon->GetMesh3P(), ActionAttenuation);
 }
 
 void UWeaponEffectsComponent::PlayEquipSound()
@@ -94,7 +86,7 @@ void UWeaponEffectsComponent::Client_PlayEquipSound_Implementation()
 {
 	if (EquipSound && !DrawSound && IsOwnerLocallyControlled())
 	{
-		UGameplayStatics::PlaySound2D(this, EquipSound);
+		CharacterSoundPlayback::TryPlayLocal2D(GetWeaponOwner(), EquipSound);
 	}
 }
 
@@ -105,8 +97,7 @@ void UWeaponEffectsComponent::PlayDrawSound() const
 	{
 		return;
 	}
-	UGameplayStatics::SpawnSoundAttached(DrawSound, Weapon->GetMesh3P(), NAME_None,
-		FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
+	CharacterSoundPlayback::PlayAttached(Weapon, DrawSound, Weapon->GetMesh3P(), ActionAttenuation);
 }
 
 bool UWeaponEffectsComponent::TryPlayHolsterSound(const UAnimMontage* Montage) const
@@ -115,8 +106,7 @@ bool UWeaponEffectsComponent::TryPlayHolsterSound(const UAnimMontage* Montage) c
 	const AWeaponBase* Weapon = GetWeaponOwner();
 	if (HolsterSound && Weapon && Weapon->GetMesh3P() && GetNetMode() != NM_DedicatedServer)
 	{
-		UGameplayStatics::SpawnSoundAttached(HolsterSound, Weapon->GetMesh3P(), NAME_None,
-			FVector::ZeroVector, EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, ActionAttenuation);
+		CharacterSoundPlayback::PlayAttached(Weapon, HolsterSound, Weapon->GetMesh3P(), ActionAttenuation);
 	}
 	return true;
 }
@@ -153,7 +143,7 @@ void UWeaponEffectsComponent::PlayMeleeAttackSound(const bool bHeavyAttack)
 	// 공격한 본인(예측 클라이언트 또는 리슨 서버 호스트)은 몽타주와 같은 프레임에 2D로 바로 재생한다.
 	if (IsOwnerLocallyControlled())
 	{
-		UGameplayStatics::PlaySound2D(this, Sound);
+		CharacterSoundPlayback::TryPlayLocal2D(GetWeaponOwner(), Sound);
 	}
 
 	if (Owner->HasAuthority())
@@ -182,18 +172,7 @@ void UWeaponEffectsComponent::Multicast_PlayMeleeAttackSound_Implementation(cons
 	}
 
 	// 다른 플레이어에게는 공격자 위치에 붙여 3D로 재생해, 멀어질수록 작아지게 한다.
-	UGameplayStatics::SpawnSoundAttached(
-		Sound,
-		AttachComponent,
-		NAME_None,
-		FVector::ZeroVector,
-		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset,
-		false,
-		1.f,
-		1.f,
-		0.f,
-		MeleeAttackAttenuation);
+	CharacterSoundPlayback::PlayAttached(GetWeaponOwner(), Sound, AttachComponent, MeleeAttackAttenuation);
 }
 
 USoundBase* UWeaponEffectsComponent::ResolveMeleeAttackSound(const bool bHeavyAttack) const
@@ -203,9 +182,7 @@ USoundBase* UWeaponEffectsComponent::ResolveMeleeAttackSound(const bool bHeavyAt
 
 bool UWeaponEffectsComponent::IsOwnerLocallyControlled() const
 {
-	const AWeaponBase* Weapon = GetWeaponOwner();
-	const APawn* OwningPawn = Weapon ? Cast<APawn>(Weapon->GetOwner()) : nullptr;
-	return OwningPawn && OwningPawn->IsLocallyControlled();
+	return CharacterSoundPlayback::IsLocalPlayer(GetWeaponOwner());
 }
 
 USceneComponent* UWeaponEffectsComponent::GetSoundAttachComponent() const

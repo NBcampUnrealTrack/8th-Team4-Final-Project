@@ -121,6 +121,24 @@ void UShooterMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 
 	bWantsToSprint = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0 && !bSprintBlocked;
 }
+
+bool UShooterMovementComponent::CanCrouchInCurrentState() const
+{
+	// Enter crouch on the ground; keep an existing crouch when walking off a ledge.
+	return Super::CanCrouchInCurrentState() && (IsMovingOnGround() || IsCrouching());
+}
+
+void UShooterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
+{
+	// Discard disallowed requests, including replayed moves, instead of buffering them until landing.
+	if (!CanCrouchInCurrentState())
+	{
+		bWantsToCrouch = false;
+	}
+
+	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+}
+
 float UShooterMovementComponent::GetMaxSpeed() const
 {
 	const bool bSprinting = bWantsToSprint && !IsCrouching();

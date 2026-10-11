@@ -11,6 +11,8 @@
 
 class UAbilitySystemComponent;
 class UCameraComponent;
+class UCameraShakeBase;
+class APlayerCameraManager;
 class UCombatHitZoneDefinition;
 class UCombatComponent;
 class UFootstepComponent;
@@ -138,6 +140,31 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
+	TSubclassOf<UCameraShakeBase> JumpCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float JumpCameraShakeScale = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
+	TSubclassOf<UCameraShakeBase> LandingCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float LandingCameraShakeScale = 1.f;
+
+	// Small steps do not cause a landing impulse. Speeds are relative to the hit surface.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MinLandingImpactSpeed = 180.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "1.0", Units = "cm/s"))
+	float FullLandingImpactSpeed = 600.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float MaxLandingImpactScale = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AimingMovementCameraShakeScale = 0.35f;
+
 	FVector StandingCameraRelativeLocation = FVector::ZeroVector;
 	bool bInterpolatingCrouchCamera = false;
 
@@ -192,6 +219,11 @@ private:
 	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
 	void UpdateSprintBlocked(float Stamina);
 	void PlayExhaustedBreathSound() const;
+	void PlayMovementCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass, float Scale);
+	void StopMovementCameraShake();
+
+	TWeakObjectPtr<UCameraShakeBase> ActiveMovementCameraShake;
+	TWeakObjectPtr<APlayerCameraManager> MovementShakeCameraManager;
 
 	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
 	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);

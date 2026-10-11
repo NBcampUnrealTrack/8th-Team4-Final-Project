@@ -1,4 +1,5 @@
 #include "Animation/AnimNotify_FirearmSound.h"
+#include "Audio/CharacterSoundPlayback.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "Character/ShooterCharacter.h"
@@ -64,6 +65,9 @@ void UAnimNotify_FirearmSound::Notify(USkeletalMeshComponent* MeshComp,UAnimSequ
    }
   }
  }
+ // Keep the canonical trigger and notify dedup, then choose the listener perspective.
+ if(Sound && Sound->IsOneShot()
+  && CharacterSoundPlayback::TryPlayLocal2D(Emitter->GetOwner(),Sound,VolumeMultiplier,PitchMultiplier))return;
  if(!AttenuationOverride)
  {
   Super::Notify(Emitter,Animation,EventReference);

@@ -8,6 +8,9 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Camera/ShooterMovementCameraShake.h"
 #include "Character/FootstepComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Combat/CombatComponent.h"
@@ -55,6 +58,8 @@ AShooterCharacter::AShooterCharacter(const FObjectInitializer& ObjectInitializer
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
+	JumpCameraShake = UShooterJumpCameraShake::StaticClass();
+	LandingCameraShake = UShooterLandingCameraShake::StaticClass();
 
 	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
 	SpringArm->SetupAttachment(GetRootComponent());
@@ -140,6 +145,7 @@ void AShooterCharacter::Tick(const float DeltaSeconds)
 
 void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	StopMovementCameraShake();
 	UnsubscribeTags();
 
 	Super::EndPlay(EndPlayReason);
@@ -164,6 +170,7 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 
 void AShooterCharacter::UnPossessed()
 {
+	StopMovementCameraShake();
     Super::UnPossessed();
     FirstPersonAppearance->RefreshFromPlayerState();
     UpdateTagSubscriptions();
@@ -171,6 +178,7 @@ void AShooterCharacter::UnPossessed()
 
 void AShooterCharacter::OnRep_Controller()
 {
+	StopMovementCameraShake();
     Super::OnRep_Controller();
     FirstPersonAppearance->RefreshFromPlayerState();
 }
@@ -538,7 +546,21 @@ void AShooterCharacter::OnMovementModeChanged(EMovementMode PrevMovementMode, ui
 
 void AShooterCharacter::Landed(const FHitResult& Hit)
 {
+	// Capture impact velocity before Super dispatches Blueprint landing events.
+	const UPrimitiveComponent* Surface = Hit.GetComponent();
+	const FVector SurfaceVelocity = IsValid(Surface) ? Surface->GetComponentVelocity() : FVector::ZeroVector;
+	const float ImpactSpeed = FMath::Max(0.f,
+		static_cast<float>(-FVector::DotProduct(GetVelocity() - SurfaceVelocity, Hit.ImpactNormal)));
 	Super::Landed(Hit);
+
+	const float MinSpeed = FMath::Max(0.f, MinLandingImpactSpeed);
+	if (ImpactSpeed > MinSpeed)
+	{
+		const float SpeedRange = FMath::Max(1.f, FullLandingImpactSpeed - MinSpeed);
+		const float ImpactScale = FMath::Clamp((ImpactSpeed - MinSpeed) / SpeedRange,
+			0.f, FMath::Max(0.f, MaxLandingImpactScale));
+		PlayMovementCameraShake(LandingCameraShake, ImpactScale * LandingCameraShakeScale);
+	}
 	if (HasAuthority())
 	{
 		UAISense_Hearing::ReportNoiseEvent(
@@ -549,11 +571,56 @@ void AShooterCharacter::Landed(const FHitResult& Hit)
 void AShooterCharacter::OnJumped_Implementation()
 {
 	Super::OnJumped_Implementation();
+	PlayMovementCameraShake(JumpCameraShake, JumpCameraShakeScale);
 
 	if (IsValid(Footstep))
 	{
 		Footstep->PlayJumpSound();
 	}
+}
+
+void AShooterCharacter::PlayMovementCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass, float Scale)
+{
+	// Saved-move replay must not repeat a cosmetic impulse already predicted locally.
+	if (!ShakeClass || Scale <= 0.f || bClientUpdating || bDeathStateApplied || !IsLocallyControlled())
+	{
+		return;
+	}
+
+	APlayerController* LocalController = Cast<APlayerController>(GetController());
+	if (!IsValid(LocalController) || !LocalController->IsLocalController()
+		|| LocalController->GetPawn() != this || LocalController->GetViewTarget() != this
+		|| !IsValid(LocalController->PlayerCameraManager))
+	{
+		return;
+	}
+
+	if (IsValid(Combat) && Combat->IsAiming())
+	{
+		Scale *= FMath::Clamp(AimingMovementCameraShakeScale, 0.f, 1.f);
+	}
+	if (Scale <= 0.f)
+	{
+		return;
+	}
+
+	// Replace only the prior movement impulse; weapon recoil/fire shakes are independent.
+	StopMovementCameraShake();
+	MovementShakeCameraManager = LocalController->PlayerCameraManager;
+	ActiveMovementCameraShake = LocalController->PlayerCameraManager->StartCameraShake(ShakeClass, Scale);
+}
+
+void AShooterCharacter::StopMovementCameraShake()
+{
+	if (APlayerCameraManager* CameraManager = MovementShakeCameraManager.Get())
+	{
+		if (UCameraShakeBase* Shake = ActiveMovementCameraShake.Get())
+		{
+			CameraManager->StopCameraShake(Shake, true);
+		}
+	}
+	ActiveMovementCameraShake.Reset();
+	MovementShakeCameraManager.Reset();
 }
 
 void AShooterCharacter::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
@@ -692,6 +759,7 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 		return;
 	}
 	bDeathStateApplied = true;
+	StopMovementCameraShake();
 
 	if (HasAuthority())
 	{
@@ -802,6 +870,12 @@ void AShooterCharacter::HandleSprintReleased()
 
 void AShooterCharacter::HandleCrouchPressed()
 {
+	const UCharacterMovementComponent* Movement = GetCharacterMovement();
+	if (!IsValid(Movement) || !Movement->CanCrouchInCurrentState())
+	{
+		return;
+	}
+
 	HandleSprintReleased();
 	Crouch();
 }

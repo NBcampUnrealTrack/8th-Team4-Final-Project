@@ -55,6 +55,7 @@ public:
 	virtual float GetMaxSpeed() const override;
 
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+	virtual bool CanCrouchInCurrentState() const override;
 
 	// CombatComponent가 이동 상태 탄퍼짐 배율(WeaponBase::SetMovementSpreadMultiplier)을 계산할 때 참고한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
@@ -70,6 +71,7 @@ public:
 
 protected:
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
+	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float WalkSpeed = 600.f;
