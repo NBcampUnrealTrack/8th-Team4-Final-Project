@@ -1,4 +1,5 @@
 #include "GAS/CueNotify/RogueVoiceCueNotify.h"
+#include "Audio/CharacterSoundPlayback.h"
 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -22,7 +23,7 @@ bool URogueVoiceCueNotify::OnExecute_Implementation(AActor* Target, const FGamep
 	const ADominationPlayerState* CasterClassState = CasterPawn ? CasterPawn->GetPlayerState<ADominationPlayerState>() : nullptr;
 	const FRogueClassVoice* ClassVoice = CasterClassState ? ClassVoices.Find(CasterClassState->GetCombatClass()) : nullptr;
 
-	if (CasterPawn && CasterPawn->IsLocallyControlled())
+	if (CharacterSoundPlayback::IsLocalPlayer(Caster))
 	{
 		if (USoundBase* Voice = ClassVoice ? ClassVoice->SelfVoice.Get() : SelfVoice.Get())
 		{
