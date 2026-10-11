@@ -56,7 +56,7 @@ protected:
 		FCameraShakePatternUpdateResult& OutResult) override;
 };
 
-/** Continuous running sway; one lateral cycle spans two footsteps. */
+/** Shared walk/run sway; retain the class name for existing Blueprint assets. */
 UCLASS(EditInlineNew, meta = (AutoExpandCategories = "Movement"))
 class FPS_API UShooterSprintCameraShakePattern : public UShooterLocalMovementCameraShakePattern
 {
@@ -92,6 +92,7 @@ private:
 	float TargetSpeed = 0.f;
 	float TargetIntensity = 0.f;
 	float CurrentIntensity = 0.f;
+	float TargetStepDistance = 1.f;
 	float CurrentStepDistance = 1.f;
 };
 

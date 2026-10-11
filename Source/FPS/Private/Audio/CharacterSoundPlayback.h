@@ -21,5 +21,6 @@ namespace CharacterSoundPlayback
 		float VolumeMultiplier = 1.f, float PitchMultiplier = 1.f);
 
 	void PlayAttached(const AActor* SoundOwner, USoundBase* Sound, USceneComponent* AttachTo,
-		USoundAttenuation* AttenuationSettings);
+		USoundAttenuation* AttenuationSettings, float VolumeMultiplier = 1.f,
+		float PitchMultiplier = 1.f, FName AttachName = NAME_None);
 }

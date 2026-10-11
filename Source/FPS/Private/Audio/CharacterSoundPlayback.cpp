@@ -2,6 +2,7 @@
 
 #include "Components/SceneComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 
@@ -18,8 +19,11 @@ bool CharacterSoundPlayback::IsLocalPlayer(const AActor* SoundOwner)
 		Pawn = Cast<APawn>(SoundOwner->GetOwner());
 	}
 
-	// Server-controlled AI is locally controlled too, but must remain spatial.
-	return IsValid(Pawn) && Pawn->IsPlayerControlled() && Pawn->IsLocallyControlled();
+	const APlayerController* Controller = IsValid(Pawn)
+		? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+	// Only this process's possessed local player gets non-spatial audio.
+	return IsValid(Controller) && Controller->IsLocalController()
+		&& Controller->GetLocalPlayer() && Controller->GetPawn() == Pawn;
 }
 
 bool CharacterSoundPlayback::TryPlayLocal2D(const AActor* SoundOwner, USoundBase* Sound,
@@ -50,17 +54,18 @@ void CharacterSoundPlayback::PlayAtLocation(const AActor* SoundOwner, USoundBase
 }
 
 void CharacterSoundPlayback::PlayAttached(const AActor* SoundOwner, USoundBase* Sound,
-	USceneComponent* AttachTo, USoundAttenuation* AttenuationSettings)
+	USceneComponent* AttachTo, USoundAttenuation* AttenuationSettings,
+	const float VolumeMultiplier, const float PitchMultiplier, const FName AttachName)
 {
 	if (!IsValid(SoundOwner) || !IsValid(Sound) || SoundOwner->GetNetMode() == NM_DedicatedServer
-		|| TryPlayLocal2D(SoundOwner, Sound))
+		|| TryPlayLocal2D(SoundOwner, Sound, VolumeMultiplier, PitchMultiplier))
 	{
 		return;
 	}
 
 	if (IsValid(AttachTo))
 	{
-		UGameplayStatics::SpawnSoundAttached(Sound, AttachTo, NAME_None, FVector::ZeroVector,
-			EAttachLocation::KeepRelativeOffset, false, 1.f, 1.f, 0.f, AttenuationSettings);
+		UGameplayStatics::SpawnSoundAttached(Sound, AttachTo, AttachName, FVector::ZeroVector,
+			EAttachLocation::KeepRelativeOffset, false, VolumeMultiplier, PitchMultiplier, 0.f, AttenuationSettings);
 	}
 }

@@ -92,7 +92,12 @@ void UShooterSprintCameraShakePattern::SetMovementState(float Speed, float Inten
 {
 	TargetSpeed = FMath::Max(0.f, Speed);
 	TargetIntensity = FMath::Max(0.f, Intensity);
-	CurrentStepDistance = FMath::Max(1.f, StepDistance);
+	TargetStepDistance = FMath::Max(1.f, StepDistance);
+	if (CurrentIntensity <= UE_SMALL_NUMBER)
+	{
+		// Seed a new shake at its real stride length, not the reset value of one centimetre.
+		CurrentStepDistance = TargetStepDistance;
+	}
 }
 
 void UShooterSprintCameraShakePattern::GetShakePatternInfoImpl(FCameraShakeInfo& OutInfo) const
@@ -112,6 +117,7 @@ void UShooterSprintCameraShakePattern::StartShakePatternImpl(const FCameraShakeP
 		TargetSpeed = 0.f;
 		TargetIntensity = 0.f;
 		CurrentIntensity = 0.f;
+		TargetStepDistance = 1.f;
 		CurrentStepDistance = 1.f;
 	}
 }
@@ -137,6 +143,7 @@ void UShooterSprintCameraShakePattern::UpdateShakePatternImpl(
 		? 1.f - FMath::Exp(-DeltaTime / ResponseTime)
 		: 1.f;
 	CurrentIntensity = FMath::Lerp(CurrentIntensity, TargetIntensity, ResponseAlpha);
+	CurrentStepDistance = FMath::Lerp(CurrentStepDistance, TargetStepDistance, ResponseAlpha);
 	if (TargetIntensity <= 0.f && CurrentIntensity <= UE_KINDA_SMALL_NUMBER)
 	{
 		CurrentIntensity = 0.f;

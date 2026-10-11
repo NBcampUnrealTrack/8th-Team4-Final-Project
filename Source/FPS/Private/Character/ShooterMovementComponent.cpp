@@ -155,16 +155,53 @@ float UShooterMovementComponent::GetMaxSpeed() const
 	return CalculateMaxSpeed(bWantsToSprint && !IsCrouching());
 }
 
-float UShooterMovementComponent::GetMaxAcceleration() const
+void UShooterMovementComponent::CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration)
 {
-	const float DefaultAcceleration = Super::GetMaxAcceleration();
-	if (!bWantsToSprint || IsCrouching() || !IsMovingOnGround()
-		|| SprintAcceleration <= UE_SMALL_NUMBER)
+	const float PreviousSpeed = static_cast<float>(Velocity.Size2D());
+	Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
+
+	if (!bWantsToSprint || bSprintBlocked || IsCrouching() || !IsMovingOnGround() || bFluid
+		|| DeltaTime <= UE_SMALL_NUMBER || SprintAcceleration <= UE_SMALL_NUMBER
+		|| Acceleration.IsNearlyZero())
 	{
-		return DefaultAcceleration;
+		return;
 	}
 
-	return FMath::Min(DefaultAcceleration, SprintAcceleration);
+	// Keep normal input/steering/braking; ease only additional speed above walking.
+	const float NewSpeed = static_cast<float>(Velocity.Size2D());
+	if (NewSpeed <= PreviousSpeed)
+	{
+		return;
+	}
+
+	const float InputScale = GetAnalogInputModifier();
+	const float MinimumSpeed = GetMinAnalogSpeed();
+	const float WalkingSpeed = FMath::Max(MinimumSpeed, CalculateMaxSpeed(false) * InputScale);
+	const float TargetSpeed = FMath::Max(MinimumSpeed, GetMaxSpeed() * InputScale);
+	const float SpeedRange = TargetSpeed - WalkingSpeed;
+	if (SpeedRange <= UE_SMALL_NUMBER || NewSpeed <= WalkingSpeed || PreviousSpeed >= TargetSpeed)
+	{
+		return;
+	}
+
+	float SprintDeltaTime = DeltaTime;
+	if (PreviousSpeed < WalkingSpeed)
+	{
+		// Only the part of this movement step above walking speed uses sprint easing.
+		SprintDeltaTime *= (NewSpeed - WalkingSpeed) / (NewSpeed - PreviousSpeed);
+	}
+
+	const float StartSpeed = FMath::Max(PreviousSpeed, WalkingSpeed);
+	// Exact ease-out step: acceleration fades with remaining speed, reaching the cap in finite time.
+	const float RemainingFraction = FMath::Sqrt(FMath::Clamp((TargetSpeed - StartSpeed) / SpeedRange, 0.f, 1.f));
+	const float NextFraction = FMath::Max(0.f, RemainingFraction - SprintAcceleration * SprintDeltaTime / (2.f * SpeedRange));
+	const float AllowedSpeed = TargetSpeed - SpeedRange * FMath::Square(NextFraction);
+	if (NewSpeed > AllowedSpeed)
+	{
+		const float Scale = AllowedSpeed / NewSpeed;
+		Velocity.X *= Scale;
+		Velocity.Y *= Scale;
+	}
 }
 
 float UShooterMovementComponent::CalculateMaxSpeed(bool bSprinting) const

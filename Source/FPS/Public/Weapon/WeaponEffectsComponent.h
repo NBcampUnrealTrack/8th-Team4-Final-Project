@@ -25,6 +25,7 @@ public:
 	void PlayFireCameraShake() const;
 	void PlayFireSound() const;
 	void PlayEmptyClipSound();
+	USoundAttenuation* GetActionAttenuation() const { return ActionAttenuation.Get(); }
 	// Common 3P animation state calls this once per equip transition on each peer.
 	// No extra RPC/notify: the owner hears 2D; observers use the world-space emitter.
 	void PlayDrawSound() const;

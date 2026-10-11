@@ -53,7 +53,11 @@ public:
 	void SetSprintBlocked(bool bBlocked);
 
 	virtual float GetMaxSpeed() const override;
-	virtual float GetMaxAcceleration() const override;
+
+	// Resolved non-sprint speed, including the same weapon and augment modifiers.
+	float GetMaxWalkingSpeed() const { return CalculateMaxSpeed(false); }
+
+	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
 
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
 	virtual bool CanCrouchInCurrentState() const override;
@@ -82,7 +86,7 @@ protected:
 	float SprintSpeed = 850.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement",
-		meta = (ClampMin = "0.0", Units = "cm/s^2", ToolTip = "Ground sprint acceleration cap. 0 uses Character Movement Max Acceleration."))
+		meta = (ClampMin = "0.0", Units = "cm/s^2", ToolTip = "Initial acceleration above walking speed, easing to zero at sprint speed. Higher is quicker; 0 uses normal Character Movement acceleration."))
 	float SprintAcceleration = 800.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")

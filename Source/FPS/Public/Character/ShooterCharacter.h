@@ -153,8 +153,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
 	float LandingCameraShakeScale = 1.f;
 
+	// Share the existing shake class with walking; keep the property name for Blueprint compatibility.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
 	TSubclassOf<UShooterSprintCameraShake> SprintCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float WalkCameraShakeScale = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "1.0", Units = "cm"))
+	float WalkCameraStepDistance = 230.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
 	float SprintCameraShakeScale = 1.f;
@@ -232,13 +239,13 @@ private:
 	APlayerCameraManager* GetLocalMovementCameraManager() const;
 	void PlayMovementCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass, float Scale);
 	void StopMovementCameraShake();
-	void UpdateSprintCameraShake();
-	void StopSprintCameraShake(bool bImmediately);
+	void UpdateLocomotionCameraShake();
+	void StopLocomotionCameraShake(bool bImmediately);
 
 	TWeakObjectPtr<UCameraShakeBase> ActiveMovementCameraShake;
 	TWeakObjectPtr<APlayerCameraManager> MovementShakeCameraManager;
-	TWeakObjectPtr<UShooterSprintCameraShake> ActiveSprintCameraShake;
-	TWeakObjectPtr<APlayerCameraManager> SprintShakeCameraManager;
+	TWeakObjectPtr<UShooterSprintCameraShake> ActiveLocomotionCameraShake;
+	TWeakObjectPtr<APlayerCameraManager> LocomotionShakeCameraManager;
 
 	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
 	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);

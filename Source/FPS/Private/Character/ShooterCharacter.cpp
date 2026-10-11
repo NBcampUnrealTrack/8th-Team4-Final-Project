@@ -147,7 +147,7 @@ void AShooterCharacter::Tick(const float DeltaSeconds)
 void AShooterCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopMovementCameraShake();
-	StopSprintCameraShake(true);
+	StopLocomotionCameraShake(true);
 	UnsubscribeTags();
 
 	Super::EndPlay(EndPlayReason);
@@ -173,7 +173,7 @@ void AShooterCharacter::PossessedBy(AController* NewController)
 void AShooterCharacter::UnPossessed()
 {
 	StopMovementCameraShake();
-	StopSprintCameraShake(true);
+	StopLocomotionCameraShake(true);
     Super::UnPossessed();
     FirstPersonAppearance->RefreshFromPlayerState();
     UpdateTagSubscriptions();
@@ -182,7 +182,7 @@ void AShooterCharacter::UnPossessed()
 void AShooterCharacter::OnRep_Controller()
 {
 	StopMovementCameraShake();
-	StopSprintCameraShake(true);
+	StopLocomotionCameraShake(true);
     Super::OnRep_Controller();
     FirstPersonAppearance->RefreshFromPlayerState();
 }
@@ -624,8 +624,8 @@ void AShooterCharacter::PlayMovementCameraShake(TSubclassOf<UCameraShakeBase> Sh
 		return;
 	}
 
-	// Give jump/landing priority while the sprint sway settles smoothly.
-	StopSprintCameraShake(false);
+	// Give jump/landing priority while locomotion sway settles smoothly.
+	StopLocomotionCameraShake(false);
 	StopMovementCameraShake();
 	MovementShakeCameraManager = CameraManager;
 	ActiveMovementCameraShake = CameraManager->StartCameraShake(ShakeClass, Scale);
@@ -688,9 +688,9 @@ void AShooterCharacter::OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeig
 	}
 }
 
-void AShooterCharacter::StopSprintCameraShake(bool bImmediately)
+void AShooterCharacter::StopLocomotionCameraShake(bool bImmediately)
 {
-	UShooterSprintCameraShake* Shake = ActiveSprintCameraShake.Get();
+	UShooterSprintCameraShake* Shake = ActiveLocomotionCameraShake.Get();
 	if (!bImmediately && Shake && !Shake->IsFinished())
 	{
 		// Keep the instance during fade-out so a quick restart preserves its phase.
@@ -698,18 +698,18 @@ void AShooterCharacter::StopSprintCameraShake(bool bImmediately)
 		return;
 	}
 
-	if (APlayerCameraManager* CameraManager = SprintShakeCameraManager.Get())
+	if (APlayerCameraManager* CameraManager = LocomotionShakeCameraManager.Get())
 	{
 		if (Shake)
 		{
 			CameraManager->StopCameraShake(Shake, true);
 		}
 	}
-	ActiveSprintCameraShake.Reset();
-	SprintShakeCameraManager.Reset();
+	ActiveLocomotionCameraShake.Reset();
+	LocomotionShakeCameraManager.Reset();
 }
 
-void AShooterCharacter::UpdateSprintCameraShake()
+void AShooterCharacter::UpdateLocomotionCameraShake()
 {
 	if (bClientUpdating)
 	{
@@ -719,50 +719,66 @@ void AShooterCharacter::UpdateSprintCameraShake()
 	APlayerCameraManager* CameraManager = GetLocalMovementCameraManager();
 	if (!CameraManager)
 	{
-		StopSprintCameraShake(true);
+		StopLocomotionCameraShake(true);
 		return;
 	}
 
 	const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(GetCharacterMovement());
 	const UCameraShakeBase* MovementImpulse = ActiveMovementCameraShake.Get();
-	const UShooterSprintCameraShake* SprintDefaults = SprintCameraShake.GetDefaultObject();
-	if (!SprintDefaults || !Cast<UShooterSprintCameraShakePattern>(SprintDefaults->GetRootShakePattern())
-		|| SprintCameraShakeScale <= 0.f || !IsValid(Movement)
-		|| !Movement->ShouldPlaySprintAnimation() || (IsValid(Combat) && Combat->IsAiming())
+	const UShooterSprintCameraShake* ShakeDefaults = SprintCameraShake.GetDefaultObject();
+	if (!ShakeDefaults || !Cast<UShooterSprintCameraShakePattern>(ShakeDefaults->GetRootShakePattern())
+		|| !IsValid(Movement) || !Movement->IsMovingOnGround() || Movement->IsCrouching()
+		|| (IsValid(Combat) && Combat->IsAiming())
 		|| (MovementImpulse && !MovementImpulse->IsFinished()))
 	{
-		StopSprintCameraShake(false);
+		StopLocomotionCameraShake(false);
 		return;
 	}
 
-	const float MaxSpeed = Movement->GetMaxSpeed();
-	if (MaxSpeed <= UE_SMALL_NUMBER)
+	const float Speed = static_cast<float>(Movement->Velocity.Size2D());
+	const float WalkingSpeed = Movement->GetMaxWalkingSpeed();
+	if (WalkingSpeed <= UE_SMALL_NUMBER || Speed <= UE_KINDA_SMALL_NUMBER)
 	{
-		StopSprintCameraShake(false);
+		StopLocomotionCameraShake(false);
 		return;
 	}
 
-	UShooterSprintCameraShake* Shake = ActiveSprintCameraShake.Get();
-	if (!Shake || Shake->IsFinished() || SprintShakeCameraManager.Get() != CameraManager
+	// Use resolved movement speeds so weapon/augment modifiers stay owned by movement.
+	const float SprintSpeedRange = Movement->IsSprinting()
+		? Movement->GetMaxSpeed() - WalkingSpeed : 0.f;
+	const float SprintAlpha = SprintSpeedRange > UE_SMALL_NUMBER
+		? FMath::Clamp((Speed - WalkingSpeed) / SprintSpeedRange, 0.f, 1.f)
+		: 0.f;
+	const float Intensity = FMath::Lerp(FMath::Max(0.f, WalkCameraShakeScale),
+		FMath::Max(0.f, SprintCameraShakeScale), SprintAlpha)
+		* FMath::Clamp(Speed / WalkingSpeed, 0.f, 1.f);
+	if (Intensity <= UE_SMALL_NUMBER)
+	{
+		StopLocomotionCameraShake(false);
+		return;
+	}
+
+	UShooterSprintCameraShake* Shake = ActiveLocomotionCameraShake.Get();
+	if (!Shake || Shake->IsFinished() || LocomotionShakeCameraManager.Get() != CameraManager
 		|| Shake->GetClass() != SprintCameraShake.Get())
 	{
-		StopSprintCameraShake(true);
+		StopLocomotionCameraShake(true);
 		Shake = Cast<UShooterSprintCameraShake>(CameraManager->StartCameraShake(SprintCameraShake, 1.f));
-		ActiveSprintCameraShake = Shake;
-		SprintShakeCameraManager = CameraManager;
+		ActiveLocomotionCameraShake = Shake;
+		LocomotionShakeCameraManager = CameraManager;
 	}
 
 	if (Shake)
 	{
-		const float Speed = static_cast<float>(Movement->Velocity.Size2D());
-		Shake->UpdateMovement(Speed,
-			SprintCameraShakeScale * FMath::Clamp(Speed / MaxSpeed, 0.f, 1.f), SprintCameraStepDistance);
+		const float StepDistance = FMath::Lerp(FMath::Max(1.f, WalkCameraStepDistance),
+			FMath::Max(1.f, SprintCameraStepDistance), SprintAlpha);
+		Shake->UpdateMovement(Speed, Intensity, StepDistance);
 	}
 }
 
 void AShooterCharacter::HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
 {
-	UpdateSprintCameraShake();
+	UpdateLocomotionCameraShake();
 
 	const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(GetCharacterMovement());
 	const bool bIsSprinting = IsValid(Movement) && Movement->IsSprinting() && !Movement->IsCrouching();
@@ -855,7 +871,7 @@ void AShooterCharacter::PlayDeathReaction_Implementation(const FRogueDeathReacti
 	}
 	bDeathStateApplied = true;
 	StopMovementCameraShake();
-	StopSprintCameraShake(true);
+	StopLocomotionCameraShake(true);
 
 	if (HasAuthority())
 	{
