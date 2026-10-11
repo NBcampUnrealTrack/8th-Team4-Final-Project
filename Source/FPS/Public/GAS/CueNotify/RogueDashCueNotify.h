@@ -7,6 +7,7 @@
 #include "RogueDashCueNotify.generated.h"
 
 class APawn;
+class UMaterialInterface;
 
 USTRUCT(BlueprintType)
 struct FPS_API FDashClassMontages
@@ -76,10 +77,55 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float SpeedLineOpacity = .35f;
 
+	// Afterimages for other players: holographic copies of the dashing body (and weapon) left along the path,
+	// tinted from FarColor (oldest) to NearColor (newest) and fading out. The dashing player does not see them.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	bool bAfterimages = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage", meta = (ClampMin = "0", ClampMax = "8"))
+	int32 AfterimageCount = 8;
+
+	// Seconds between afterimages (the dash itself lasts about 0.15 s).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage", meta = (ClampMin = "0.01"))
+	float AfterimageInterval = .02f;
+
+	// Seconds each afterimage takes to fade out.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage", meta = (ClampMin = "0.05"))
+	float AfterimageLifetime = .35f;
+
+	// Translucent material for every slot of the copies. Its opacity scalar is faded out over the lifetime.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	TSoftObjectPtr<UMaterialInterface> AfterimageMaterial = TSoftObjectPtr<UMaterialInterface>(
+		FSoftObjectPath(TEXT("/Game/AugmentFX/M_Dash_Afterimage.M_Dash_Afterimage")));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	FName AfterimageOpacityParameter = TEXT("Opacity Multiplier");
+
+	// Multiplies the material's own opacity at the start of the fade.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage", meta = (ClampMin = "0.0"))
+	float AfterimageOpacity = 1.f;
+
+	// Vector parameter tinted per afterimage. Empty: keep the material's colour.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	FName AfterimageColorParameter = TEXT("Color");
+
+	// Oldest afterimage (where the dash started).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	FLinearColor AfterimageFarColor = FLinearColor(.05f, 1.f, .45f);
+
+	// Newest afterimage (next to the player).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage")
+	FLinearColor AfterimageNearColor = FLinearColor(.1f, .45f, 1.f);
+
+	// Level of detail for the copies (0: automatic, 1: LOD0, 2: LOD1 ...). Lower detail keeps many copies cheap.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Dash|Afterimage", meta = (ClampMin = "0"))
+	int32 AfterimageForcedLOD = 2;
+
 protected:
 	virtual bool OnExecute_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) const override;
 	virtual UAnimMontage* ResolveMontage3P(AActor* Target) const override;
 
 private:
 	void PlayLocalSpeedFeedback(APawn* Pawn) const;
+	void PlayAfterimages(AActor* Target) const;
 };

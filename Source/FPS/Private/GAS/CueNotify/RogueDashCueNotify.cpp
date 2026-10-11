@@ -4,6 +4,8 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
+#include "Components/PoseableMeshComponent.h"
+#include "Customization/AppearanceBoneDependencyComponent.h"
 #include "Containers/Ticker.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -12,9 +14,11 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Settings/DominationClassSettings.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Player/DominationPlayerState.h"
 #include "Rendering/DrawElements.h"
 #include "Tags/GameplayTags.h"
+#include "Weapon/WeaponBase.h"
 #include "Widgets/SLeafWidget.h"
 
 namespace
@@ -99,6 +103,163 @@ namespace
 		float Duration = .35f;
 		float Opacity = .35f;
 	};
+
+	struct FDashAfterimage
+	{
+		TArray<TWeakObjectPtr<UPoseableMeshComponent>> Parts;
+		TWeakObjectPtr<UMaterialInstanceDynamic> Material;
+		double Born = 0.0;
+	};
+
+	struct FDashAfterimageTrail
+	{
+		TWeakObjectPtr<AActor> Target;
+		TWeakObjectPtr<UMaterialInterface> Material;
+		TArray<FDashAfterimage> Images;
+		int32 Remaining = 0;
+		int32 Total = 0;
+		double Next = 0.0;
+		double Interval = .04;
+		double Lifetime = .3;
+		FName OpacityParameter;
+		float Opacity = 1.f;
+		float BaseOpacity = 1.f;
+		bool bHaveBaseOpacity = false;
+		FName ColorParameter;
+		FLinearColor FarColor = FLinearColor::Green;
+		FLinearColor NearColor = FLinearColor::Blue;
+		int32 ForcedLOD = 0;
+	};
+
+	// Freezes the target's currently visible third-person meshes (body parts and held weapon) into translucent copies.
+	void SpawnAfterimage(FDashAfterimageTrail& Trail, double Now)
+	{
+		AActor* Target = Trail.Target.Get();
+		UMaterialInterface* Material = Trail.Material.Get();
+		if (!Target || !Material)
+		{
+			return;
+		}
+
+		TArray<USkeletalMeshComponent*> Sources;
+		Target->GetComponents(Sources);
+		if (const auto* Shooter = Cast<AShooterCharacter>(Target))
+		{
+			const auto* Combat = Shooter->GetCombatComponent();
+			if (AWeaponBase* Weapon = Combat ? Combat->GetCurrentWeapon() : nullptr)
+			{
+				Sources.Add(Weapon->GetMesh3P());
+			}
+		}
+
+		FDashAfterimage Image;
+		Image.Born = Now;
+		UMaterialInstanceDynamic* Dynamic = UMaterialInstanceDynamic::Create(Material, Target);
+		if (!Dynamic)
+		{
+			return;
+		}
+		if (!Trail.bHaveBaseOpacity)
+		{
+			// The material's own opacity, faded from here.
+			Trail.BaseOpacity = Dynamic->K2_GetScalarParameterValue(Trail.OpacityParameter);
+			Trail.bHaveBaseOpacity = true;
+		}
+		Dynamic->SetScalarParameterValue(Trail.OpacityParameter, Trail.BaseOpacity * Trail.Opacity);
+		if (!Trail.ColorParameter.IsNone())
+		{
+			// Oldest copy gets FarColor, the newest NearColor.
+			const int32 Index = Trail.Total - Trail.Remaining;
+			const float Along = Trail.Total > 1 ? static_cast<float>(Index) / (Trail.Total - 1) : 1.f;
+			Dynamic->SetVectorParameterValue(Trail.ColorParameter, FMath::Lerp(Trail.FarColor, Trail.NearColor, Along));
+		}
+		Image.Material = Dynamic;
+
+		for (USkeletalMeshComponent* Source : Sources)
+		{
+			// Third-person visuals only: skip the first-person arms, hidden gameplay drivers and helper meshes.
+			if (!Source || !Source->GetSkeletalMeshAsset() || !Source->IsRegistered() || !Source->IsVisible() || Source->bHiddenInGame
+				|| Source->bOnlyOwnerSee || !Source->bRenderInMainPass || Source->IsA<UAppearanceBoneDependencyComponent>())
+			{
+				continue;
+			}
+			auto* Part = NewObject<UPoseableMeshComponent>(Target, NAME_None, RF_Transient);
+			Part->SetSkinnedAssetAndUpdate(Source->GetSkeletalMeshAsset());
+			Part->SetWorldTransform(Source->GetComponentTransform());
+			Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Part->SetGenerateOverlapEvents(false);
+			Part->SetCanEverAffectNavigation(false);
+			Part->SetCastShadow(false);
+			Part->bReceivesDecals = false;
+			// The dashing player never sees their own afterimages.
+			Part->SetOwnerNoSee(true);
+			Part->SetForcedLOD(Trail.ForcedLOD);
+			Part->RegisterComponent();
+			// A follower of a leader pose has no pose of its own: copy the leader's.
+			USkeletalMeshComponent* Pose = Cast<USkeletalMeshComponent>(Source->LeaderPoseComponent.Get());
+			if (!Pose)
+			{
+				Pose = Source;
+			}
+			Part->CopyPoseFromSkeletalComponent(Pose);
+			for (int32 Slot = 0; Slot < Part->GetNumMaterials(); ++Slot)
+			{
+				Part->SetMaterial(Slot, Dynamic);
+			}
+			Image.Parts.Add(Part);
+		}
+		if (!Image.Parts.IsEmpty())
+		{
+			Trail.Images.Add(MoveTemp(Image));
+		}
+	}
+
+	void DestroyAfterimage(FDashAfterimage& Image)
+	{
+		for (const TWeakObjectPtr<UPoseableMeshComponent>& Part : Image.Parts)
+		{
+			if (UPoseableMeshComponent* Mesh = Part.Get())
+			{
+				Mesh->DestroyComponent();
+			}
+		}
+		Image.Parts.Reset();
+	}
+
+	bool TickAfterimageTrail(FDashAfterimageTrail& Trail)
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (!Trail.Target.IsValid())
+		{
+			for (FDashAfterimage& Image : Trail.Images)
+			{
+				DestroyAfterimage(Image);
+			}
+			return false;
+		}
+		while (Trail.Remaining > 0 && Now >= Trail.Next)
+		{
+			SpawnAfterimage(Trail, Now);
+			--Trail.Remaining;
+			Trail.Next += Trail.Interval;
+		}
+		for (int32 I = Trail.Images.Num() - 1; I >= 0; --I)
+		{
+			FDashAfterimage& Image = Trail.Images[I];
+			const float Age = static_cast<float>((Now - Image.Born) / Trail.Lifetime);
+			if (Age >= 1.f)
+			{
+				DestroyAfterimage(Image);
+				Trail.Images.RemoveAt(I);
+				continue;
+			}
+			if (UMaterialInstanceDynamic* Dynamic = Image.Material.Get())
+			{
+				Dynamic->SetScalarParameterValue(Trail.OpacityParameter, Trail.BaseOpacity * Trail.Opacity * FMath::Square(1.f - Age));
+			}
+		}
+		return Trail.Remaining > 0 || !Trail.Images.IsEmpty();
+	}
 }
 
 void URogueDashShakePattern::GetShakePatternInfoImpl(FCameraShakeInfo& OutInfo) const
@@ -141,6 +302,10 @@ bool URogueDashCueNotify::OnExecute_Implementation(AActor* Target, const FGamepl
 	if (bLocalSpeedFeedback)
 	{
 		PlayLocalSpeedFeedback(Cast<APawn>(Target));
+	}
+	if (bAfterimages)
+	{
+		PlayAfterimages(Target);
 	}
 	return bResult;
 }
@@ -195,6 +360,44 @@ void URogueDashCueNotify::PlayLocalSpeedFeedback(APawn* Pawn) const
 			WeakViewport->RemoveViewportWidgetForPlayer(WeakPlayer.Get(), Widget.ToSharedRef());
 		}
 		return false;
+	}));
+}
+
+void URogueDashCueNotify::PlayAfterimages(AActor* Target) const
+{
+	// Other players' views only: the dashing player sees the first-person feedback instead.
+	const auto* Pawn = Cast<APawn>(Target);
+	if (!Pawn || Pawn->IsLocallyControlled() || AfterimageCount <= 0 || Pawn->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UMaterialInterface* Material = AfterimageMaterial.LoadSynchronous();
+	if (!Material)
+	{
+		return;
+	}
+
+	const TSharedRef<FDashAfterimageTrail> Trail = MakeShared<FDashAfterimageTrail>();
+	Trail->Target = Target;
+	Trail->Material = Material;
+	Trail->Remaining = AfterimageCount;
+	Trail->Total = AfterimageCount;
+	Trail->ColorParameter = AfterimageColorParameter;
+	Trail->FarColor = AfterimageFarColor;
+	Trail->NearColor = AfterimageNearColor;
+	Trail->ForcedLOD = AfterimageForcedLOD;
+	Trail->Next = FPlatformTime::Seconds();
+	Trail->Interval = AfterimageInterval;
+	Trail->Lifetime = AfterimageLifetime;
+	Trail->OpacityParameter = AfterimageOpacityParameter;
+	Trail->Opacity = AfterimageOpacity;
+	if (!TickAfterimageTrail(*Trail))
+	{
+		return;
+	}
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Trail](float)
+	{
+		return TickAfterimageTrail(*Trail);
 	}));
 }
 
