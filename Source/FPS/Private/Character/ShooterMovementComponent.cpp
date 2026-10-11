@@ -139,9 +139,36 @@ void UShooterMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSe
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 }
 
+void UShooterMovementComponent::SetPostLandedPhysics(const FHitResult& Hit)
+{
+	Super::SetPostLandedPhysics(Hit);
+
+	if (IsMovingOnGround())
+	{
+		// Keep impact feedback intact; cap only landing momentum before ground movement resumes.
+		Velocity = Velocity.GetClampedToMaxSize2D(FMath::Max(0.f, CalculateMaxSpeed(false)));
+	}
+}
+
 float UShooterMovementComponent::GetMaxSpeed() const
 {
-	const bool bSprinting = bWantsToSprint && !IsCrouching();
+	return CalculateMaxSpeed(bWantsToSprint && !IsCrouching());
+}
+
+float UShooterMovementComponent::GetMaxAcceleration() const
+{
+	const float DefaultAcceleration = Super::GetMaxAcceleration();
+	if (!bWantsToSprint || IsCrouching() || !IsMovingOnGround()
+		|| SprintAcceleration <= UE_SMALL_NUMBER)
+	{
+		return DefaultAcceleration;
+	}
+
+	return FMath::Min(DefaultAcceleration, SprintAcceleration);
+}
+
+float UShooterMovementComponent::CalculateMaxSpeed(bool bSprinting) const
+{
 	const float BaseMaxSpeed = bSprinting ? SprintSpeed : Super::GetMaxSpeed();
 	const AActor* OwnerActor = GetOwner();
 	if (!IsValid(OwnerActor))

@@ -53,6 +53,7 @@ public:
 	void SetSprintBlocked(bool bBlocked);
 
 	virtual float GetMaxSpeed() const override;
+	virtual float GetMaxAcceleration() const override;
 
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
 	virtual bool CanCrouchInCurrentState() const override;
@@ -72,12 +73,17 @@ public:
 protected:
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
+	virtual void SetPostLandedPhysics(const FHitResult& Hit) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float WalkSpeed = 600.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float SprintSpeed = 850.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement",
+		meta = (ClampMin = "0.0", Units = "cm/s^2", ToolTip = "Ground sprint acceleration cap. 0 uses Character Movement Max Acceleration."))
+	float SprintAcceleration = 800.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float CrouchSpeed = 300.f;
@@ -90,4 +96,6 @@ protected:
 
 	bool bSprintBlocked = false;
 
+private:
+	float CalculateMaxSpeed(bool bSprinting) const;
 };
