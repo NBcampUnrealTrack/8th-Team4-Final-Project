@@ -58,9 +58,9 @@ void UShooterMinimapSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-bool UShooterMinimapSubsystem::IsKillcamDuplicate(const AShooterMinimapBounds* Bounds)
+bool UShooterMinimapSubsystem::IsKillcamDuplicate(const AActor* Actor)
 {
-	const ULevel* Level = Bounds ? Bounds->GetLevel() : nullptr;
+	const ULevel* Level = Actor ? Actor->GetLevel() : nullptr;
 	const FLevelCollection* Collection = Level ? Level->GetCachedLevelCollection() : nullptr;
 	return Collection && Collection->GetType() == ELevelCollectionType::DynamicDuplicatedLevels;
 }

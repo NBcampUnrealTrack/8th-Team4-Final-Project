@@ -352,4 +352,5 @@ void UDominationSiteTrackerWidget::RefreshCapturePlayerCount()
 	SetWidgetShown(Panel_EnemyCount, EnemyCount > 0);
 	SetWidgetShown(Image_AllyChevron, AllyCount > 0 && EnemyCount == 0);
 	SetWidgetShown(Image_EnemyChevron, EnemyCount > 0 && AllyCount == 0);
+	SetWidgetShown(Image_ContestedIcon, AllyCount > 0 && EnemyCount > 0);
 }
