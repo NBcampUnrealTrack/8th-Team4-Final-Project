@@ -614,6 +614,11 @@ private:
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).
 	float LastFireInterval = 0.f;
 
+	// 발사 간격 대비 허용 오차 비율. 연사 판정(RegisterFireCooldown)과 서버가 원격 클라이언트의 예측 발사를
+	// 받아들이는 조기 도착 여유(CanFireNow)에 함께 쓰인다.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Fire", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float FireIntervalTolerance = 0.3f;
+
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();
 

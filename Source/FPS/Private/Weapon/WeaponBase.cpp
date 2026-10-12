@@ -196,9 +196,23 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 		return false;
 	}
 
+	// 원격 클라이언트가 예측 발사한 요청은 네트워크 지터 때문에 서버 기준으로 간격보다 조금 일찍
+	// 도착할 수 있다. 서버가 이걸 거절하면 클라이언트는 탄약만 줄고(CurrentAmmo 비복제) 사격음·이펙트가
+	// 빠져 연사가 끊겨 보이므로 약간의 여유를 둔다. RegisterFireCooldown이 예정 시각 기준으로 다음
+	// 쿨다운을 잡기 때문에 여유를 줘도 지속 연사 속도는 RPM을 넘지 않는다.
+	float EarlyTolerance = 0.f;
+	if (HasAuthority())
+	{
+		const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+		if (OwnerPawn && !OwnerPawn->IsLocallyControlled())
+		{
+			EarlyTolerance = LastFireInterval * FireIntervalTolerance;
+		}
+	}
+
 	// 쿨다운은 직전에 실제로 발사된 공격(좌/우 무관)의 간격을 기준으로 하므로, 지금 요청한
 	// 공격이 좌/우 어느 쪽이든 그 간격이 지나기 전에는 발사할 수 없다.
-	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
+	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval - EarlyTolerance;
 }
 
 bool AWeaponBase::TryPlayEmptyClipSound()
@@ -673,7 +687,14 @@ float AWeaponBase::ResolveRPMForShot(const bool bHeavyAttack) const
 
 void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
 {
-	LastFireTime = World.GetTimeSeconds();
+	// 연사 중에는 실제 발사 시각 대신 직전 발의 예정 시각(직전 발 + 간격)을 기준으로 다음 쿨다운을 잡는다.
+	// 실제 시각을 쓰면 프레임/패킷 도착 단위로 생기는 지연이 매 발 누적돼 연사 박자가 불규칙해지고,
+	// 서버는 다음 요청이 상대적으로 일찍 도착한 것처럼 보여 거절하게 된다.
+	const float Now = World.GetTimeSeconds();
+	const float ScheduledTime = LastFireTime + LastFireInterval;
+	const bool bContinuousFire = LastFireInterval > 0.f
+		&& FMath::Abs(Now - ScheduledTime) <= LastFireInterval * FireIntervalTolerance;
+	LastFireTime = bContinuousFire ? ScheduledTime : Now;
 	LastFireInterval = 60.f / RPMUsed;
 }
 
