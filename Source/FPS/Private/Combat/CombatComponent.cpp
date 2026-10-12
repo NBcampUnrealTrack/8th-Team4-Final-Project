@@ -764,8 +764,30 @@ void UCombatComponent::ReEquipCurrentWeapon()
 void UCombatComponent::RefreshFirstPersonADSPresentation() const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
-		|| !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	if (!IsValid(OwnerPawn) || !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	bool bViewedByLocalPlayer = OwnerPawn->IsLocallyControlled();
+	if (!bViewedByLocalPlayer)
+	{
+		if (UWorld* World = OwnerPawn->GetWorld())
+		{
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			{
+				const APlayerController* LocalController = It->Get();
+				if (IsValid(LocalController) && LocalController->IsLocalController()
+					&& LocalController->GetViewTarget() == OwnerPawn)
+				{
+					bViewedByLocalPlayer = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!bViewedByLocalPlayer)
 	{
 		return;
 	}

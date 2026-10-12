@@ -693,6 +693,35 @@ void AShooterPlayerController::StopVoiceTalking()
 	ServerSetVoiceTalking(false);
 }
 
+bool AShooterPlayerController::IsPushToTalkKey(const FKey& Key) const
+{
+	if (!SupportsVoiceChat() || !Key.IsValid() || !IsValid(InputConfig) || !IsValid(InputConfig->PushToTalkAction))
+	{
+		return false;
+	}
+
+	const auto IsMappedToPushToTalk = [this, &Key](const UInputMappingContext* MappingContext)
+	{
+		if (!IsValid(MappingContext))
+		{
+			return false;
+		}
+
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			if (Mapping.Action == InputConfig->PushToTalkAction && Mapping.Key == Key)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	return IsMappedToPushToTalk(RuntimeDefaultMappingContext)
+		|| IsMappedToPushToTalk(RuntimeSystemMappingContext);
+}
+
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
 {
 	if (!IsLocalController() || !SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
@@ -1186,7 +1215,24 @@ void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, A
 
 void AShooterPlayerController::HandleViewTargetBlendComplete()
 {
+	RefreshViewedPawnWeaponPresentation();
 	OnViewPresentationChanged.Broadcast();
+}
+
+void AShooterPlayerController::RefreshViewedPawnWeaponPresentation()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AShooterCharacter* ViewedCharacter = Cast<AShooterCharacter>(GetViewTarget()))
+	{
+		if (UCombatComponent* ViewedCombat = ViewedCharacter->GetCombatComponent())
+		{
+			ViewedCombat->RefreshEquippedWeaponPresentation();
+		}
+	}
 }
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
@@ -1218,6 +1264,7 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
 	if (GetViewTarget() != PreviousViewTarget)
 	{
+		RefreshViewedPawnWeaponPresentation();
 		OnViewPresentationChanged.Broadcast();
 	}
 }
