@@ -19,6 +19,7 @@ class FPS_API ARogueFxLoopingCueNotify : public AGameplayCueNotify_Looping
 	GENERATED_BODY()
 
 protected:
+	virtual bool OnActive_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) override;
 	virtual bool WhileActive_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) override;
 	virtual bool OnRemove_Implementation(AActor* Target, const FGameplayCueParameters& Parameters) override;
 
@@ -60,6 +61,7 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<USkeletalMeshComponent> OverlayMesh;
 
+	void StartEffects(AActor* Target, const FGameplayCueParameters& Parameters);
 	void StopSpawnedParticles();
 	void SpawnOnWeapon(AActor* Target);
 	void ApplyOverlay(AActor* Target);

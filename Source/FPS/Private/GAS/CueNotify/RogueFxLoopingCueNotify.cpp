@@ -12,14 +12,26 @@
 #include "Particles/ParticleSystemComponent.h"
 #include "Weapon/WeaponBase.h"
 
+bool ARogueFxLoopingCueNotify::OnActive_Implementation(AActor* Target, const FGameplayCueParameters& Parameters)
+{
+	const bool bResult = Super::OnActive_Implementation(Target, Parameters);
+	StartEffects(Target, Parameters);
+	return bResult;
+}
+
 bool ARogueFxLoopingCueNotify::WhileActive_Implementation(AActor* Target, const FGameplayCueParameters& Parameters)
 {
 	const bool bResult = Super::WhileActive_Implementation(Target, Parameters);
+	StartEffects(Target, Parameters);
+	return bResult;
+}
 
+void ARogueFxLoopingCueNotify::StartEffects(AActor* Target, const FGameplayCueParameters& Parameters)
+{
 	UWorld* World = IsValid(Target) ? Target->GetWorld() : GetWorld();
 	if (!World)
 	{
-		return bResult;
+		return;
 	}
 
 	StopSpawnedParticles();
@@ -28,7 +40,7 @@ bool ARogueFxLoopingCueNotify::WhileActive_Implementation(AActor* Target, const 
 	{
 		SpawnOnWeapon(Target);
 		ApplyOverlay(Target);
-		return bResult;
+		return;
 	}
 
 	const FRotator Rotation = Parameters.Normal.IsNearlyZero() ? FRotator::ZeroRotator : Parameters.Normal.Rotation();
@@ -99,8 +111,6 @@ bool ARogueFxLoopingCueNotify::WhileActive_Implementation(AActor* Target, const 
 	}
 
 	ApplyOverlay(Target);
-
-	return bResult;
 }
 
 bool ARogueFxLoopingCueNotify::OnRemove_Implementation(AActor* Target, const FGameplayCueParameters& Parameters)
