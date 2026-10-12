@@ -40,6 +40,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Killcam/KillcamReplaySubsystem.h"
+#include "Killcam/KillcamCameraActor.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
@@ -1238,13 +1239,23 @@ void AShooterPlayerController::RefreshViewedPawnWeaponPresentation()
 		return;
 	}
 
-	if (AShooterCharacter* ViewedCharacter = Cast<AShooterCharacter>(GetViewTarget()))
+	if (AShooterCharacter* ViewedCharacter = Cast<AShooterCharacter>(GetPresentationViewTarget()))
 	{
 		if (UCombatComponent* ViewedCombat = ViewedCharacter->GetCombatComponent())
 		{
 			ViewedCombat->RefreshEquippedWeaponPresentation();
 		}
 	}
+}
+
+AActor* AShooterPlayerController::GetPresentationViewTarget() const
+{
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		return KillcamCamera->GetTrackedActor();
+	}
+
+	return GetViewTarget();
 }
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)

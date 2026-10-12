@@ -49,7 +49,7 @@ void UShooterScopeWidget::HandlePossessedPawnChanged(APawn*, APawn*)
 void UShooterScopeWidget::HandleViewPresentationChanged()
 {
 	AShooterPlayerController* Controller = BoundController.Get();
-	APawn* ViewedPawn = IsValid(Controller) ? Cast<APawn>(Controller->GetViewTarget()) : nullptr;
+	APawn* ViewedPawn = IsValid(Controller) ? Cast<APawn>(Controller->GetPresentationViewTarget()) : nullptr;
 	UCombatComponent* Combat = IsValid(ViewedPawn) ? ViewedPawn->FindComponentByClass<UCombatComponent>() : nullptr;
 	BindToCombatComponent(Combat);
 	RefreshScopeVisibility();
@@ -99,7 +99,6 @@ void UShooterScopeWidget::RefreshScopeVisibility()
 	const UCombatComponent* Combat = BoundCombatComponent.Get();
 	const AWeaponBase* Weapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	const bool bShowScope = IsValid(Controller)
-		&& !Controller->IsKillcamViewTargetSuppressed()
 		&& IsValid(Combat)
 		&& Combat->IsAiming()
 		&& IsValid(Weapon)

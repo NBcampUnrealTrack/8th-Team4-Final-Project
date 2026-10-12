@@ -260,6 +260,7 @@ public:
 		const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
 
 	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
+	AActor* GetPresentationViewTarget() const;
 
 	void ApplyKillcamViewTarget(AActor* KillcamCamera);
 
