@@ -25,11 +25,12 @@ public:
 	void PlayFireCameraShake() const;
 	void PlayFireSound() const;
 	void PlayEmptyClipSound();
+	USoundAttenuation* GetActionAttenuation() const { return ActionAttenuation.Get(); }
 	// Common 3P animation state calls this once per equip transition on each peer.
-	// No RPC/animation notify: owner and observers hear the same world-space emitter.
+	// No extra RPC/notify: the owner hears 2D; observers use the world-space emitter.
 	void PlayDrawSound() const;
 	// Called by the common character anim instance when a registered Holster starts.
-	// Returns false for unrelated montages; always emits from the world-space gun.
+	// Returns false for unrelated montages; uses the same owner/observer audio routing.
 	bool TryPlayHolsterSound(const UAnimMontage* Montage) const;
 	// Synchronization may rewind a weapon montage across the same sound notify.
 	// Consume that event once per playback, not once per frame or time window.
@@ -67,19 +68,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> EmptyClipSound;
 
-	// Separate from the shared sound asset so each weapon can have its own range.
+	// Observer attenuation; the owning player bypasses it without changing the asset.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundAttenuation> FireAttenuation;
 
+	// Observer attenuation for weapon actions. The owning player hears 2D.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundAttenuation> ActionAttenuation;
 
 	// Gun Draw audio lives here, not on the Draw animation's notify tracks.
-	// Uses ActionAttenuation, including for the owning player's first-person view.
+	// Uses ActionAttenuation for observers and 2D playback for the owning player.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> DrawSound;
 
-	// 무기를 집어넣을 때 한 번 재생. 거리 감쇠는 ActionAttenuation을 사용한다.
+	// 무기를 집어넣을 때 한 번 재생. 본인은 2D, 상대는 ActionAttenuation을 사용한다.
 	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Effects|Sound")
 	TObjectPtr<USoundBase> HolsterSound;
 

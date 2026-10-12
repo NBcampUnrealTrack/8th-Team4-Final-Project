@@ -54,7 +54,13 @@ public:
 
 	virtual float GetMaxSpeed() const override;
 
+	// Resolved non-sprint speed, including the same weapon and augment modifiers.
+	float GetMaxWalkingSpeed() const { return CalculateMaxSpeed(false); }
+
+	virtual void CalcVelocity(float DeltaTime, float Friction, bool bFluid, float BrakingDeceleration) override;
+
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+	virtual bool CanCrouchInCurrentState() const override;
 
 	// CombatComponent가 이동 상태 탄퍼짐 배율(WeaponBase::SetMovementSpreadMultiplier)을 계산할 때 참고한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Movement")
@@ -70,12 +76,18 @@ public:
 
 protected:
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
+	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
+	virtual void SetPostLandedPhysics(const FHitResult& Hit) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float WalkSpeed = 600.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float SprintSpeed = 850.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement",
+		meta = (ClampMin = "0.0", Units = "cm/s^2", ToolTip = "Initial acceleration above walking speed, easing to zero at sprint speed. Higher is quicker; 0 uses normal Character Movement acceleration."))
+	float SprintAcceleration = 800.f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement")
 	float CrouchSpeed = 300.f;
@@ -88,4 +100,6 @@ protected:
 
 	bool bSprintBlocked = false;
 
+private:
+	float CalculateMaxSpeed(bool bSprinting) const;
 };

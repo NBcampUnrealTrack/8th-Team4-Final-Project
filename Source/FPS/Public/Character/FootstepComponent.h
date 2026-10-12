@@ -55,6 +55,10 @@ private:
 		FVector& OutFootstepLocation,
 		TEnumAsByte<EPhysicalSurface>& OutSurfaceType) const;
 
+	float ResolveFootstepVolumeMultiplier(float VolumeMultiplier) const;
+	bool ShouldEmitMovementSound() const;
+	void ReportFootstepNoise(const FVector& FootstepLocation) const;
+
 	void PlayFootstepSound(
 		FVector FootstepLocation,
 		TEnumAsByte<EPhysicalSurface> SurfaceType,
@@ -68,4 +72,28 @@ private:
 private:
 	UPROPERTY(EditDefaultsOnly, Category = "Footstep")
 	TObjectPtr<UFootstepSoundDefinition> FootstepSoundDefinition;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CrouchFootstepVolumeMultiplier = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|Trace", meta = (ClampMin = "1.0", Units = "cm"))
+	float FootstepTraceDistance = 100.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0", Units = "cm"))
+	float FootstepNoiseMaxRange = 1800.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float WalkingNoiseSpeedThreshold = 250.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float RunningNoiseSpeedThreshold = 500.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0"))
+	float SlowFootstepNoiseLoudness = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0"))
+	float WalkingFootstepNoiseLoudness = 0.7f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Footstep|AI Hearing", meta = (ClampMin = "0.0"))
+	float RunningFootstepNoiseLoudness = 1.0f;
 };

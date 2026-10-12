@@ -1,11 +1,46 @@
 ﻿#include "UI/InGame/HUD/DominationSiteTrackerWidget.h"
 
 #include "Actor/DominationCapturePoint.h"
+#include "Components/Image.h"
+#include "Components/TextBlock.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/State/DominationGameState.h"
 #include "Player/BaseTeamPlayerState.h"
+#include "UI/ShooterUISettings.h"
+
+namespace
+{
+	void SetWidgetShown(UWidget* Widget, const bool bShown)
+	{
+		if (IsValid(Widget))
+		{
+			Widget->SetVisibility(bShown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
+	}
+
+	void TintImage(UImage* Image, const FLinearColor& Color)
+	{
+		if (IsValid(Image))
+		{
+			Image->SetColorAndOpacity(Color);
+		}
+	}
+}
+
+void UDominationSiteTrackerWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+
+	// 디자이너 미리보기에도 같은 색이 보이도록 여기서 칠한다. 꺾쇠 머티리얼은 이 틴트를 VertexColor 로 받는다
+	const FLinearColor AllyColor = UShooterUISettings::GetAllyColor();
+	const FLinearColor EnemyColor = UShooterUISettings::GetEnemyColor();
+	TintImage(Image_AllySlot, AllyColor);
+	TintImage(Image_EnemySlot, EnemyColor);
+	TintImage(Image_AllyChevron, AllyColor);
+	TintImage(Image_EnemyChevron, EnemyColor);
+}
 
 void UDominationSiteTrackerWidget::NativeConstruct()
 {
@@ -171,6 +206,7 @@ void UDominationSiteTrackerWidget::HandleActivePointChanged(const EDominationPoi
 void UDominationSiteTrackerWidget::HandleCaptureStateChanged(const FDominationCaptureState CaptureState)
 {
 	BP_OnCaptureStateChanged(GetCapturingRelation(), CaptureState.CaptureProgress, CaptureState.bContested);
+	RefreshCapturePlayerCount();
 }
 
 void UDominationSiteTrackerWidget::HandleTeamScoreChanged(const EGameTeam, const int32)
@@ -253,6 +289,7 @@ void UDominationSiteTrackerWidget::RefreshLocalState()
 	RefreshLocalCaptureZoneState();
 	// 위젯이 만들어질 때 내 팀이 아직 복제 전일 수 있어 도착하면 다시 보낸다
 	RefreshRelativeScore(false);
+	RefreshCapturePlayerCount();
 }
 
 void UDominationSiteTrackerWidget::RefreshRelativeScore(const bool bForce)
@@ -278,4 +315,41 @@ void UDominationSiteTrackerWidget::RefreshRelativeScore(const bool bForce)
 	BP_OnRelativeScoreChanged(
 		bLocalIsTeamB ? TeamBScore : TeamAScore,
 		bLocalIsTeamB ? TeamAScore : TeamBScore);
+}
+
+void UDominationSiteTrackerWidget::RefreshCapturePlayerCount()
+{
+	const ADominationGameState* DominationGameState = BoundGameState.Get();
+	if (!IsValid(DominationGameState))
+	{
+		return;
+	}
+
+	// 팀을 아직 모르면 TeamA 를 우리 팀 자리에 둔다
+	const ABaseTeamPlayerState* LocalPlayerState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const bool bLocalIsTeamB = IsValid(LocalPlayerState) && LocalPlayerState->GetTeam() == EGameTeam::TeamB;
+	const FDominationCaptureState CaptureState = DominationGameState->GetCaptureState();
+	const int32 AllyCount = bLocalIsTeamB ? CaptureState.TeamBPlayerCount : CaptureState.TeamAPlayerCount;
+	const int32 EnemyCount = bLocalIsTeamB ? CaptureState.TeamAPlayerCount : CaptureState.TeamBPlayerCount;
+	// 진행률 때문에 0.1초마다 불리므로 인원이 같으면 건너뛴다
+	if (AllyCount == CachedAllyCaptureCount && EnemyCount == CachedEnemyCaptureCount)
+	{
+		return;
+	}
+	CachedAllyCaptureCount = AllyCount;
+	CachedEnemyCaptureCount = EnemyCount;
+
+	if (IsValid(Text_AllyCount))
+	{
+		Text_AllyCount->SetText(FText::AsNumber(AllyCount));
+	}
+	if (IsValid(Text_EnemyCount))
+	{
+		Text_EnemyCount->SetText(FText::AsNumber(EnemyCount));
+	}
+	SetWidgetShown(Panel_CaptureCount, AllyCount + EnemyCount > 0);
+	SetWidgetShown(Panel_AllyCount, AllyCount > 0);
+	SetWidgetShown(Panel_EnemyCount, EnemyCount > 0);
+	SetWidgetShown(Image_AllyChevron, AllyCount > 0 && EnemyCount == 0);
+	SetWidgetShown(Image_EnemyChevron, EnemyCount > 0 && AllyCount == 0);
 }

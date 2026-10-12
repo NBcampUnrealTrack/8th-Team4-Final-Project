@@ -1,4 +1,5 @@
 #include "Animation/AnimNotify_FirearmSound.h"
+#include "Audio/CharacterSoundPlayback.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "Character/ShooterCharacter.h"
@@ -6,9 +7,7 @@
 #include "Weapon/WeaponBase.h"
 #include "Weapon/WeaponEffectsComponent.h"
 #include "Tags/GameplayTags.h"
-#include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
-#include "Sound/SoundAttenuation.h"
 #include "Animation/AnimInstance.h"
 USkeletalMeshComponent* UAnimNotify_FirearmSound::ResolveEmitter(USkeletalMeshComponent* Source,bool bSingleView)
 {
@@ -64,13 +63,21 @@ void UAnimNotify_FirearmSound::Notify(USkeletalMeshComponent* MeshComp,UAnimSequ
    }
   }
  }
- if(!AttenuationOverride)
+ if(!Sound||!Sound->IsOneShot())return;
+ const auto* Weapon = Cast<AWeaponBase>(Emitter->GetOwner());
+ const auto* Effects = Weapon ? Weapon->FindComponentByClass<UWeaponEffectsComponent>() : nullptr;
+ // Priority: notify override, weapon action ATT, then the sound asset's ATT.
+ USoundAttenuation* ActionAttenuation = AttenuationOverride.Get();
+ if(!ActionAttenuation && Effects) ActionAttenuation = Effects->GetActionAttenuation();
+ if(!Effects && !ActionAttenuation)
  {
-  Super::Notify(Emitter,Animation,EventReference);
+  // Preserve unrelated shared clips; gameplay weapons use the common action route.
+  if(!CharacterSoundPlayback::TryPlayLocal2D(Emitter->GetOwner(),Sound,VolumeMultiplier,PitchMultiplier))
+   Super::Notify(Emitter,Animation,EventReference);
   return;
  }
- if(!Sound||!Sound->IsOneShot())return;
- // An action follows the 3P weapon even while the player moves during reload.
- UGameplayStatics::SpawnSoundAttached(Sound,Emitter,AttachName,FVector::ZeroVector,
-  EAttachLocation::SnapToTarget,false,VolumeMultiplier,PitchMultiplier,0.f,AttenuationOverride);
+ // Reload/bolt inherit the weapon's observer ATT when the notify has no override.
+ // The owner hears 2D; everyone else follows this weapon's 3P emitter.
+ CharacterSoundPlayback::PlayAttached(Emitter->GetOwner(),Sound,Emitter,ActionAttenuation,
+  VolumeMultiplier,PitchMultiplier,AttachName);
 }
