@@ -74,6 +74,12 @@ public:
 			&& Velocity.SizeSquared2D() > FMath::Square(3.f);
 	}
 
+	// 달리기 애니메이션이 재생 중이거나, 끝난 뒤 총구가 다시 정면으로 돌아오는 중(SprintFireRecoveryTime)이면 true.
+	// 이 동안은 사격하지 않는다(GA_RangedAttack).
+	bool IsRecoveringFromSprint() const;
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 protected:
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
@@ -100,6 +106,14 @@ protected:
 
 	bool bSprintBlocked = false;
 
+	// 달리기 애니메이션이 끝난 뒤 사격을 다시 허용하기까지의 시간. 1인칭 달리기 자세가 정면 자세로
+	// 블렌드되는 시간(BPC_TacticalPresentation의 Gait 보간)에 맞춰 조정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Movement", meta = (ClampMin = "0.0", Units = "s"))
+	float SprintFireRecoveryTime = 0.35f;
+
 private:
+	// 마지막으로 달리기 애니메이션 조건이 참이었던 월드 시간.
+	double LastSprintAnimationTime = -1.0e9;
+
 	float CalculateMaxSpeed(bool bSprinting) const;
 };

@@ -79,6 +79,30 @@ void UShooterMovementComponent::BeginPlay()
 	NavAgentProps.bCanCrouch = true;
 }
 
+void UShooterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (ShouldPlaySprintAnimation())
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			LastSprintAnimationTime = World->GetTimeSeconds();
+		}
+	}
+}
+
+bool UShooterMovementComponent::IsRecoveringFromSprint() const
+{
+	if (ShouldPlaySprintAnimation())
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	return World && (World->GetTimeSeconds() - LastSprintAnimationTime) < SprintFireRecoveryTime;
+}
+
 void UShooterMovementComponent::StartSprint()
 {
 	if (IsCrouching() || bSprintBlocked)
