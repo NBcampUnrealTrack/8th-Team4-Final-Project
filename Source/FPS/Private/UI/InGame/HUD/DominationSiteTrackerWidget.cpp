@@ -2,6 +2,11 @@
 
 #include "Actor/DominationCapturePoint.h"
 #include "Components/Image.h"
+#include "Components/HorizontalBox.h"
+#if WITH_EDITOR
+#include "Engine/Blueprint.h"
+#endif
+#include "UI/InGame/HUD/DominationSiteTrackerSlotWidget.h"
 #include "Components/TextBlock.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -12,11 +17,12 @@
 
 namespace
 {
-	void SetWidgetShown(UWidget* Widget, const bool bShown)
+	void SetWidgetShown(UWidget* Widget, const bool bShown,
+		const ESlateVisibility WhenHidden = ESlateVisibility::Collapsed)
 	{
 		if (IsValid(Widget))
 		{
-			Widget->SetVisibility(bShown ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			Widget->SetVisibility(bShown ? ESlateVisibility::HitTestInvisible : WhenHidden);
 		}
 	}
 
@@ -33,7 +39,7 @@ void UDominationSiteTrackerWidget::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 
-	// 디자이너 미리보기에도 같은 색이 보이도록 여기서 칠한다. 꺾쇠 머티리얼은 이 틴트를 VertexColor 로 받는다
+	// 디자이너 미리보기에도 동일한 아군/적군 이미지 틴트를 적용한다.
 	const FLinearColor AllyColor = UShooterUISettings::GetAllyColor();
 	const FLinearColor EnemyColor = UShooterUISettings::GetEnemyColor();
 	TintImage(Image_AllySlot, AllyColor);
@@ -59,6 +65,10 @@ void UDominationSiteTrackerWidget::NativeConstruct()
 	}
 
 	BoundGameState = DominationGameState;
+	// Reconstructing the same HUD must reapply visibility and count text once.
+	CachedAllyCaptureCount = CachedEnemyCaptureCount = INDEX_NONE;
+	// Do not replay historical completion flashes on late join / HUD reconstruction.
+	LastPresentationCaptureSerial = DominationGameState->GetObjectiveCaptureSerial();
 	DominationGameState->OnActivePointChanged.AddUniqueDynamic(this, &ThisClass::HandleActivePointChanged);
 	DominationGameState->OnCaptureStateChanged.AddUniqueDynamic(this, &ThisClass::HandleCaptureStateChanged);
 	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(this, &ThisClass::HandleTeamScoreChanged);
@@ -81,6 +91,17 @@ void UDominationSiteTrackerWidget::NativeConstruct()
 
 void UDominationSiteTrackerWidget::NativeDestruct()
 {
+	if (UHorizontalBox* Sites = Cast<UHorizontalBox>(GetWidgetFromName(TEXT("HBox_Sites"))))
+	{
+		for (int32 Index = 0; Index < Sites->GetChildrenCount(); ++Index)
+		{
+			if (UDominationSiteTrackerSlotWidget* Marker = Cast<UDominationSiteTrackerSlotWidget>(Sites->GetChildAt(Index)))
+			{
+				Marker->StopPresentationAnimations();
+			}
+		}
+	}
+	LastPresentationCaptureSerial = INDEX_NONE;
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearAllTimersForObject(this);
@@ -201,12 +222,14 @@ void UDominationSiteTrackerWidget::HandleActivePointChanged(const EDominationPoi
 
 	RefreshActiveCapturePoint();
 	RefreshLocalCaptureZoneState();
+	RefreshSitePresentation();
 }
 
 void UDominationSiteTrackerWidget::HandleCaptureStateChanged(const FDominationCaptureState CaptureState)
 {
 	BP_OnCaptureStateChanged(GetCapturingRelation(), CaptureState.CaptureProgress, CaptureState.bContested);
 	RefreshCapturePlayerCount();
+	RefreshSitePresentation();
 }
 
 void UDominationSiteTrackerWidget::HandleTeamScoreChanged(const EGameTeam, const int32)
@@ -223,6 +246,7 @@ void UDominationSiteTrackerWidget::HandleTeamScoreChanged(const EGameTeam, const
 void UDominationSiteTrackerWidget::HandleObjectiveFlowStateChanged()
 {
 	BP_OnTransitionStateChanged(IsPointTransitioning());
+	RefreshSitePresentation();
 }
 
 void UDominationSiteTrackerWidget::HandleCapturePointPawnChanged(APawn*)
@@ -282,6 +306,7 @@ void UDominationSiteTrackerWidget::RefreshLocalCaptureZoneState()
 	bHasLocalCaptureZoneState = true;
 	bLocalPlayerInsideActivePoint = bShouldShow;
 	BP_OnLocalCaptureZoneChanged(bShouldShow);
+	RefreshSitePresentation();
 }
 
 void UDominationSiteTrackerWidget::RefreshLocalState()
@@ -315,6 +340,7 @@ void UDominationSiteTrackerWidget::RefreshRelativeScore(const bool bForce)
 	BP_OnRelativeScoreChanged(
 		bLocalIsTeamB ? TeamBScore : TeamAScore,
 		bLocalIsTeamB ? TeamAScore : TeamBScore);
+	RefreshSitePresentation();
 }
 
 void UDominationSiteTrackerWidget::RefreshCapturePlayerCount()
@@ -348,9 +374,89 @@ void UDominationSiteTrackerWidget::RefreshCapturePlayerCount()
 		Text_EnemyCount->SetText(FText::AsNumber(EnemyCount));
 	}
 	SetWidgetShown(Panel_CaptureCount, AllyCount + EnemyCount > 0);
-	SetWidgetShown(Panel_AllyCount, AllyCount > 0);
-	SetWidgetShown(Panel_EnemyCount, EnemyCount > 0);
+	// Hidden retains each reserved side; the centre icon never follows the occupied side.
+	SetWidgetShown(Panel_AllyCount, AllyCount > 0, ESlateVisibility::Hidden);
+	SetWidgetShown(Panel_EnemyCount, EnemyCount > 0, ESlateVisibility::Hidden);
 	SetWidgetShown(Image_AllyChevron, AllyCount > 0 && EnemyCount == 0);
 	SetWidgetShown(Image_EnemyChevron, EnemyCount > 0 && AllyCount == 0);
-	SetWidgetShown(Image_ContestedIcon, AllyCount > 0 && EnemyCount > 0);
+}
+
+FString UDominationSiteTrackerWidget::GetRefinedWidgetParentPath(UObject* BlueprintAsset)
+{
+#if WITH_EDITOR
+	const UBlueprint* Blueprint = Cast<UBlueprint>(BlueprintAsset);
+	return Blueprint && Blueprint->ParentClass ? Blueprint->ParentClass->GetPathName() : FString();
+#else
+	return FString();
+#endif
+}
+
+FString UDominationSiteTrackerWidget::GetRefinedBlueprintStatus(UObject* BlueprintAsset)
+{
+#if WITH_EDITOR
+	const UBlueprint* Blueprint = Cast<UBlueprint>(BlueprintAsset);
+	if (!Blueprint || !Blueprint->GeneratedClass) return TEXT("MissingGeneratedClass");
+	switch (Blueprint->Status)
+	{
+	case BS_UpToDate: return TEXT("Ready");
+	case BS_UpToDateWithWarnings: return TEXT("ReadyWithWarnings");
+	case BS_Error: return TEXT("Error");
+	case BS_Dirty: return TEXT("Dirty");
+	default: return TEXT("NotCompiled");
+	}
+#else
+	return TEXT("EditorOnly");
+#endif
+}
+
+void UDominationSiteTrackerWidget::RefreshSitePresentation()
+{
+	const ADominationGameState* GameState = BoundGameState.Get();
+	if (!bEnableRefinedSitePresentation || !IsValid(GameState)) return;
+	UHorizontalBox* Sites = Cast<UHorizontalBox>(GetWidgetFromName(TEXT("HBox_Sites")));
+	if (!IsValid(Sites)) return;
+
+	const FDominationCaptureState Capture = GameState->GetCaptureState();
+	const FDominationObjectiveFlowState Flow = GameState->GetObjectiveFlowState();
+	const bool bExactlyOneTeamPresent = (Capture.TeamAPlayerCount > 0) != (Capture.TeamBPlayerCount > 0);
+	// Leftover progress in an empty point is not an ongoing capture.
+	// Reversing the opponent's progress with one team present is an ongoing capture.
+	const bool bCaptureRunning = GameState->IsObjectiveCaptureEnabled()
+		&& bExactlyOneTeamPresent && !Capture.bContested && Capture.CaptureProgress < 1.0f;
+	const ABaseTeamPlayerState* LocalState = GetOwningPlayerState<ABaseTeamPlayerState>();
+	const EGameTeam LocalTeam = IsValid(LocalState) ? LocalState->GetTeam() : EGameTeam::None;
+	auto RelativeColor = [LocalTeam](const EGameTeam Team)
+	{
+		switch (DominationRules::GetCaptureRelation(Team, LocalTeam))
+		{
+		case EDominationCaptureRelation::Ally: return UShooterUISettings::GetAllyColor();
+		case EDominationCaptureRelation::Enemy: return UShooterUISettings::GetEnemyColor();
+		default: return FLinearColor(0.91f, 0.94f, 0.97f, 1.0f);
+		}
+	};
+	const FLinearColor ProgressColor = RelativeColor(Capture.CapturingTeam);
+	const bool bNewCompletion = LastPresentationCaptureSerial != INDEX_NONE
+		&& Flow.CaptureSerial > 0 && Flow.CaptureSerial != LastPresentationCaptureSerial;
+	int32 Presented = 0;
+	const int32 Count = FMath::Min(Sites->GetChildrenCount(), DominationRules::PointCount);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UDominationSiteTrackerSlotWidget* Marker = Cast<UDominationSiteTrackerSlotWidget>(Sites->GetChildAt(Index));
+		if (!IsValid(Marker)) continue;
+		FDominationSiteMarkerState State;
+		State.PointId = DominationRules::GetPointId(Index);
+		State.bActive = State.PointId == Flow.ActivePointId;
+		State.bCapturing = State.bActive && bCaptureRunning;
+		State.bContested = State.bActive && Capture.bContested;
+		State.bLocalFocus = State.bActive && bLocalPlayerInsideActivePoint;
+		State.Progress = State.bActive ? Capture.CaptureProgress : 0.0f;
+		State.ProgressColor = ProgressColor;
+		Marker->PresentSiteState(State);
+		if (bNewCompletion && State.PointId == Flow.LastCapturedPointId)
+		{
+			Marker->PresentCaptureComplete(RelativeColor(Flow.LastCapturingTeam));
+		}
+		++Presented;
+	}
+	if (Presented > 0) LastPresentationCaptureSerial = Flow.CaptureSerial;
 }
