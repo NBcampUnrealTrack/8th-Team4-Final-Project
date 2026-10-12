@@ -437,6 +437,11 @@ bool AWeaponBase::IsADS() const
 	return Aim && Aim->IsADS();
 }
 
+float AWeaponBase::GetAccumulatedRecoilPitch() const
+{
+	return Aim ? Aim->GetAccumulatedRecoilPitch() : 0.f;
+}
+
 bool AWeaponBase::CanADS() const
 {
 	// 라이플과 스나이퍼는 조준을 지원하고, 각 무기의 Aim 설정을 따른다.
@@ -815,6 +820,19 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 			&& Character->GetCombatComponent()->GetCurrentWeapon() == this)
 		{
 			Anim->PlayFireMontageForCurrentWeapon(true);
+		}
+	}
+
+	// Third-person recoil for every view of this pawn from outside (observers and a listen server's view of
+	// remote players), all ranged weapons. The owner sees first-person recoil instead.
+	if (OwningPawn && !OwningPawn->IsLocallyControlled() && !bKnifeAttack)
+	{
+		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
+		UShooterAnimInstance* Anim = Character && Character->GetMesh()
+			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
+		if (Anim && Character->GetCombatComponent() && Character->GetCombatComponent()->GetCurrentWeapon() == this)
+		{
+			Anim->PlayFireRecoil();
 		}
 	}
 
