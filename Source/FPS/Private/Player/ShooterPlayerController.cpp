@@ -2488,6 +2488,7 @@ void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
 	bIsChatInputOpen = true;
 	ChatInputWidget = Widget;
 	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
+	OnChatInputOpenChanged.Broadcast(true);
 }
 
 void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
@@ -2515,6 +2516,7 @@ void AShooterPlayerController::CloseChatInput()
 	UShooterChatInputBox* Widget = ChatInputWidget.Get();
 	bIsChatInputOpen = false;
 	ChatInputWidget.Reset();
+	OnChatInputOpenChanged.Broadcast(false);
 
 	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
 	{

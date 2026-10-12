@@ -42,6 +42,9 @@ struct FUIInputConfig;
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
 
+// 채팅 로그(UShooterChatLog)가 구독해서 입력창이 열려 있는 동안 내역 패널을 계속 보이게 한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatInputOpenChangedSignature, bool, bIsOpen);
+
 // 핑 인디케이터 레이어가 구독해서 월드에 마커를 띄운다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPingEvent&, Ping);
 
@@ -276,6 +279,10 @@ public:
 	// 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
 	FOnChatMessageReceivedSignature OnChatMessageReceived;
+
+	// 채팅 입력창이 열리거나(BeginChatInput) 닫힐 때(CloseChatInput) 브로드캐스트된다.
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
+	FOnChatInputOpenChangedSignature OnChatInputOpenChanged;
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Chat")
 	bool IsChatInputOpen() const { return bIsChatInputOpen; }

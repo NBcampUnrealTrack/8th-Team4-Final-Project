@@ -12,7 +12,8 @@ class UVerticalBox;
 class UScrollBox;
 
 // 화면 좌측 상단에 상시 표시되는 채팅 로그. UShooterKillFeed와 동일한 구조(자가 구독 +
-// VerticalBox 엔트리 + 타이머 체인 만료)를 따른다.
+// VerticalBox 엔트리)를 따르되, 엔트리는 시간으로 만료되지 않고 MaxVisibleEntries를 넘을 때만
+// 오래된 것부터 지워진다.
 UCLASS()
 class FPS_API UShooterChatLog : public UCommonUserWidget
 {
@@ -29,9 +30,14 @@ protected:
 	UFUNCTION()
 	void HandleChatMessageReceived(const FChatMessage& Message);
 
+	// Enter로 입력창이 열려 있는 동안은 아무것도 안 쳐도 내역 패널을 계속 보여주고,
+	// 닫히면 그때부터 숨김 타이머를 건다.
+	UFUNCTION()
+	void HandleChatInputOpenChanged(bool bIsOpen);
+
 	// 채팅(송신/수신) 활동이 있을 때마다 패널(배경+내역)을 보이게 하고 숨김 타이머를 다시 건다.
-	// 개별 엔트리의 만료(RemoveOldestEntry)와는 별개 - 엔트리는 그대로 남아있고 패널 전체의
-	// Visibility만 토글된다. 다시 활동이 생기면 남아있던 내역이 그대로 다시 보인다.
+	// 엔트리는 그대로 남아있고 패널 전체의 Visibility만 토글된다. 다시 활동이 생기면 남아있던
+	// 내역이 그대로 다시 보인다. 입력창이 열려 있으면 타이머를 걸지 않는다.
 	void ShowPanelAndResetInactivityTimer();
 
 	void HandlePanelInactivityTimeout();
@@ -45,18 +51,15 @@ protected:
 	UFUNCTION()
 	void HandleEntriesUserScrolled(float CurrentOffset);
 
-	// false면 엔트리 만료(EntryLifetimeSeconds)와 패널 자동 숨김을 모두 끄고 MaxVisibleEntries만큼
-	// 내역을 계속 쌓아둔다. 대기방(WBP_RoomScreen)에 배치한 인스턴스에서 끈다.
+	// false면 패널 자동 숨김을 끄고 상시 표시한다. 대기방(WBP_RoomScreen)에 배치한 인스턴스에서 끈다.
 	UPROPERTY(EditAnywhere, Category = "Chat")
 	bool bAutoHide = true;
 
+	// 이 개수를 넘으면 가장 오래된 엔트리부터 지운다. 시간으로는 지워지지 않는다.
 	UPROPERTY(EditAnywhere, Category = "Chat", meta = (ClampMin = "1"))
 	int32 MaxVisibleEntries = 8;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Chat", meta = (ClampMin = "0.1"))
-	float EntryLifetimeSeconds = 8.0f;
-
-	// 채팅 관련 활동(송신/수신)이 이 시간 동안 없으면 배경+내역 패널 전체를 숨긴다.
+	// 채팅 관련 활동(송신/수신/입력창 닫힘)이 이 시간 동안 없으면 배경+내역 패널 전체를 숨긴다.
 	UPROPERTY(EditDefaultsOnly, Category = "Chat", meta = (ClampMin = "0.1"))
 	float PanelHideAfterInactivitySeconds = 4.0f;
 
@@ -81,9 +84,11 @@ private:
 	// true면 내역 높이가 바뀔 때마다 맨 아래(최신 메시지)로 자동 스크롤한다.
 	bool bFollowLatest = true;
 
+	// 입력창이 열려 있는 동안은 패널 숨김 타이머를 걸지 않는다.
+	bool bChatInputOpen = false;
+
 	// 마지막으로 맨 아래로 맞췄을 때의 끝 오프셋. 이 값이 바뀌었을 때만 다시 스크롤한다.
 	float LastScrollEndOffset = -1.0f;
 
-	FTimerHandle ExpiryTimerHandle;
 	FTimerHandle PanelHideTimerHandle;
 };
