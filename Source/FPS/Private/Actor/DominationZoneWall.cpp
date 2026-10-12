@@ -136,12 +136,22 @@ void ADominationZoneWall::RefreshFromCurrentGameState()
 
 void ADominationZoneWall::HandleActivePointChanged(const EDominationPointId ActivePointId)
 {
+	SetWallActive(IsActiveForPoint(ActivePointId));
+}
+
+bool ADominationZoneWall::IsActiveForPoint(const EDominationPointId ActivePointId) const
+{
 	// 아직 활성 거점이 정해지지 않은 매치 시작 전(None)에는 첫 거점(C)으로 간주해 C용 벽이 처음부터 켜져 있게 한다.
 	// 거점 전환 중에는 GameState가 이미 다음 거점 ID를 가지므로 None은 매치 시작 전/라운드 리셋에서만 나온다.
 	const EDominationPointId EffectivePointId = ActivePointId == EDominationPointId::None
 		? DominationRules::InitialPointId
 		: ActivePointId;
-	SetWallActive(ActiveDuringPoints.Contains(EffectivePointId));
+	return ActiveDuringPoints.Contains(EffectivePointId);
+}
+
+FVector ADominationZoneWall::GetWallHalfExtent() const
+{
+	return WallZone ? WallZone->GetUnscaledBoxExtent() : FVector::ZeroVector;
 }
 
 void ADominationZoneWall::SetWallActive(const bool bNewActive)

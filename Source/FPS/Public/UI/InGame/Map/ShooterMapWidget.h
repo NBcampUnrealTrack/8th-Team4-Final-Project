@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonUserWidget.h"
+#include "GameMode/Types/DominationTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "Minimap/MinimapTypes.h"
 #include "Ping/PingTypes.h"
@@ -11,10 +12,13 @@
 #include "ShooterMapWidget.generated.h"
 
 class ABaseTeamPlayerState;
+class ADominationGameState;
+class ADominationPointGimmick;
 class AShooterMinimapBounds;
 class AShooterPlayerController;
 class UCanvasPanel;
 class UImage;
+class USizeBox;
 class UTexture2D;
 
 USTRUCT()
@@ -49,6 +53,21 @@ struct FShooterMapPingMarker
 
 	FTimerHandle ExpiryTimerHandle;
 	bool bActive = false;
+};
+
+// 지금 켜진 구역 제한 벽 하나를 맵 위 선으로 그린 것.
+USTRUCT()
+struct FShooterMapZoneWallLine
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> Image;
+
+	// 벽은 고정이라 거점이 바뀔 때만 계산한다. 두께만 화면 px 기준이라 확대에 맞춰 매번 바꾼다.
+	FVector2D ContentCenter = FVector2D::ZeroVector;
+	float ContentLength = 0.f;
+	float Angle = 0.f;
 };
 
 /**
@@ -129,6 +148,24 @@ protected:
 	// 미니맵 중심. 카메라 기준이라 사망 후 관전/킬캠 중에도 보는 곳을 따라간다.
 	bool GetViewPoint(FVector& OutLocation, float& OutYaw) const;
 
+	// 활성 거점이 바뀌었으면 그 거점의 구역 제한 벽(ADominationZoneWall)들로 보이는 영역을 다시 잡는다.
+	void RefreshActiveZone(const AShooterMinimapBounds& Bounds);
+
+	// 활성 구역 바깥을 덮는 사각형 4장을 배치한다. 구역이 없으면 숨긴다.
+	void ApplyZoneMask();
+
+	// 전체 맵 창(Panel_MapViewport를 감싼 SizeBox)을 보여줄 영역과 같은 비율로 맞춘다.
+	void ApplyFullMapViewportShape();
+
+	// 지금 켜진 구역 제한 벽 위치에 선을, 현재(또는 다음) 거점 박스 위치에 강조 사각형을 다시 배치한다.
+	void RebuildDominationOverlays(const AShooterMinimapBounds& Bounds, const ADominationGameState* GameState, EDominationPointId PointId);
+
+	// 벽 선 두께(화면 px 고정)와 거점 강조 색/깜빡임을 갱신한다. 위치 갱신마다 부른다.
+	void UpdateDominationOverlays(float ContentScale);
+
+	// 켜진 기믹 위치에 확보 팀(아군/적) 색 표시를 갱신한다. 위치 갱신마다 부른다.
+	void UpdateGimmickStatus(const AShooterMinimapBounds& Bounds);
+
 	// 미니맵 원 밖이면 원 테두리(같은 방향)로 끌어온 Content 좌표를 돌려준다. 전체 맵이면 그대로.
 	FVector2D ClampToMinimapEdge(const FVector2D& ContentPosition) const;
 
@@ -177,6 +214,111 @@ protected:
 	// 목표 배율로 부드럽게 따라가는 속도. 0이면 즉시 바뀐다.
 	UPROPERTY(EditAnywhere, Category = "Shooter|Map|FullMap", meta = (ClampMin = "0.0", EditCondition = "MapMode == EShooterMapMode::FullMap"))
 	float FullMapZoomInterpSpeed = 15.f;
+
+	// 전체 맵(M)에서 점령전 현재 거점 구역만 보여준다. 구역은 맵 전체에서 지금 켜진 구역 제한 벽들의
+	// 바깥쪽(벽 Forward의 반대편)을 잘라낸 사각형이다. 벽이 없는 변은 맵 가장자리까지 보인다.
+	// 1배일 때 그 구역에 맞춰 열고 바깥은 OutsideZoneColor로 덮는다. 벽이 없는 모드/레벨은 맵 전체 그대로.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone", meta = (EditCondition = "MapMode == EShooterMapMode::FullMap"))
+	bool bLimitToActiveZone = true;
+
+	// 벽 경계를 바깥으로 얼마나(cm) 넓힐지. 0이면 벽(노란 선)에서 딱 잘린다. 늘리면 벽 바로 밖 지형이 살짝 보인다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone", meta = (ClampMin = "0.0", EditCondition = "MapMode == EShooterMapMode::FullMap && bLimitToActiveZone"))
+	float ActiveZonePadding = 0.f;
+
+	// 구역 바깥을 덮는 색. 알파 1이면 완전히 가린다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone", meta = (EditCondition = "MapMode == EShooterMapMode::FullMap && bLimitToActiveZone"))
+	FLinearColor OutsideZoneColor = FLinearColor(0.f, 0.f, 0.f, 1.f);
+
+	// 지금 켜진 구역 제한 벽 위치에 선을 긋는다. 미니맵/전체 맵 공통.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone")
+	bool bShowZoneWalls = true;
+
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone", meta = (EditCondition = "bShowZoneWalls"))
+	FLinearColor ZoneWallColor = FLinearColor(1.f, 0.85f, 0.f, 1.f);
+
+	// 벽 선 두께(화면 px). 확대해도 같은 두께로 보인다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Zone", meta = (ClampMin = "0.5", EditCondition = "bShowZoneWalls"))
+	float ZoneWallThickness = 3.f;
+
+	// 현재 거점 박스 위에 강조 사각형을 덮는다. 거점 전환 중(다음 거점으로 이동하는 시간)과 매치 시작 전엔 다음 거점이 깜빡인다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination")
+	bool bHighlightActivePoint = true;
+
+	// 점령 가능한 현재 거점 색.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bHighlightActivePoint"))
+	FLinearColor ActivePointColor = FLinearColor(1.f, 0.85f, 0.f, 0.4f);
+
+	// 곧 열릴 다음 거점 색. 알파가 0과 이 값 사이를 오가며 깜빡인다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bHighlightActivePoint"))
+	FLinearColor UpcomingPointColor = FLinearColor(1.f, 0.85f, 0.f, 0.6f);
+
+	// 깜빡임 한 번(밝아졌다 어두워짐)에 걸리는 시간(초).
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "0.1", EditCondition = "bHighlightActivePoint"))
+	float PointBlinkPeriod = 0.8f;
+
+	// true면 점령 가능한 현재 거점도 깜빡인다. false면 ActivePointColor로 고정.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bHighlightActivePoint"))
+	bool bBlinkActivePoint = false;
+
+	// 점령 중인 팀에 따라 거점 색을 바꾼다. 아군은 AllyStatusColor, 적은 EnemyStatusColor(진하기는 ActivePointColor 알파).
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bHighlightActivePoint"))
+	bool bColorPointByCapture = true;
+
+	// 양 팀이 같이 들어가 경합 중일 때 깜빡이는 색.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bHighlightActivePoint && bColorPointByCapture"))
+	FLinearColor ContestedPointColor = FLinearColor(1.f, 0.5f, 0.f, 0.5f);
+
+	// 거점 안에 아무도 없이 게이지만 남아 줄어들 때, 게이지 주인 팀 색에 곱하는 진하기.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bHighlightActivePoint && bColorPointByCapture"))
+	float UnattendedPointAlphaScale = 0.4f;
+
+	// 켜진 거점 기믹(정찰 단말/중계 비콘) 위치에 아군/적 색 표시를 덮는다. 아이콘은 배경 텍스처에 이미 그려져 있다.
+	// 누군가 확보 중이면 그 팀 색으로 깜빡이고, 확보한 팀(비콘 소유/정찰 효과 중)이 있으면 그 색으로 고정된다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination")
+	bool bShowGimmickStatus = true;
+
+	// 기믹 위에 덮을 모양. 비워두면 사각형. 링/원 텍스처를 넣으면 아이콘 테두리처럼 보인다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bShowGimmickStatus"))
+	FSlateBrush GimmickStatusBrush;
+
+	// 표시 한 변의 월드 크기(cm). 배경 텍스처 아이콘처럼 맵 확대에 따라 같이 커진다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "10.0", EditCondition = "bShowGimmickStatus"))
+	float GimmickStatusWorldSize = 600.f;
+
+	// 기본 원(GimmickStatusBrush를 비웠을 때)의 안쪽 채움 진하기. 테두리는 항상 팀 색 그대로다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "0.0", ClampMax = "1.0", EditCondition = "bShowGimmickStatus"))
+	float GimmickStatusFillOpacity = 0.55f;
+
+	// 기본 원의 테두리 두께(Content 단위라 맵 확대에 따라 같이 굵어진다).
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "0.0", EditCondition = "bShowGimmickStatus"))
+	float GimmickStatusOutlineWidth = 4.f;
+
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bShowGimmickStatus"))
+	FLinearColor AllyStatusColor = FLinearColor(0.1f, 0.55f, 1.f, 1.f);
+
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bShowGimmickStatus"))
+	FLinearColor EnemyStatusColor = FLinearColor(1.f, 0.15f, 0.15f, 1.f);
+
+	// 아무 팀도 확보하지 않은 상태의 색. 기본은 투명(텍스처 아이콘 그대로).
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (EditCondition = "bShowGimmickStatus"))
+	FLinearColor NeutralStatusColor = FLinearColor(1.f, 1.f, 1.f, 0.f);
+
+	// 확보 완료 직후 빠르게 깜빡여 알리는 시간(초).
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|Domination", meta = (ClampMin = "0.0", EditCondition = "bShowGimmickStatus"))
+	float GimmickSecuredFlashDuration = 2.f;
+
+	// 전체 맵 창은 WBP SizeBox 크기(기본 정사각형)와 같은 넓이를 유지한 채 보여줄 영역 비율로 늘어난다.
+	// 이 크기(px)를 넘으면 그 안에 맞춰 줄인다. 0이면 화면 크기 × FullMapMaxScreenFraction.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|FullMap", meta = (EditCondition = "MapMode == EShooterMapMode::FullMap"))
+	FVector2D FullMapMaxViewportSize = FVector2D::ZeroVector;
+
+	// 위에서 정한 창 크기에 곱하는 배율. 1이면 기본 창과 같은 넓이, 작을수록 창이 작아진다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|FullMap", meta = (ClampMin = "0.1", ClampMax = "2.0", EditCondition = "MapMode == EShooterMapMode::FullMap"))
+	float FullMapSizeScale = 0.85f;
+
+	// FullMapMaxViewportSize가 0일 때 창이 화면에서 차지할 수 있는 최대 비율.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Map|FullMap", meta = (ClampMin = "0.1", ClampMax = "1.0", EditCondition = "MapMode == EShooterMapMode::FullMap"))
+	float FullMapMaxScreenFraction = 0.9f;
 
 	// 위치 샘플링 주기(초). 0.05 = 초당 20회.
 	UPROPERTY(EditAnywhere, Category = "Shooter|Map", meta = (ClampMin = "0.016"))
@@ -229,6 +371,57 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FShooterMapPingMarker> PingMarkers;
+
+	// Panel_MapViewport를 감싼 SizeBox. 전체 맵 창 모양을 바꿀 때 쓴다.
+	UPROPERTY(Transient)
+	TObjectPtr<USizeBox> FullMapSizeBox;
+
+	// WBP에 지정된 SizeBox 크기, 코드가 정한 현재 창 크기.
+	FVector2D FullMapBaseSize = FVector2D::ZeroVector;
+	FVector2D FullMapViewportSize = FVector2D::ZeroVector;
+
+	// 활성 구역 바깥을 덮는 사각형(위/아래/왼쪽/오른쪽).
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UImage>> ZoneMaskImages;
+
+	// 켜진 벽마다 하나. 남는 건 숨겨서 다음 거점에 재사용한다.
+	UPROPERTY(Transient)
+	TArray<FShooterMapZoneWallLine> ZoneWallLines;
+	int32 ActiveZoneWallLineCount = 0;
+
+	// 현재(또는 다음) 거점 박스를 덮는 강조 사각형.
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> PointHighlightImage;
+	bool bHasPointHighlight = false;
+
+	// 켜진 거점 기믹과 그 위에 덮는 팀 색 표시.
+	TWeakObjectPtr<ADominationPointGimmick> TrackedGimmick;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UImage> GimmickStatusImage;
+
+	// 실제로 그리는 브러시. 텍스처가 없으면 원이고, 테두리 색을 팀 색에 맞춰 바꾼다.
+	UPROPERTY(Transient)
+	FSlateBrush GimmickStatusDrawBrush;
+	bool bGimmickStatusUsesCircle = false;
+	FLinearColor LastGimmickOutlineColor = FLinearColor::Transparent;
+
+	// 확보 팀이 바뀐 순간을 잡아 깜빡임을 시작한다.
+	EGameTeam LastGimmickHolderTeam = EGameTeam::None;
+	float GimmickFlashEndTime = 0.f;
+
+	// 텍스처 중 실제 맵이 그려진 영역(Content 좌표). 위아래 빈 공간을 뺀 맵 전체.
+	FVector2D PlayableAreaMin = FVector2D::ZeroVector;
+	FVector2D PlayableAreaMax = FVector2D::ZeroVector;
+
+	// 활성 구역(Content 좌표). bHasActiveZone이 false면 PlayableArea 전체.
+	FVector2D ActiveZoneMin = FVector2D::ZeroVector;
+	FVector2D ActiveZoneMax = FVector2D::ZeroVector;
+	bool bHasActiveZone = false;
+
+	// 마지막으로 구역을 계산한 거점. 거점 전환은 GameState 이벤트 순서와 무관하게 위치 갱신 때 비교만 한다.
+	EDominationPointId CachedZonePointId = EDominationPointId::None;
+	bool bZoneDirty = true;
 
 	int32 ActivePlayerMarkerCount = 0;
 
