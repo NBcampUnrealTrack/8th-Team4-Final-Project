@@ -149,6 +149,9 @@ private:
 	TObjectPtr<UImage> Image_AllyChevron;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_EnemyChevron;
+	// 양 팀이 같이 있을 때 꺾쇠 대신 가운데에 띄운다
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_ContestedIcon;
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
