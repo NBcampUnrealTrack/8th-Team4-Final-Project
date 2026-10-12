@@ -265,6 +265,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetEffectiveReloadDuration() const { return EffectiveReloadDuration; }
 
+	// 재장전 시작부터 실제 완료(FinishReload)까지의 시간. 몽타주 길이보다 ReloadCompleteLeadTime만큼 짧고,
+	// 리드가 재장전 시간의 절반을 넘지 않도록 막는다.
+	float GetReloadCompleteDelay() const
+	{
+		return FMath::Max(EffectiveReloadDuration - ReloadCompleteLeadTime, EffectiveReloadDuration * 0.5f);
+	}
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetPelletCountPerShot() const { return PelletCountPerShot; }
 
@@ -491,6 +498,11 @@ protected:
 	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
+
+	// 재장전 몽타주가 끝나기 이만큼(초) 전에 탄약을 채우고 사격 차단을 푼다. 몽타주 길이는
+	// EffectiveReloadDuration 그대로라 애니메이션 꼬리 부분은 다음 사격 몽타주가 덮어쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo", meta = (ClampMin = "0.0", Units = "s"))
+	float ReloadCompleteLeadTime = 0.2f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;

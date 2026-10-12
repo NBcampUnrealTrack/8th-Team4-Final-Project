@@ -903,7 +903,7 @@ void AWeaponBase::StartReload()
 
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
+		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, GetReloadCompleteDelay(), false);
 	}
 }
 
