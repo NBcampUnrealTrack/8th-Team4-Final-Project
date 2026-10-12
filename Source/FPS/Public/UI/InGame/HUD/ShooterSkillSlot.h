@@ -94,7 +94,7 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_KeyLabel;
 	// MaxCharges만큼 채움
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> HBox_ChargeBars;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_Icon;
