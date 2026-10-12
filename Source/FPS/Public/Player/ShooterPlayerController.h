@@ -109,6 +109,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void StopVoiceTalking();
 
+	bool IsPushToTalkKey(const FKey& Key) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
 
@@ -561,6 +563,7 @@ private:
 	UFUNCTION()
 	void HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn);
 	void HandleViewTargetBlendComplete();
+	void RefreshViewedPawnWeaponPresentation();
     UFUNCTION(Server, Reliable)
     void ServerSubmitAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
     FTimerHandle AppearanceSubmitTimer;
