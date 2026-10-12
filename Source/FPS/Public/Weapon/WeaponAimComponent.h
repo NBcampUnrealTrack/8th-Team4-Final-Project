@@ -30,6 +30,9 @@ public:
 	void SetADS(bool bNewIsADS);
 	bool IsADS() const { return bIsADS; }
 	bool CanADS() const { return bCanADS; }
+
+	// 반동이 지금 카메라 Pitch에 얹어 둔 양(복귀 중 잔여 포함). 컨트롤러에는 -이 값만큼 들어가 있다.
+	float GetAccumulatedRecoilPitch() const { return AccumulatedRecoilPitch; }
 	float GetADSFieldOfView() const;
 	float GetADSCameraInterpSpeedOverride() const { return ADSCameraInterpSpeedOverride; }
 	float GetADSMoveSpeedMultiplier() const { return ADSMoveSpeedMultiplier; }

@@ -27,6 +27,30 @@ struct FPlayerAnims
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UAnimSequence> SprintAnim = nullptr;
 
+	// Optional local-space additive walk cycle, layered over the idle while walking (first person).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimSequence> WalkAdditiveAnim = nullptr;
+
+	// Ground speed (cm/s) at which WalkAdditiveAnim plays at rate 1 with full weight.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "1.0"))
+	float WalkAdditiveReferenceSpeed = 600.f;
+
+	// Optional local-space additive jump/land layer (first person), played by explicit time:
+	// 0 -> JumpLandHoldTime = takeoff (held while airborne), JumpLandLandStart -> end = landing.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimSequence> JumpLandAdditiveAnim = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float JumpLandHoldTime = 0.25f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float JumpLandLandStart = 1.f / 3.f;
+
+	// Optional local-space additive fire recoil (third person), played from 0 on every shot seen by
+	// other players: shoulders and gun kick back/up while the head stays level.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TObjectPtr<UAnimSequence> FireRecoilAdditiveAnim = nullptr;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TObjectPtr<UBlendSpace> AimOffset_Hip = nullptr;
 
