@@ -160,13 +160,13 @@ void UShooterHealthBar::RefreshHealth()
 void UShooterHealthBar::RefreshShield()
 {
 	Text_Shield->SetText(FText::AsNumber(CachedShield));
-	Text_Shield->SetVisibility(CachedMaxShield > 0.f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	
+	Text_Shield->SetVisibility(CachedShield > 0.f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+
 	VitalBar->SetVitals(MakeVitalValues());
 
 	if (Image_ShieldDeco)
 	{
-		Image_ShieldDeco->SetVisibility(CachedMaxShield > 0.f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Image_ShieldDeco->SetVisibility(CachedShield > 0.f ?ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
