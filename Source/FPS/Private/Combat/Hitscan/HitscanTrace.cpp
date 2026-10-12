@@ -11,7 +11,6 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
-#include "GAS/RogueTargetFilter.h"
 #include "Interfaces/RogueDamageableTarget.h"
 #include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
@@ -272,21 +271,6 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	ImpactEffectData.ImpactSurfaceType = ResolveImpactSurfaceType(HitResult);
 	ImpactEffectData.PelletIndex = PelletIndex;
 	ImpactEffectData.bHasHit = true;
-
-	if (AActor* TargetActor = HitResult.GetActor();
-		IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
-	{
-		ImpactEffectData.bSpawnImpactParticle =
-			IRogueDamageableTarget::Execute_ShouldSpawnHitscanImpactParticle(TargetActor);
-
-		// 팀킬 대미지는 RogueDamageSubsystem::ApplyDamageInternal이 이미 차단하지만, 혈흔 파티클은
-		// 그 검사와 무관하게 여기서 무조건 스폰됐다 - 같은 팀을 맞혀도 피가 튀는 원인이었다.
-		// 대미지 차단과 같은 기준(URogueTargetFilter)으로 아군이면 혈흔도 함께 끈다.
-		if (URogueTargetFilter::GetRelation(Request.InstigatorActor, TargetActor) == ERogueTargetRelation::Friendly)
-		{
-			ImpactEffectData.bSpawnImpactParticle = false;
-		}
-	}
 
 	return ImpactEffectData;
 }

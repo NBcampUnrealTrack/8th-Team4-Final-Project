@@ -35,7 +35,6 @@ public:
     virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
     virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
     virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
-    virtual bool ShouldSpawnHitscanImpactParticle_Implementation() const override;
 
     UFUNCTION(BlueprintPure, Category = "Training")
     bool IsAlive() const;
@@ -55,9 +54,6 @@ public:
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Audio", meta = (ClampMin = "0.0", ClampMax = "4.0"))
     float BotSoundVolume = 1.0f;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Damage|Presentation")
-    bool bEnableHitscanImpactParticles = false;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|Death")
     TObjectPtr<UMaterialInterface> DissolveMaterial;

@@ -300,6 +300,7 @@ void AShooterPlayerController::PreloadCombatFeedbackSounds()
 		AudioSettings->HitMarkerSound_Kill.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_HeadshotKill.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_Confirmation.ToSoftObjectPath(),
+		AudioSettings->BulletNearMissSound.ToSoftObjectPath(),
 		AudioSettings->LocalKillSound.ToSoftObjectPath(),
 		AudioSettings->DoubleKillSound.ToSoftObjectPath(),
 		AudioSettings->TripleKillSound.ToSoftObjectPath(),
@@ -1115,6 +1116,17 @@ void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 Ki
 	}
 
 	PlayCombatFeedbackSound(*SoundRef);
+}
+
+void AShooterPlayerController::ClientPlayBulletNearMiss_Implementation(const FVector_NetQuantize SoundLocation)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	PlayCombatFeedbackSound(AudioSettings->BulletNearMissSound, FVector(SoundLocation));
 }
 
 void AShooterPlayerController::PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation)

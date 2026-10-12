@@ -206,6 +206,9 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayKillSound(int32 KillStreak);
 
+	UFUNCTION(Client, Unreliable)
+	void ClientPlayBulletNearMiss(FVector_NetQuantize SoundLocation);
+
 	UFUNCTION(Client, Reliable)
 	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
 

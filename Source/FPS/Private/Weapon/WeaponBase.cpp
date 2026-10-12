@@ -12,7 +12,10 @@
 #include "Animation/ShooterAnimInstance.h"
 #include "Character/ShooterCharacter.h"
 #include "GameMode/Types/DominationTypes.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
+#include "Settings/ShooterAudioSettings.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
@@ -26,7 +29,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
-#include "Particles/ParticleSystem.h"
+#include "Sound/SoundBase.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -815,15 +818,12 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 		}
 	}
 
-	// 표면별 임팩트 파티클(혈흔 등)은 FireEffects BP 그래프와 무관하게 여기서 직접 스폰한다 -
-	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.
 	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
 		const bool bHeadshot = RogueTags::IsHeadZone(ImpactEffect.HitZoneTag);
 
-		// 명중 관련 캐시/표면 임팩트 파티클은 실제 Hit일 때만 갱신
 		if (ImpactEffect.bHasHit)
 		{
 			LastImpactPoint = ImpactEffect.ImpactPoint;
@@ -831,27 +831,15 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 			LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
 			LastImpactPelletIndex = ImpactEffect.PelletIndex;
 
-			if (SurfaceDefinition && ImpactEffect.bSpawnImpactParticle)
+			if (SurfaceDefinition)
 			{
-				// 혈흔 등 임팩트 파티클은 헤드샷 고정 / 그 외 랜덤 규칙으로 직접 스폰한다.
-				// 임팩트 사운드(바디/헤드샷/사망)는 PlayerController가 소유한 기존 히트 피드백 시스템에서 처리한다.
-				UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot);
-				if (ImpactParticle)
+				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
 				{
-					// ImpactNormal.Rotation()은 X축(전방)이 표면 노멀을 향하게 정렬할 뿐 Roll은 항상 0이라,
-					// 방향성 있는 파티클(예: P_Blood_Splat_Cone)이 매번 같은 각도로만 튄다. 노멀 축(Roll)을
-					// 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀는 것처럼 보이게 한다.
-					FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
-					ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
-
-					UGameplayStatics::SpawnEmitterAtLocation(
-						this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
+					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
 				}
 			}
 		}
 
-		// FireEffects와 명중 노드는 bHasHit으로 분기. 혈흔 파티클은 위에서 이미 C++이 직접 처리하므로,
-		// bHeadshot 핀은 그 외 부가 연출(카메라 셰이크 등)을 BP에서 분기하고 싶을 때만 참고하면 된다.
 		FireEffects(
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
@@ -1108,5 +1096,100 @@ void AWeaponBase::ResolveHitscanShot(
 
 	TArray<FHitscanImpactEffectData> ImpactEffects;
 	Resolver->ResolveServerShot(Request, ImpactEffects);
+	NotifyBulletNearMisses(Request, ImpactEffects);
 	PlayFireEffects(TraceStart, PelletDirections, ImpactEffects);
+}
+
+void AWeaponBase::NotifyBulletNearMisses(
+	const FHitscanShotRequest& Request,
+	const TArray<FHitscanImpactEffectData>& ImpactEffects)
+{
+	UWorld* World = GetWorld();
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!IsValid(World) || !AudioSettings || AudioSettings->BulletNearMissSound.IsNull()
+		|| AudioSettings->BulletNearMissDistanceCentimeters <= 0.f
+		|| Request.PelletDirections.IsEmpty() || Request.TraceSettings.MaximumRangeCentimeters <= 0.f)
+	{
+		return;
+	}
+
+	const APawn* InstigatorPawn = Cast<APawn>(Request.InstigatorActor);
+	const ABaseTeamPlayerState* InstigatorPlayerState = IsValid(InstigatorPawn)
+		? InstigatorPawn->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const EGameTeam InstigatorTeam = IsValid(InstigatorPlayerState)
+		? InstigatorPlayerState->GetTeam()
+		: EGameTeam::None;
+
+	TSet<TWeakObjectPtr<AActor>> HitActors;
+	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
+	{
+		if (ImpactEffect.bHasHit && ImpactEffect.HitActor.IsValid())
+		{
+			HitActors.Add(ImpactEffect.HitActor);
+		}
+	}
+
+	const double CurrentTime = World->GetTimeSeconds();
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* Recipient = Cast<AShooterPlayerController>(Iterator->Get());
+		APawn* RecipientPawn = IsValid(Recipient) ? Recipient->GetPawn() : nullptr;
+		ABaseTeamPlayerState* RecipientPlayerState = IsValid(RecipientPawn)
+			? RecipientPawn->GetPlayerState<ABaseTeamPlayerState>()
+			: nullptr;
+		if (!IsValid(Recipient) || !IsValid(RecipientPawn) || RecipientPawn == InstigatorPawn
+			|| !IsValid(RecipientPlayerState) || !RecipientPlayerState->IsAlive()
+			|| (InstigatorTeam != EGameTeam::None && RecipientPlayerState->GetTeam() == InstigatorTeam)
+			|| HitActors.Contains(TWeakObjectPtr<AActor>(RecipientPawn)))
+		{
+			continue;
+		}
+
+		if (const double* LastTime = LastBulletNearMissTimes.Find(Recipient);
+			LastTime && CurrentTime - *LastTime < AudioSettings->BulletNearMissCooldownSeconds)
+		{
+			continue;
+		}
+
+		const FVector RecipientLocation = RecipientPawn->GetActorLocation()
+			+ FVector::UpVector * RecipientPawn->GetSimpleCollisionHalfHeight();
+		const float NearMissDistance = AudioSettings->BulletNearMissDistanceCentimeters
+			+ RecipientPawn->GetSimpleCollisionRadius();
+		const float NearMissDistanceSquared = FMath::Square(NearMissDistance);
+		TOptional<FVector> ClosestNearMissPoint;
+		float ClosestDistanceSquared = TNumericLimits<float>::Max();
+
+		for (const FVector& PelletDirection : Request.PelletDirections)
+		{
+			const FVector NormalizedDirection = PelletDirection.GetSafeNormal();
+			if (NormalizedDirection.IsNearlyZero())
+			{
+				continue;
+			}
+
+			const FVector TraceEnd = Request.TraceStart + NormalizedDirection * Request.TraceSettings.MaximumRangeCentimeters;
+			const FVector ClosestPoint = FMath::ClosestPointOnSegment(RecipientLocation, Request.TraceStart, TraceEnd);
+			const float DistanceSquared = FVector::DistSquared(RecipientLocation, ClosestPoint);
+			if (DistanceSquared > NearMissDistanceSquared || DistanceSquared >= ClosestDistanceSquared)
+			{
+				continue;
+			}
+
+			FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BulletNearMiss), Request.TraceSettings.bTraceComplex, Request.CauserActor);
+			QueryParams.AddIgnoredActor(Request.InstigatorActor);
+			QueryParams.AddIgnoredActor(Request.CauserActor);
+			if (!World->LineTraceTestByChannel(Request.TraceStart, ClosestPoint, Request.TraceSettings.TraceChannel, QueryParams))
+			{
+				ClosestNearMissPoint = ClosestPoint;
+				ClosestDistanceSquared = DistanceSquared;
+			}
+		}
+
+		if (ClosestNearMissPoint.IsSet())
+		{
+			LastBulletNearMissTimes.FindOrAdd(Recipient) = CurrentTime;
+			Recipient->ClientPlayBulletNearMiss(ClosestNearMissPoint.GetValue());
+		}
+	}
 }

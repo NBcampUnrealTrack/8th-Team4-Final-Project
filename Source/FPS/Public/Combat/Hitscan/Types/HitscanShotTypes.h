@@ -135,14 +135,8 @@ struct FHitscanImpactEffectData
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	int32 PelletIndex = 0;
 
-	// 실제 표면에 맞은 경우에만 데칼/파티클/사운드 재생하도록 분기
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	bool bHasHit = false;
-
-	// 타겟이 임팩트 파티클을 허용하는지 서버에서 결정해 Multicast에 함께 전달한다.
-	// HitActor는 서버 전용이므로 클라이언트에서 다시 타입을 판별하지 않는다.
-	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
-	bool bSpawnImpactParticle = true;
 
 	// 맞은 부위(헤드/토르소/팔다리 등). 헤드샷 여부 판정 및 헤드샷 전용 이펙트 분기에 쓰인다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")

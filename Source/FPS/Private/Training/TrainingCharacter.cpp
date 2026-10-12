@@ -86,11 +86,6 @@ UCombatHitZoneDefinition* ATrainingCharacter::GetCombatHitZoneDefinition_Impleme
     return HitZoneDefinition;
 }
 
-bool ATrainingCharacter::ShouldSpawnHitscanImpactParticle_Implementation() const
-{
-    return bEnableHitscanImpactParticles;
-}
-
 void ATrainingCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 {
     BeginDissolveRemoval();
