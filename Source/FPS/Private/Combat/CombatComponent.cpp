@@ -18,6 +18,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/ShooterPlayerController.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
@@ -776,9 +777,9 @@ void UCombatComponent::RefreshFirstPersonADSPresentation() const
 		{
 			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 			{
-				const APlayerController* LocalController = It->Get();
+				const AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(It->Get());
 				if (IsValid(LocalController) && LocalController->IsLocalController()
-					&& LocalController->GetViewTarget() == OwnerPawn)
+					&& LocalController->GetPresentationViewTarget() == OwnerPawn)
 				{
 					bViewedByLocalPlayer = true;
 					break;
