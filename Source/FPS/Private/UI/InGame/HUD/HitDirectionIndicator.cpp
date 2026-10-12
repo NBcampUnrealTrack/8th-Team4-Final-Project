@@ -52,7 +52,6 @@ void UHitDirectionIndicator::TryBindHealthComponent()
 		UnbindHealthComponent();
 		BoundHealthComponent = HealthComponent;
 		HealthComponent->OnHitReactionReceived.AddUniqueDynamic(this, &ThisClass::HandleHitReactionReceived);
-		UE_LOG(LogTemp, Warning, TEXT("[HitDirectionIndicator] %s: HealthComponent 바인딩 완료."), *GetName());
 	}
 
 	if (UWorld* World = GetWorld())
@@ -72,11 +71,6 @@ void UHitDirectionIndicator::UnbindHealthComponent()
 
 void UHitDirectionIndicator::HandleHitReactionReceived(FVector WorldDirection)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[HitDirectionIndicator] %s: 이벤트 수신. Image_HitDirection=%s Anim_HitFade=%s"),
-		*GetName(),
-		Image_HitDirection ? TEXT("있음") : TEXT("None"),
-		Anim_HitFade ? TEXT("있음") : TEXT("None"));
-
 	if (!Image_HitDirection || WorldDirection.IsNearlyZero())
 	{
 		return;

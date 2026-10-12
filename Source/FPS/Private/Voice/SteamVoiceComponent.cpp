@@ -38,7 +38,6 @@ bool USteamVoiceComponent::StartCapture()
 		return false;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=valid Owner=%s"), *GetNameSafe(GetOwner()));
 	SteamUser()->StartVoiceRecording();
 	bCapturingVoice = true;
 
@@ -171,11 +170,6 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 	}
 
 	OutPcmVoiceData.SetNum(static_cast<int32>(BytesWritten));
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Success Speaker=%s CompressedBytes=%d PcmBytes=%d SampleRate=%d"),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num(),
-		OutPcmVoiceData.Num(),
-		SampleRate);
 	return true;
 }
 
@@ -298,9 +292,6 @@ void USteamVoiceComponent::PollVoiceCapture()
 	}
 
 	CompressedVoiceData.SetNum(static_cast<int32>(BytesWritten));
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Capture] Owner=%s CompressedBytes=%d"),
-		*GetNameSafe(GetOwner()),
-		CompressedVoiceData.Num());
 
 	if (AShooterPlayerController* PlayerController = GetOwnerShooterPlayerController())
 	{

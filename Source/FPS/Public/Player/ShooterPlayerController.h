@@ -42,6 +42,9 @@ struct FUIInputConfig;
 // 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, const FChatMessage&, Message);
 
+// 채팅 로그(UShooterChatLog)가 구독해서 입력창이 열려 있는 동안 내역 패널을 계속 보이게 한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatInputOpenChangedSignature, bool, bIsOpen);
+
 // 핑 인디케이터 레이어가 구독해서 월드에 마커를 띄운다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPingEvent&, Ping);
 
@@ -210,6 +213,39 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientExitSpectatorMode();
 
+	// 트레일러 촬영용 카메라(개발 전용, 쉬핑 빌드에서는 동작하지 않음).
+	// TrailerCamOn: 서버에서 관전 상태로 옮긴 뒤 시네마 카메라로 시점을 바꾼다. TrailerCamOff: 카메라를 지우고 시점을 되돌린다.
+	UFUNCTION(Exec)
+	void TrailerCamOn();
+
+	UFUNCTION(Exec)
+	void TrailerCamOff();
+
+	// ModeName: Free / Follow / Orbit
+	UFUNCTION(Exec)
+	void TrailerCamMode(const FString& ModeName);
+
+	// Arg: next / prev / 번호(0부터, 본인 제외 플레이어 순서)
+	UFUNCTION(Exec)
+	void TrailerCamTarget(const FString& Arg);
+
+	// Name: distance, height, side, lookheight, orbitspeed, speed, look, smooth, focal, aperture, dof
+	UFUNCTION(Exec)
+	void TrailerCamSet(const FString& Name, float Value);
+
+	UFUNCTION(Exec)
+	void TrailerCamInfo();
+
+	// Arg: on(HUD 숨김) / off(HUD 표시) / 비우면 전환
+	UFUNCTION(Exec)
+	void TrailerCamHud(const FString& Arg);
+
+	UFUNCTION(Server, Reliable)
+	void ServerTrailerCamEnterSpectator();
+
+	UFUNCTION(Client, Reliable)
+	void ClientTrailerCamActivate();
+
 	virtual void SetViewTarget(
 		AActor* NewViewTarget,
 		FViewTargetTransitionParams TransitionParams = FViewTargetTransitionParams()) override;
@@ -243,6 +279,10 @@ public:
 	// 채팅 로그(UShooterChatLog)가 구독해서 새 메시지를 표시.
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
 	FOnChatMessageReceivedSignature OnChatMessageReceived;
+
+	// 채팅 입력창이 열리거나(BeginChatInput) 닫힐 때(CloseChatInput) 브로드캐스트된다.
+	UPROPERTY(BlueprintAssignable, Category = "Shooter|Chat")
+	FOnChatInputOpenChangedSignature OnChatInputOpenChanged;
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Chat")
 	bool IsChatInputOpen() const { return bIsChatInputOpen; }

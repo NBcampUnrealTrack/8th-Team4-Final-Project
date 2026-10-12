@@ -10,6 +10,9 @@
 class ADominationGameState;
 class ADominationCapturePoint;
 class APawn;
+class UImage;
+class UTextBlock;
+class UWidget;
 
 /**
  * A-B-C-D-E 5개 거점을 한눈에 보여주는 인디케이터 (O-O-O-O-O, 활성 거점만 강조).
@@ -74,6 +77,7 @@ public:
 	int32 GetTransitionSecondsRemaining() const;
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -122,6 +126,29 @@ private:
 	void RefreshLocalState();
 	// bForce 가 false 면 내 팀이 바뀌었을 때만 보낸다
 	void RefreshRelativeScore(bool bForce);
+	// 활성 거점 안 인원(내 팀 기준). 1명 이상인 쪽만 숫자
+	void RefreshCapturePlayerCount();
+
+	// 판 + 양쪽 인원 + 꺾쇠 전체. 아무도 없으면 통째로 숨긴다
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_CaptureCount;
+	// 슬롯 배경 + 숫자를 묶은 패널. 인원이 0 이면 통째로 숨긴다
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_AllyCount;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Panel_EnemyCount;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_AllySlot;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_EnemySlot;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_AllyCount;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_EnemyCount;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_AllyChevron;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_EnemyChevron;
 
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
 	TWeakObjectPtr<ADominationCapturePoint> ActiveCapturePoint;
@@ -129,6 +156,8 @@ private:
 	bool bHasLocalCaptureZoneState = false;
 	bool bLocalPlayerInsideActivePoint = false;
 	EGameTeam CachedLocalTeam = EGameTeam::None;
+	int32 CachedAllyCaptureCount = INDEX_NONE;
+	int32 CachedEnemyCaptureCount = INDEX_NONE;
 
 	static constexpr float LocalCaptureZoneUpdateInterval = 0.1f;
 };

@@ -38,26 +38,28 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Audio")
 	TSoftObjectPtr<USoundClass> VoiceSoundClass;
 
-	// 처치자 본인에게만 재생되는 히트마커/킬 피드백 사운드.
-	// BP_ShooterPlayerController/BP_BombPlayerController/BP_DominationPlayerController 등
-	// PlayerController 하위 클래스마다 따로 채워야 했던 걸 여기 하나로 통합한다.
-	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
+	// 공격자에게 들리는 타격음. 기존 Config 키는 유지하고 에디터 표시명만 구분한다.
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Impact Sound Body", ToolTip = "Body impact sound. Plays alongside Hit Marker Sound."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_Body;
 
-	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
+	// 실드 전용 타격음은 기존 기획대로 재생하지 않는다.
+	UPROPERTY(Config, EditAnywhere, AdvancedDisplay, Category = "Combat Feedback", meta = (DisplayName = "Impact Sound Shield", ToolTip = "Reserved setting. Shield-specific impact audio is disabled; Hit Marker Sound still confirms the hit."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_Shield;
 
-	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Impact Sound Headshot", ToolTip = "Headshot impact sound. Plays alongside Hit Marker Sound."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_Headshot;
 
-	// 처치 강조 사운드. 비어있으면 부위별 사운드로 대체된다.
-	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
+	// 처치 시 타격음 대체값. 비우면 맞은 부위의 타격음을 그대로 사용한다.
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Impact Sound Kill", ToolTip = "Optional kill impact override. Leave empty to use the body or headshot impact. Put the confirmation ding in Hit Marker Sound."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_Kill;
 
-	// 헤드샷으로 처치했을 때 재생되는 전용 사운드. HitMarkerSound_Kill보다 우선하며,
-	// 비어있으면 HitMarkerSound_Kill로, 그마저 비어있으면 HitMarkerSound_Headshot으로 대체된다.
-	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
+	// 헤드샷 처치 타격음. 비어있으면 Kill, 그마저 비어있으면 Headshot을 사용한다.
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Impact Sound Headshot Kill", ToolTip = "Optional headshot kill impact override. Falls back to Impact Sound Kill, then Impact Sound Headshot."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_HeadshotKill;
+
+	// 명중 확인음(띵). 처치 여부와 관계없이 선택된 타격음과 함께 재생한다.
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Hit Marker Sound", ToolTip = "Confirmation sound played alongside the selected impact on every audible hit, including kills and shield hits. Leave empty to disable this layer."))
+	TSoftObjectPtr<USoundBase> HitMarkerSound_Confirmation;
 
 	// 처치 확정 시 재생되는 별도의 킬 사운드(히트마커와 무관한 경로, ClientPlayKillSound 참고).
 	// 멀티킬이 아닌 일반 킬(스트릭 1)의 기본값이자, 스트릭별 사운드가 비어있을 때의 폴백이기도 하다.

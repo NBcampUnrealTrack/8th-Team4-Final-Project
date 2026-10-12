@@ -265,6 +265,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetEffectiveReloadDuration() const { return EffectiveReloadDuration; }
 
+	// 재장전 시작부터 실제 완료(FinishReload)까지의 시간. 몽타주 길이보다 ReloadCompleteLeadTime만큼 짧고,
+	// 리드가 재장전 시간의 절반을 넘지 않도록 막는다.
+	float GetReloadCompleteDelay() const
+	{
+		return FMath::Max(EffectiveReloadDuration - ReloadCompleteLeadTime, EffectiveReloadDuration * 0.5f);
+	}
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetPelletCountPerShot() const { return PelletCountPerShot; }
 
@@ -492,6 +499,11 @@ protected:
 	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
 
+	// 재장전 몽타주가 끝나기 이만큼(초) 전에 탄약을 채우고 사격 차단을 푼다. 몽타주 길이는
+	// EffectiveReloadDuration 그대로라 애니메이션 꼬리 부분은 다음 사격 몽타주가 덮어쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo", meta = (ClampMin = "0.0", Units = "s"))
+	float ReloadCompleteLeadTime = 0.2f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;
 
@@ -601,6 +613,11 @@ private:
 	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).
 	float LastFireInterval = 0.f;
+
+	// 발사 간격 대비 허용 오차 비율. 연사 판정(RegisterFireCooldown)과 서버가 원격 클라이언트의 예측 발사를
+	// 받아들이는 조기 도착 여유(CanFireNow)에 함께 쓰인다.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Fire", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float FireIntervalTolerance = 0.3f;
 
 	UFUNCTION()
 	void OnRep_CurrentReserveAmmo();

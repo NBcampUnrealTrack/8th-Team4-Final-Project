@@ -6,6 +6,8 @@
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/ShooterAnimInstance.h"
+#include "Character/ShooterMovementComponent.h"
+#include "GameFramework/Character.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/NetworkTimeSyncComponent.h"
@@ -25,6 +27,21 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 	if (!Weapon)
 	{
 		return false;
+	}
+
+	// 달리기 애니메이션이 재생되는 동안과, 끝난 뒤 총구가 정면으로 돌아오기 전까지는 사격하지 않는다. 판정은 입력을 받은 로컬에서만 한다 -
+	// 서버는 이동 패킷이 늦게 도착하면 이미 달리기를 멈춘 발사를 막을 수 있고, CurrentAmmo는
+	// 복제되지 않아 그렇게 거절된 발은 클라이언트 탄약과 어긋난다.
+	if (ActorInfo && ActorInfo->IsLocallyControlled())
+	{
+		if (const ACharacter* Character = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
+		{
+			const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(Character->GetCharacterMovement());
+			if (Movement && Movement->IsRecoveringFromSprint())
+			{
+				return false;
+			}
+		}
 	}
 
 	// 연사 입력은 Enhanced Input의 Triggered 동안 매 프레임 활성화를 재시도한다.

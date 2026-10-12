@@ -96,9 +96,10 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	}
 
 	// AWeaponBase가 내부 타이머로 재장전을 끝내는 시점과 맞춰서, 같은 시간만큼 대기한 뒤
-	// 이 어빌리티도 종료한다(위에서 배선한 것과 같은 FinalReloadDuration을 써야 서로 어긋나지 않는다).
+	// 이 어빌리티도 종료한다. 완료 시점은 몽타주 끝보다 ReloadCompleteLeadTime만큼 이르다
+	// (GetReloadCompleteDelay - 위에서 배선한 FinalReloadDuration 기준이라 서로 어긋나지 않는다).
 	// 재장전 도중 사격 차단은 AWeaponBase::IsReloading()이 이미 처리한다.
-	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, FinalReloadDuration))
+	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, Weapon->GetReloadCompleteDelay()))
 	{
 		WaitTask->OnFinish.AddDynamic(this, &UGA_Reload::HandleReloadFinished);
 		WaitTask->ReadyForActivation();

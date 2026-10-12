@@ -52,7 +52,8 @@ namespace
 		}
 
 		TArray<UPrimitiveComponent*> Primitives;
-		Actor->GetComponents<UPrimitiveComponent>(Primitives);
+		// Child Actor 부착물(AR 스코프 등)도 같은 채널로 맞춘다
+		Actor->GetComponents<UPrimitiveComponent>(Primitives, /*bIncludeFromChildActors=*/true);
 
 		for (UPrimitiveComponent* Primitive : Primitives)
 		{
@@ -545,7 +546,8 @@ void ADominationClassPreviewStage::RegisterPreviewComponents()
 		CollectPawnWeapons(PreviewPawn, Weapons);
 		for (AWeaponBase* Weapon : Weapons)
 		{
-			SceneCapture->ShowOnlyActorComponents(Weapon);
+			// AR 스코프는 Child Actor라 포함하지 않으면 캡처되지 않는다
+			SceneCapture->ShowOnlyActorComponents(Weapon, /*bIncludeFromChildActors=*/true);
 			ApplyPreviewLightingChannels(Weapon);
 		}
 	}

@@ -199,6 +199,14 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 	CycleSpectatorTarget(PlayerController);
 }
 
+void AShooterGameMode::EnterSpectatorForTrailerCamera(APlayerController* PlayerController)
+{
+	// 트레일러 촬영용 개발 기능. 쉬핑 빌드에서는 아무 일도 하지 않는다.
+#if !UE_BUILD_SHIPPING
+	MovePlayerToSpectator(PlayerController);
+#endif
+}
+
 void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorController)
 {
 	if (!HasAuthority() || !IsValid(SpectatorController))

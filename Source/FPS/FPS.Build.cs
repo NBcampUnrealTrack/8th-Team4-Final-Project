@@ -40,6 +40,7 @@ public class FPS : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Niagara",
+			"CinematicCamera",
 			"NetworkReplayStreaming",
 			"InMemoryNetworkReplayStreaming"
 		});

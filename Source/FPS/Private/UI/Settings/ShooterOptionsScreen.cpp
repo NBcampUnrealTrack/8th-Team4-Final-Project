@@ -54,6 +54,40 @@ namespace
 
 	constexpr float VolumePercentScale = 100.0f;
 
+	struct FWindowModeChoice
+	{
+		EShooterWindowMode Mode;
+		EWindowMode::Type EngineMode;
+		const TCHAR* KoreanText;
+		const TCHAR* EnglishText;
+	};
+
+	// 선택 순서, 표시 이름, 엔진 모드의 단일 정의.
+	constexpr FWindowModeChoice WindowModeChoices[] =
+	{
+		{ EShooterWindowMode::Fullscreen, EWindowMode::Fullscreen, TEXT("전체화면"), TEXT("Fullscreen") },
+		{ EShooterWindowMode::WindowedFullscreen, EWindowMode::WindowedFullscreen, TEXT("전체화면 창모드"), TEXT("Borderless Fullscreen") },
+		{ EShooterWindowMode::Windowed, EWindowMode::Windowed, TEXT("창모드"), TEXT("Windowed") },
+	};
+
+	int32 GetWindowModeChoiceIndex(const EShooterWindowMode WindowMode)
+	{
+		int32 FallbackIndex = 0;
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(WindowModeChoices); ++Index)
+		{
+			const EShooterWindowMode ChoiceMode = WindowModeChoices[Index].Mode;
+			if (ChoiceMode == WindowMode)
+			{
+				return Index;
+			}
+			if (ChoiceMode == EShooterWindowMode::Windowed)
+			{
+				FallbackIndex = Index;
+			}
+		}
+		return FallbackIndex;
+	}
+
 	// Padding 프로퍼티를 가진 슬롯이면 타입과 무관하게 적용한다.
 	bool SetSlotPadding(UPanelSlot* Slot, const FMargin& Padding)
 	{
@@ -1127,15 +1161,8 @@ FText UShooterOptionsScreen::GetWindowModeDisplayText(
 	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 	const bool bEnglish = Settings && Settings->GetLanguage() == EShooterOptionsLanguage::English;
 
-	switch (WindowMode)
-	{
-	case EShooterWindowMode::Fullscreen:
-	case EShooterWindowMode::WindowedFullscreen:
-		return FText::FromString(bEnglish ? TEXT("Fullscreen") : TEXT("전체 화면"));
-	case EShooterWindowMode::Windowed:
-	default:
-		return FText::FromString(bEnglish ? TEXT("Windowed") : TEXT("창 모드"));
-	}
+	const FWindowModeChoice& Choice = WindowModeChoices[GetWindowModeChoiceIndex(WindowMode)];
+	return FText::FromString(bEnglish ? Choice.EnglishText : Choice.KoreanText);
 }
 
 FText UShooterOptionsScreen::GetQualityDisplayText(const int32 QualityLevel)
@@ -1836,8 +1863,8 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 		}
 		SetChoiceSegments(
 			TEXT("WindowMode"),
-			GetWindowMode() == EShooterWindowMode::Windowed ? 1 : 0,
-			2);
+			GetWindowModeChoiceIndex(GetWindowMode()),
+			UE_ARRAY_COUNT(WindowModeChoices));
 
 		const int32 FrameRateIndex = UShooterGameUserSettings::FindFrameRateLimitChoiceIndex(GetFrameRateLimit());
 		SetChoiceSegments(
@@ -2126,15 +2153,10 @@ void UShooterOptionsScreen::StepResolution(const int32 Delta)
 
 void UShooterOptionsScreen::StepWindowMode(const int32 Delta)
 {
-	const EShooterWindowMode Modes[] =
-	{
-		EShooterWindowMode::Fullscreen,
-		EShooterWindowMode::Windowed,
-	};
-
-	int32 Index = GetWindowMode() == EShooterWindowMode::Windowed ? 1 : 0;
-	Index = (Index + Delta + UE_ARRAY_COUNT(Modes)) % UE_ARRAY_COUNT(Modes);
-	SetWindowMode(Modes[Index]);
+	const int32 ChoiceCount = UE_ARRAY_COUNT(WindowModeChoices);
+	int32 Index = GetWindowModeChoiceIndex(GetWindowMode());
+	Index = (Index + Delta + ChoiceCount) % ChoiceCount;
+	SetWindowMode(WindowModeChoices[Index].Mode);
 }
 
 void UShooterOptionsScreen::StepFrameRate(const int32 Delta)
@@ -2662,29 +2684,18 @@ UShooterGameUserSettings* UShooterOptionsScreen::GetGameUserSettings() const
 EShooterWindowMode UShooterOptionsScreen::FromEngineWindowMode(
 	const EWindowMode::Type WindowMode)
 {
-	switch (WindowMode)
+	for (const FWindowModeChoice& Choice : WindowModeChoices)
 	{
-	case EWindowMode::Fullscreen:
-		return EShooterWindowMode::Fullscreen;
-	case EWindowMode::WindowedFullscreen:
-		return EShooterWindowMode::WindowedFullscreen;
-	case EWindowMode::Windowed:
-	default:
-		return EShooterWindowMode::Windowed;
+		if (Choice.EngineMode == WindowMode)
+		{
+			return Choice.Mode;
+		}
 	}
+	return EShooterWindowMode::Windowed;
 }
 
 EWindowMode::Type UShooterOptionsScreen::ToEngineWindowMode(
 	const EShooterWindowMode WindowMode)
 {
-	switch (WindowMode)
-	{
-	case EShooterWindowMode::Fullscreen:
-		return EWindowMode::Fullscreen;
-	case EShooterWindowMode::WindowedFullscreen:
-		return EWindowMode::WindowedFullscreen;
-	case EShooterWindowMode::Windowed:
-	default:
-		return EWindowMode::Windowed;
-	}
+	return WindowModeChoices[GetWindowModeChoiceIndex(WindowMode)].EngineMode;
 }

@@ -14,8 +14,9 @@ FShooterVitalBarLayout FShooterVitalBarLayout::Compute(const FShooterVitalBarLay
 	const float HealthEnd = FMath::Max(In.HealthReal, In.HealthTrail);
 	const float ShieldEnd = FMath::Max(In.ShieldReal, In.ShieldTrail);
 
-	// Player Max값 표시
-	Out.DisplayD = FMath::Max(In.MaxHealth, HealthEnd) + FMath::Max(In.MaxShield, ShieldEnd);
+	// 체력은 최대치만큼 칸을 유지하지만, 쉴드는 남은 양(감소 연출 중이면 Trail)만큼만 칸을 차지한다.
+	// 깎인 쉴드 칸은 빈칸으로 남지 않고 사라진다.
+	Out.DisplayD = FMath::Max(In.MaxHealth, HealthEnd) + ShieldEnd;
 	Out.SegmentValue = In.SegmentValue;
 	Out.bHealthChangeIsHeal = In.HealthReal > In.HealthTrail;
 	Out.bShieldChangeIsHeal = In.ShieldReal > In.ShieldTrail;
