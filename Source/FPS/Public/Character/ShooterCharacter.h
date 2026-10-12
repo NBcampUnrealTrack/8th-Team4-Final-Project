@@ -52,6 +52,7 @@ protected:
     virtual void UnPossessed() override;
     virtual void OnRep_Controller() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
 public:
 	// 이벤트는 새 외형/무기까지 갱신하고, 거리 타이머는 결과가 같으면 메시 순회를 생략한다.
@@ -280,6 +281,16 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedDeath)
 	bool bReplicatedDeath = false;
+
+	// 사격 반동이 카메라 Pitch에 얹어 둔 양(0.5도 단위). 다른 플레이어 화면의 3인칭 조준 각도가
+	// 반동으로 들렸다 내려오지 않도록 서버가 보내고, 관찰자가 조준 Pitch에서 되돌린다.
+	UPROPERTY(Replicated)
+	int8 ReplicatedRecoilPitchHalfDegrees = 0;
+
+	// 반동을 빼기 전 조준 회전(킬캠 등 실제 시점이 필요한 곳용).
+	FRotator CalculateRawAimRotation() const;
+	// 지금 이 캐릭터의 카메라 Pitch에 들어 있는 반동량(도).
+	float GetRecoilPitchForAim() const;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;

@@ -829,7 +829,7 @@ UCameraComponent* AShooterCharacter::GetViewCamera_Implementation() const
 
 FRotator AShooterCharacter::GetFixedAimRotation_Implementation() const
 {
-	return CalculateFixedAimRotation();
+	return CalculateRawAimRotation();
 }
 
 AWeaponBase* AShooterCharacter::GetCurrentWeapon_Implementation() const
@@ -908,6 +908,30 @@ void AShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 	DOREPLIFETIME(AShooterCharacter, ReplicatedDeathReaction);
 	DOREPLIFETIME(AShooterCharacter, bReplicatedDeath);
+	DOREPLIFETIME_CONDITION(AShooterCharacter, ReplicatedRecoilPitchHalfDegrees, COND_SkipOwner);
+}
+
+void AShooterCharacter::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
+{
+	Super::PreReplication(ChangedPropertyTracker);
+
+	if (HasAuthority())
+	{
+		const AWeaponBase* Weapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
+		const float RecoilPitch = IsValid(Weapon) ? Weapon->GetAccumulatedRecoilPitch() : 0.f;
+		ReplicatedRecoilPitchHalfDegrees = static_cast<int8>(FMath::Clamp(FMath::RoundToInt(RecoilPitch * 2.f), -127, 127));
+	}
+}
+
+float AShooterCharacter::GetRecoilPitchForAim() const
+{
+	// 서버는 무기 반동 상태를 직접 갖고 있고, 관찰자 클라이언트는 서버가 보낸 값을 쓴다.
+	if (HasAuthority())
+	{
+		const AWeaponBase* Weapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
+		return IsValid(Weapon) ? Weapon->GetAccumulatedRecoilPitch() : 0.f;
+	}
+	return ReplicatedRecoilPitchHalfDegrees * 0.5f;
 }
 
 bool AShooterCharacter::HasCurrentWeapon() const
@@ -916,6 +940,18 @@ bool AShooterCharacter::HasCurrentWeapon() const
 }
 
 FRotator AShooterCharacter::CalculateFixedAimRotation() const
+{
+	FRotator AimRotation = CalculateRawAimRotation();
+	if (!IsLocallyControlled())
+	{
+		// 반동은 컨트롤러 Pitch에 -누적값으로 들어가 있으므로 누적값을 더해 사격 전 조준 각도로 되돌린다.
+		AimRotation.Pitch += GetRecoilPitchForAim();
+	}
+
+	return AimRotation;
+}
+
+FRotator AShooterCharacter::CalculateRawAimRotation() const
 {
 	FRotator AimRotation = GetBaseAimRotation();
 	if (AimRotation.Pitch > 90.f && !IsLocallyControlled())

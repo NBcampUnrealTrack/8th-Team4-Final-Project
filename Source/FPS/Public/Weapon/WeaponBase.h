@@ -206,6 +206,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsADS() const;
 
+	// 반동이 현재 카메라 Pitch에 얹어 둔 양. 3인칭 조준 각도에서 반동을 빼는 데 쓴다.
+	float GetAccumulatedRecoilPitch() const;
+
 	// 이 무기가 애초에 ADS를 지원하는지(샷건/칼 등은 false). GA_ADS가 활성화 전에 확인한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	bool CanADS() const;

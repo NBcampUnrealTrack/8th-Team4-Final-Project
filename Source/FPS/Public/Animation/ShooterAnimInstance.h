@@ -41,6 +41,10 @@ public:
 	// 애셋이 없으면(예: 샷건/저격 - 추후 추가 예정) 조용히 스킵한다.
 	void PlayFireMontageForCurrentWeapon(bool bPlayObserverWeaponAction = false);
 
+	// Third person only: restarts FPlayerAnims::FireRecoilAdditiveAnim. Called per shot for pawns
+	// that are not locally controlled (AWeaponBase::Multicast_PlayFireEffects).
+	void PlayFireRecoil();
+
 	// Cache on the game thread: blend idle-only posture with the slot's base pose,
 	// instead of enabling it abruptly after the final montage instance disappears.
 	UFUNCTION(BlueprintPure, Category = "FPS|Animation|Posture")
@@ -97,6 +101,49 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
 	TObjectPtr<UAnimSequence> CurrentAimIdleAnim;
 
+	// Walk layer from FPlayerAnims::WalkAdditiveAnim. In the ABP: Apply Additive with this sequence
+	// (looping, play rate WalkAdditivePlayRate) as the additive input and WalkAdditiveAlpha as alpha.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	TObjectPtr<UAnimSequence> CurrentWalkAdditiveAnim;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Movement")
+	float WalkAdditiveAlpha = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Movement")
+	float WalkAdditivePlayRate = 1.f;
+
+	float CurrentWalkAdditiveReferenceSpeed = 600.f;
+
+	// Jump/land layer from FPlayerAnims::JumpLandAdditiveAnim. In the ABP: Apply Additive with a
+	// Sequence Evaluator (this sequence, Explicit Time = JumpLandAdditiveTime) and JumpLandAdditiveAlpha.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	TObjectPtr<UAnimSequence> CurrentJumpLandAdditiveAnim;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Movement")
+	float JumpLandAdditiveTime = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Movement")
+	float JumpLandAdditiveAlpha = 0.f;
+
+	float CurrentJumpLandHoldTime = 0.25f;
+	float CurrentJumpLandLandStart = 1.f / 3.f;
+	// 0 none, 1 airborne (takeoff then hold), 2 landing
+	uint8 JumpLandPhase = 0;
+	bool bJumpLandWasFalling = false;
+
+	// Fire recoil layer from FPlayerAnims::FireRecoilAdditiveAnim (third person). In the ABP: Apply Additive
+	// with a Sequence Evaluator (this sequence, Explicit Time = FireRecoilAdditiveTime) and FireRecoilAdditiveAlpha.
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	TObjectPtr<UAnimSequence> CurrentFireRecoilAdditiveAnim;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	float FireRecoilAdditiveTime = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
+	float FireRecoilAdditiveAlpha = 0.f;
+
+	bool bFireRecoilPlaying = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Weapon")
 	bool bIsCycling = false;
 
@@ -135,6 +182,12 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Aiming")
 	float AO_Pitch = 0.f;
+
+	// Another player's aim pitch arrives quantized (1.4 deg steps) at the net rate and carries every recoil
+	// kick of their camera, so their upper body jerks on each shot. Smooth it for pawns this machine does
+	// not control. Interp speed (FInterpTo); 0 disables.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Animation|Aiming", meta = (ClampMin = "0.0"))
+	float RemoteAimPitchInterpSpeed = 12.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Animation|Movement")
 	float MovementOffsetYaw = 0.f;
