@@ -36,6 +36,17 @@ UDominationClassSelectScreen::UDominationClassSelectScreen()
 
 FReply UDominationClassSelectScreen::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (!bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>();
+			IsValid(PlayerController) && PlayerController->IsPushToTalkKey(InKeyEvent.GetKey()))
+		{
+			PlayerController->StartVoiceTalking();
+			bVoiceCaptureStartedByScreen = true;
+			return FReply::Handled();
+		}
+	}
+
 	if (InKeyEvent.GetKey() == EKeys::Enter)
 	{
 		if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
@@ -46,6 +57,22 @@ FReply UDominationClassSelectScreen::NativeOnPreviewKeyDown(const FGeometry& InG
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UDominationClassSelectScreen::NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>();
+			IsValid(PlayerController) && PlayerController->IsPushToTalkKey(InKeyEvent.GetKey()))
+		{
+			PlayerController->StopVoiceTalking();
+			bVoiceCaptureStartedByScreen = false;
+			return FReply::Handled();
+		}
+	}
+
+	return Super::NativeOnKeyUp(InGeometry, InKeyEvent);
 }
 
 void UDominationClassSelectScreen::NativeOnActivated()
@@ -98,6 +125,15 @@ void UDominationClassSelectScreen::NativeOnActivated()
 
 void UDominationClassSelectScreen::NativeOnDeactivated()
 {
+	if (bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetOwningPlayer<AShooterPlayerController>())
+		{
+			PlayerController->StopVoiceTalking();
+		}
+		bVoiceCaptureStartedByScreen = false;
+	}
+
 	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
 	{
 		Settings->OnAudioSettingsChanged.RemoveAll(this);

@@ -66,6 +66,17 @@ void UShooterRoomScreen::NativeOnInitialized()
 
 FReply UShooterRoomScreen::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (!bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+			IsValid(PlayerController) && PlayerController->IsPushToTalkKey(InKeyEvent.GetKey()))
+		{
+			PlayerController->StartVoiceTalking();
+			bVoiceCaptureStartedByScreen = true;
+			return FReply::Handled();
+		}
+	}
+
 	// 대기방은 Menu 입력 모드라 Enhanced Input의 OpenChatAction이 PC까지 오지 않는다.
 	// 인게임처럼 Enter로 채팅을 열 수 있게 여기서 가로챈다.
 	if (InKeyEvent.GetKey() == EKeys::Enter && ChatInputBoxClass)
@@ -75,6 +86,22 @@ FReply UShooterRoomScreen::NativeOnPreviewKeyDown(const FGeometry& InGeometry, c
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UShooterRoomScreen::NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetLocalShooterPlayerController();
+			IsValid(PlayerController) && PlayerController->IsPushToTalkKey(InKeyEvent.GetKey()))
+		{
+			PlayerController->StopVoiceTalking();
+			bVoiceCaptureStartedByScreen = false;
+			return FReply::Handled();
+		}
+	}
+
+	return Super::NativeOnKeyUp(InGeometry, InKeyEvent);
 }
 
 void UShooterRoomScreen::OpenChat()
@@ -131,6 +158,15 @@ void UShooterRoomScreen::NativeOnActivated()
 
 void UShooterRoomScreen::NativeOnDeactivated()
 {
+	if (bVoiceCaptureStartedByScreen)
+	{
+		if (AShooterPlayerController* PlayerController = GetLocalShooterPlayerController())
+		{
+			PlayerController->StopVoiceTalking();
+		}
+		bVoiceCaptureStartedByScreen = false;
+	}
+
 	if (ThumbnailHandle.IsValid() && !ThumbnailHandle->HasLoadCompleted())
 	{
 		ThumbnailHandle->CancelHandle();

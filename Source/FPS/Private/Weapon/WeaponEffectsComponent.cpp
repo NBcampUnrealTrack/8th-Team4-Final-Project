@@ -46,8 +46,10 @@ void UWeaponEffectsComponent::PlayFireSound() const
 {
 	const auto* Weapon = GetWeaponOwner();
 	if (!FireSound || !Weapon || GetNetMode() == NM_DedicatedServer
-		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife || !Weapon->GetMesh3P()) return;
-	CharacterSoundPlayback::PlayAttached(Weapon, FireSound, Weapon->GetMesh3P(), FireAttenuation);
+		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife) return;
+	// Mesh3P는 소켓/외형 바디가 준비되지 않으면 부착되지 못하고 무기 스폰 위치(리스폰 지점)에 남는다.
+	// 거기에 붙이면 총소리가 엉뚱한 곳에서 나므로, 항상 캐릭터를 따라가는 무기 소유자 루트에 붙인다.
+	CharacterSoundPlayback::PlayAttached(Weapon, FireSound, GetSoundAttachComponent(), FireAttenuation);
 }
 
 void UWeaponEffectsComponent::PlayEmptyClipSound()
@@ -62,12 +64,12 @@ void UWeaponEffectsComponent::PlayEmptyClipSound()
 void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 {
 	const auto* Weapon = GetWeaponOwner();
-	if (!EmptyClipSound || !Weapon || !Weapon->GetMesh3P() || GetNetMode() == NM_DedicatedServer)
+	if (!EmptyClipSound || !Weapon || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	CharacterSoundPlayback::PlayAttached(Weapon, EmptyClipSound, Weapon->GetMesh3P(), ActionAttenuation);
+	CharacterSoundPlayback::PlayAttached(Weapon, EmptyClipSound, GetSoundAttachComponent(), ActionAttenuation);
 }
 
 void UWeaponEffectsComponent::PlayEquipSound()
@@ -93,20 +95,20 @@ void UWeaponEffectsComponent::Client_PlayEquipSound_Implementation()
 void UWeaponEffectsComponent::PlayDrawSound() const
 {
 	const AWeaponBase* Weapon = GetWeaponOwner();
-	if (!DrawSound || !Weapon || !Weapon->GetMesh3P() || GetNetMode() == NM_DedicatedServer)
+	if (!DrawSound || !Weapon || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
-	CharacterSoundPlayback::PlayAttached(Weapon, DrawSound, Weapon->GetMesh3P(), ActionAttenuation);
+	CharacterSoundPlayback::PlayAttached(Weapon, DrawSound, GetSoundAttachComponent(), ActionAttenuation);
 }
 
 bool UWeaponEffectsComponent::TryPlayHolsterSound(const UAnimMontage* Montage) const
 {
 	if (!Montage || !HolsterMontages.Contains(Montage)) return false;
 	const AWeaponBase* Weapon = GetWeaponOwner();
-	if (HolsterSound && Weapon && Weapon->GetMesh3P() && GetNetMode() != NM_DedicatedServer)
+	if (HolsterSound && Weapon && GetNetMode() != NM_DedicatedServer)
 	{
-		CharacterSoundPlayback::PlayAttached(Weapon, HolsterSound, Weapon->GetMesh3P(), ActionAttenuation);
+		CharacterSoundPlayback::PlayAttached(Weapon, HolsterSound, GetSoundAttachComponent(), ActionAttenuation);
 	}
 	return true;
 }

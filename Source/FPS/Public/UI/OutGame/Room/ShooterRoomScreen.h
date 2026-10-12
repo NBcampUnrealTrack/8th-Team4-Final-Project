@@ -37,6 +37,7 @@ protected:
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 	virtual bool NativeOnHandleBackAction() override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
 	// 인게임 UTeamMatchUIInitComponent::OpenChat과 같은 방식으로 입력창을 Modal에 Push한다.
@@ -200,4 +201,6 @@ private:
 
 	// 시작을 누른 뒤 복제가 올 때까지의 로컬 잠금
 	bool bLocalStartPending = false;
+
+	bool bVoiceCaptureStartedByScreen = false;
 };

@@ -39,6 +39,8 @@ public:
 
 	float GetMapWorldHalfSize() const { return MapWorldHalfSize; }
 	UTexture2D* GetMapTexture() const { return MapTexture; }
+	FVector2D GetPlayableAreaUVMin() const { return PlayableAreaUVMin; }
+	FVector2D GetPlayableAreaUVMax() const { return PlayableAreaUVMax; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -72,6 +74,14 @@ protected:
 	// 선으로 그린 맵 배경. 정사각형 텍스처여야 한다.
 	UPROPERTY(EditAnywhere, Category = "Shooter|Minimap")
 	TObjectPtr<UTexture2D> MapTexture;
+
+	// 텍스처 중 실제 맵이 그려진 영역(UV, 좌상단 0,0). 가로로 긴 맵이면 위아래 빈 공간을 빼도록 Y를 좁힌다.
+	// 전체 맵(M)은 이 영역(또는 그 안의 활성 구역)만 창에 맞춰 보여준다.
+	UPROPERTY(EditAnywhere, Category = "Shooter|Minimap", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	FVector2D PlayableAreaUVMin = FVector2D::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Shooter|Minimap", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	FVector2D PlayableAreaUVMax = FVector2D::UnitVector;
 
 	UPROPERTY(EditAnywhere, Category = "Shooter|Minimap|Capture", meta = (ClampMin = "256", ClampMax = "8192"))
 	int32 CaptureResolution = 2048;

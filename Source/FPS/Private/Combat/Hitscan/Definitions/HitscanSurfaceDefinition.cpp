@@ -1,6 +1,6 @@
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 
-#include "Particles/ParticleSystem.h"
+#include "Sound/SoundBase.h"
 
 FHitscanSurfaceRule UHitscanSurfaceDefinition::ResolveSurfaceRule(
 	const TEnumAsByte<EPhysicalSurface> SurfaceType) const
@@ -16,29 +16,15 @@ FHitscanSurfaceRule UHitscanSurfaceDefinition::ResolveSurfaceRule(
 	return DefaultSurfaceRule;
 }
 
-UParticleSystem* UHitscanSurfaceDefinition::ResolveImpactParticle(const TEnumAsByte<EPhysicalSurface> SurfaceType, const bool bHeadshot) const
+USoundBase* UHitscanSurfaceDefinition::ResolveImpactSound(const TEnumAsByte<EPhysicalSurface> SurfaceType) const
 {
 	for (const FHitscanPhysicalSurfaceRule& Entry : SurfaceRules)
 	{
 		if (Entry.SurfaceType == SurfaceType)
 		{
-			if (bHeadshot && Entry.HeadshotImpactParticle)
-			{
-				return Entry.HeadshotImpactParticle;
-			}
-
-			if (!Entry.ImpactParticleVariants.IsEmpty())
-			{
-				const int32 RandomIndex = FMath::RandHelper(Entry.ImpactParticleVariants.Num());
-				if (UParticleSystem* Variant = Entry.ImpactParticleVariants[RandomIndex])
-				{
-					return Variant;
-				}
-			}
-
-			return Entry.ImpactParticle ? Entry.ImpactParticle : DefaultImpactParticle;
+			return Entry.ImpactSound ? Entry.ImpactSound : DefaultImpactSound;
 		}
 	}
 
-	return DefaultImpactParticle;
+	return DefaultImpactSound;
 }

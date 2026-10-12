@@ -54,6 +54,7 @@ protected:
 	// Menu 입력 모드라 Enhanced Input의 OpenChatAction이 PC까지 오지 않는다. 대기방(UShooterRoomScreen)처럼
 	// Enter를 여기서 가로채 채팅을 연다. 선택창에서는 팀/귓말만 허용한다.
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual FReply NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	// LOCK IN → PICKED 라벨 전환은 WBP가 담당
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -183,6 +184,7 @@ private:
 
 	// 확정 요청 복제가 돌아오기 전까지의 왕복 구간을 막는 로컬 플래그
 	bool bLockInRequestPending = false;
+	bool bVoiceCaptureStartedByScreen = false;
 	bool bAllowActiveClassReselection = false;
 	EDominationCombatClass ActiveReselectionPreviewClass = EDominationCombatClass::Unselected;
 	FText SelectionFailure;

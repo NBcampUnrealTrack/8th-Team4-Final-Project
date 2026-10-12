@@ -3,6 +3,7 @@
 #include "Killcam/KillcamCameraActor.h"
 
 #include "Camera/CameraComponent.h"
+#include "Combat/CombatComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -156,10 +157,15 @@ void AKillcamCameraActor::UpdateFirstPersonPresentation()
 	{
 		SetMeshPresentation(Weapon->GetMesh3P(), false);
 	}
-	SetMeshPresentation(IPlayerInterface::Execute_GetMesh1P(Target), true);
+	const UCombatComponent* Combat = Target->FindComponentByClass<UCombatComponent>();
+	const bool bHideFirstPerson = IsValid(Combat)
+		&& Combat->IsAiming()
+		&& IsValid(Weapon)
+		&& Weapon->ShouldHideFirstPersonPresentationWhileADS();
+	SetMeshPresentation(IPlayerInterface::Execute_GetMesh1P(Target), !bHideFirstPerson);
 	if (IsValid(Weapon))
 	{
-		SetMeshPresentation(Weapon->GetMesh1P(), true);
+		SetMeshPresentation(Weapon->GetMesh1P(), !bHideFirstPerson);
 	}
 }
 

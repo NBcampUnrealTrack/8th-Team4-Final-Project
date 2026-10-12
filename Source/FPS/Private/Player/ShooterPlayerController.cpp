@@ -40,6 +40,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Killcam/KillcamReplaySubsystem.h"
+#include "Killcam/KillcamCameraActor.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
@@ -300,6 +301,7 @@ void AShooterPlayerController::PreloadCombatFeedbackSounds()
 		AudioSettings->HitMarkerSound_Kill.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_HeadshotKill.ToSoftObjectPath(),
 		AudioSettings->HitMarkerSound_Confirmation.ToSoftObjectPath(),
+		AudioSettings->BulletNearMissSound.ToSoftObjectPath(),
 		AudioSettings->LocalKillSound.ToSoftObjectPath(),
 		AudioSettings->DoubleKillSound.ToSoftObjectPath(),
 		AudioSettings->TripleKillSound.ToSoftObjectPath(),
@@ -691,6 +693,35 @@ void AShooterPlayerController::StopVoiceTalking()
 	}
 
 	ServerSetVoiceTalking(false);
+}
+
+bool AShooterPlayerController::IsPushToTalkKey(const FKey& Key) const
+{
+	if (!SupportsVoiceChat() || !Key.IsValid() || !IsValid(InputConfig) || !IsValid(InputConfig->PushToTalkAction))
+	{
+		return false;
+	}
+
+	const auto IsMappedToPushToTalk = [this, &Key](const UInputMappingContext* MappingContext)
+	{
+		if (!IsValid(MappingContext))
+		{
+			return false;
+		}
+
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			if (Mapping.Action == InputConfig->PushToTalkAction && Mapping.Key == Key)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	return IsMappedToPushToTalk(RuntimeDefaultMappingContext)
+		|| IsMappedToPushToTalk(RuntimeSystemMappingContext);
 }
 
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
@@ -1088,6 +1119,17 @@ void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 Ki
 	PlayCombatFeedbackSound(*SoundRef);
 }
 
+void AShooterPlayerController::ClientPlayBulletNearMiss_Implementation(const FVector_NetQuantize SoundLocation)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	PlayCombatFeedbackSound(AudioSettings->BulletNearMissSound, FVector(SoundLocation));
+}
+
 void AShooterPlayerController::PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation)
 {
 	if (SoundRef.IsNull())
@@ -1186,7 +1228,34 @@ void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, A
 
 void AShooterPlayerController::HandleViewTargetBlendComplete()
 {
+	RefreshViewedPawnWeaponPresentation();
 	OnViewPresentationChanged.Broadcast();
+}
+
+void AShooterPlayerController::RefreshViewedPawnWeaponPresentation()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AShooterCharacter* ViewedCharacter = Cast<AShooterCharacter>(GetPresentationViewTarget()))
+	{
+		if (UCombatComponent* ViewedCombat = ViewedCharacter->GetCombatComponent())
+		{
+			ViewedCombat->RefreshEquippedWeaponPresentation();
+		}
+	}
+}
+
+AActor* AShooterPlayerController::GetPresentationViewTarget() const
+{
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		return KillcamCamera->GetTrackedActor();
+	}
+
+	return GetViewTarget();
 }
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
@@ -1218,6 +1287,7 @@ void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetT
 	Super::SetViewTarget(NewViewTarget, TransitionParams);
 	if (GetViewTarget() != PreviousViewTarget)
 	{
+		RefreshViewedPawnWeaponPresentation();
 		OnViewPresentationChanged.Broadcast();
 	}
 }

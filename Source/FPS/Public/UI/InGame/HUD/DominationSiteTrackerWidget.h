@@ -15,10 +15,9 @@ class UTextBlock;
 class UWidget;
 
 /**
- * A-B-C-D-E 5개 거점을 한눈에 보여주는 인디케이터 (O-O-O-O-O, 활성 거점만 강조).
- * 양옆 라운드 점수, 활성 거점의 점령 진행률/점령 팀도 함께 제공
- * DominationCaptureProgressWidget과 동일하게 표시 방식(강조 모양, 테두리 채움, 중앙 정렬 애니메이션)은
- * Blueprint에 맡기고, C++은 ADominationGameState의 복제 상태만 전달
+ * 점수와 거점 상태를 GameState 이벤트에서 받아 표시한다.
+ * BP의 기존 슬롯 생성/중앙 정렬은 유지하고, Refined 모드에서는
+ * 슬롯의 표시와 점령 중 pulse를 네이티브 프레젠테이션에 전달한다.
  */
 
 UCLASS(Abstract, Blueprintable)
@@ -27,6 +26,20 @@ class FPS_API UDominationSiteTrackerWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// Asset installer checks that both halves of the native UI patch are built.
+	UFUNCTION(BlueprintPure, Category = "Domination|Refined Style")
+	static int32 GetRefinedTrackerRevision() { return 4; }
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Refined Style")
+	static int32 GetRefinedCountLayoutRevision() { return 43; }
+
+	// Python cannot access every UBlueprint editor property in all 5.7 builds.
+	UFUNCTION(BlueprintPure, Category = "Domination|Editor", meta = (DevelopmentOnly))
+	static FString GetRefinedWidgetParentPath(UObject* BlueprintAsset);
+
+	UFUNCTION(BlueprintPure, Category = "Domination|Editor", meta = (DevelopmentOnly))
+	static FString GetRefinedBlueprintStatus(UObject* BlueprintAsset);
+
 	UFUNCTION(BlueprintPure, Category = "Domination|Site Tracker")
 	EDominationPointId GetActivePointId() const;
 
@@ -77,6 +90,10 @@ public:
 	int32 GetTransitionSecondsRemaining() const;
 
 protected:
+	// Enabled by r4 only after the existing point WBP has been reparented.
+	UPROPERTY(EditDefaultsOnly, Category = "Domination|Refined Style")
+	bool bEnableRefinedSitePresentation = false;
+
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -128,11 +145,13 @@ private:
 	void RefreshRelativeScore(bool bForce);
 	// 활성 거점 안 인원(내 팀 기준). 1명 이상인 쪽만 숫자
 	void RefreshCapturePlayerCount();
+	void RefreshSitePresentation();
+	int32 LastPresentationCaptureSerial = INDEX_NONE;
 
 	// 판 + 양쪽 인원 + 꺾쇠 전체. 아무도 없으면 통째로 숨긴다
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Panel_CaptureCount;
-	// 슬롯 배경 + 숫자를 묶은 패널. 인원이 0 이면 통째로 숨긴다
+	// 인원이 0이면 Hidden: 표시만 숨기고 아군/적군의 고정 칸은 유지한다.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Panel_AllyCount;
 	UPROPERTY(meta = (BindWidgetOptional))

@@ -30,6 +30,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Domination|ZoneWall")
 	bool IsWallActive() const { return bWallActive; }
 
+	// 주어진 활성 거점에서 이 벽이 켜져야 하는지. 미니맵처럼 OnActivePointChanged 구독 순서와
+	// 무관하게 판단해야 하는 곳에서 쓴다. None은 매치 시작 전이라 첫 거점으로 간주한다.
+	bool IsActiveForPoint(EDominationPointId ActivePointId) const;
+
+	// 벽 박스의 액터 로컬 절반 크기(스케일 전). 벽 면은 로컬 Y(가로)×Z(높이), 두께는 X다.
+	FVector GetWallHalfExtent() const;
+
 private:
 	void HandleGameStateSet(AGameStateBase* NewGameState);
 	void RefreshFromCurrentGameState();

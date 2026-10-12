@@ -18,6 +18,7 @@
 #include "GAS/RogueTargetFilter.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/ShooterPlayerController.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "TimerManager.h"
@@ -764,8 +765,30 @@ void UCombatComponent::ReEquipCurrentWeapon()
 void UCombatComponent::RefreshFirstPersonADSPresentation() const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
-		|| !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	if (!IsValid(OwnerPawn) || !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	bool bViewedByLocalPlayer = OwnerPawn->IsLocallyControlled();
+	if (!bViewedByLocalPlayer)
+	{
+		if (UWorld* World = OwnerPawn->GetWorld())
+		{
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			{
+				const AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(It->Get());
+				if (IsValid(LocalController) && LocalController->IsLocalController()
+					&& LocalController->GetPresentationViewTarget() == OwnerPawn)
+				{
+					bViewedByLocalPlayer = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!bViewedByLocalPlayer)
 	{
 		return;
 	}

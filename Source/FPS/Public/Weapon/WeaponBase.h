@@ -390,6 +390,7 @@ protected:
 		int32 InShotIndexInMagazine,
 		float ClientFireServerTime,
 		bool bHeavyAttack);
+	void NotifyBulletNearMisses(const FHitscanShotRequest& Request, const TArray<FHitscanImpactEffectData>& ImpactEffects);
 
 	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
 
@@ -425,6 +426,8 @@ protected:
 	// SetPresentationActive(true)에서 호출. 오너의 Mesh1P/Mesh3P(IPlayerInterface)에
 	// GripSocketName1P/3P로 Mesh1P/Mesh3P를 재부착한다.
 	void AttachToOwnerMeshes() const;
+
+	TMap<TWeakObjectPtr<class AShooterPlayerController>, double> LastBulletNearMissTimes;
 
 protected:
 	// GetEquippedStateTag() 참고. 무기별 BP 기본값에서 지정.

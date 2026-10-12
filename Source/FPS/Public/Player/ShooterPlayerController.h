@@ -109,6 +109,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void StopVoiceTalking();
 
+	bool IsPushToTalkKey(const FKey& Key) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData);
 
@@ -204,6 +206,9 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientPlayKillSound(int32 KillStreak);
 
+	UFUNCTION(Client, Unreliable)
+	void ClientPlayBulletNearMiss(FVector_NetQuantize SoundLocation);
+
 	UFUNCTION(Client, Reliable)
 	void ClientEnterSpectatorMode(APlayerState* ViewTargetPlayerState);
 
@@ -255,6 +260,7 @@ public:
 		const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
 
 	bool IsKillcamViewTargetSuppressed() const { return bKillcamViewTargetSuppressed; }
+	AActor* GetPresentationViewTarget() const;
 
 	void ApplyKillcamViewTarget(AActor* KillcamCamera);
 
@@ -561,6 +567,7 @@ private:
 	UFUNCTION()
 	void HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn);
 	void HandleViewTargetBlendComplete();
+	void RefreshViewedPawnWeaponPresentation();
     UFUNCTION(Server, Reliable)
     void ServerSubmitAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
     FTimerHandle AppearanceSubmitTimer;

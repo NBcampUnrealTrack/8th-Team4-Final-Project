@@ -61,6 +61,15 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback", meta = (DisplayName = "Hit Marker Sound", ToolTip = "Confirmation sound played alongside the selected impact on every audible hit, including kills and shield hits. Leave empty to disable this layer."))
 	TSoftObjectPtr<USoundBase> HitMarkerSound_Confirmation;
 
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Near Miss")
+	TSoftObjectPtr<USoundBase> BulletNearMissSound;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Near Miss", meta = (ClampMin = "0.0"))
+	float BulletNearMissDistanceCentimeters = 120.f;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback|Near Miss", meta = (ClampMin = "0.0"))
+	float BulletNearMissCooldownSeconds = 0.15f;
+
 	// 처치 확정 시 재생되는 별도의 킬 사운드(히트마커와 무관한 경로, ClientPlayKillSound 참고).
 	// 멀티킬이 아닌 일반 킬(스트릭 1)의 기본값이자, 스트릭별 사운드가 비어있을 때의 폴백이기도 하다.
 	UPROPERTY(Config, EditAnywhere, Category = "Combat Feedback")
