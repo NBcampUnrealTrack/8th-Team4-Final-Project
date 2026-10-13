@@ -635,7 +635,9 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 		{
 			PlaybackWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 			PlaybackWidget->SetReplay(PlaybackElimination, Cast<APawn>(KillerActor), Cast<APawn>(GetReplayActor(VictimActorGuid)));
-			PlaybackWidget->AddToPlayerScreen(100);
+			// 플레이어 스크린 레이어는 뷰포트 위젯보다 항상 아래에 그려져, 킬러 시점으로 켜지는
+			// 스나이퍼 스코프(AddToViewport)에 킬캠 HUD가 가려진다. 뷰포트에 올려 스코프 위에 그린다.
+			PlaybackWidget->AddToViewport(100);
 		}
 	}
 	return true;
