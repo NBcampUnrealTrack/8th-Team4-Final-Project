@@ -1,10 +1,10 @@
-﻿// ShooterReticle.h
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 #include "GAS/Damage/RogueDamageTypes.h"
 #include "Blueprint/UserWidget.h"
+#include "Widgets/SWidget.h"
 #include "ShooterReticle.generated.h"
 
 class AWeaponBase;
@@ -19,17 +19,19 @@ class UWidgetAnimation;
  * 크로스헤어 탄퍼짐(Spread)과 조준 대상에 따른 표시 색상을 표현한다.
  * GetSpreadDegrees()가 장착 무기의 AWeaponBase::GetCurrentSpreadDegrees()를 읽는다.
  * 폴링하지 않는다 - CombatComponent::OnCrosshairSpreadInputsChanged(무기/탄퍼짐/FOV 변경),
- * 크로스헤어 설정 변경, 뷰포트 크기 변경 시점에만 4방향 간격을 다시 계산한다.
+ * 크로스헤어 설정 변경, 뷰포트 크기 변경 시 목표 간격을 계산한다. 축소 중에만 Slate 타이머로 표시를 보간한다.
  */
 UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterReticle : public UUserWidget
 {
 	GENERATED_BODY()
-	
+
 public:
+	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	float ComputeSpreadRadius() const;
-	
+
 	// 탄퍼짐이 없는 상태인지 확인한다.
 	UFUNCTION(BlueprintPure, Category = "UI")
 	bool IsPerfectAccuracy() const;
@@ -68,13 +70,20 @@ protected:
 	UFUNCTION()
 	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 
-	// 이전 CombatComponent 구독을 해제하고 새 CombatComponent(nullptr 가능)를 구독한다.
+	// 구독만 교체한다. 표시 초기화는 빙의/설정 변경 처리에서 한 번 수행한다.
 	void BindToCombatComponent(UCombatComponent* NewCombat);
+	void UnbindFromCombatComponent();
 
 	// 현재 탄퍼짐/FOV/뷰포트 기준으로 4방향 크로스헤어 간격을 다시 계산해 적용한다.
 	void RefreshSpreadOffsets();
+	void ApplySpreadRadius(float Radius);
+	void ResetSpreadPresentation();
+	void StopSpreadAnimation();
+	void ClearSpreadAnimationHandles();
+	void StartSpreadAnimation();
+	EActiveTimerReturnType AdvanceSpreadAnimation(double CurrentTime, float DeltaTime);
 
-	void HandleCrosshairSettingsChanged();
+	void HandleCrosshairPresentationChanged();
 	void HandleCrosshairTargetChanged(bool bAimingAtEnemy);
 	void RefreshCrosshairColor();
 
@@ -82,6 +91,9 @@ protected:
 
 	// 장착 무기가 없거나 동적 크로스헤어가 꺼져 있으면 0.
 	float GetSpreadDegrees() const;
+	float ProjectSpreadToRadius(float SpreadDegrees) const;
+	bool UsesDynamicSpread(const AWeaponBase* Weapon) const;
+	const UShooterGameUserSettings* GetCrosshairSettings() const;
 
 	// 화면에 보이는 Pawn. 평소엔 내 Pawn, 관전 중엔 관전 대상이다.
 	APawn* GetViewedPawn() const;
@@ -156,6 +168,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "UI")
 	float MinSpreadRadius = 8.f;
 
+	// 실제 탄퍼짐은 그대로 두고, 축소 표시의 오차만 이 시간마다 절반으로 줄인다. 0이면 즉시 표시.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Crosshair", meta = (ClampMin = "0.0", ClampMax = "0.1", Units = "s"))
+	float SpreadReturnHalfLife = 0.02f;
+
 	// 탄퍼짐 표현 정도가 심해지면 제한한다
 	UPROPERTY(EditAnywhere, Category = "UI")
 	float SpreadRadiusScale = 1.f;
@@ -199,6 +215,15 @@ private:
 	TWeakObjectPtr<UShooterGameUserSettings> CachedCrosshairSettings;
 	FDelegateHandle CrosshairSettingsHandle;
 	FDelegateHandle ViewportResizedHandle;
+
+	TWeakObjectPtr<AWeaponBase> SpreadPresentationWeapon;
+	TWeakPtr<SWidget> SpreadAnimationWidget;
+	TWeakPtr<FActiveTimerHandle> SpreadAnimationTimer;
+	double SpreadAnimationTime = 0.0;
+	float DisplayedSpreadRadius = 0.f;
+	float TargetSpreadRadius = 0.f;
+	bool bSpreadRadiusInitialized = false;
+	bool bSpreadPresentationActive = false;
 
 	FTimerHandle HitMarkerTimerHandle;
 	bool bHitMarkerActive = false;
