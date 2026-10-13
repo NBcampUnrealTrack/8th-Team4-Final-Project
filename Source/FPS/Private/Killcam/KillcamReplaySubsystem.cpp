@@ -16,6 +16,7 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "UI/Killcam/KillcamWidget.h"
+#include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogKillcam, Log, All);
 
@@ -169,6 +170,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 	SavedLiveViewTarget.Reset();
 	KillerActorGuid = FNetworkGUID();
 	VictimActorGuid = FNetworkGUID();
+	KillerWeaponGuids.Reset();
 	DeathDemoTime = 0.0f;
 	SetupRetryElapsed = 0.0f;
 	bPlaying = false;
@@ -270,6 +272,17 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	KillerActorGuid = RecordingDriver->GetGUIDForActor(KillerPawn);
 	PlaybackElimination = EliminationEvent;
 	VictimActorGuid = RecordingDriver->GetGUIDForActor(VictimPawn);
+	KillerWeaponGuids.Reset();
+	for (const AActor* OwnedActor : KillerPawn->Children)
+	{
+		if (const AWeaponBase* Weapon = Cast<AWeaponBase>(OwnedActor))
+		{
+			if (const FNetworkGUID WeaponGuid = RecordingDriver->GetGUIDForActor(Weapon); WeaponGuid.IsValid())
+			{
+				KillerWeaponGuids.Add(WeaponGuid);
+			}
+		}
+	}
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
 	if (!KillerActorGuid.IsValid() || !VictimActorGuid.IsValid())
 	{
@@ -476,6 +489,11 @@ void UKillcamReplaySubsystem::StartPlayback(const uint64 Generation,
 	DuplicateCollection->SetDemoNetDriver(PlaybackDriver);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(KillerActorGuid);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(VictimActorGuid);
+	// CurrentWeapon이 가리키는 무기 채널이 큐에 남으면 시킹 후에도 수 초간 None으로 남는다.
+	for (const FNetworkGUID& WeaponGuid : KillerWeaponGuids)
+	{
+		PlaybackDriver->AddNonQueuedGUIDForScrubbing(WeaponGuid);
+	}
 	const TWeakObjectPtr<UDemoNetDriver> WeakPlaybackDriver = PlaybackDriver;
 	// Seeking also has a deadline; an unfinished seek cannot outlive this death indefinitely.
 	World->GetTimerManager().SetTimer(PlaybackTimerHandle,

@@ -577,4 +577,7 @@ private:
     bool bAppearanceSubmitted = false;
 	TWeakObjectPtr<AActor> PendingViewTarget;
 	FViewTargetTransitionParams PendingViewTargetTransitionParams;
+
+	// TEMP: 킬캠 후 관전 대상 1P 무기 미표시 진단 로그 중복 방지
+	FString LastSpectateDiagnosticState;
 };

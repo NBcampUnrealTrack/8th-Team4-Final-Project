@@ -1296,6 +1296,43 @@ void AShooterPlayerController::UpdateHiddenComponents(
 	const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents)
 {
 	Super::UpdateHiddenComponents(ViewLocation, HiddenComponents);
+
+	// TEMP: 킬캠 후 관전 시 팀원 1P 무기 미표시 원인 확인용. 상태가 바뀔 때만 남긴다.
+	if (IsLocalController())
+	{
+		const AShooterCharacter* Viewed = Cast<AShooterCharacter>(GetViewTarget());
+		FString DiagnosticState;
+		if (IsValid(Viewed) && Viewed != GetPawn())
+		{
+			const UCombatComponent* ViewedCombat = Viewed->GetCombatComponent();
+			const AWeaponBase* Weapon = IsValid(ViewedCombat) ? ViewedCombat->GetCurrentWeapon() : nullptr;
+			const USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+			const USkeletalMeshComponent* ArmsMesh1P = IPlayerInterface::Execute_GetMesh1P(const_cast<AShooterCharacter*>(Viewed));
+			DiagnosticState = FString::Printf(
+				TEXT("Target=%s Suppressed=%d Weapon=%s WeaponOwner=%s ActorHidden=%d Mesh1PVisible=%d Mesh1PHidden=%d Mesh1PRegistered=%d Mesh1PParent=%s ArmsVisible=%d ArmsHidden=%d Aiming=%d"),
+				*GetNameSafe(Viewed),
+				bKillcamViewTargetSuppressed ? 1 : 0,
+				*GetNameSafe(Weapon),
+				IsValid(Weapon) ? *GetNameSafe(Weapon->GetOwner()) : TEXT("None"),
+				IsValid(Weapon) && Weapon->IsHidden() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsVisible() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsRegistered() ? 1 : 0,
+				IsValid(WeaponMesh1P) ? *GetNameSafe(WeaponMesh1P->GetAttachParent()) : TEXT("None"),
+				IsValid(ArmsMesh1P) && ArmsMesh1P->IsVisible() ? 1 : 0,
+				IsValid(ArmsMesh1P) && ArmsMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(ViewedCombat) && ViewedCombat->IsAiming() ? 1 : 0);
+		}
+		if (DiagnosticState != LastSpectateDiagnosticState)
+		{
+			LastSpectateDiagnosticState = DiagnosticState;
+			if (!DiagnosticState.IsEmpty())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[SpectateDiag] %s"), *DiagnosticState);
+			}
+		}
+	}
+
 	if (!bKillcamViewTargetSuppressed || !IsLocalController() || !GetWorld())
 	{
 		return;
