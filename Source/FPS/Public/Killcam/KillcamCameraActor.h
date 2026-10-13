@@ -74,4 +74,7 @@ private:
 	TArray<FKillcamMeshVisibility> SavedMeshVisibility;
 
 	bool bHasValidView = false;
+
+	// TEMP: 킬캠 총 미표시 진단 로그 중복 방지
+	FString LastDiagnosticState;
 };

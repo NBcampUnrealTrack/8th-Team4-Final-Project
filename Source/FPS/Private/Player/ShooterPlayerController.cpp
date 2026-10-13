@@ -1301,6 +1301,50 @@ void AShooterPlayerController::UpdateHiddenComponents(
 		return;
 	}
 
+	// 킬캠 시점 액터는 어떤 폰의 오너도 아니라 1P 메시 아래의 OwnerNoSee 파츠(스나 1P 스코프 등)가
+	// 오너 판정 없이 그대로 그려진다. 킬러의 현재 무기 외에는 1P 표현을 전부 숨긴다.
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		AActor* Tracked = KillcamCamera->GetTrackedActor();
+		const AWeaponBase* TrackedWeapon = IsValid(Tracked) && Tracked->Implements<UPlayerInterface>()
+			? IPlayerInterface::Execute_GetCurrentWeapon(Tracked)
+			: nullptr;
+		if (const FLevelCollection* ReplayCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels))
+		{
+			for (ULevel* Level : ReplayCollection->GetLevels())
+			{
+				if (!IsValid(Level))
+				{
+					continue;
+				}
+
+				for (AActor* Actor : Level->Actors)
+				{
+					const AWeaponBase* Weapon = Cast<AWeaponBase>(Actor);
+					USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) && Weapon != TrackedWeapon
+						? Weapon->GetMesh1P()
+						: nullptr;
+					if (!IsValid(WeaponMesh1P))
+					{
+						continue;
+					}
+
+					TArray<USceneComponent*> Mesh1PTree;
+					WeaponMesh1P->GetChildrenComponents(true, Mesh1PTree);
+					Mesh1PTree.Add(WeaponMesh1P);
+					for (USceneComponent* Child : Mesh1PTree)
+					{
+						if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Child);
+							IsValid(Primitive) && Primitive->IsRegistered())
+						{
+							HiddenComponents.Add(Primitive->GetPrimitiveSceneId());
+						}
+					}
+				}
+			}
+		}
+	}
+
 	const FLevelCollection* LiveCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
 	if (!LiveCollection)
 	{
