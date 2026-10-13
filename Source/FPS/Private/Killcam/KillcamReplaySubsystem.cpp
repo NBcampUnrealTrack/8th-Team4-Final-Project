@@ -4,6 +4,7 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/DemoNetConnection.h"
 #include "Engine/DemoNetDriver.h"
+#include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
@@ -309,17 +310,10 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	{
 		if (const AWeaponBase* Weapon = Cast<AWeaponBase>(OwnedActor))
 		{
-			const FNetworkGUID WeaponGuid = RecordingDriver->GetGUIDForActor(Weapon);
-			if (WeaponGuid.IsValid())
+			if (const FNetworkGUID WeaponGuid = RecordingDriver->GetGUIDForActor(Weapon); WeaponGuid.IsValid())
 			{
 				KillerWeaponGuids.Add(WeaponGuid);
 			}
-			// TEMP: 킬러 무기가 녹화 스트림에 들어갔는지(GUID/채널) 확인용
-			UNetConnection* DemoConnection = RecordingDriver->ClientConnections.IsEmpty() ? nullptr : RecordingDriver->ClientConnections[0].Get();
-			UE_LOG(LogKillcam, Warning, TEXT("[KillcamDiag] Death weapon=%s hidden=%d guid=%s channel=%d remoteRole=%d level=%s"),
-				*Weapon->GetName(), Weapon->IsHidden() ? 1 : 0, *WeaponGuid.ToString(),
-				DemoConnection && DemoConnection->FindActorChannelRef(const_cast<AWeaponBase*>(Weapon)) ? 1 : 0,
-				static_cast<int32>(Weapon->GetRemoteRole()), *GetNameSafe(Weapon->GetLevel()));
 		}
 	}
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
@@ -421,8 +415,10 @@ void UKillcamReplaySubsystem::StartRecording()
 		return;
 	}
 
+	// 활성 컬렉션에 따라 World의 데모 드라이버 포인터가 바뀌므로 엔진에 등록된 이름 기준으로 확인한다.
+	UDemoNetDriver* NamedDriver = Cast<UDemoNetDriver>(GEngine->FindNamedNetDriver(World, NAME_DemoNetDriver));
 	UDemoNetDriver* ExistingDriver = World->GetDemoNetDriver();
-	if (IsValid(ExistingDriver) && ExistingDriver->IsRecording())
+	if ((IsValid(ExistingDriver) && ExistingDriver->IsRecording()) || (IsValid(NamedDriver) && NamedDriver->IsRecording()))
 	{
 		return;
 	}
@@ -430,6 +426,18 @@ void UKillcamReplaySubsystem::StartRecording()
 	TArray<FString> Options;
 	Options.Add(TEXT("ReplayStreamerOverride=InMemoryNetworkReplayStreaming"));
 	Options.Add(TEXT("SkipSpawnSpectatorController"));
+	// 킬캠 정리 타이머는 리플레이 틱 중에 걸려 복제 레벨 컬렉션이 활성인 채로 여기 들어온다.
+	// 그 상태로 녹화를 시작하면 초기 네트워크 객체 목록(FActorIterator, 활성 레벨만)에 라이브 액터가 빠져서
+	// RPC가 오기 전까지 녹화되지 않는다. 킬러 무기는 발사 RPC 전까지 리플레이에 없어 킬캠에서 총이 안 보였다.
+	// 새 드라이버를 라이브 컬렉션에 등록할 때까지 컨텍스트를 유지한다.
+	TOptional<FScopedLevelCollectionContextSwitch> CollectionContext;
+	if (FLevelCollection* LiveCollection = World->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels))
+	{
+		// 녹화를 멈춰도 컬렉션 포인터는 지워지지 않는다. 파괴된 드라이버가 World로 복원되면
+		// StartRecordingReplay의 DestroyDemoNetDriver가 check에 걸리므로 실제 등록된 드라이버로 맞춘다.
+		LiveCollection->SetDemoNetDriver(NamedDriver);
+		CollectionContext.Emplace(LiveCollection, World);
+	}
 	GameInstance->StartRecordingReplay(TEXT("_Killcam"), TEXT("_Killcam"), Options);
 
 	UDemoNetDriver* RecordingDriver = World->GetDemoNetDriver();
@@ -440,9 +448,7 @@ void UKillcamReplaySubsystem::StartRecording()
 
 	FLevelCollection& SourceCollection = World->FindOrAddCollectionByType(ELevelCollectionType::DynamicSourceLevels);
 	SourceCollection.SetDemoNetDriver(RecordingDriver);
-	// 0.5ms는 액터 50개 우선순위 정렬만으로 초과돼(로그 0.69ms) 복제 단계가 매 프레임 굶었다.
-	// 그 결과 무기 같은 저우선순위 채널이 녹화 시작 후 수십 초간 안 열려 킬캠에서 총이 사라졌다. (녹화는 8Hz)
-	RecordingDriver->SetMaxDesiredRecordTimeMS(2.0f);
+	RecordingDriver->SetMaxDesiredRecordTimeMS(0.5f);
 	RecordingDriver->SetActorPrioritizationEnabled(true);
 	RecordingDriver->SetViewerOverride(GetPlayerController());
 	RecordingDriver->SetCheckpointSaveMaxMSPerFrame(2.0f);
@@ -612,13 +618,6 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 	SourceCollection->SetIsVisible(false);
 	DuplicateCollection->SetIsVisible(true);
 	RefreshCollectionRenderState(SourceCollection);
-
-	// TEMP: 킬러 무기가 리플레이에 언제 생기는지 확인용
-	for (const FNetworkGUID& WeaponGuid : KillerWeaponGuids)
-	{
-		UE_LOG(LogKillcam, Warning, TEXT("[KillcamDiag] Playback weapon guid=%s actor=%s"),
-			*WeaponGuid.ToString(), *GetNameSafe(GetReplayActor(WeaponGuid)));
-	}
 
 	PlayerController->SetKillcamViewTargetSuppressed(true);
 

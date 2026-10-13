@@ -19,8 +19,9 @@ USkeletalMeshComponent* UAnimNotify_FirearmSound::ResolveEmitter(USkeletalMeshCo
   // trigger, while still locating the audible emitter on the world-space gun.
   if(bSingleView)
   {
-   const auto* Pawn=Cast<APawn>(Weapon->GetOwner());
-   const auto* Trigger=Pawn&&Pawn->IsLocallyControlled()?Weapon->GetMesh1P():Weapon->GetMesh3P();
+   // Killcam plays the replay pawn's 1P montage, so pick by first-person presentation, not local control.
+   const auto* Character=Cast<AShooterCharacter>(Weapon->GetOwner());
+   const auto* Trigger=Character&&Character->IsFirstPersonPresented()?Weapon->GetMesh1P():Weapon->GetMesh3P();
    return Source==Trigger?Weapon->GetMesh3P():nullptr;
   }
   // Reload/bolt assets opt out of the legacy trigger and run solely on 3P.

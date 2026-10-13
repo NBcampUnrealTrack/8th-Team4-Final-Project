@@ -102,6 +102,11 @@ public:
 
 	UCombatComponent* GetCombatComponent() const { return Combat; }
 
+	// 로컬 플레이어가 이 캐릭터를 1인칭으로 보고 있는지. 직접 조종 중이거나 킬캠/관전으로 시점을 빌린 경우 true.
+	// 1P/3P 몽타주 선택은 IsLocallyControlled 대신 이걸 써야 킬캠 리플레이에서도 1P 장전/스왑이 보인다.
+	UFUNCTION(BlueprintPure, Category = "Presentation")
+	bool IsFirstPersonPresented() const;
+
 protected:
 	bool InitializeDefaultWeaponLoadout();
 

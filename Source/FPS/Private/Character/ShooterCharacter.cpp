@@ -34,6 +34,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Perception/AISense_Hearing.h"
 #include "Settings/ShooterAudioSettings.h"
@@ -815,6 +816,29 @@ UAbilitySystemComponent* AShooterCharacter::GetAbilitySystemComponent() const
 USkeletalMeshComponent* AShooterCharacter::GetMesh1P_Implementation() const
 {
 	return Mesh1P;
+}
+
+bool AShooterCharacter::IsFirstPersonPresented() const
+{
+	if (IsLocallyControlled())
+	{
+		return true;
+	}
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		const AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(It->Get());
+		if (IsValid(LocalController) && LocalController->IsLocalController()
+			&& LocalController->GetPresentationViewTarget() == this)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 USkeletalMeshComponent* AShooterCharacter::GetMesh3P_Implementation() const

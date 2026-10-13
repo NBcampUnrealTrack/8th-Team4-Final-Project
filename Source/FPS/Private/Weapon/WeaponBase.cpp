@@ -173,16 +173,6 @@ void AWeaponBase::OnRep_Owner()
 	}
 }
 
-float AWeaponBase::GetReplayPriority(const FVector& ViewPos, const FVector& ViewDir, AActor* Viewer, AActor* ViewTarget,
-	UActorChannel* const InChannel, const float Time)
-{
-	if (AActor* OwnerActor = GetOwner())
-	{
-		return OwnerActor->GetReplayPriority(ViewPos, ViewDir, Viewer, ViewTarget, InChannel, Time);
-	}
-	return Super::GetReplayPriority(ViewPos, ViewDir, Viewer, ViewTarget, InChannel, Time);
-}
-
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
 	if (const AActor* OwnerActor = GetOwner())
@@ -811,7 +801,17 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 		if (Effects) Effects->PlayFireSound();
 	}
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
-	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
+	// 킬캠/관전으로 이 폰을 1인칭으로 보는 중이면 1P 총구 이펙트를 써야 숨겨진 3P 총에서 이펙트가 나가지 않는다.
+	const AShooterCharacter* OwningCharacter = Cast<AShooterCharacter>(OwningPawn);
+	const bool bIsFirstPerson = OwningCharacter ? OwningCharacter->IsFirstPersonPresented()
+		: OwningPawn && OwningPawn->IsLocallyControlled();
+
+	// 클라이언트 킬캠 녹화는 받은 비신뢰 멀티캐스트를 다음 무기 복제까지 쌓아 두고, 한 번에 2개(net.MaxRPCPerNetUpdate)만 남긴다.
+	// 무기는 0.3~0.5초에 한 번만 녹화 복제돼 연사가 2발씩 묶이고 나머지는 버려졌다. 받을 때마다 다음 녹화 프레임에 내보내게 한다.
+	if (GetLocalRole() != ROLE_Authority)
+	{
+		ForceNetUpdate();
+	}
 
 	// The predicting owner and authority play rifle/knife animation through the ability.
 	// Simulated observers receive fire effects, but do not execute that ability.
