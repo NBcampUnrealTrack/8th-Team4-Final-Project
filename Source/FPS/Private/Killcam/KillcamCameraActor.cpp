@@ -166,6 +166,7 @@ void AKillcamCameraActor::UpdateFirstPersonPresentation()
 	if (IsValid(Weapon))
 	{
 		SetMeshPresentation(Weapon->GetMesh1P(), !bHideFirstPerson);
+		SetLoosePartPresentation(Weapon, !bHideFirstPerson);
 	}
 }
 
@@ -180,39 +181,88 @@ void AKillcamCameraActor::SetMeshPresentation(USceneComponent* Root, bool bFirst
 	Components.Add(Root);
 	for (USceneComponent* Child : Components)
 	{
-		UMeshComponent* Component = Cast<UMeshComponent>(Child);
-		if (!IsValid(Component))
+		ApplyComponentPresentation(Cast<UMeshComponent>(Child), bFirstPerson, Child == Root);
+	}
+}
+
+void AKillcamCameraActor::SetLoosePartPresentation(const AWeaponBase* Weapon, bool bFirstPerson)
+{
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+	const USceneComponent* Mesh1P = Weapon->GetMesh1P();
+	const USceneComponent* Mesh3P = Weapon->GetMesh3P();
+	TArray<UMeshComponent*> Components;
+	Weapon->GetComponents<UMeshComponent>(Components, true);
+	for (UMeshComponent* Component : Components)
+	{
+		if (!IsValid(Component)
+			|| (IsValid(Mesh1P) && (Component == Mesh1P || Component->IsAttachedTo(Mesh1P)))
+			|| (IsValid(Mesh3P) && (Component == Mesh3P || Component->IsAttachedTo(Mesh3P))))
 		{
 			continue;
 		}
-		const bool bSaved = SavedMeshVisibility.ContainsByPredicate([Component](const FKillcamMeshVisibility& State)
+
+		// Mesh1P/Mesh3P 밖(SceneRoot 등)에 붙은 BP 파츠는 트리로 1P/3P를 알 수 없어 원래 오너 플래그로 가른다.
+		// 킬캠 시점 액터는 오너가 아니라서 OwnerNoSee 3P 스코프가 그대로 보이던 문제.
+		const FKillcamMeshVisibility* Saved = SavedMeshVisibility.FindByPredicate([Component](const FKillcamMeshVisibility& State)
 		{
 			return State.Component == Component;
 		});
-		if (!bSaved)
+		const bool bOwnerNoSee = Saved ? Saved->bOwnerNoSee : Component->bOwnerNoSee;
+		const bool bOnlyOwnerSee = Saved ? Saved->bOnlyOwnerSee : Component->bOnlyOwnerSee;
+		if (bOwnerNoSee)
 		{
-			FKillcamMeshVisibility& State = SavedMeshVisibility.AddDefaulted_GetRef();
-			State.Component = Component;
-			State.bOnlyOwnerSee = Component->bOnlyOwnerSee;
-			State.bOwnerNoSee = Component->bOwnerNoSee;
-			State.bVisible = Component->IsVisible();
-			State.bHiddenInGame = Component->bHiddenInGame;
-			if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
-			{
-				State.AnimTickOption = Mesh->VisibilityBasedAnimTickOption;
-			}
+			ApplyComponentPresentation(Component, false, false);
 		}
-		Component->SetOnlyOwnerSee(false);
-		Component->SetOwnerNoSee(false);
-		if (!bFirstPerson || Component == Root)
+		else if (bOnlyOwnerSee)
 		{
-			Component->SetVisibility(bFirstPerson);
-			Component->SetHiddenInGame(!bFirstPerson);
+			ApplyComponentPresentation(Component, bFirstPerson, false);
 		}
+	}
+}
+
+void AKillcamCameraActor::ApplyComponentPresentation(UMeshComponent* Component, bool bFirstPerson, bool bIsRoot)
+{
+	if (!IsValid(Component))
+	{
+		return;
+	}
+	FKillcamMeshVisibility* State = SavedMeshVisibility.FindByPredicate([Component](const FKillcamMeshVisibility& Saved)
+	{
+		return Saved.Component == Component;
+	});
+	if (!State)
+	{
+		State = &SavedMeshVisibility.AddDefaulted_GetRef();
+		State->Component = Component;
+		State->bOnlyOwnerSee = Component->bOnlyOwnerSee;
+		State->bOwnerNoSee = Component->bOwnerNoSee;
+		State->bVisible = Component->IsVisible();
+		State->bHiddenInGame = Component->bHiddenInGame;
 		if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
 		{
-			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+			State->AnimTickOption = Mesh->VisibilityBasedAnimTickOption;
 		}
+	}
+	Component->SetOnlyOwnerSee(false);
+	Component->SetOwnerNoSee(false);
+	if (bIsRoot)
+	{
+		Component->SetVisibility(bFirstPerson);
+		Component->SetHiddenInGame(!bFirstPerson);
+		State->bVisibilityOverridden = true;
+	}
+	else
+	{
+		// 자식(스코프/사이트/홀스터 무기)은 HiddenInGame으로만 숨기고 보일 땐 원래 값으로 되돌린다.
+		// Visibility는 ADS/무기 교체 로직이 관리하므로 건드리면 ADS 해제나 무기 교체 후 파츠가 안 돌아온다.
+		Component->SetHiddenInGame(bFirstPerson ? State->bHiddenInGame : true);
+	}
+	if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
+	{
+		Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 	}
 }
 
@@ -228,7 +278,10 @@ void AKillcamCameraActor::RestoreMeshPresentation()
 		}
 		Component->SetOnlyOwnerSee(State.bOnlyOwnerSee);
 		Component->SetOwnerNoSee(State.bOwnerNoSee);
-		Component->SetVisibility(State.bVisible);
+		if (State.bVisibilityOverridden)
+		{
+			Component->SetVisibility(State.bVisible);
+		}
 		Component->SetHiddenInGame(State.bHiddenInGame);
 		if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
 		{
