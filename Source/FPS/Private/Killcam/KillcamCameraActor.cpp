@@ -277,7 +277,8 @@ void AKillcamCameraActor::ApplyComponentPresentation(UMeshComponent* Component, 
 	{
 		// 자식(스코프/사이트/홀스터 무기)은 HiddenInGame으로만 숨기고 보일 땐 원래 값으로 되돌린다.
 		// Visibility는 ADS/무기 교체 로직이 관리하므로 건드리면 ADS 해제나 무기 교체 후 파츠가 안 돌아온다.
-		Component->SetHiddenInGame(bFirstPerson ? State->bHiddenInGame : true);
+		// 킬캠은 오너 시점을 흉내 내므로 원래 OwnerNoSee였던 파츠(Mesh1P 아래 SM_sight_002 등)는 오너처럼 숨긴다.
+		Component->SetHiddenInGame(bFirstPerson && !State->bOwnerNoSee ? State->bHiddenInGame : true);
 	}
 	if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
 	{
