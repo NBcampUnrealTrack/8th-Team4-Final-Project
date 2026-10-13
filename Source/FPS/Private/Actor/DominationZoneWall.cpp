@@ -1,4 +1,4 @@
-#include "Actor/DominationZoneWall.h"
+﻿#include "Actor/DominationZoneWall.h"
 
 #include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/State/DominationGameState.h"
+#include "Killcam/KillcamReplaySubsystem.h"
 #include "TimerManager.h"
 
 
@@ -107,6 +108,11 @@ void ADominationZoneWall::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ADominationZoneWall::HandleGameStateSet(AGameStateBase* NewGameState)
 {
+	if (IsValid(NewGameState) && !UKillcamReplaySubsystem::IsLiveWorldActor(NewGameState))
+	{
+		return;
+	}
+
 	BoundGameState = Cast<ADominationGameState>(NewGameState);
 	RefreshFromCurrentGameState();
 }
