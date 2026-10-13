@@ -7,6 +7,7 @@
 #include "DominationPlayerSlot.generated.h"
 
 class ADominationPlayerState;
+class AShooterPlayerState;
 class UCommonTextBlock;
 class UImage;
 class UTexture2D;
@@ -41,6 +42,8 @@ public:
 	int32 GetCachedPlayerId() const;
 
 protected:
+	virtual void NativeDestruct() override;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
 	void BP_UpdateSlotPresentation(EDominationSlotState State, bool bIsLocalSlot);
 	UFUNCTION(BlueprintImplementableEvent, Category = "Domination|Class Selection")
@@ -48,6 +51,11 @@ protected:
 
 private:
 	void RefreshClassNameText();
+	void RefreshVoiceTalkingIcon();
+	void UnbindVoiceTalking();
+
+	UFUNCTION()
+	void HandleVoiceTalkingChanged(AShooterPlayerState* ChangedPlayerState, bool bIsTalking);
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Portrait;
@@ -57,6 +65,9 @@ private:
 	TObjectPtr<UCommonTextBlock> Text_PlayerName;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonTextBlock> Text_ClassName;
+	// 이름 오른쪽 말하는 중 아이콘
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_VoiceTalking;
 
 	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
 

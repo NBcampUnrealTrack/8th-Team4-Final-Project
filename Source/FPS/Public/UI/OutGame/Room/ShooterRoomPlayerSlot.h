@@ -25,6 +25,10 @@ public:
 	void SetPlayer(const FShooterRoomSlotView& View);
 	// bJoinable 이 false 면 칸은 비어 보이되 눌리지 않는다
 	void SetEmpty(EGameTeam InSlotTeam, bool bJoinable = true);
+	// 시그니처 비교와 무관하게 reconcile 마다 갱신
+	void SetTalking(bool bIsTalking);
+
+	int32 GetCachedPlayerId() const { return CachedPlayerId; }
 
 	FOnRoomSlotJoinRequested OnJoinRequested;
 
@@ -47,6 +51,9 @@ protected:
 	TObjectPtr<UWidget> Panel_Join;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Img_Profile;
+	// 말하는 중 아이콘
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Img_VoiceTalking;
 
 	// 지속 상태 배경. C++ 만 켜고 끔
 	UPROPERTY(meta = (BindWidgetOptional))

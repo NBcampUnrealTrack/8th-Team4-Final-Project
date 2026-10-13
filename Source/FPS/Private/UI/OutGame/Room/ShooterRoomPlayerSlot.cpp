@@ -11,6 +11,7 @@ void UShooterRoomPlayerSlot::NativeOnInitialized()
 
 	Btn_Join->OnClicked().AddUObject(this, &ThisClass::HandleJoinClicked);
 	DefaultProfileBrush = Img_Profile->GetBrush();
+	SetTalking(false);
 }
 
 void UShooterRoomPlayerSlot::SetPlayer(const FShooterRoomSlotView& View)
@@ -82,10 +83,19 @@ void UShooterRoomPlayerSlot::SetEmpty(const EGameTeam InSlotTeam, const bool bJo
 		Panel_Join->SetIsEnabled(bJoinable);
 	}
 	Img_Profile->SetVisibility(ESlateVisibility::Collapsed);
+	SetTalking(false);
 	StopReadyTransition();
 	ApplyStateBackground(EShooterRoomSlotState::Empty);
 	BP_ApplySlotState(false, FShooterRoomSlotView(), SlotTeam);
 	BP_ApplyReadyColor(false);
+}
+
+void UShooterRoomPlayerSlot::SetTalking(const bool bIsTalking)
+{
+	if (IsValid(Img_VoiceTalking))
+	{
+		Img_VoiceTalking->SetVisibility(bIsTalking ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UShooterRoomPlayerSlot::HandleJoinClicked()

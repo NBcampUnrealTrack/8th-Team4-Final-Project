@@ -350,11 +350,13 @@ void UShooterRoomScreen::Refresh()
 	const FString Signature = BuildPresentationSignature(Views, LobbyGameState);
 	if (Signature == CachedPresentationSignature)
 	{
+		RefreshTalkingIndicators(Views);
 		return;
 	}
 	CachedPresentationSignature = Signature;
 
 	RefreshTeamPanels(Views);
+	RefreshTalkingIndicators(Views);
 	RefreshRoomHeader(Views, LobbyGameState);
 	RefreshModePanel(LobbyGameState->GetSelectedMatchMode(), bIsHost);
 	RefreshActions(LobbyGameState, bIsHost);
@@ -419,6 +421,7 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 		// 호스트 칸은 항상 채워진 상태이므로 서버도 레디 검사에서 호스트를 뺀다
 		View.bIsReady = View.bIsHost || ShooterPlayerState->IsLobbyReady();
 		View.bIsLocal = (PlayerState == LocalState);
+		View.bIsTalking = ShooterPlayerState->IsVoiceTalking();
 		// 없으면 다음 reconcile 에서 다시 물음
 		View.ProfileImage = IsValid(ProfileImages)
 			? ProfileImages->FindOrRequestProfileImage(PlayerState->GetUniqueId())
@@ -593,6 +596,39 @@ void UShooterRoomScreen::RebuildUnassignedEntries(const TArray<FShooterRoomSlotV
 	JoinEntry->OnJoinRequested.AddUObject(this, &ThisClass::HandleSlotJoinRequested);
 	JoinEntry->SetEmpty(EGameTeam::None, !LocalPlayerState->IsLobbyReady());
 	Box_Unassigned->AddChild(JoinEntry);
+}
+
+void UShooterRoomScreen::RefreshTalkingIndicators(const TArray<FShooterRoomSlotView>& Views)
+{
+	const auto ApplyTalking = [&Views](UShooterRoomPlayerSlot* RoomSlot)
+	{
+		if (!IsValid(RoomSlot))
+		{
+			return;
+		}
+
+		const int32 PlayerId = RoomSlot->GetCachedPlayerId();
+		const FShooterRoomSlotView* View = PlayerId == INDEX_NONE
+			? nullptr
+			: Views.FindByPredicate([PlayerId](const FShooterRoomSlotView& Candidate)
+			{
+				return Candidate.PlayerId == PlayerId;
+			});
+		RoomSlot->SetTalking(View != nullptr && View->bIsTalking);
+	};
+
+	for (UShooterRoomPlayerSlot* RoomSlot : TeamSlotsA)
+	{
+		ApplyTalking(RoomSlot);
+	}
+	for (UShooterRoomPlayerSlot* RoomSlot : TeamSlotsB)
+	{
+		ApplyTalking(RoomSlot);
+	}
+	for (UWidget* Child : Box_Unassigned->GetAllChildren())
+	{
+		ApplyTalking(Cast<UShooterRoomPlayerSlot>(Child));
+	}
 }
 
 void UShooterRoomScreen::RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views)
