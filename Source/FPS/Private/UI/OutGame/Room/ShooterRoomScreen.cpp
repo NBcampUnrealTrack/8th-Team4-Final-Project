@@ -57,7 +57,10 @@ void UShooterRoomScreen::NativeOnInitialized()
 	Btn_Ready->OnClicked().AddUObject(this, &ThisClass::HandleReadyClicked);
 	Btn_Start->OnClicked().AddUObject(this, &ThisClass::HandleStartClicked);
 	Btn_Leave->OnClicked().AddUObject(this, &ThisClass::HandleLeaveClicked);
-	Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
+	if (Btn_ModeNext)
+	{
+		Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
+	}
 
 	// 방장은 NativeGetDesiredFocusTarget이 nullptr이라, 채팅 입력창이 Pop된 뒤 포커스가 돌아올 곳이
 	// 화면 자신뿐이다. 포커스가 화면 밖으로 새면 Enter 프리뷰를 못 받아 채팅을 다시 못 연다.
@@ -661,7 +664,10 @@ void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMod
 {
 	// 모드를 고르는 사람은 호스트뿐
 	const ESlateVisibility ArrowVisibility = bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	Btn_ModeNext->SetVisibility(ArrowVisibility);
+	if (Btn_ModeNext)
+	{
+		Btn_ModeNext->SetVisibility(ArrowVisibility);
+	}
 
 	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
 	const int32 TeamCapacity = IsValid(LobbyGameState) ? LobbyGameState->GetRoomSettings().MaxPlayersPerTeam : 0;

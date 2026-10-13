@@ -131,7 +131,8 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Leave;
 	
-	UPROPERTY(meta = (BindWidget))
+	// BindWidget -> BindWidgetOptional
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterButtonBase> Btn_ModeNext;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_ModeName;
