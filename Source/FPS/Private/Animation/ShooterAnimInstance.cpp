@@ -382,7 +382,8 @@ float UShooterAnimInstance::GetPreviewAwareFinalGripAlpha(float GameplayAlpha) c
 
 float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const
 {
-	const float BaseWeight = GetIdlePostureSourceWeight();
+	const float StandingWeight = 1.f - FMath::Clamp(GroundSpeed / 150.f, 0.f, 1.f);
+	const float BaseWeight = GetIdlePostureSourceWeight() * StandingWeight;
 	if (bFirstPersonAnimation || !IsValid(Combat))
 	{
 		return BaseWeight;
