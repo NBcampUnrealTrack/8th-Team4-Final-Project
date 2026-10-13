@@ -9,6 +9,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Weapon/WeaponBase.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogKillcamPresentation, Log, All);
+
 namespace
 {
 	FRotator NormalizeReplicatedAimRotation(FRotator AimRotation)
@@ -167,6 +169,23 @@ void AKillcamCameraActor::UpdateFirstPersonPresentation()
 	{
 		SetMeshPresentation(Weapon->GetMesh1P(), !bHideFirstPerson);
 		SetLoosePartPresentation(Weapon, !bHideFirstPerson);
+	}
+
+	// TEMP: 킬캠 총 미표시 원인 확인용. 상태가 바뀔 때만 남긴다.
+	const USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+	const FString DiagnosticState = FString::Printf(
+		TEXT("Weapon=%s Aiming=%d HideFP=%d ActorHidden=%d Mesh1PVisible=%d Mesh1PHidden=%d Mesh1PParent=%s"),
+		*GetNameSafe(Weapon),
+		IsValid(Combat) && Combat->IsAiming() ? 1 : 0,
+		bHideFirstPerson ? 1 : 0,
+		IsValid(Weapon) && Weapon->IsHidden() ? 1 : 0,
+		IsValid(WeaponMesh1P) && WeaponMesh1P->IsVisible() ? 1 : 0,
+		IsValid(WeaponMesh1P) && WeaponMesh1P->bHiddenInGame ? 1 : 0,
+		IsValid(WeaponMesh1P) ? *GetNameSafe(WeaponMesh1P->GetAttachParent()) : TEXT("None"));
+	if (DiagnosticState != LastDiagnosticState)
+	{
+		LastDiagnosticState = DiagnosticState;
+		UE_LOG(LogKillcamPresentation, Log, TEXT("[KillcamDiag] %s"), *DiagnosticState);
 	}
 }
 
