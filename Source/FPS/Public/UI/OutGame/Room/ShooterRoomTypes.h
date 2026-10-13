@@ -28,6 +28,9 @@ struct FShooterRoomSlotView
 	bool bIsReady = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
 	bool bIsLocal = false;
+	// 시그니처에 넣지 않음. 말할 때마다 칸을 다시 그리지 않게
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	bool bIsTalking = false;
 
 	// 없으면 nullptr. 칸이 기본 이미지로 그림
 	UPROPERTY(BlueprintReadOnly, Category = "Lobby")

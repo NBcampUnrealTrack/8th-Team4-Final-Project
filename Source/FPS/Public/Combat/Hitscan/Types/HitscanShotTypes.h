@@ -138,6 +138,10 @@ struct FHitscanImpactEffectData
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	bool bHasHit = false;
 
+	// 파티클 복구
+	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
+	bool bSpawnImpactParticle = true;
+
 	// 맞은 부위(헤드/토르소/팔다리 등). 헤드샷 여부 판정 및 헤드샷 전용 이펙트 분기에 쓰인다.
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Combat|Hitscan|Effect")
 	FGameplayTag HitZoneTag;

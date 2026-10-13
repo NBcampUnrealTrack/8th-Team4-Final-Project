@@ -19,6 +19,8 @@ struct FKillcamMeshVisibility
 	bool bOwnerNoSee = false;
 	bool bVisible = false;
 	bool bHiddenInGame = false;
+	// 킬캠이 Visibility를 직접 바꾼 루트만 되돌린다. 자식 Visibility는 게임 쪽 소유
+	bool bVisibilityOverridden = false;
 	EVisibilityBasedAnimTickOption AnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 };
 
@@ -49,6 +51,8 @@ private:
 	void RestoreFirstPersonAttachment();
 	void UpdateFirstPersonPresentation();
 	void SetMeshPresentation(USceneComponent* Root, bool bFirstPerson);
+	void SetLoosePartPresentation(const AWeaponBase* Weapon, bool bFirstPerson);
+	void ApplyComponentPresentation(UMeshComponent* Component, bool bFirstPerson, bool bIsRoot);
 	void RestoreMeshPresentation();
 
 	UPROPERTY(VisibleAnywhere, Category = "Killcam")
@@ -70,4 +74,7 @@ private:
 	TArray<FKillcamMeshVisibility> SavedMeshVisibility;
 
 	bool bHasValidView = false;
+
+	// TEMP: 킬캠 총 미표시 진단 로그 중복 방지
+	FString LastDiagnosticState;
 };

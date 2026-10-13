@@ -65,6 +65,7 @@ private:
 		EGameTeam Team);
 	void RebuildUnassignedEntries(const TArray<FShooterRoomSlotView>& UnassignedViews);
 	void RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views);
+	void RefreshTalkingIndicators(const TArray<FShooterRoomSlotView>& Views);
 	void HandleSlotJoinRequested(EGameTeam Team);
 
 	// 모드 패널

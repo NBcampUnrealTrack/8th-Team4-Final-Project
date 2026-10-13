@@ -1,4 +1,4 @@
-#include "Actor/DominationSpawnBarrier.h"
+﻿#include "Actor/DominationSpawnBarrier.h"
 
 #include "Actor/DominationCapturePoint.h"
 #include "Actor/DominationSpawnVolume.h"
@@ -8,6 +8,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameMode/State/DominationGameState.h"
+#include "Killcam/KillcamReplaySubsystem.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "TimerManager.h"
 
@@ -126,6 +127,11 @@ void ADominationSpawnBarrier::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ADominationSpawnBarrier::HandleGameStateSet(AGameStateBase* NewGameState)
 {
+	if (IsValid(NewGameState) && !UKillcamReplaySubsystem::IsLiveWorldActor(NewGameState))
+	{
+		return;
+	}
+
 	BoundGameState = Cast<ADominationGameState>(NewGameState);
 	if (!IsValid(BoundGameState))
 	{
