@@ -44,6 +44,11 @@ public:
 	// 오너가 채워지는 이 시점에 부착/표시를 다시 확정한다.
 	virtual void OnRep_Owner() override;
 
+	// 무기 액터 루트는 캐릭터를 따라가지 않아(메시만 부착) 거리 기반 리플레이 우선순위가 바닥으로 떨어진다.
+	// 킬캠 녹화 예산에 밀려 무기 채널이 수 초간 안 열리면 킬캠 초반에 총이 안 보이므로 오너 우선순위를 따른다.
+	virtual float GetReplayPriority(const FVector& ViewPos, const FVector& ViewDir, AActor* Viewer, AActor* ViewTarget,
+		UActorChannel* const InChannel, float Time) override;
+
 	// RPM 쿨다운 확인 -> 재장전/탄약 확인 -> Spread가 반영된 펠릿별 최종 방향 생성
 	// -> B Hitscan Resolver에 사격 1회 전달 -> 반동 적용 -> 연사 카운트 증가.
 	// bHeavyAttack: 전술 칼처럼 좌/우클릭 대미지가 다른 무기용. AltBaseDamage가 0이면 무시되고 BaseDamage를 쓴다.

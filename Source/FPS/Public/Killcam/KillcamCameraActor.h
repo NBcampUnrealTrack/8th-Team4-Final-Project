@@ -54,6 +54,7 @@ private:
 	void SetLoosePartPresentation(const AWeaponBase* Weapon, bool bFirstPerson);
 	void ApplyComponentPresentation(UMeshComponent* Component, bool bFirstPerson, bool bIsRoot);
 	void RestoreMeshPresentation();
+	void LogPresentationDiagnostics(AActor* Target, const AWeaponBase* Weapon, bool bAiming, bool bHideFirstPerson);
 
 	UPROPERTY(VisibleAnywhere, Category = "Killcam")
 	TObjectPtr<UCameraComponent> CameraComponent;
@@ -75,6 +76,6 @@ private:
 
 	bool bHasValidView = false;
 
-	// TEMP: 킬캠 총 미표시 진단 로그 중복 방지
-	FString LastDiagnosticState;
+	// TEMP: 킬캠 표시 진단 로그 주기
+	double NextDiagnosticTime = 0.0;
 };

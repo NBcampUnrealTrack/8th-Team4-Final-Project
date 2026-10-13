@@ -2,11 +2,17 @@
 
 #include "Killcam/KillcamCameraActor.h"
 
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Combat/CombatComponent.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/Level.h"
+#include "Engine/StaticMesh.h"
+#include "Engine/World.h"
+#include "UObject/UObjectIterator.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogKillcamPresentation, Log, All);
@@ -171,21 +177,106 @@ void AKillcamCameraActor::UpdateFirstPersonPresentation()
 		SetLoosePartPresentation(Weapon, !bHideFirstPerson);
 	}
 
-	// TEMP: 킬캠 총 미표시 원인 확인용. 상태가 바뀔 때만 남긴다.
-	const USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
-	const FString DiagnosticState = FString::Printf(
-		TEXT("Weapon=%s Aiming=%d HideFP=%d ActorHidden=%d Mesh1PVisible=%d Mesh1PHidden=%d Mesh1PParent=%s"),
-		*GetNameSafe(Weapon),
-		IsValid(Combat) && Combat->IsAiming() ? 1 : 0,
-		bHideFirstPerson ? 1 : 0,
-		IsValid(Weapon) && Weapon->IsHidden() ? 1 : 0,
-		IsValid(WeaponMesh1P) && WeaponMesh1P->IsVisible() ? 1 : 0,
-		IsValid(WeaponMesh1P) && WeaponMesh1P->bHiddenInGame ? 1 : 0,
-		IsValid(WeaponMesh1P) ? *GetNameSafe(WeaponMesh1P->GetAttachParent()) : TEXT("None"));
-	if (DiagnosticState != LastDiagnosticState)
+	LogPresentationDiagnostics(Target, Weapon, IsValid(Combat) && Combat->IsAiming(), bHideFirstPerson);
+}
+
+void AKillcamCameraActor::LogPresentationDiagnostics(AActor* Target, const AWeaponBase* Weapon, bool bAiming, bool bHideFirstPerson)
+{
+	// TEMP: 킬캠 총/조준경 표시 원인 확인용. 킬러가 소유한 모든 메시의 플래그와 카메라 기준 위치를 0.5초마다 남긴다.
+	const UWorld* World = GetWorld();
+	if (!World || World->GetRealTimeSeconds() < NextDiagnosticTime)
 	{
-		LastDiagnosticState = DiagnosticState;
-		UE_LOG(LogKillcamPresentation, Log, TEXT("[KillcamDiag] %s"), *DiagnosticState);
+		return;
+	}
+	NextDiagnosticTime = World->GetRealTimeSeconds() + 0.5;
+
+	const USkeletalMeshComponent* ArmsMesh = IPlayerInterface::Execute_GetMesh1P(Target);
+	const UAnimInstance* ArmsAnim = IsValid(ArmsMesh) ? ArmsMesh->GetAnimInstance() : nullptr;
+	UE_LOG(LogKillcamPresentation, Log,
+		TEXT("[KillcamDiag] ---- Target=%s Role=%d Weapon=%s Aiming=%d HideFP=%d Arms=%s ArmsAnim=%s ArmsMontage=%s"),
+		*GetNameSafe(Target), static_cast<int32>(Target->GetLocalRole()), *GetNameSafe(Weapon),
+		bAiming ? 1 : 0, bHideFirstPerson ? 1 : 0,
+		IsValid(ArmsMesh) ? *GetNameSafe(ArmsMesh->GetSkinnedAsset()) : TEXT("None"),
+		IsValid(ArmsAnim) ? *GetNameSafe(ArmsAnim->GetClass()) : TEXT("None"),
+		IsValid(ArmsAnim) ? *GetNameSafe(ArmsAnim->GetCurrentActiveMontage()) : TEXT("None"));
+
+	// 무기와 무기의 ChildActor(BP 부착물)까지 Owner 체인으로 모은다.
+	// Mesh1P를 킬캠 카메라에 붙여 둔 동안엔 루트 기준 GetAttachedActors로는 무기를 못 찾는다.
+	TArray<AActor*> Actors{Target};
+	for (int32 Index = 0; Index < Actors.Num(); ++Index)
+	{
+		for (AActor* Child : Actors[Index]->Children)
+		{
+			if (IsValid(Child))
+			{
+				Actors.AddUnique(Child);
+			}
+		}
+	}
+
+	const FTransform ViewTransform = CameraComponent->GetComponentTransform();
+	for (const AActor* Actor : Actors)
+	{
+		Actor->ForEachComponent<UMeshComponent>(false, [&](const UMeshComponent* Component)
+		{
+			const UObject* Asset = nullptr;
+			if (const UStaticMeshComponent* StaticMesh = Cast<UStaticMeshComponent>(Component))
+			{
+				Asset = StaticMesh->GetStaticMesh();
+			}
+			else if (const USkinnedMeshComponent* SkinnedMesh = Cast<USkinnedMeshComponent>(Component))
+			{
+				Asset = SkinnedMesh->GetSkinnedAsset();
+			}
+			if (!Asset || !Component->IsRegistered())
+			{
+				return;
+			}
+			// X=앞, Y=오른쪽, Z=위 (카메라 기준 cm)
+			const FVector Local = ViewTransform.InverseTransformPosition(Component->GetComponentLocation());
+			UE_LOG(LogKillcamPresentation, Log,
+				TEXT("[KillcamDiag]   %s.%s Asset=%s Parent=%s/%s Vis=%d Hid=%d ActorHid=%d ONS=%d OOS=%d Rendered=%d Local=(%.0f,%.0f,%.0f)"),
+				*GetNameSafe(Actor), *Component->GetName(), *GetNameSafe(Asset),
+				*GetNameSafe(Component->GetAttachParent()), *Component->GetAttachSocketName().ToString(),
+				Component->IsVisible() ? 1 : 0, Component->bHiddenInGame ? 1 : 0, Actor->IsHidden() ? 1 : 0,
+				Component->bOwnerNoSee ? 1 : 0, Component->bOnlyOwnerSee ? 1 : 0,
+				Component->WasRecentlyRendered(0.2f) ? 1 : 0, Local.X, Local.Y, Local.Z);
+		});
+	}
+
+	// 킬러 소유가 아닌 조준경(라이브 월드의 내 무기, 리플레이 속 다른 플레이어 무기 등)이 겹쳐 보이는지 확인한다.
+	for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
+	{
+		const UStaticMeshComponent* Component = *It;
+		const AActor* Actor = IsValid(Component) ? Component->GetOwner() : nullptr;
+		const UStaticMesh* Mesh = IsValid(Component) ? Component->GetStaticMesh() : nullptr;
+		if (!Actor || !Mesh || Component->GetWorld() != World || !Component->IsRegistered() || Actors.Contains(Actor))
+		{
+			continue;
+		}
+		const FString MeshName = Mesh->GetName();
+		if (!MeshName.Contains(TEXT("Attach")) && !MeshName.Contains(TEXT("sight")) && !MeshName.Contains(TEXT("scope")))
+		{
+			continue;
+		}
+		FString OwnerChain;
+		for (const AActor* Chain = Actor->GetOwner(); Chain; Chain = Chain->GetOwner())
+		{
+			OwnerChain += TEXT(">") + Chain->GetName();
+		}
+		const ULevel* Level = Component->GetComponentLevel();
+		const FLevelCollection* Collection = Level ? Level->GetCachedLevelCollection() : nullptr;
+		const FVector Local = ViewTransform.InverseTransformPosition(Component->GetComponentLocation());
+		UE_LOG(LogKillcamPresentation, Log,
+			TEXT("[KillcamDiag]   [Other] %s.%s Asset=%s Owners=%s Level=%s Collection=%d CollectionVis=%d Parent=%s Vis=%d Hid=%d ONS=%d OOS=%d Rendered=%d Local=(%.0f,%.0f,%.0f)"),
+			*Actor->GetName(), *Component->GetName(), *MeshName, *OwnerChain,
+			Level ? *GetNameSafe(Level->GetOuter()) : TEXT("None"),
+			Collection ? static_cast<int32>(Collection->GetType()) : -1,
+			Collection && Collection->IsVisible() ? 1 : 0,
+			*GetNameSafe(Component->GetAttachParent()),
+			Component->IsVisible() ? 1 : 0, Component->bHiddenInGame ? 1 : 0,
+			Component->bOwnerNoSee ? 1 : 0, Component->bOnlyOwnerSee ? 1 : 0,
+			Component->WasRecentlyRendered(0.2f) ? 1 : 0, Local.X, Local.Y, Local.Z);
 	}
 }
 

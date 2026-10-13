@@ -173,6 +173,16 @@ void AWeaponBase::OnRep_Owner()
 	}
 }
 
+float AWeaponBase::GetReplayPriority(const FVector& ViewPos, const FVector& ViewDir, AActor* Viewer, AActor* ViewTarget,
+	UActorChannel* const InChannel, const float Time)
+{
+	if (AActor* OwnerActor = GetOwner())
+	{
+		return OwnerActor->GetReplayPriority(ViewPos, ViewDir, Viewer, ViewTarget, InChannel, Time);
+	}
+	return Super::GetReplayPriority(ViewPos, ViewDir, Viewer, ViewTarget, InChannel, Time);
+}
+
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
 	if (const AActor* OwnerActor = GetOwner())
