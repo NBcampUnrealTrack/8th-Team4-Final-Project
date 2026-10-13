@@ -30,6 +30,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Sound/SoundBase.h"
+#include "Particles/ParticleSystem.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -854,6 +855,21 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
 				{
 					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				}
+
+				// 파티클 복구
+				if (ImpactEffect.bSpawnImpactParticle)
+				{
+					if (UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot))
+					{
+						// ImpactNormal.Rotation()은 Roll이 항상 0이라 방향성 있는 파티클(예: P_Blood_Splat_Cone)이
+						// 매번 같은 각도로만 튄다. 노멀 축(Roll)을 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀게 한다.
+						FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
+						ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
+
+						UGameplayStatics::SpawnEmitterAtLocation(
+							this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
+					}
 				}
 			}
 		}
