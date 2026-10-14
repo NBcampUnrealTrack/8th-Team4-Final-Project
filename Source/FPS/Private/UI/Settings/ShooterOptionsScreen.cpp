@@ -1503,8 +1503,6 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Btn_Side_Controls"), TEXT("조작 설정"), TEXT("Controls"));
 	Set(TEXT("TXT_Btn_Side_KeyBindings"), TEXT("키 설정"), TEXT("Key Bindings"));
 	Set(TEXT("TXT_Btn_Side_Audio"), TEXT("오디오 설정"), TEXT("Audio"));
-	// Set(TEXT("TXT_Btn_Side_VoiceChat"), TEXT("보이스 채팅"), TEXT("Voice Chat")); // Removed
-	// Modified: 보이스 채팅 탭에 채팅 옵션도 들어가서 탭 이름을 "채팅 설정"으로 변경 (WBP 위젯 이름도 TXT_Btn_Side_Chat으로 변경)
 	Set(TEXT("TXT_Btn_Side_Chat"), TEXT("채팅 설정"), TEXT("Chat"));
 	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("언어 설정"), TEXT("Language"));
 	Set(TEXT("TXT_Btn_Side_Crosshair"), TEXT("크로스헤어"), TEXT("Crosshair"));
@@ -1553,8 +1551,9 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_InvertY"), TEXT("Y축 반전"), TEXT("Invert Y"));
 	Set(TEXT("TXT_Label_ADSMode"), TEXT("ADS"), TEXT("ADS"));
 	Set(TEXT("TXT_Label_CrouchMode"), TEXT("앉기"), TEXT("Crouch"));
-	// 채팅 표시 옵션
-	Set(TEXT("TXT_Label_ChatOpacity"), TEXT("채팅 투명도"), TEXT("Chat Opacity"));
+	
+	//채팅 표시 옵션
+	Set(TEXT("TXT_Label_ChatOpacity"), TEXT("채팅 불투명도"), TEXT("Chat Opacity"));
 	Set(TEXT("TXT_Label_ChatSize"), TEXT("채팅 크기"), TEXT("Chat Size"));
 	Set(TEXT("TXT_Label_DynamicCrosshair"), TEXT("동적 크로스헤어"), TEXT("Dynamic Crosshair"));
 
