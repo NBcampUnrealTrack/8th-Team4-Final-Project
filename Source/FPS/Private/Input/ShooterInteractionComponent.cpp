@@ -200,18 +200,19 @@ void UShooterInteractionComponent::UnregisterProximityInteractable(AActor* Candi
 
 void UShooterInteractionComponent::SetInteractionPromptWidgetClass(TSubclassOf<UUserWidget> InWidgetClass)
 {
-    if (InteractionPromptWidgetClass == InWidgetClass)
+    if (InteractionPromptWidgetClass != InWidgetClass)
     {
-        return;
+        InteractionPromptWidgetClass = InWidgetClass;
+        if (ActiveInteractionPrompt)
+        {
+            ActiveInteractionPrompt->RemoveFromParent();
+            ActiveInteractionPrompt = nullptr;
+        }
     }
 
-    InteractionPromptWidgetClass = InWidgetClass;
-    if (ActiveInteractionPrompt)
-    {
-        ActiveInteractionPrompt->RemoveFromParent();
-        ActiveInteractionPrompt = nullptr;
-    }
+    // Re-sync even when the class was already assigned by the controller BP.
     UpdatePromptTickEnabled();
+    RefreshInteractionPrompt();
 }
 
 void UShooterInteractionComponent::SetInteractionPromptZOrder(const int32 InZOrder)
@@ -310,9 +311,13 @@ void UShooterInteractionComponent::ShowInteractionPrompt()
         {
             return;
         }
-        ActiveInteractionPrompt->AddToViewport(InteractionPromptZOrder);
     }
 
+    // The widget can outlive its viewport attachment after UI teardown.
+    if (!ActiveInteractionPrompt->IsInViewport())
+    {
+        ActiveInteractionPrompt->AddToViewport(InteractionPromptZOrder);
+    }
     ActiveInteractionPrompt->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 

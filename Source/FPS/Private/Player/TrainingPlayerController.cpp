@@ -37,8 +37,21 @@ void ATrainingPlayerController::BeginPlay()
         return;
     }
 
+    // A controller/BP override takes precedence over the project-wide default.
+    TSubclassOf<UUserWidget> PromptClass = Interaction->InteractionPromptWidgetClass;
+    if (!PromptClass)
+    {
+        PromptClass = Settings->InteractionPromptWidgetClass.LoadSynchronous();
+        if (!PromptClass)
+        {
+            UE_LOG(LogTrainingController, Warning,
+                TEXT("Interaction prompt widget could not be loaded: '%s'. Assign it in Project Settings > Training > UI or on the controller's InteractionComponent."),
+                *Settings->InteractionPromptWidgetClass.ToSoftObjectPath().ToString());
+        }
+    }
+
     Interaction->SetInteractionPromptZOrder(Settings->InteractionPromptZOrder);
-    Interaction->SetInteractionPromptWidgetClass(Settings->InteractionPromptWidgetClass.LoadSynchronous());
+    Interaction->SetInteractionPromptWidgetClass(PromptClass);
 }
 
 void ATrainingPlayerController::OnUnPossess()
