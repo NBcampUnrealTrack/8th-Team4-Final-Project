@@ -296,7 +296,7 @@ void UDominationSiteTrackerWidget::RefreshLocalCaptureZoneState()
 		&& IsValid(CapturePoint)
 		&& IsValid(PlayerState)
 		&& PlayerState->IsAlive()
-		&& CapturePoint->ContainsWorldLocation(OwningPawn->GetActorLocation());
+		&& CapturePoint->ContainsPawn(OwningPawn);
 
 	if (bHasLocalCaptureZoneState && bLocalPlayerInsideActivePoint == bShouldShow)
 	{
