@@ -224,6 +224,17 @@ void UShooterChatLog::ShowPanelAndResetInactivityTimer()
 // 스크롤바 자리를 뺀다. 배치 결과(캐시된 크기)가 아니라 지정된 값으로 계산해 숨겨져 있던 중에도 정확하다.
 float UShooterChatLog::GetEntryRowWidth() const
 {
+	// Modified: 대기방(bAutoHide == false)은 폭을 코드로 지정하지 않고 방 화면 레이아웃이 정한다.
+	// WBP 기본 SizeBox 폭으로 계산하면 실제 채팅창 폭과 달라 줄바꿈이 어긋나므로, 실제 배치된 내역 폭을 쓴다.
+	if (!bAutoHide && ScrollBox_Entries)
+	{
+		const float LaidOutWidth = ScrollBox_Entries->GetCachedGeometry().GetLocalSize().X;
+		if (LaidOutWidth > 0.0f)
+		{
+			return FMath::Max(0.0f, LaidOutWidth - ScrollBox_Entries->GetScrollbarThickness().X);
+		}
+	}
+
 	float Width = AppliedWidthOverride > 0.0f ? AppliedWidthOverride : 0.0f;
 	if (Width <= 0.0f && WidthSizeBox.IsValid())
 	{
@@ -248,6 +259,23 @@ float UShooterChatLog::GetEntryRowWidth() const
 		Width -= ScrollBox_Entries->GetScrollbarThickness().X;
 	}
 	return FMath::Max(0.0f, Width);
+}
+
+// Modified: 줄 폭이 바뀌었으면 모든 메시지의 줄바꿈 폭을 다시 계산한다(인게임/대기방 공용).
+void UShooterChatLog::UpdateEntryRowWidths()
+{
+	const float EntryRowWidth = GetEntryRowWidth();
+	if (EntryRowWidth > 0.0f && !FMath::IsNearlyEqual(EntryRowWidth, AppliedEntryRowWidth, 0.5f))
+	{
+		AppliedEntryRowWidth = EntryRowWidth;
+		for (UShooterChatEntry* Entry : ActiveEntries)
+		{
+			if (Entry)
+			{
+				Entry->SetRowWidth(EntryRowWidth);
+			}
+		}
+	}
 }
 
 float UShooterChatLog::GetPanelHideDelaySeconds() const
@@ -312,18 +340,8 @@ void UShooterChatLog::RefreshAutoHideVisuals()
 	}
 
 	// 채팅창 폭이 바뀌면(해상도/창 크기) 기존 메시지들의 줄바꿈 폭도 새 폭으로 다시 계산한다.
-	const float EntryRowWidth = GetEntryRowWidth();
-	if (EntryRowWidth > 0.0f && !FMath::IsNearlyEqual(EntryRowWidth, AppliedEntryRowWidth, 0.5f))
-	{
-		AppliedEntryRowWidth = EntryRowWidth;
-		for (UShooterChatEntry* Entry : ActiveEntries)
-		{
-			if (Entry)
-			{
-				Entry->SetRowWidth(EntryRowWidth);
-			}
-		}
-	}
+	// Modified: 대기방에서도 쓰도록 함수로 분리
+	UpdateEntryRowWidths();
 
 	// 입력창이 열려 있으면 전체 내역을 또렷하게, 닫혀 있으면 옵션 투명도와 조준 중 투명도를 적용한다.
 	float PanelOpacity = 1.0f;
@@ -379,6 +397,11 @@ void UShooterChatLog::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	if (bAutoHide)
 	{
 		RefreshAutoHideVisuals();
+	}
+	else
+	{
+		// Modified: 대기방은 자동 숨김을 안 쓰지만 줄바꿈 폭은 실제 채팅창 폭을 따라가야 한다.
+		UpdateEntryRowWidths();
 	}
 
 	if (!ScrollBox_Entries || !bFollowLatest)
