@@ -13,7 +13,11 @@
 #include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 #include "UI/InGame/ShooterAugmentSelectScreen.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/InGame/HUD/ShooterChatInputBox.h"
 #include "UI/InGame/Scoreboard/ShooterScoreboard.h"
+#include "UI/InGame/Weapons/ShooterScopeWidget.h"
+#include "UI/Settings/ShooterOptionsScreen.h"
+#include "UI/ShooterUISettings.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogTeamMatchUIInit, Log, All);
 
@@ -30,6 +34,7 @@ void UTeamMatchUIInitComponent::InitializeTeamMatchUI(
 {
 	BoundPlayerController = PlayerController;
 	BoundInventory = Inventory;
+	CreateScopeWidget(PlayerController);
 
 	Inventory->OnOffersChanged.AddUniqueDynamic(
 		this,
@@ -57,9 +62,12 @@ void UTeamMatchUIInitComponent::ShutdownTeamMatchUI()
 	bInGameMenuRequested = false;
 	bLastObservedVoteActive = false;
 	bModalRefreshPending = false;
+	RemoveScopeWidget();
+	RemoveOptionsScreen();
 	RemoveInGameMenu();
 	RemoveSurrenderVote();
 	HideAugmentSelect();
+	ResetAugmentRequestContext();
 	HideScoreboard();
 
 	if (BoundInventory.IsValid())
@@ -123,6 +131,62 @@ void UTeamMatchUIInitComponent::HideInGameMenu()
 	ScheduleModalRefresh();
 }
 
+void UTeamMatchUIInitComponent::SuspendScreenPresentation()
+{
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
+
+	bScreenPresentationSuspended = true;
+	bInGameMenuRequested = false;
+
+	RemoveScopeWidget();
+	// 채팅은 PC 가 따로 든 상태가 있어 건드리지 않음
+	RemoveOptionsScreen();
+	RemoveInGameMenu();
+	RemoveSurrenderVote();
+	HideAugmentSelect();
+	HideScoreboard();
+}
+
+void UTeamMatchUIInitComponent::CreateScopeWidget(AShooterPlayerController* PlayerController)
+{
+	if (bScreenPresentationSuspended || !IsValid(PlayerController) || !PlayerController->IsLocalController())
+	{
+		return;
+	}
+	if (!ScopeWidgetClass)
+	{
+		UE_LOG(LogTeamMatchUIInit, Warning,
+			TEXT("ScopeWidgetClass is unset on %s. Assign a scope Blueprint based on ShooterScopeWidget."),
+			*GetNameSafe(this));
+		return;
+	}
+	if (!IsValid(ScopeWidgetInstance))
+	{
+		ScopeWidgetInstance = CreateWidget<UShooterScopeWidget>(PlayerController, ScopeWidgetClass);
+		if (!IsValid(ScopeWidgetInstance))
+		{
+			UE_LOG(LogTeamMatchUIInit, Error, TEXT("Could not create scope widget: %s."), *GetNameSafe(ScopeWidgetClass));
+			return;
+		}
+	}
+	if (!ScopeWidgetInstance->IsInViewport())
+	{
+		ScopeWidgetInstance->AddToViewport(ScopeViewportZOrder);
+	}
+}
+
+void UTeamMatchUIInitComponent::RemoveScopeWidget()
+{
+	if (IsValid(ScopeWidgetInstance))
+	{
+		ScopeWidgetInstance->RemoveFromParent();
+		ScopeWidgetInstance = nullptr;
+	}
+}
+
 bool UTeamMatchUIInitComponent::IsInGameMenuOpen() const
 {
 	return IsValid(GetInGameMenuInstance());
@@ -153,6 +217,7 @@ void UTeamMatchUIInitComponent::PresentInGameMenu()
 
 	SetInGameMenuInstance(InGameMenu);
 	InGameMenu->OnResumeRequested.AddUObject(this, &ThisClass::HandleResumeRequested);
+	InGameMenu->OnOptionsRequested.AddUObject(this, &ThisClass::HandleOptionsRequested);
 	InGameMenu->OnReturnToLobbyRequested.AddUObject(
 		this,
 		&ThisClass::HandleReturnToLobbyRequested);
@@ -171,11 +236,59 @@ void UTeamMatchUIInitComponent::RemoveInGameMenu()
 	}
 
 	InGameMenu->OnResumeRequested.RemoveAll(this);
+	InGameMenu->OnOptionsRequested.RemoveAll(this);
 	InGameMenu->OnReturnToLobbyRequested.RemoveAll(this);
 	InGameMenu->OnQuitGameRequested.RemoveAll(this);
 	InGameMenu->OnSurrenderRequested.RemoveAll(this);
 	RemoveScreenFromLayer(UITags::UI_Layer_Modal, InGameMenu);
 	SetInGameMenuInstance(nullptr);
+}
+
+void UTeamMatchUIInitComponent::PresentOptionsScreen()
+{
+	if (IsValid(OptionsScreenInstance))
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	TSubclassOf<UShooterOptionsScreen> ResolvedOptionsClass = OptionsScreenClass;
+	if (!IsValid(ResolvedOptionsClass))
+	{
+		ResolvedOptionsClass = UShooterUISettings::LoadDefaultOptionsScreenClass();
+	}
+
+
+	if (!IsValid(UIManager) || !IsValid(ResolvedOptionsClass))
+	{
+		UE_LOG(LogTeamMatchUIInit, Error,
+			TEXT("Options screen class is unavailable. Assign OptionsScreenClass or configure the default options screen."));
+		return;
+	}
+
+	OptionsScreenInstance = Cast<UShooterOptionsScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ResolvedOptionsClass));
+	if (!IsValid(OptionsScreenInstance))
+	{
+		return;
+	}
+
+	OptionsScreenInstance->OnCloseRequested.AddUObject(
+		this,
+		&ThisClass::HandleOptionsCloseRequested);
+}
+
+void UTeamMatchUIInitComponent::RemoveOptionsScreen()
+{
+	if (!IsValid(OptionsScreenInstance))
+	{
+		return;
+	}
+
+	OptionsScreenInstance->FinishEditing();
+	OptionsScreenInstance->OnCloseRequested.RemoveAll(this);
+	RemoveScreenFromLayer(UITags::UI_Layer_Modal, OptionsScreenInstance);
+	OptionsScreenInstance = nullptr;
 }
 
 void UTeamMatchUIInitComponent::PresentSurrenderVote()
@@ -237,6 +350,10 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 	if (UShooterAugmentSelectScreen* AugmentScreen = GetAugmentSelectInstance();
 		IsValid(AugmentScreen) && AugmentScreen->IsActivated())
 	{
+		// 아래 Push 경로와 동일하게 진입 연출 상태를 먼저 갱신한다.
+		OnAugmentOffersPresented(InOffers);
+		AugmentScreen->SetEntryAnimation(GetAugmentEntryAnimation());
+		
 		AugmentScreen->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 		return;
 	}
@@ -263,6 +380,15 @@ void UTeamMatchUIInitComponent::ShowAugmentSelect(
 	AugmentScreen->OnAugmentRerollRequested.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleAugmentRerollRequested);
+	AugmentScreen->OnSelectionOutroFinished.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleSelectionOutroFinished);
+	
+	OnAugmentScreenCreated(AugmentScreen);
+	
+	OnAugmentOffersPresented(InOffers);
+	AugmentScreen->SetEntryAnimation(GetAugmentEntryAnimation());
+	
 	AugmentScreen->SetOffers(InOffers, BuildRerollsRemaining(InOffers.Num()));
 }
 
@@ -280,23 +406,41 @@ void UTeamMatchUIInitComponent::HideAugmentSelect()
 	AugmentScreen->OnAugmentRerollRequested.RemoveDynamic(
 		this,
 		&ThisClass::HandleAugmentRerollRequested);
+	AugmentScreen->OnSelectionOutroFinished.RemoveDynamic(
+		this,
+		&ThisClass::HandleSelectionOutroFinished);
+	
 	RemoveScreenFromLayer(UITags::UI_Layer_Modal, AugmentScreen);
 	SetAugmentSelectInstance(nullptr);
+
+	// 화면 제거는 요청을 취소하지 않는다.
+	// 해제는 ResetAugmentRequestContext() 만 한다
 }
 
 void UTeamMatchUIInitComponent::ShowScoreboard()
 {
+	// Guard the creation entry point too: BP/direct callers may bypass input bindings.
+	if (!SupportsScoreboard())
+	{
+		return;
+	}
+
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
+
 	if (IsValid(ScoreboardInstance))
 	{
 		return;
 	}
-	
+
 	UShooterUIManagerSubsystem* UIManager = GetUIManager();
 	if (!ensure(UIManager) || !ensure(ScoreboardClass))
 	{
 		return;
 	}
-	
+
 	ScoreboardInstance = Cast<UShooterScoreboard>(
 		UIManager->PushWidgetToLayer(UITags::UI_Layer_GameMenu, ScoreboardClass));
 }
@@ -307,9 +451,41 @@ void UTeamMatchUIInitComponent::HideScoreboard()
 	{
 		return;
 	}
-	
+
 	RemoveScreenFromLayer(UITags::UI_Layer_GameMenu, ScoreboardInstance);
 	ScoreboardInstance = nullptr;
+}
+
+UShooterChatInputBox* UTeamMatchUIInitComponent::OpenChat()
+{
+	if (IsValid(ChatInputBoxInstance))
+	{
+		return ChatInputBoxInstance;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!ensure(UIManager) || !ensure(ChatInputBoxClass))
+	{
+		return nullptr;
+	}
+
+	// GameMenu 레이어는 스코어보드처럼 포커스를 가져가지 않는 오버레이용이라 Action Router가
+	// 리프 노드로 취급하지 않는다(입력 포커스가 안 걸림). 채팅은 실제 키보드 포커스가 필요해서
+	// InGameMenu/Options/AugmentSelect와 같은 Modal 레이어를 사용한다.
+	ChatInputBoxInstance = Cast<UShooterChatInputBox>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Modal, ChatInputBoxClass));
+	return ChatInputBoxInstance;
+}
+
+void UTeamMatchUIInitComponent::CloseChat()
+{
+	if (!IsValid(ChatInputBoxInstance))
+	{
+		return;
+	}
+
+	RemoveScreenFromLayer(UITags::UI_Layer_Modal, ChatInputBoxInstance);
+	ChatInputBoxInstance = nullptr;
 }
 
 void UTeamMatchUIInitComponent::ScheduleModalRefresh()
@@ -328,6 +504,11 @@ void UTeamMatchUIInitComponent::RefreshModalPresentation()
 {
 	bModalRefreshPending = false;
 
+	if (bScreenPresentationSuspended)
+	{
+		return;
+	}
+
 	const AShooterPlayerController* PlayerController = BoundPlayerController.Get();
 	const bool bVoteActive = IsValid(PlayerController)
 		&& PlayerController->GetSurrenderVoteState().IsActive();
@@ -340,17 +521,38 @@ void UTeamMatchUIInitComponent::RefreshModalPresentation()
 	const TArray<FAugmentInventoryEntry> Offers = BoundInventory.IsValid()
 		? BoundInventory->GetOffers()
 		: TArray<FAugmentInventoryEntry>();
-	const bool bShowAugment = IsAugmentPresentationAllowed() && !Offers.IsEmpty();
+	
+	if (bSelectionRequestPending 
+		&& !(Offers.IsValidIndex(RequestedOfferIndex)
+		&& Offers[RequestedOfferIndex].DefinitionId == RequestDefinitionId))
+	{
+		ResetAugmentRequestContext();
+	}
+	const UShooterAugmentSelectScreen* AugmentScreen = GetAugmentSelectInstance();
+	const bool bOutroPlaying = IsValid(AugmentScreen) && AugmentScreen->IsOutroPlaying();
+	
+	const bool bShowAugment = IsAugmentPresentationAllowed() 
+		&& !Offers.IsEmpty()
+		&& !bSelectionRequestPending
+		&& !bOutroPlaying;
 
 	if (bInGameMenuRequested)
 	{
 		CloseModeSpecificScreensForModal();
 		RemoveSurrenderVote();
 		HideAugmentSelect();
+
+		// Options는 InGameMenu의 하위 화면이다. 열려 있으면 갱신 중 다시 메뉴를 덮어쓰지 않는다.
+		if (IsValid(OptionsScreenInstance))
+		{
+			return;
+		}
+
 		PresentInGameMenu();
 		return;
 	}
 
+	RemoveOptionsScreen();
 	RemoveInGameMenu();
 	if (bVoteActive)
 	{
@@ -366,11 +568,12 @@ void UTeamMatchUIInitComponent::RefreshModalPresentation()
 		CloseModeSpecificScreensForModal();
 		ShowAugmentSelect(Offers);
 	}
-	else
+	else if (!bOutroPlaying)
 	{
 		HideAugmentSelect();
 	}
 }
+
 
 bool UTeamMatchUIInitComponent::CanRequestSurrender() const
 {
@@ -392,12 +595,36 @@ void UTeamMatchUIInitComponent::HandleResumeRequested()
 	ScheduleModalRefresh();
 }
 
+void UTeamMatchUIInitComponent::HandleOptionsRequested()
+{
+	// 같은 CommonUI stack 위에 올려 두면 옵션을 닫을 때 기존 메뉴의 상태와 포커스가 복구된다.
+	PresentOptionsScreen();
+
+	// 클래스 미지정이나 Push 실패 시에도 인게임 메뉴가 그대로 남아 빈 Modal 상태가 되지 않는다.
+	if (!IsValid(OptionsScreenInstance))
+	{
+		ScheduleModalRefresh();
+	}
+}
+
+void UTeamMatchUIInitComponent::HandleOptionsCloseRequested()
+{
+	RemoveOptionsScreen();
+	bInGameMenuRequested = true;
+	ScheduleModalRefresh();
+}
+
 void UTeamMatchUIInitComponent::HandleReturnToLobbyRequested()
 {
 	if (AShooterPlayerController* PlayerController = BoundPlayerController.Get())
 	{
-		PlayerController->RequestReturnToLobby();
+		RequestReturnToOutGame(*PlayerController);
 	}
+}
+
+void UTeamMatchUIInitComponent::RequestReturnToOutGame(AShooterPlayerController& PlayerController)
+{
+	PlayerController.RequestReturnToLobby();
 }
 
 void UTeamMatchUIInitComponent::HandleQuitGameRequested()
@@ -466,11 +693,24 @@ void UTeamMatchUIInitComponent::HandleSurrenderVoteStartResult(
 
 void UTeamMatchUIInitComponent::HandleAugmentSelected(const int32 OfferIndex)
 {
-	if (BoundInventory.IsValid())
+	if (bSelectionRequestPending || !BoundInventory.IsValid())
 	{
-		BoundInventory->ServerSelectOffer(OfferIndex);
+		return;
 	}
-	HideAugmentSelect();
+	
+	const TArray<FAugmentInventoryEntry>& CurrentOffers = BoundInventory->GetOffers();
+	if (!CurrentOffers.IsValidIndex(OfferIndex))
+	{
+		return;
+	}
+	
+	// 상태를 바꾸고 보냄
+	bSelectionRequestPending =true;
+	RequestedOfferIndex = OfferIndex;
+	RequestDefinitionId = CurrentOffers[OfferIndex].DefinitionId;
+	
+	BoundInventory->ServerSelectOffer(OfferIndex);
+	// 화면은 아웃트로 끝나고 닫음.
 }
 
 void UTeamMatchUIInitComponent::HandleAugmentOffersChanged()
@@ -484,6 +724,13 @@ void UTeamMatchUIInitComponent::HandleAugmentRerollRequested(const int32 SlotInd
 	{
 		BoundInventory->ServerRerollOffer(SlotIndex);
 	}
+}
+
+void UTeamMatchUIInitComponent::HandleSelectionOutroFinished()
+{
+	HideAugmentSelect();
+	// 아웃트로 도중 도착한 다음 후보가 뜨기위함
+	ScheduleModalRefresh();
 }
 
 bool UTeamMatchUIInitComponent::IsTeamMatchUIReady() const
@@ -522,6 +769,23 @@ void UTeamMatchUIInitComponent::RemoveScreenFromLayer(
 	{
 		Screen->DeactivateWidget();
 	}
+}
+
+void UTeamMatchUIInitComponent::ResetAugmentRequestContext()
+{
+	bSelectionRequestPending = false;
+	RequestedOfferIndex = INDEX_NONE;
+	RequestDefinitionId = FPrimaryAssetId();
+}
+
+bool UTeamMatchUIInitComponent::IsAugmentSelectionRequestPending() const
+{
+	return bSelectionRequestPending;
+}
+
+EAugmentSelectEntry UTeamMatchUIInitComponent::GetAugmentEntryAnimation() const
+{
+	return EAugmentSelectEntry::Intro;
 }
 
 TArray<int32> UTeamMatchUIInitComponent::BuildRerollsRemaining(

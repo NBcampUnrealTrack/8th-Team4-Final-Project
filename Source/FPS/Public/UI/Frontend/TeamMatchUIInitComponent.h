@@ -6,14 +6,18 @@
 #include "GameplayTagContainer.h"
 #include "TeamMatchUIInitComponent.generated.h"
 
+enum class EAugmentSelectEntry : uint8;
 class AShooterPlayerController;
 class UAugmentInventoryComponent;
 class UCommonActivatableWidget;
 class UShooterAugmentSelectScreen;
+class UShooterChatInputBox;
 class UShooterInGameMenuScreen;
+class UShooterOptionsScreen;
 class UShooterSurrenderVoteScreen;
 class UShooterUIManagerSubsystem;
 class UShooterScoreboard;
+class UShooterScopeWidget;
 
 enum class ESurrenderVoteStartResult : uint8;
 
@@ -45,11 +49,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void HideAugmentSelect();
 	
+	// UI policy, available before PlayerState/UI initialization and on clients.
+	UFUNCTION(BlueprintPure, Category = "UI|Scoreboard")
+	virtual bool SupportsScoreboard() const { return true; }
+
 	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
 	void ShowScoreboard();
 	
 	UFUNCTION(BlueprintCallable, Category = "UI|Scoreboard")
 	void HideScoreboard();
+
+	// Enter로 채팅창을 연다. CommonUI GameMenu 레이어에 Push되어 활성화되며,
+	// 그 시점에 UShooterChatInputBox::NativeGetDesiredFocusTarget으로 포커스가 자동으로 잡힌다.
+	UFUNCTION(BlueprintCallable, Category = "UI|Chat")
+	UShooterChatInputBox* OpenChat();
+
+	UFUNCTION(BlueprintCallable, Category = "UI|Chat")
+	void CloseChat();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -60,12 +76,22 @@ protected:
 	void ShutdownTeamMatchUI();
 	void NotifyModeUIStateChanged();
 
+	void SuspendScreenPresentation();
+
 	bool IsTeamMatchUIReady() const;
 	bool IsSurrenderVoteOpen() const;
 	UAugmentInventoryComponent* GetBoundAugmentInventory() const;
+	virtual void RequestReturnToOutGame(AShooterPlayerController& PlayerController);
 	UShooterUIManagerSubsystem* GetUIManager() const;
 	void RemoveScreenFromLayer(FGameplayTag LayerTag, UCommonActivatableWidget* Screen);
-
+	
+	void ResetAugmentRequestContext();
+	bool IsAugmentSelectionRequestPending() const;
+	
+	virtual void OnAugmentScreenCreated(UShooterAugmentSelectScreen* Screen) {};
+	virtual void OnAugmentOffersPresented(const TArray<FAugmentInventoryEntry>& InOffers) {};
+	virtual EAugmentSelectEntry GetAugmentEntryAnimation() const;
+	
 	virtual bool IsAugmentPresentationAllowed() const
 		PURE_VIRTUAL(UTeamMatchUIInitComponent::IsAugmentPresentationAllowed, return false;);
 	virtual bool IsSurrenderRequestAllowed() const
@@ -94,15 +120,21 @@ protected:
 
 private:
 	void PresentInGameMenu();
+	void PresentOptionsScreen();
 	void RemoveInGameMenu();
+	void RemoveOptionsScreen();
 	void PresentSurrenderVote();
 	void RemoveSurrenderVote();
 	void ScheduleModalRefresh();
 	void RefreshModalPresentation();
+	void CreateScopeWidget(AShooterPlayerController* PlayerController);
+	void RemoveScopeWidget();
 	bool CanRequestSurrender() const;
 	TArray<int32> BuildRerollsRemaining(int32 OfferCount) const;
 
 	void HandleResumeRequested();
+	void HandleOptionsRequested();
+	void HandleOptionsCloseRequested();
 	void HandleReturnToLobbyRequested();
 	void HandleQuitGameRequested();
 	void HandleSurrenderRequested();
@@ -110,7 +142,7 @@ private:
 	void HandleSurrenderMenuRequested();
 	void HandleSurrenderVoteStateChanged();
 	void HandleSurrenderVoteStartResult(ESurrenderVoteStartResult Result);
-
+	
 	UFUNCTION()
 	void HandleAugmentSelected(int32 OfferIndex);
 
@@ -119,12 +151,37 @@ private:
 
 	UFUNCTION()
 	void HandleAugmentRerollRequested(int32 SlotIndex);
+	
+	UFUNCTION()
+	void HandleSelectionOutroFinished();
+
+	// Root Layout(-1) 아래에서 모든 전투 모드의 스코프를 별도로 그린다.
+	UPROPERTY(EditAnywhere, Category = "UI|Scope")
+	TSubclassOf<UShooterScopeWidget> ScopeWidgetClass;
+
+	UPROPERTY(EditAnywhere, Category = "UI|Scope")
+	int32 ScopeViewportZOrder = -2;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterScopeWidget> ScopeWidgetInstance;
+
+	// 모든 팀 매치가 공통으로 사용하는 옵션 화면. 파생 UI Init BP에서 WBP_OptionsScreen을 지정한다.
+	UPROPERTY(EditAnywhere, Category = "UI|System Menu")
+	TSubclassOf<UShooterOptionsScreen> OptionsScreenClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterOptionsScreen> OptionsScreenInstance;
 
 	UPROPERTY(EditAnywhere, Category = "UI|Scoreboard")
 	TSubclassOf<UShooterScoreboard> ScoreboardClass;
 	UPROPERTY(Transient)
 	TObjectPtr<UShooterScoreboard> ScoreboardInstance;
-	
+
+	UPROPERTY(EditAnywhere, Category = "UI|Chat")
+	TSubclassOf<UShooterChatInputBox> ChatInputBoxClass;
+	UPROPERTY(Transient)
+	TObjectPtr<UShooterChatInputBox> ChatInputBoxInstance;
+
 	TWeakObjectPtr<AShooterPlayerController> BoundPlayerController;
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 	FTimerHandle ModalRefreshTimerHandle;
@@ -132,4 +189,13 @@ private:
 	bool bInGameMenuRequested = false;
 	bool bLastObservedVoteActive = false;
 	bool bModalRefreshPending = false;
+	
+	// 정지 뒤 Modal · 스코어보드를 더 띄우지 않는다. 컴포넌트가 매치 월드와 같이 끝나 재개가 없다
+	bool bScreenPresentationSuspended = false;
+
+	// Offers가 비었다 - 카드가 적용 됐다는 뜻이 아님
+	bool bSelectionRequestPending = false;
+	
+	int32 RequestedOfferIndex = INDEX_NONE;
+	FPrimaryAssetId RequestDefinitionId;
 };

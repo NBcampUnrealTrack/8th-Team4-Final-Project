@@ -1,251 +1,105 @@
-#include "UI/Frontend/DominationUIInitComponent.h"
+﻿#include "UI/Frontend/DominationUIInitComponent.h"
 
-#include "Augment/AugmentInventoryComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "GameMode/State/DominationGameState.h"
-#include "Player/DominationPlayerController.h"
-#include "Player/DominationPlayerState.h"
 #include "Tags/UITags.h"
 #include "TimerManager.h"
-#include "UI/InGame/Domination/DominationClassSelectScreen.h"
-#include "UI/InGame/HUD/ShooterPlayerHUD.h"
-#include "UI/InGame/Menu/ShooterInGameMenuScreen.h"
-#include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
-#include "UI/InGame/ShooterAugmentSelectScreen.h"
-#include "UI/Layout/ShooterPrimaryGameLayout.h"
+#include "GameMode/State/DominationGameState.h"
+#include "GameMode/Settings/DominationSandstormSettings.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
+#include "Preload/DominationPreloadSubsystem.h"
+#include "UI/InGame/HUD/DominationSandstormWarningWidget.h"
+#include "UI/InGame/ShooterMatchOutcomeScreen.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultSubsystem.h"
 #include "UI/Subsystem/ShooterUIManagerSubsystem.h"
+#include "UI/Transition/ScreenTransitionSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationUIInit, Log, All);
 
-UDominationUIInitComponent::UDominationUIInitComponent()
-{
-	InitialWidgetLayer = UITags::UI_Layer_Game;
-}
-
 void UDominationUIInitComponent::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	ADominationPlayerController* PlayerController =
-		Cast<ADominationPlayerController>(GetOwner());
-	if (!IsValid(PlayerController) || !PlayerController->IsLocalController())
-	{
-		return;
-	}
-
-	if (!RootLayoutClass
-		|| !InitialWidgetClass
-		|| !InitialWidgetLayer.IsValid()
-		|| !ClassSelectionWidgetClass)
-	{
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Domination UI configuration is incomplete on %s."),
-			*GetNameSafe(PlayerController));
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager))
-	{
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Shooter UI manager is unavailable for %s."),
-			*GetNameSafe(PlayerController));
-		return;
-	}
-
-	UIManager->InitializeUI(PlayerController, RootLayoutClass);
-	if (!UIManager->IsUIInitialized())
-	{
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Failed to initialize the Domination root layout. RootLayoutClass=%s"),
-			*GetNameSafe(RootLayoutClass));
-		return;
-	}
-
-	RefreshDominationUI();
+    // travel 이벤트를 못 받은 경로 대비. 
+    const AShooterPlayerController* PlayerController =
+        Cast<AShooterPlayerController>(GetOwner());
+    UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    if (IsValid(PlayerController)
+        && PlayerController->IsLocalController()
+        && IsValid(GameInstance))
+    {
+        if (UDominationPreloadSubsystem* PreloadSubsystem =
+            GameInstance->GetSubsystem<UDominationPreloadSubsystem>())
+        {
+            PreloadSubsystem->EnsurePreloadStarted(GetWorld());
+        }
+    }
 }
 
-void UDominationUIInitComponent::EndPlay(
-	const EEndPlayReason::Type EndPlayReason)
+void UDominationUIInitComponent::ResetWorldBinding()
 {
-	ClearInitializationRetry();
-	UnbindFromPlayerState();
-	UnbindFromGameState();
-	RemoveClassSelectionScreen();
+    if (UWorld* World = GetWorld())
+    {
+        // 매치종료 트랜지션 늦음 방지 예약
+        if (World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+        {
+            UE_LOG(LogDominationUIInit, Log, TEXT("Match exit transition was late; covering instantly before travel."));
+            BeginMatchExitTransition(true);
+        }
+        World->GetTimerManager().ClearAllTimersForObject(this);
+    }
+	
+    MatchExitTransitionTimer.Invalidate();
+    SandstormWarningTimer.Invalidate();
 
-	if (IsValid(InitialWidgetInstance))
-	{
-		if (UShooterUIManagerSubsystem* UIManager = GetUIManager())
-		{
-			UIManager->RemoveWidgetFromLayer(
-				InitialWidgetLayer,
-				InitialWidgetInstance);
-		}
-		InitialWidgetInstance = nullptr;
-	}
-
-	Super::EndPlay(EndPlayReason);
+    UnbindFromGameState();
+    ClearSandstormWarning();
+    LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
+    LastObservedRewardRound = 0;
+    Super::ResetWorldBinding();
 }
 
-void UDominationUIInitComponent::RefreshDominationUI()
+bool UDominationUIInitComponent::PrepareModeBindings()
 {
-	ADominationGameState* DominationGameState = GetWorld()
-		? GetWorld()->GetGameState<ADominationGameState>()
-		: nullptr;
-	if (!IsValid(DominationGameState))
-	{
-		ScheduleInitializationRetry();
-		return;
-	}
-
-	BindToGameState(DominationGameState);
-
-	ADominationPlayerController* PlayerController =
-		Cast<ADominationPlayerController>(GetOwner());
-	ADominationPlayerState* PlayerState = IsValid(PlayerController)
-		? PlayerController->GetPlayerState<ADominationPlayerState>()
-		: nullptr;
-	if (!IsValid(PlayerState))
-	{
-		RemoveClassSelectionScreen();
-		ScheduleInitializationRetry();
-		return;
-	}
-
-	BindToPlayerState(PlayerState);
-	RefreshClassSelectionPresentation(DominationGameState, PlayerState);
-
-	const EDominationMatchPhase Phase = DominationGameState->GetDominationPhase();
-	if (Phase != EDominationMatchPhase::InProgress
-		&& Phase != EDominationMatchPhase::MatchEnded)
-	{
-		ClearInitializationRetry();
-		return;
-	}
-
-	if (IsValid(InitialWidgetInstance) && IsTeamMatchUIReady())
-	{
-		ClearInitializationRetry();
-		return;
-	}
-
-	if (PlayerState->GetTeam() == EGameTeam::None)
-	{
-		ScheduleInitializationRetry();
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !UIManager->IsUIInitialized())
-	{
-		ClearInitializationRetry();
-		UnbindFromGameState();
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Domination root layout became unavailable before HUD initialization."));
-		return;
-	}
-
-	if (!IsValid(InitialWidgetInstance))
-	{
-		InitialWidgetInstance = Cast<UShooterPlayerHUD>(
-			UIManager->PushWidgetToLayer(InitialWidgetLayer, InitialWidgetClass));
-		if (!IsValid(InitialWidgetInstance))
-		{
-			ClearInitializationRetry();
-			UnbindFromGameState();
-			UE_LOG(LogDominationUIInit, Error,
-				TEXT("Failed to create the Domination player HUD. Layer=%s WidgetClass=%s"),
-				*InitialWidgetLayer.ToString(),
-				*GetNameSafe(InitialWidgetClass));
-			return;
-		}
-	}
-
-	UAugmentInventoryComponent* Inventory = PlayerState->GetAugmentInventory();
-	if (!IsValid(Inventory))
-	{
-		ScheduleInitializationRetry();
-		return;
-	}
-
-	InitializeTeamMatchUI(PlayerController, Inventory);
-	ClearInitializationRetry();
+    ADominationGameState* ModeState = GetWorld()
+        ? GetWorld()->GetGameState<ADominationGameState>() : nullptr;
+    if (!IsValid(ModeState)) { return false; }
+    BindToGameState(ModeState);
+    return true;
 }
 
-void UDominationUIInitComponent::RefreshClassSelectionPresentation(
-	ADominationGameState* DominationGameState,
-	ADominationPlayerState* PlayerState)
+bool UDominationUIInitComponent::CanInitializeCombatHUD(const ADominationPlayerState&) const
 {
-	if (!IsValid(DominationGameState) || !IsValid(PlayerState))
-	{
-		RemoveClassSelectionScreen();
-		return;
-	}
-
-	const EDominationMatchPhase Phase = DominationGameState->GetDominationPhase();
-	const EPlayerParticipationState ParticipationState =
-		PlayerState->GetParticipationState();
-	const bool bInitialParticipantSelecting =
-		Phase == EDominationMatchPhase::ClassSelecting
-		&& ParticipationState == EPlayerParticipationState::WaitingForMatchStart;
-	const bool bJoinInProgressSelecting =
-		Phase == EDominationMatchPhase::InProgress
-		&& ParticipationState == EPlayerParticipationState::WaitingForNextSpawn
-		&& !PlayerState->HasSelectedCombatClass();
-
-	if (bInitialParticipantSelecting || bJoinInProgressSelecting)
-	{
-		PresentClassSelectionScreen();
-		return;
-	}
-
-	RemoveClassSelectionScreen();
+    return BoundGameState.IsValid()
+        && (BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
+            || BoundGameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded);
 }
 
-void UDominationUIInitComponent::PresentClassSelectionScreen()
+bool UDominationUIInitComponent::ShouldPresentClassSelection(const ADominationPlayerState& ClassState) const
 {
-	if (IsValid(ClassSelectionWidgetInstance))
-	{
-		return;
-	}
-
-	UShooterUIManagerSubsystem* UIManager = GetUIManager();
-	if (!IsValid(UIManager) || !ClassSelectionWidgetClass)
-	{
-		return;
-	}
-
-	ClassSelectionWidgetInstance = Cast<UDominationClassSelectScreen>(
-		UIManager->PushWidgetToLayer(
-			UITags::UI_Layer_Menu,
-			ClassSelectionWidgetClass));
-	if (!IsValid(ClassSelectionWidgetInstance))
-	{
-		UE_LOG(LogDominationUIInit, Error,
-			TEXT("Failed to create the Domination class selection screen. WidgetClass=%s"),
-			*GetNameSafe(ClassSelectionWidgetClass));
-	}
+    if (!BoundGameState.IsValid()) { return false; }
+    const EDominationMatchPhase Phase = BoundGameState->GetDominationPhase();
+    return (Phase == EDominationMatchPhase::ClassSelecting
+            && ClassState.GetParticipationState() == EPlayerParticipationState::WaitingForMatchStart)
+        || (Phase == EDominationMatchPhase::InProgress
+            && ClassState.GetParticipationState() == EPlayerParticipationState::WaitingForNextSpawn
+            && !ClassState.HasSelectedCombatClass());
 }
 
-void UDominationUIInitComponent::RemoveClassSelectionScreen()
+bool UDominationUIInitComponent::IsAugmentModeActive() const
 {
-	if (!IsValid(ClassSelectionWidgetInstance))
-	{
-		return;
-	}
-
-	RemoveScreenFromLayer(
-		UITags::UI_Layer_Menu,
-		ClassSelectionWidgetInstance);
-	ClassSelectionWidgetInstance = nullptr;
+    return BoundGameState.IsValid()
+        && BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
 }
 
 void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 {
-	RefreshDominationUI();
+	RefreshCombatUI();
+	UpdateSandstormWarning();
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
 
 	if (IsTeamMatchUIReady())
 	{
@@ -256,18 +110,45 @@ void UDominationUIInitComponent::HandleDominationFlowStateChanged()
 void UDominationUIInitComponent::HandleMatchStateChanged()
 {
 	TryCaptureMatchResult();
+	TryPresentMatchEnd();
+	
+	// 새 매치가 InProgress 로 진입하는 순간, 이전 매치에서 남은
+	// 증강 선택 보류 상태와 진입 연출 이력을 초기화한다.
+	if (!BoundGameState.IsValid())
+	{
+		return;
+	}
+	
+	const EDominationMatchPhase Phase = BoundGameState->GetDominationPhase();
+	if (Phase == LastObservedMatchPhase)
+	{
+		return;
+	}
+	LastObservedMatchPhase = Phase;
+
+	// 진입 순간에만 초기화
+	if (Phase != EDominationMatchPhase::InProgress)
+	{
+		return;                     
+	}
+
+	ResetAugmentPresentationHistory();
+	LastObservedRewardRound = 0;
 }
 
-void UDominationUIInitComponent::HandleParticipationStateChanged(
-	const EPlayerParticipationState)
+void UDominationUIInitComponent::HandleRewardRoundChanged(EGameTeam Team, int32 NewScore)
 {
-	RefreshDominationUI();
-}
-
-void UDominationUIInitComponent::HandleCombatClassChanged(
-	const EDominationCombatClass)
-{
-	RefreshDominationUI();
+	const int32 Round = BoundGameState.IsValid()
+		? BoundGameState->GetCurrentRoundNumber()
+		: 0;
+	if (Round == LastObservedRewardRound)
+	{
+		return;
+	}
+	
+	LastObservedRewardRound = Round;
+	
+	SetAugmentSelectDismissed(false);
 }
 
 void UDominationUIInitComponent::TryCaptureMatchResult()
@@ -289,28 +170,100 @@ void UDominationUIInitComponent::TryCaptureMatchResult()
 	}
 }
 
-void UDominationUIInitComponent::ScheduleInitializationRetry()
+void UDominationUIInitComponent::TryPresentMatchEnd()
 {
-	UWorld* World = GetWorld();
-	if (!IsValid(World)
-		|| World->GetTimerManager().IsTimerActive(InitializationRetryTimerHandle))
+	if (!BoundGameState.IsValid()
+		|| BoundGameState->GetDominationPhase() != EDominationMatchPhase::MatchEnded
+		|| BoundGameState->GetMatchWinner() == EGameTeam::None)
 	{
 		return;
 	}
 
-	World->GetTimerManager().SetTimer(
-		InitializationRetryTimerHandle,
-		this,
-		&ThisClass::RefreshDominationUI,
-		0.1f,
-		true);
+	SuspendScreenPresentation();
+	TryPresentMatchOutcome();
+
+	// 연출 성공과 무관하게 예약
+	TryScheduleMatchExitTransition();
 }
 
-void UDominationUIInitComponent::ClearInitializationRetry()
+void UDominationUIInitComponent::TryPresentMatchOutcome()
 {
-	if (UWorld* World = GetWorld())
+	if (IsValid(MatchOutcomeScreen) || !MatchOutcomeScreenClass)
 	{
-		World->GetTimerManager().ClearTimer(InitializationRetryTimerHandle);
+		return;
+	}
+
+	const APlayerController* PlayerController = Cast<APlayerController>(GetOwner());
+	const ABaseTeamPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const EGameTeam LocalTeam = IsValid(PlayerState) ? PlayerState->GetTeam() : EGameTeam::None;
+	if (LocalTeam == EGameTeam::None)
+	{
+		return;
+	}
+
+	UShooterUIManagerSubsystem* UIManager = GetUIManager();
+	if (!IsValid(UIManager))
+	{
+		return;
+	}
+
+	MatchOutcomeScreen = Cast<UShooterMatchOutcomeScreen>(
+		UIManager->PushWidgetToLayer(UITags::UI_Layer_Menu, MatchOutcomeScreenClass));
+	if (!IsValid(MatchOutcomeScreen))
+	{
+		return;
+	}
+
+	// 내 팀 점수가 먼저
+	const bool bLocalIsTeamA = (LocalTeam == EGameTeam::TeamA);
+	const int32 TeamAScore = BoundGameState->GetTeamAScore();
+	const int32 TeamBScore = BoundGameState->GetTeamBScore();
+
+	MatchOutcomeScreen->ShowOutcome(
+		LocalTeam == BoundGameState->GetMatchWinner(),
+		bLocalIsTeamA ? TeamAScore : TeamBScore,
+		bLocalIsTeamA ? TeamBScore : TeamAScore);
+}
+
+void UDominationUIInitComponent::TryScheduleMatchExitTransition()
+{
+	UWorld* World = GetWorld();
+	if (bMatchExitTransitionAttempted
+		|| !IsValid(World)
+		|| World->GetTimerManager().IsTimerActive(MatchExitTransitionTimer))
+	{
+		return;
+	}
+
+	// 서버가 복제한 종료 시각 기준
+	const float Remaining = BoundGameState->GetPhaseTimeRemaining();
+	if (Remaining <= MatchExitCoverLeadSeconds)
+	{
+		BeginMatchExitTransition(true);
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		MatchExitTransitionTimer,
+		FTimerDelegate::CreateUObject(this, &ThisClass::BeginMatchExitTransition, false),
+		Remaining - MatchExitCoverLeadSeconds,
+		false);
+}
+
+void UDominationUIInitComponent::BeginMatchExitTransition(const bool bInstant)
+{
+	bMatchExitTransitionAttempted = true;
+
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UScreenTransitionSubsystem* Transition = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UScreenTransitionSubsystem>()
+		: nullptr;
+
+	if (!Transition || !Transition->BeginTransition(FSimpleDelegate(), bInstant))
+	{
+		UE_LOG(LogDominationUIInit, Warning, TEXT("Match exit transition could not start."));
 	}
 }
 
@@ -330,6 +283,12 @@ void UDominationUIInitComponent::BindToGameState(
 	DominationGameState->OnMatchStateChanged.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleMatchStateChanged);
+	DominationGameState->OnTeamScoreChanged.AddUniqueDynamic(
+		this, 
+		&ThisClass::HandleRewardRoundChanged);
+	DominationGameState->OnSandstormStateChanged.AddUniqueDynamic(
+		this, &ThisClass::HandleSandstormStateChanged);
+	UpdateSandstormWarning();
 }
 
 void UDominationUIInitComponent::UnbindFromGameState()
@@ -338,52 +297,10 @@ void UDominationUIInitComponent::UnbindFromGameState()
 	{
 		BoundGameState->OnDominationFlowStateChanged.RemoveAll(this);
 		BoundGameState->OnMatchStateChanged.RemoveAll(this);
+		BoundGameState->OnTeamScoreChanged.RemoveAll(this);
+		BoundGameState->OnSandstormStateChanged.RemoveAll(this);
 	}
 	BoundGameState.Reset();
-}
-
-void UDominationUIInitComponent::BindToPlayerState(
-	ADominationPlayerState* PlayerState)
-{
-	if (BoundPlayerState.Get() == PlayerState)
-	{
-		return;
-	}
-
-	UnbindFromPlayerState();
-	if (!IsValid(PlayerState))
-	{
-		return;
-	}
-
-	BoundPlayerState = PlayerState;
-	PlayerState->OnParticipationStateChanged.AddUniqueDynamic(
-		this,
-		&ThisClass::HandleParticipationStateChanged);
-	PlayerState->OnCombatClassChanged.AddUniqueDynamic(
-		this,
-		&ThisClass::HandleCombatClassChanged);
-}
-
-void UDominationUIInitComponent::UnbindFromPlayerState()
-{
-	if (ADominationPlayerState* PlayerState = BoundPlayerState.Get())
-	{
-		PlayerState->OnParticipationStateChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandleParticipationStateChanged);
-		PlayerState->OnCombatClassChanged.RemoveDynamic(
-			this,
-			&ThisClass::HandleCombatClassChanged);
-	}
-
-	BoundPlayerState.Reset();
-}
-
-bool UDominationUIInitComponent::IsAugmentPresentationAllowed() const
-{
-	return BoundGameState.IsValid()
-		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
 }
 
 bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const
@@ -392,53 +309,70 @@ bool UDominationUIInitComponent::IsSurrenderRequestAllowed() const
 		&& BoundGameState->GetDominationPhase() == EDominationMatchPhase::InProgress;
 }
 
-TSubclassOf<UShooterInGameMenuScreen>
-UDominationUIInitComponent::GetInGameMenuWidgetClass() const
+
+void UDominationUIInitComponent::HandleSandstormStateChanged(const FDominationSandstormState&)
 {
-	return InGameMenuClass;
+    UpdateSandstormWarning();
 }
 
-TSubclassOf<UShooterSurrenderVoteScreen>
-UDominationUIInitComponent::GetSurrenderVoteWidgetClass() const
+void UDominationUIInitComponent::UpdateSandstormWarning()
 {
-	return SurrenderVoteClass;
+    const ADominationGameState* GameState = BoundGameState.Get();
+    const UDominationSandstormSettings* Settings = GameState ? GameState->GetSandstormSettings() : nullptr;
+    APlayerController* Controller = Cast<APlayerController>(GetOwner());
+    if (!GameState || !Settings || !Settings->WarningWidgetClass
+        || !Controller || !Controller->IsLocalController()
+        || GameState->GetDominationPhase() == EDominationMatchPhase::MatchEnded
+        || GameState->GetSandstormState().Phase != EDominationSandstormPhase::Warning)
+    {
+        ClearSandstormWarning(true);
+        return;
+    }
+
+    const FDominationSandstormState& State = GameState->GetSandstormState();
+    const float Remaining = State.GetTimeRemaining(GameState->GetServerWorldTimeSeconds());
+    if (Remaining <= 0.0f)
+    {
+        ClearSandstormWarning(true);
+        return;
+    }
+    if (SandstormWarningWidget && SandstormWarningWidget->GetClass() != Settings->WarningWidgetClass.Get())
+    {
+        ClearSandstormWarning();
+    }
+    if (!SandstormWarningWidget)
+    {
+        SandstormWarningWidget = CreateWidget<UDominationSandstormWarningWidget>(Controller, Settings->WarningWidgetClass);
+        if (!SandstormWarningWidget)
+        {
+            return;
+        }
+        SandstormWarningWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+        SandstormWarningWidget->AddToPlayerScreen(20);
+    }
+
+    SandstormWarningWidget->SetWarning(Remaining, State.PhaseDuration);
+    const float NextChange = Remaining - (FMath::CeilToInt(Remaining) - 1);
+    GetWorld()->GetTimerManager().SetTimer(SandstormWarningTimer, this,
+        &ThisClass::UpdateSandstormWarning, FMath::Max(0.01f, NextChange), false);
 }
 
-TSubclassOf<UShooterAugmentSelectScreen>
-UDominationUIInitComponent::GetAugmentSelectWidgetClass() const
+void UDominationUIInitComponent::ClearSandstormWarning(const bool bPlayExit)
 {
-	return AugmentSelectClass;
-}
-
-UShooterInGameMenuScreen* UDominationUIInitComponent::GetInGameMenuInstance() const
-{
-	return InGameMenuInstance;
-}
-
-void UDominationUIInitComponent::SetInGameMenuInstance(
-	UShooterInGameMenuScreen* Instance)
-{
-	InGameMenuInstance = Instance;
-}
-
-UShooterSurrenderVoteScreen* UDominationUIInitComponent::GetSurrenderVoteInstance() const
-{
-	return SurrenderVoteInstance;
-}
-
-void UDominationUIInitComponent::SetSurrenderVoteInstance(
-	UShooterSurrenderVoteScreen* Instance)
-{
-	SurrenderVoteInstance = Instance;
-}
-
-UShooterAugmentSelectScreen* UDominationUIInitComponent::GetAugmentSelectInstance() const
-{
-	return AugmentSelectInstance;
-}
-
-void UDominationUIInitComponent::SetAugmentSelectInstance(
-	UShooterAugmentSelectScreen* Instance)
-{
-	AugmentSelectInstance = Instance;
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(SandstormWarningTimer);
+    }
+    if (SandstormWarningWidget)
+    {
+        if (bPlayExit)
+        {
+            SandstormWarningWidget->PlayExitAndRemove();
+        }
+        else
+        {
+            SandstormWarningWidget->RemoveFromParent();
+        }
+        SandstormWarningWidget = nullptr;
+    }
 }

@@ -1,4 +1,4 @@
-#include "Combat/Hitscan/HitscanResolverSubsystem.h"
+﻿#include "Combat/Hitscan/HitscanResolverSubsystem.h"
 
 #include "Combat/Hitscan/HitscanHitContextBuilder.h"
 #include "Combat/LagCompensationRewindScope.h"
@@ -6,8 +6,10 @@
 #include "GAS/Damage/RogueDamageSubsystem.h"
 #include "GameFramework/Actor.h"
 #include "HitscanTrace.h"
+#include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Tags/GameplayTags.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 bool UHitscanResolverSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
@@ -53,7 +55,8 @@ void UHitscanResolverSubsystem::ResolveImpactSamples(
 void UHitscanResolverSubsystem::ApplyDamageToTargets(
 	UWorld* World,
 	const FHitscanShotRequest& Request,
-	const TArray<FRogueHitContext>& HitContexts) const
+	const TArray<FRogueHitContext>& HitContexts,
+	TArray<TWeakObjectPtr<AActor>>* OutAppliedTargets) const
 {
 	if (!IsValid(World) || HitContexts.IsEmpty())
 	{
@@ -61,7 +64,7 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 	}
 
 	URogueDamageSubsystem* DamageSubsystem = World->GetSubsystem<URogueDamageSubsystem>();
-	if (!IsValid(DamageSubsystem))
+	if (!ensureMsgf(IsValid(DamageSubsystem), TEXT("Hitscan world is missing RogueDamageSubsystem")))
 	{
 		return;
 	}
@@ -75,7 +78,11 @@ void UHitscanResolverSubsystem::ApplyDamageToTargets(
 
 	for (const FRogueHitContext& HitContext : HitContexts)
 	{
-		DamageSubsystem->ApplyHitscanDamage(Params, HitContext);
+		const FRogueDamageResult Result = DamageSubsystem->ApplyHitscanDamage(Params, HitContext);
+		if (OutAppliedTargets && Result.bApplied)
+		{
+			OutAppliedTargets->Add(HitContext.Target.Get());
+		}
 	}
 }
 
@@ -83,6 +90,7 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 	const FHitscanShotRequest& Request,
 	TArray<FHitscanImpactEffectData>& OutImpactEffects) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(Hitscan_ResolveServerShot);
 	OutImpactEffects.Reset();
 
 	UWorld* World = GetWorld();
@@ -94,9 +102,37 @@ bool UHitscanResolverSubsystem::ResolveServerShot(
 	TArray<FHitscanImpactSample> ImpactSamples;
 	ResolveImpactSamples(World, Request, ImpactSamples, OutImpactEffects);
 
+	// 반응형 사격 과녁은 GAS 대미지 경로와 분리해서 서버 명중만 전달한다.
+	TSet<TWeakObjectPtr<AActor>> NotifiedReactiveTargets;
+	for (const FHitscanImpactEffectData& ImpactEffect : OutImpactEffects)
+	{
+		AActor* HitActor = ImpactEffect.HitActor.Get();
+		const TWeakObjectPtr<AActor> HitActorKey(HitActor);
+		IRogueHitscanReactiveTarget* ReactiveTarget = IsValid(HitActor)
+			? Cast<IRogueHitscanReactiveTarget>(HitActor)
+			: nullptr;
+		if (!ReactiveTarget || NotifiedReactiveTargets.Contains(HitActorKey))
+		{
+			continue;
+		}
+
+		FVector ShotDirection = FVector::ZeroVector;
+		if (Request.PelletDirections.IsValidIndex(ImpactEffect.PelletIndex))
+		{
+			ShotDirection = Request.PelletDirections[ImpactEffect.PelletIndex].GetSafeNormal();
+		}
+
+		ReactiveTarget->HandleHitscanImpact(
+			Request.InstigatorActor, ImpactEffect.ImpactPoint, ShotDirection);
+		NotifiedReactiveTargets.Add(HitActorKey);
+	}
+
 	TArray<FRogueHitContext> HitContexts;
 	FHitscanHitContextBuilder::Build(Request, ImpactSamples, HitContexts);
 
-	ApplyDamageToTargets(World, Request, HitContexts);
+	TArray<TWeakObjectPtr<AActor>> AppliedTargets;
+	const bool bNotifyObservers = OnServerShotResolved.IsBound();
+	ApplyDamageToTargets(World, Request, HitContexts, bNotifyObservers ? &AppliedTargets : nullptr);
+	if (bNotifyObservers) { OnServerShotResolved.Broadcast(Request, AppliedTargets); }
 	return true;
 }

@@ -15,7 +15,7 @@ class UCommonActivatableWidgetContainerBase;
  * RegisterLayer로 Tag에 등록하고 컨테이너에 등록한다.
  * PushWidgetToLayer로 태그로 Stack을 찾아 화면을 Stack하고 PopWidgetFromLayer로 pop한다.
  */
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterPrimaryGameLayout : public UCommonUserWidget
 {
 	GENERATED_BODY()
@@ -30,12 +30,12 @@ public:
 	// 레이어 태그 전체 비우기. HUD 화면 정리 등에 필요
 	void ClearLayer(FGameplayTag LayerTag);
 	
+	UCommonActivatableWidgetContainerBase* GetLayerContainer(FGameplayTag LayerTag) const;
+	
 protected:
 	virtual void NativeOnInitialized() override;
 	
 	void RegisterLayer(FGameplayTag LayerTag, UCommonActivatableWidgetContainerBase* LayerWidget);
-	
-	UCommonActivatableWidgetContainerBase* GetLayerContainer(FGameplayTag LayerTag) const;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Game;
@@ -45,6 +45,8 @@ protected:
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Menu;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonActivatableWidgetStack> Stack_Modal;
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UCommonActivatableWidgetStack> Stack_Transition;
 	
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UCommonActivatableWidgetContainerBase>> LayerContainers;

@@ -23,4 +23,18 @@ bool FDominationCaptureTimeRuleTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 중계 비콘 부활 대기 감소 규칙 테스트
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDominationRespawnDelayRuleTest,
+	"FPS.GameFlow.Domination.Rules.RespawnDelay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FDominationRespawnDelayRuleTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("No reduction keeps the base delay"), DominationRules::GetRespawnDelay(8.0f, 0.0f), 8.0f);
+	TestEqual(TEXT("Relay reduction shortens 8 seconds to 6"), DominationRules::GetRespawnDelay(8.0f, 2.0f), 6.0f);
+	TestEqual(TEXT("Negative reduction is ignored"), DominationRules::GetRespawnDelay(8.0f, -2.0f), 8.0f);
+	return true;
+}
+
 #endif

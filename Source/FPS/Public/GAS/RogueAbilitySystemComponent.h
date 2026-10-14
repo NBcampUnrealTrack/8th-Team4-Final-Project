@@ -9,6 +9,9 @@
 #include "RogueAbilitySystemComponent.generated.h"
 
 class URogueAbilitySet;
+class AWeaponBase;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCooldownTimeChanged, FGameplayTag /*CooldownTag*/);
 
 UCLASS()
 class FPS_API URogueAbilitySystemComponent : public UAbilitySystemComponent
@@ -20,11 +23,16 @@ public:
 
 	// 눌림 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
-	void AbilityInputTagPressed(const FGameplayTag& InputTag);
+	void AbilityInputTagPressed(const FGameplayTag& InputTag, bool bToggleADS = false, bool bIsNewPress = true);
 
 	// 떼짐 상태 활성화
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Ability")
-	void AbilityInputTagReleased(const FGameplayTag& InputTag);
+	void AbilityInputTagReleased(const FGameplayTag& InputTag, bool bPreserveADS = false);
+
+	// 실제 무기 전환은 이전 무기의 ADS와 그 입력만 정리한다.
+	void CancelADSAbilityForWeapon(const AWeaponBase* Weapon);
+	void ClearAbilityInput();
+	void ReleaseADSInput();
 
 	// 목록의 어빌리티를 부여 서버 전용.
 	void GrantAbilitySet(const URogueAbilitySet* AbilitySet);
@@ -37,7 +45,17 @@ public:
 	// 수명이 라운드에 한정된 GE 제거
 	int32 RemoveRoundScopedEffects();
 
+	// 남은 액티브 쿨타임을 비율만큼 줄임. 서버 전용
+	void ReduceActiveCooldowns(float Rate);
+
+	// 슬롯 쿨타임의 시간이 바뀜 (태그 개수 변화 없이). 서버, 클라 모두
+	FOnCooldownTimeChanged OnCooldownTimeChanged;
+
+	virtual void OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect) override;
+
 private:
+	void ReleaseAbilityInput(FGameplayAbilitySpec& Spec);
+
 	// 입력이 들어와도 AbilitySpec이 실행되지 않는 경우 로그
 	void ReportInputResult(const FGameplayTag& InputTag, int32 MatchedSpecCount, int32 CandidateCount, int32 ActivatedCount);
 

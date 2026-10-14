@@ -1,6 +1,8 @@
 #include "GameMode/State/BaseTeamGameState.h"
 
 #include "Net/UnrealNetwork.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Player/ShooterPlayerController.h"
 
 ABaseTeamGameState::ABaseTeamGameState()
 {

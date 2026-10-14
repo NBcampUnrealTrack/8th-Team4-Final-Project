@@ -1,6 +1,7 @@
-#include "HitscanTrace.h"
+﻿#include "HitscanTrace.h"
 
 #include "AbilitySystemInterface.h"
+#include "Actor/DominationSpawnBarrier.h"
 #include "Combat/CombatHitZoneDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Helpers/HitscanMath.h"
@@ -9,10 +10,16 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GAS/RogueTargetFilter.h"
 #include "Interfaces/RogueDamageableTarget.h"
+#include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Tags/GameplayTags.h"
 
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 bool FHitscanTrace::IsPotentialDamageTargetActor(AActor* TargetActor,
 												 const FHitscanDamageTargetSettings& TargetSettings)
 {
@@ -53,12 +60,15 @@ FGameplayTag FHitscanTrace::ResolveHitZoneTag(const FHitResult& HitResult, const
 				TargetActor->FindComponentByClass<ULagCompensationComponent>())
 		{
 			FGameplayTag HitZoneTag;
-			if (LagCompensationComponent->TryGetHitZoneForComponent(HitResult.GetComponent(), HitZoneTag))
+			if (LagCompensationComponent->TryGetHitZoneForComponent(HitResult.GetComponent(), HitZoneTag)
+				&& HitZoneTag.IsValid())
 			{
 				return HitZoneTag;
 			}
 		}
 	}
+
+	FGameplayTag ResolvedHitZoneTag = Request.DamageSettings.DefaultHitZoneTag;
 
 	AActor* TargetActor = HitResult.GetActor();
 	if (IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
@@ -66,11 +76,15 @@ FGameplayTag FHitscanTrace::ResolveHitZoneTag(const FHitResult& HitResult, const
 		if (const UCombatHitZoneDefinition* HitZoneDefinition =
 				IRogueDamageableTarget::Execute_GetCombatHitZoneDefinition(TargetActor))
 		{
-			return HitZoneDefinition->ResolveHitZone(BoneName, Request.DamageSettings.DefaultHitZoneTag);
+			ResolvedHitZoneTag = HitZoneDefinition->ResolveHitZone(BoneName, ResolvedHitZoneTag);
 		}
 	}
 
-	return Request.DamageSettings.DefaultHitZoneTag;
+	// Hits against capsules or non-skeletal damageable actors may not have a bone name.
+	// HitContextBuilder intentionally rejects invalid zone tags, so an unset weapon fallback would
+	// otherwise turn a real blocking hit into an impact-only hit with no damage event.
+	// Treat a valid generic damageable hit as torso when no more specific zone can be resolved.
+	return ResolvedHitZoneTag.IsValid() ? ResolvedHitZoneTag : RogueTags::Hit_Zone_Torso;
 }
 
 bool FHitscanTrace::FindSurfaceExit(const FHitResult& EntryHit, const FVector& TraceDirection,
@@ -232,15 +246,46 @@ bool FHitscanTrace::TryBuildImpactSample(const FHitResult& HitResult, const FVec
 	return true;
 }
 
+TEnumAsByte<EPhysicalSurface> FHitscanTrace::ResolveImpactSurfaceType(const FHitResult& HitResult)
+{
+	if (const AActor* TargetActor = HitResult.GetActor())
+	{
+		if (TargetActor->Implements<URogueDamageableTarget>())
+		{
+			// DefaultEngine.ini의 PhysicalSurfaces 매핑상 SurfaceType1 = "Character".
+			return SurfaceType1;
+		}
+	}
+
+	return UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+}
+
 FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	const FHitResult& HitResult,
+	const FHitscanShotRequest& Request,
 	const int32 PelletIndex)
 {
 	FHitscanImpactEffectData ImpactEffectData;
+	ImpactEffectData.HitActor = HitResult.GetActor();
 	ImpactEffectData.ImpactPoint = HitResult.ImpactPoint;
 	ImpactEffectData.ImpactNormal = HitResult.ImpactNormal;
-	ImpactEffectData.ImpactSurfaceType = UPhysicalMaterial::DetermineSurfaceType(HitResult.PhysMaterial.Get());
+	ImpactEffectData.ImpactSurfaceType = ResolveImpactSurfaceType(HitResult);
 	ImpactEffectData.PelletIndex = PelletIndex;
+	ImpactEffectData.bHasHit = true;
+
+	// 파티클 복구
+	if (AActor* TargetActor = HitResult.GetActor();
+		IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
+	{
+		ImpactEffectData.bSpawnImpactParticle =
+			IRogueDamageableTarget::Execute_ShouldSpawnHitscanImpactParticle(TargetActor);
+		
+		if (URogueTargetFilter::GetRelation(Request.InstigatorActor, TargetActor) == ERogueTargetRelation::Friendly)
+		{
+			ImpactEffectData.bSpawnImpactParticle = false;
+		}
+	}
+
 	return ImpactEffectData;
 }
 
@@ -308,6 +353,23 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 	QueryParams.bReturnPhysicalMaterial = true;
 	QueryParams.AddIgnoredActor(Request.InstigatorActor);
 	QueryParams.AddIgnoredActor(Request.CauserActor);
+	
+	if (const APawn* InstigatorPawn = Cast<APawn>(Request.InstigatorActor))
+	{
+		const ABaseTeamPlayerState* InstigatorPlayerState = InstigatorPawn->GetPlayerState<ABaseTeamPlayerState>();
+		const EGameTeam InstigatorTeam = IsValid(InstigatorPlayerState) ? InstigatorPlayerState->GetTeam() : EGameTeam::None;
+		if (InstigatorTeam != EGameTeam::None)
+		{
+			for (const TWeakObjectPtr<ADominationSpawnBarrier>& BarrierPtr : ADominationSpawnBarrier::GetActiveBarriers())
+			{
+				ADominationSpawnBarrier* Barrier = BarrierPtr.Get();
+				if (IsValid(Barrier) && Barrier->GetOwnerTeam() == InstigatorTeam)
+				{
+					QueryParams.AddIgnoredActor(Barrier);
+				}
+			}
+		}
+	}
 
 	for (int32 TraceIteration = 0; TraceIteration < Request.TraceSettings.MaximumTraceIterations; ++TraceIteration)
 	{
@@ -332,13 +394,21 @@ bool FHitscanTrace::ResolveCurrentPellet(UWorld* World, const FHitscanShotReques
 			return false;
 		}
 
-		OutImpactEffect = BuildImpactEffectData(HitResult, PelletIndex);
+		OutImpactEffect = BuildImpactEffectData(HitResult, Request, PelletIndex);
+		OutImpactEffect.HitZoneTag = ResolveHitZoneTag(HitResult, Request, HitResult.BoneName);
 		bOutHasImpactEffect = true;
 
 		// 현재 규칙은 피해 대상에서 펠릿을 종료하고, 월드 표면만 연속 관통한다.
 		if (TryBuildImpactSample(HitResult, TraceDirection, PenetrationState, Request, PelletIndex, OutImpactSample))
 		{
 			return true;
+		}
+
+		// 반응형 사격 과녁은 대미지 대상이 아니어도 명중을 받아야 하므로 여기서 탄을 종료한다.
+		if (AActor* HitActor = HitResult.GetActor();
+			IsValid(HitActor) && Cast<IRogueHitscanReactiveTarget>(HitActor) != nullptr)
+		{
+			return false;
 		}
 
 		const float DistanceTraveledCentimeters = FVector::Distance(Request.TraceStart, HitResult.ImpactPoint);
@@ -358,6 +428,7 @@ bool FHitscanTrace::ResolveImpacts(UWorld* World, const FHitscanShotRequest& Req
 								   TArray<FHitscanImpactSample>& OutImpactSamples,
 								   TArray<FHitscanImpactEffectData>& OutImpactEffects)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(Hitscan_ResolveImpacts);
 	OutImpactSamples.Reset();
 	OutImpactEffects.Reset();
 

@@ -49,6 +49,31 @@ bool UDominationLoadoutManager::InitializeCombatClassInventory(
 	}
 
 	WeaponInventory->ServerInitializeForNewMatch();
+	return EnsureCombatClassInventory(PlayerState);
+}
+
+bool UDominationLoadoutManager::EnsureCombatClassInventory(
+	ADominationPlayerState* PlayerState) const
+{
+	UWeaponInventoryComponent* WeaponInventory = IsValid(PlayerState)
+		? PlayerState->GetWeaponInventory()
+		: nullptr;
+	const FGameplayTag PrimaryWeaponTag = IsValid(PlayerState)
+		? ResolvePrimaryWeaponTag(PlayerState->GetCombatClass())
+		: FGameplayTag();
+	if (!IsValid(WeaponInventory) || !PrimaryWeaponTag.IsValid())
+	{
+		return false;
+	}
+
+	if (WeaponInventory->GetEquippedPrimaryTag() == PrimaryWeaponTag
+		&& WeaponInventory->IsPossessed(PrimaryWeaponTag))
+	{
+		return true;
+	}
+
+	// 레이트 조인/재스폰 중 상태 동기화가 늦었더라도 다른 무기 상태를 리셋하지 않고
+	// 해당 클래스의 주무기만 다시 확정한다.
 	return WeaponInventory->ServerConfirmPrimaryPurchase(PrimaryWeaponTag);
 }
 

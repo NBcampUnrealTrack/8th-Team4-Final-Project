@@ -1,4 +1,4 @@
-#include "Voice/SteamVoiceComponent.h"
+﻿#include "Voice/SteamVoiceComponent.h"
 
 #include "Components/AudioComponent.h"
 #include "Engine/World.h"
@@ -19,32 +19,36 @@ USteamVoiceComponent::USteamVoiceComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void USteamVoiceComponent::StartCapture()
+bool USteamVoiceComponent::StartCapture()
 {
 	if (!SteamUser())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=null Owner=%s"), *GetNameSafe(GetOwner()));
-		return;
+		return false;
 	}
 
 	if (bCapturingVoice)
 	{
-		return;
+		return true;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][StartCapture] SteamUser=valid Owner=%s"), *GetNameSafe(GetOwner()));
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
 	SteamUser()->StartVoiceRecording();
 	bCapturingVoice = true;
 
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().SetTimer(
-			VoiceCaptureTimerHandle,
-			this,
-			&ThisClass::PollVoiceCapture,
-			FMath::Max(0.01f, CapturePollInterval),
-			true);
-	}
+	World->GetTimerManager().SetTimer(
+		VoiceCaptureTimerHandle,
+		this,
+		&ThisClass::PollVoiceCapture,
+		FMath::Max(0.01f, CapturePollInterval),
+		true);
+
+	return true;
 }
 
 void USteamVoiceComponent::StopCapture()
@@ -67,7 +71,10 @@ void USteamVoiceComponent::StopCapture()
 	}
 }
 
-void USteamVoiceComponent::PlayCompressedVoicePacket(APlayerState* SpeakerPlayerState, const TArray<uint8>& CompressedVoiceData)
+void USteamVoiceComponent::PlayCompressedVoicePacket(
+	APlayerState* SpeakerPlayerState,
+	const TArray<uint8>& CompressedVoiceData,
+	const float SenderMicrophoneVolume)
 {
 	TArray<uint8> PcmVoiceData;
 	if (!DecompressVoicePacket(SpeakerPlayerState, CompressedVoiceData, PcmVoiceData))
@@ -75,17 +82,32 @@ void USteamVoiceComponent::PlayCompressedVoicePacket(APlayerState* SpeakerPlayer
 		return;
 	}
 
+	ApplyPcmGain(PcmVoiceData, SenderMicrophoneVolume);
+
 	FSteamVoicePlaybackSlot* PlaybackSlot = FindOrCreatePlaybackSlot(SpeakerPlayerState);
 	if (!PlaybackSlot || !PlaybackSlot->SoundWave || !PlaybackSlot->AudioComponent)
 	{
 		return;
 	}
 
+	PlaybackSlot->AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
 	PlaybackSlot->SoundWave->QueueAudio(PcmVoiceData.GetData(), PcmVoiceData.Num());
 
 	if (!PlaybackSlot->AudioComponent->IsPlaying())
 	{
 		PlaybackSlot->AudioComponent->Play();
+	}
+}
+
+void USteamVoiceComponent::SetOutputVolume(const float Volume)
+{
+	VoiceOutputVolume = FMath::Clamp(Volume, 0.0f, 2.0f);
+	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
+	{
+		if (PlaybackSlot.AudioComponent)
+		{
+			PlaybackSlot.AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
+		}
 	}
 }
 
@@ -148,29 +170,41 @@ bool USteamVoiceComponent::DecompressVoicePacket(
 	}
 
 	OutPcmVoiceData.SetNum(static_cast<int32>(BytesWritten));
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Decompress] Success Speaker=%s CompressedBytes=%d PcmBytes=%d SampleRate=%d"),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num(),
-		OutPcmVoiceData.Num(),
-		SampleRate);
 	return true;
+}
+
+void USteamVoiceComponent::ApplyPcmGain(TArray<uint8>& PcmVoiceData, const float Gain)
+{
+	if (PcmVoiceData.Num() < static_cast<int32>(sizeof(int16)))
+	{
+		return;
+	}
+
+	const float ClampedGain = FMath::Clamp(Gain, 0.0f, 2.0f);
+	int16* Samples = reinterpret_cast<int16*>(PcmVoiceData.GetData());
+	const int32 SampleCount = PcmVoiceData.Num() / static_cast<int32>(sizeof(int16));
+	for (int32 Index = 0; Index < SampleCount; ++Index)
+	{
+		const int32 Scaled = FMath::RoundToInt(static_cast<float>(Samples[Index]) * ClampedGain);
+		Samples[Index] = static_cast<int16>(FMath::Clamp(Scaled, static_cast<int32>(MIN_int16), static_cast<int32>(MAX_int16)));
+	}
 }
 
 void USteamVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	StopCapture();
+	StopPlayback();
 
 	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
 	{
 		if (PlaybackSlot.AudioComponent)
 		{
-			PlaybackSlot.AudioComponent->Stop();
 			PlaybackSlot.AudioComponent->DestroyComponent();
-		}
-
-		if (PlaybackSlot.SoundWave)
-		{
-			PlaybackSlot.SoundWave->ResetAudio();
 		}
 	}
 
@@ -179,11 +213,39 @@ void USteamVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+void USteamVoiceComponent::StopPlayback()
+{
+	for (FSteamVoicePlaybackSlot& PlaybackSlot : PlaybackSlots)
+	{
+		if (PlaybackSlot.AudioComponent)
+		{
+			PlaybackSlot.AudioComponent->Stop();
+		}
+
+		if (PlaybackSlot.SoundWave)
+		{
+			PlaybackSlot.SoundWave->ResetAudio();
+		}
+	}
+}
+
 void USteamVoiceComponent::PollVoiceCapture()
 {
+	const auto StopOwnerVoiceTalking = [this]()
+	{
+		if (AShooterPlayerController* PlayerController = GetOwnerShooterPlayerController())
+		{
+			PlayerController->StopVoiceTalking();
+		}
+		else
+		{
+			StopCapture();
+		}
+	};
+
 	if (!bCapturingVoice || !SteamUser())
 	{
-		StopCapture();
+		StopOwnerVoiceTalking();
 		return;
 	}
 
@@ -191,7 +253,7 @@ void USteamVoiceComponent::PollVoiceCapture()
 	const EVoiceResult AvailableResult = SteamUser()->GetAvailableVoice(&AvailableCompressedBytes);
 	if (AvailableResult == k_EVoiceResultNotRecording)
 	{
-		StopCapture();
+		StopOwnerVoiceTalking();
 		return;
 	}
 
@@ -218,15 +280,18 @@ void USteamVoiceComponent::PollVoiceCapture()
 		BufferSize,
 		&BytesWritten);
 
+	if (VoiceResult == k_EVoiceResultNotRecording)
+	{
+		StopOwnerVoiceTalking();
+		return;
+	}
+
 	if (VoiceResult != k_EVoiceResultOK || BytesWritten == 0)
 	{
 		return;
 	}
 
 	CompressedVoiceData.SetNum(static_cast<int32>(BytesWritten));
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][Capture] Owner=%s CompressedBytes=%d"),
-		*GetNameSafe(GetOwner()),
-		CompressedVoiceData.Num());
 
 	if (AShooterPlayerController* PlayerController = GetOwnerShooterPlayerController())
 	{
@@ -304,6 +369,8 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 	SoundWave->SampleByteSize = sizeof(int16);
 	SoundWave->Duration = INDEFINITELY_LOOPING_DURATION;
 	SoundWave->SoundGroup = SOUNDGROUP_Voice;
+	// Voice chat is intentionally not routed through the game's Voice SoundClass.
+	// Incoming voice has its own user volume and still follows the device/master output volume.
 
 	UAudioComponent* AudioComponent = NewObject<UAudioComponent>(OwnerActor);
 	if (!IsValid(AudioComponent))
@@ -313,6 +380,7 @@ FSteamVoicePlaybackSlot* USteamVoiceComponent::FindOrCreatePlaybackSlot(APlayerS
 
 	AudioComponent->bAutoActivate = false;
 	AudioComponent->SetSound(SoundWave);
+	AudioComponent->SetVolumeMultiplier(VoiceOutputVolume);
 	AudioComponent->RegisterComponentWithWorld(World);
 
 	PlaybackSlot->SoundWave = SoundWave;

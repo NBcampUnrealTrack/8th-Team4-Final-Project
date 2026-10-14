@@ -1,6 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
-
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
@@ -26,8 +24,11 @@ public:
 
 	bool IsDeathDeclared() const { return bDeathDeclared; }
 
+	// 일반 데미지 검증이 끝난 뒤 서버에서 강제로 사망을 확정할 때 사용한다.
+	void ServerForceDeath(const FGameplayEffectContextHandle& Context);
+
 	// 라운드 시작 / 부활 시 반드시 호출
-	void ClearDeathDeclared() { bDeathDeclared = false; }
+	void ClearDeathDeclared() { bDeathDeclared = false; bLethalSurviveUsed = false; }
 
 protected:
 	UFUNCTION() void OnRep_Health(const FGameplayAttributeData& OldValue);
@@ -35,6 +36,8 @@ protected:
 	UFUNCTION() void OnRep_Shield(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_MaxShield(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_ShopDamageAmplification(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_Stamina(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_MaxStamina(const FGameplayAttributeData& OldValue);
 
 private:
 	// Max 계열이 바뀔 때 현재값도 수정
@@ -43,6 +46,9 @@ private:
 	
 	// 체력이 0 이 되었으면 사망을 1회 확정하고 발신
 	void TryDeclareDeath(const FGameplayEffectContextHandle& Context);
+
+	// 치명 피해를 목숨당 1번 버틸 수 있는지 (기합의 띠)
+	bool CanSurviveLethal() const;
 
 public:
 	// 0 이 되면 즉시 사망
@@ -70,6 +76,16 @@ public:
 	FGameplayAttributeData ShopDamageAmplification;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,ShopDamageAmplification)
 
+	// 달리기 중 소모, 0 이 되면 달리기 중단
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Stamina, Category = "Rogue|Vital")
+	FGameplayAttributeData Stamina;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,Stamina)
+
+	// 최대 스태미너
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxStamina, Category = "Rogue|Vital")
+	FGameplayAttributeData MaxStamina;
+	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,MaxStamina)
+
 	UPROPERTY(BlueprintReadOnly, Category = "Rogue|Vital")
 	FGameplayAttributeData IncomingDamage;
 	ATTRIBUTE_ACCESSORS_BASIC(URogueVitalAttributeSet,IncomingDamage)
@@ -89,6 +105,9 @@ public:
 private:
 	// 중복 호출 방지를 위한 사망 여부 플래그
 	bool bDeathDeclared = false;
+
+	// 이번 목숨에서 치명 피해를 버텼는지. 부활 시 초기화
+	bool bLethalSurviveUsed = false;
 
 public:
 	// 사망 확정 시 1회 발신. 구독자가 사망 시퀀스를 소유

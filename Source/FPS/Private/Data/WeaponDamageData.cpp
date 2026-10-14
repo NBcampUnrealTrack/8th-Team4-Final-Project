@@ -10,24 +10,31 @@ DEFINE_LOG_CATEGORY_STATIC(LogWeaponDamageData, Log, All);
 
 #define LOCTEXT_NAMESPACE "WeaponDamageData"
 
-const FWeaponDamageEntry* UWeaponDamageData::FindEntry(const FGameplayTag WeaponTag)
+const FWeaponDamageEntry* UWeaponDamageData::FindEntry(const FGameplayTag WeaponTag, const bool bAllowSynchronousLoad)
 {
 	if (!WeaponTag.IsValid())
 	{
 		return nullptr;
 	}
 
-	const UWeaponDamageData* DamageData = GetDefault<URogueGASSettings>()->WeaponDamageData.LoadSynchronous();
+	const TSoftObjectPtr<UWeaponDamageData>& DamageDataPtr = GetDefault<URogueGASSettings>()->WeaponDamageData;
+	UE_CLOG(bAllowSynchronousLoad && DamageDataPtr.IsPending(), LogWeaponDamageData, Warning,
+		TEXT("[RogueDamage] %s 가 프리로드되지 않아 동기 로드합니다"), *DamageDataPtr.ToString());
+	const UWeaponDamageData* DamageData = bAllowSynchronousLoad
+		? DamageDataPtr.LoadSynchronous() : DamageDataPtr.Get();
 	if (!DamageData)
 	{
-		UE_LOG(LogWeaponDamageData, Error,
-			TEXT("[RogueDamage] WeaponDamageData 가 설정되지 않았습니다. "
-			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
+		if (bAllowSynchronousLoad)
+		{
+			UE_LOG(LogWeaponDamageData, Error,
+				TEXT("[RogueDamage] WeaponDamageData 가 설정되지 않았습니다. "
+				     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요."));
+		}
 		return nullptr;
 	}
 
 	const FWeaponDamageEntry* Entry = DamageData->Weapons.Find(WeaponTag);
-	if (!Entry)
+	if (!Entry && bAllowSynchronousLoad)
 	{
 		static TSet<FGameplayTag> WarnedTags;
 

@@ -10,6 +10,8 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Session/SessionSubSystem.h"
+#include "Travel/ShooterTravelSettings.h"
+#include "UObject/UObjectGlobals.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLobbyGameMode, Log, All);
 
@@ -20,25 +22,100 @@ ALobbyGameMode::ALobbyGameMode()
 	PlayerStateClass = AShooterPlayerState::StaticClass();
 }
 
+void ALobbyGameMode::BeginPlay()
+{
+	Super::BeginPlay();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->NotifyLobbyReady(GetWorld());
+		}
+	}
+}
+
+void ALobbyGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+void ALobbyGameMode::InitGameState()
+{
+	Super::InitGameState();
+
+	ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!IsValid(LobbyGameState) || !IsValid(GameInstance))
+	{
+		return;
+	}
+
+	const USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>();
+	if (!IsValid(SessionSubsystem))
+	{
+		return;
+	}
+
+	FLobbyRoomSettings NewSettings;
+	NewSettings.RoomName = SessionSubsystem->GetRoomName();
+	NewSettings.MaxPlayers = SessionSubsystem->GetMaxPlayers();
+	NewSettings.MaxPlayersPerTeam = MaxPlayersPerTeam;
+	NewSettings.MinimumPlayersToStart = MinimumPlayersToStart;
+	LobbyGameState->SetRoomSettings(NewSettings);
+}
+
 void ALobbyGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 	AssignHostPlayerIfNeeded(NewPlayer);
+	if (bStartRoomGamePending && !bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster changed while preparing travel."));
+	}
 	NotifyLobbyPlayerListChanged();
+
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
 }
 
 void ALobbyGameMode::PostSeamlessTravel()
 {
 	Super::PostSeamlessTravel();
 	RebuildLobbyStateAfterSeamlessTravel();
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->NotifyLobbyReady(GetWorld());
+		}
+	}
 }
 
 void ALobbyGameMode::Logout(AController* Exiting)
 {
+	if (bStartRoomGamePending && !bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(TEXT("A player left while preparing travel."));
+	}
 	const APlayerState* ExitingPlayerState = Exiting ? Exiting->PlayerState : nullptr;
 	Super::Logout(Exiting);
 	ReassignHostPlayerIfNeeded(ExitingPlayerState);
 	NotifyLobbyPlayerListChanged();
+
+	if (USessionSubSystem* SessionSubsystem = UGameInstance::GetSubsystem<USessionSubSystem>(GetGameInstance()))
+	{
+		SessionSubsystem->NotifyRoomMembersChanged();
+	}
 }
 
 bool ALobbyGameMode::RequestStartRoomGame(
@@ -60,7 +137,7 @@ bool ALobbyGameMode::RequestStartRoomGame(
 	// as the single source of truth for the rest of the start sequence.
 	if (!GameMapName.IsEmpty())
 	{
-		ELobbyMatchMode RequestedMatchMode = ELobbyMatchMode::Bomb;
+		ELobbyMatchMode RequestedMatchMode = ELobbyMatchMode::Domination;
 		if (!TryResolveMatchModeFromMapName(GameMapName, RequestedMatchMode)
 			|| !RequestLobbyMatchMode(RequestingPlayer, RequestedMatchMode))
 		{
@@ -98,6 +175,12 @@ bool ALobbyGameMode::RequestStartRoomGame(
 		return false;
 	}
 
+	if (SessionSubsystem->IsRoomOperationInProgress())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: a room operation is still in progress."));
+		return false;
+	}
+
 	const ELobbyMatchMode SelectedMatchMode = GetSelectedMatchMode();
 	const FString SelectedMapName = GetMapNameForMatchMode(SelectedMatchMode);
 	const FString SelectedMatchType = GetMatchTypeForMatchMode(SelectedMatchMode);
@@ -117,11 +200,23 @@ bool ALobbyGameMode::RequestStartRoomGame(
 		return false;
 	}
 
+	if (!CaptureMatchTravelParticipants())
+	{
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Start room game blocked: the travel roster is invalid."));
+		return false;
+	}
+
 	PendingGameMapPath = ResolveMapPathFromName(SelectedMapName);
+	MatchTravelRequestId = MatchTravelRequestId == MAX_int32 ? 1 : MatchTravelRequestId + 1;
 	bStartRoomGamePending = true;
+	NotifyLobbyPlayerListChanged();
 	SessionSubsystem->OnStartRoomGameComplete.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleStartRoomGameComplete);
+	// 이 제한은 온라인 세션 응답에만 적용하며 에셋 로딩 시간에는 적용하지 않는다.
+	GetWorldTimerManager().SetTimer(
+		SessionStartResponseTimer, this, &ThisClass::HandleSessionStartResponseTimeout,
+		FMath::Max(1.0f, GetDefault<UShooterTravelSettings>()->OnlineSessionStartTimeout), false);
 	SessionSubsystem->StartRoomGameWithSettings(SelectedMapName, SelectedMatchType);
 	return true;
 }
@@ -129,9 +224,44 @@ bool ALobbyGameMode::RequestStartRoomGame(
 bool ALobbyGameMode::CanStartRoomGame() const
 {
 	return IsSupportedMatchMode(GetSelectedMatchMode())
+		&& IsHostInTeam()
 		&& AreAllClientsReady()
 		&& HasMinimumPlayersToStart()
 		&& CanFinalizeTeamsForMatchStart();
+}
+
+FLobbyStartState ALobbyGameMode::BuildStartState() const
+{
+	FLobbyStartState Result;
+	CountClientReady(Result.ReadyCount, Result.ReadyRequired);
+
+	// 위에서부터 먼저 걸리는 사유 하나만 남겨 순서가 화면 문구의 우선순위
+	if (bStartRoomGamePending || bTravelingToGameMap)
+	{
+		Result.Blocker = ELobbyStartBlocker::Starting;
+	}
+	else if (!IsHostInTeam())
+	{
+		Result.Blocker = ELobbyStartBlocker::HostNotInTeam;
+	}
+	else if (!HasMinimumPlayersToStart())
+	{
+		Result.Blocker = ELobbyStartBlocker::NotEnoughPlayers;
+	}
+	else if (!CanFinalizeTeamsForMatchStart())
+	{
+		Result.Blocker = ELobbyStartBlocker::TeamsCannotBeFinalized;
+	}
+	else if (Result.ReadyCount < Result.ReadyRequired)
+	{
+		Result.Blocker = ELobbyStartBlocker::WaitingForReady;
+	}
+	else
+	{
+		Result.Blocker = ELobbyStartBlocker::None;
+	}
+
+	return Result;
 }
 
 bool ALobbyGameMode::RequestLobbyMatchMode(
@@ -175,7 +305,7 @@ ELobbyMatchMode ALobbyGameMode::GetSelectedMatchMode() const
 	const ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>();
 	return IsValid(LobbyGameState)
 		? LobbyGameState->GetSelectedMatchMode()
-		: ELobbyMatchMode::Bomb;
+		: ELobbyMatchMode::Domination;
 }
 
 FString ALobbyGameMode::GetSelectedGameMapName() const
@@ -192,7 +322,12 @@ void ALobbyGameMode::AssignHostPlayerIfNeeded(APlayerController* NewPlayer)
 
 	HostPlayerState = NewPlayer->PlayerState;
 
-	// Keep the initial room advertisement aligned with the default Bomb selection.
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
+	}
+
+	// Keep the initial room advertisement aligned with the default Domination selection.
 	UpdateSessionAdvertisementForMatchMode(GetSelectedMatchMode());
 }
 
@@ -241,6 +376,11 @@ void ALobbyGameMode::RebuildLobbyStateAfterSeamlessTravel()
 		HostPlayerState = FallbackHostPlayerState;
 	}
 
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
+	}
+
 	if (!HostPlayerState.IsValid())
 	{
 		UE_LOG(LogLobbyGameMode, Warning, TEXT("Lobby seamless travel completed without a valid host player."));
@@ -273,8 +413,14 @@ void ALobbyGameMode::ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlaye
 		if (IsValid(PlayerState) && PlayerState != ExitingPlayerState)
 		{
 			HostPlayerState = PlayerState;
-			return;
+			break;
 		}
+	}
+
+	// 새 호스트를 못 찾으면 nullptr 을 넣어 나간 플레이어를 가리키지 않게 함
+	if (ALobbyGameState* LobbyGameState = GetGameState<ALobbyGameState>())
+	{
+		LobbyGameState->SetHostPlayerState(HostPlayerState.Get());
 	}
 }
 
@@ -298,10 +444,11 @@ bool ALobbyGameMode::RequestLobbyTeam(
 		return false;
 	}
 
-	// None and invalid enum values are internal/invalid states, not player-facing choices.
-	if (RequestedTeam != EGameTeam::TeamA && RequestedTeam != EGameTeam::TeamB)
+	// None 은 대기로 돌아가기. 시작할 때 FinalizeTeamsForMatchStart 가 남은 대기 인원을 채운다
+	const bool bToWaiting = RequestedTeam == EGameTeam::None;
+	if (!bToWaiting && RequestedTeam != EGameTeam::TeamA && RequestedTeam != EGameTeam::TeamB)
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: only TeamA or TeamB is selectable."));
+		UE_LOG(LogLobbyGameMode, Warning, TEXT("Team change blocked: only TeamA, TeamB or None is selectable."));
 		return false;
 	}
 
@@ -310,13 +457,20 @@ bool ALobbyGameMode::RequestLobbyTeam(
 		return true;
 	}
 
-	if (CountTeamPlayers(RequestedTeam) >= MaxPlayersPerTeam)
+	// 대기는 정원이 없다
+	if (!bToWaiting && CountTeamPlayers(RequestedTeam) >= MaxPlayersPerTeam)
 	{
 		UE_LOG(LogLobbyGameMode, Warning,
 			TEXT("Team change blocked: requested team is full (%d/%d)."),
 			CountTeamPlayers(RequestedTeam),
 			MaxPlayersPerTeam);
 		return false;
+	}
+
+	// 대기에서는 레디할 수 없다
+	if (bToWaiting)
+	{
+		ShooterPlayerState->SetLobbyReady(false);
 	}
 
 	ShooterPlayerState->SetTeam(RequestedTeam);
@@ -458,38 +612,39 @@ void ALobbyGameMode::NotifyLobbyPlayerListChanged()
 
 bool ALobbyGameMode::AreAllClientsReady() const
 {
+	int32 ReadyCount = 0;
+	int32 TotalCount = 0;
+	CountClientReady(ReadyCount, TotalCount);
+	return ReadyCount == TotalCount;
+}
+
+void ALobbyGameMode::CountClientReady(int32& OutReady, int32& OutTotal) const
+{
+	OutReady = 0;
+	OutTotal = 0;
+
 	const AGameStateBase* CurrentGameState = GameState;
 	if (!IsValid(CurrentGameState))
 	{
-		UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check failed: GameState is invalid."));
-		return false;
+		return;
 	}
 
 	for (APlayerState* PlayerState : CurrentGameState->PlayerArray)
 	{
-		if (!IsValid(PlayerState))
+		// Pressing Start is the host's readiness confirmation.
+		if (!IsValid(PlayerState) || IsHostPlayerState(PlayerState))
 		{
-			UE_LOG(LogLobbyGameMode, Warning, TEXT("Ready check: invalid PlayerState in PlayerArray."));
 			continue;
 		}
 
-		// Pressing Start is the host's readiness confirmation.
-		if (IsHostPlayerState(PlayerState))
-		{
-			continue;
-		}
+		++OutTotal;
 
 		const AShooterPlayerState* ShooterPlayerState = Cast<AShooterPlayerState>(PlayerState);
-		if (!IsValid(ShooterPlayerState) || !ShooterPlayerState->IsLobbyReady())
+		if (IsValid(ShooterPlayerState) && ShooterPlayerState->IsLobbyReady())
 		{
-			UE_LOG(LogLobbyGameMode, Warning,
-				TEXT("Ready check failed: Player=%s Ready=false"),
-				*GetNameSafe(PlayerState));
-			return false;
+			++OutReady;
 		}
 	}
-
-	return true;
 }
 
 bool ALobbyGameMode::HasMinimumPlayersToStart() const
@@ -544,6 +699,13 @@ bool ALobbyGameMode::IsHostPlayerState(const APlayerState* PlayerState) const
 	return IsValid(PlayerState)
 		&& HostPlayerState.IsValid()
 		&& HostPlayerState.Get() == PlayerState;
+}
+
+bool ALobbyGameMode::IsHostInTeam() const
+{
+	// 호스트가 대기에 있으면 자동 배정에 맡기지 않고 시작을 막는다
+	const AShooterPlayerState* HostState = Cast<AShooterPlayerState>(HostPlayerState.Get());
+	return IsValid(HostState) && HostState->GetTeam() != EGameTeam::None;
 }
 
 bool ALobbyGameMode::IsSupportedMatchMode(const ELobbyMatchMode MatchMode) const
@@ -668,54 +830,227 @@ FString ALobbyGameMode::ResolveMapPathFromName(const FString& MapName) const
 
 	if (MapName.IsEmpty())
 	{
-		return BombMapName.IsEmpty()
-			? TEXT("/Game/Maps/BombMap")
-			: FString::Printf(TEXT("/Game/Maps/%s"), *BombMapName);
+		return DominationMapName.IsEmpty()
+			? TEXT("/Game/Maps/DominationMap")
+			: FString::Printf(TEXT("/Game/Maps/%s"), *DominationMapName);
 	}
 
 	return FString::Printf(TEXT("/Game/Maps/%s"), *MapName);
 }
 
-void ALobbyGameMode::TravelToPendingGameMap()
+bool ALobbyGameMode::CaptureMatchTravelParticipants()
 {
+	MatchTravelParticipants.Reset();
 	UWorld* World = GetWorld();
-	if (!World || World->GetNetMode() == NM_Client || bTravelingToGameMap)
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(Iterator->Get());
+		const AShooterPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<AShooterPlayerState>() : nullptr;
+		if (!IsValid(PlayerState) || PlayerState->GetTeam() == EGameTeam::None)
+		{
+			MatchTravelParticipants.Reset();
+			return false;
+		}
+		MatchTravelParticipants.Add(PlayerController, PlayerState->GetTeam());
+	}
+	return MatchTravelParticipants.Num() >= MinimumPlayersToStart;
+}
+
+bool ALobbyGameMode::IsMatchTravelRosterValid() const
+{
+	const UWorld* World = GetWorld();
+	if (!IsValid(World) || !CanStartRoomGame())
+	{
+		return false;
+	}
+
+	int32 PlayerCount = 0;
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* PlayerController = Cast<AShooterPlayerController>(Iterator->Get());
+		const EGameTeam* OriginalTeam = MatchTravelParticipants.Find(PlayerController);
+		const AShooterPlayerState* PlayerState = IsValid(PlayerController)
+			? PlayerController->GetPlayerState<AShooterPlayerState>() : nullptr;
+		if (!OriginalTeam || !IsValid(PlayerState) || PlayerState->GetTeam() != *OriginalTeam)
+		{
+			return false;
+		}
+		++PlayerCount;
+	}
+	return PlayerCount == MatchTravelParticipants.Num();
+}
+
+void ALobbyGameMode::BeginMatchTravelPreparation()
+{
+	if (!bStartRoomGamePending || !IsMatchTravelRosterValid())
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster or readiness changed before preparation."));
+		return;
+	}
+
+	bPreparingMatchTravel = true;
+	PendingMatchTravelPlayers.Reset();
+	TArray<TWeakObjectPtr<AShooterPlayerController>> Participants;
+	MatchTravelParticipants.GenerateKeyArray(Participants);
+	for (const TWeakObjectPtr<AShooterPlayerController>& Participant : Participants)
+	{
+		PendingMatchTravelPlayers.Add(Participant);
+	}
+
+	UE_LOG(LogLobbyGameMode, Log, TEXT("Match travel preparation started. Request=%d Players=%d Map=%s"),
+		MatchTravelRequestId, Participants.Num(), *PendingGameMapPath);
+
+	// 마지막 완료 응답까지 로비 월드와 연결을 유지한다.
+	for (const TWeakObjectPtr<AShooterPlayerController>& Participant : Participants)
+	{
+		if (!bPreparingMatchTravel)
+		{
+			break;
+		}
+		if (AShooterPlayerController* PlayerController = Participant.Get())
+		{
+			PlayerController->ClientPrepareMatchTravel(PendingGameMapPath, MatchTravelRequestId);
+		}
+		else
+		{
+			CancelMatchTravelPreparation(TEXT("A travel participant is no longer valid."));
+			break;
+		}
+	}
+}
+
+void ALobbyGameMode::NotifyMatchTravelPrepared(
+	AShooterPlayerController* PlayerController, const int32 RequestId, const bool bSuccess)
+{
+	if (!bPreparingMatchTravel || RequestId != MatchTravelRequestId
+		|| !PendingMatchTravelPlayers.Contains(PlayerController))
 	{
 		return;
 	}
 
-	bTravelingToGameMap = true;
-
-	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	if (!bSuccess)
 	{
-		if (AShooterPlayerController* ShooterPlayerController =
-			Cast<AShooterPlayerController>(Iterator->Get()))
-		{
-			ShooterPlayerController->ClientShowLoadingScreen(0.2f);
-		}
+		UE_LOG(LogLobbyGameMode, Error, TEXT("Match travel preparation failed for %s. Request=%d"),
+			*GetNameSafe(PlayerController), RequestId);
+		CancelMatchTravelPreparation(TEXT("A participant could not preload the required assets."));
+		return;
 	}
 
+	PendingMatchTravelPlayers.Remove(PlayerController);
+	UE_LOG(LogLobbyGameMode, Log, TEXT("Match travel participant prepared. Request=%d Player=%s Remaining=%d"),
+		RequestId, *GetNameSafe(PlayerController), PendingMatchTravelPlayers.Num());
+	if (PendingMatchTravelPlayers.IsEmpty())
+	{
+		TravelToPendingGameMap();
+	}
+}
+
+void ALobbyGameMode::CancelPendingMatchTravel(const FString& Reason)
+{
+	if (bStartRoomGamePending || bPreparingMatchTravel || bTravelingToGameMap)
+	{
+		CancelMatchTravelPreparation(*Reason);
+	}
+}
+
+void ALobbyGameMode::HandleSessionStartResponseTimeout()
+{
+	if (bStartRoomGamePending && !bPreparingMatchTravel)
+	{
+		CancelMatchTravelPreparation(TEXT("The online session start response timed out."));
+	}
+}
+
+void ALobbyGameMode::CancelMatchTravelPreparation(const TCHAR* Reason)
+{
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
+	bPreparingMatchTravel = false;
+	bStartRoomGamePending = false;
+	bTravelingToGameMap = false;
+	PendingMatchTravelPlayers.Reset();
+	UE_LOG(LogLobbyGameMode, Warning, TEXT("Match travel preparation canceled. Request=%d Reason=%s"),
+		MatchTravelRequestId, Reason);
+
+	for (const TPair<TWeakObjectPtr<AShooterPlayerController>, EGameTeam>& Participant : MatchTravelParticipants)
+	{
+		if (AShooterPlayerController* PlayerController = Participant.Key.Get())
+		{
+			PlayerController->ClientCancelMatchTravelPreparation(MatchTravelRequestId);
+		}
+	}
+	MatchTravelParticipants.Reset();
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
+			SessionSubsystem->CancelRoomGameStart();
+		}
+	}
+	NotifyLobbyPlayerListChanged();
+	if (const APlayerState* HostState = HostPlayerState.Get())
+	{
+		if (AShooterPlayerController* HostController = Cast<AShooterPlayerController>(HostState->GetOwningController()))
+		{
+			HostController->ClientNotifyLobbyStartFailed();
+		}
+	}
+}
+
+void ALobbyGameMode::TravelToPendingGameMap()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || World->GetNetMode() == NM_Client || bTravelingToGameMap)
+	{
+		return;
+	}
+	if (!bPreparingMatchTravel || !PendingMatchTravelPlayers.IsEmpty() || !IsMatchTravelRosterValid())
+	{
+		CancelMatchTravelPreparation(TEXT("The room roster or readiness changed before travel."));
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
 	bUseSeamlessTravel = true;
-	World->ServerTravel(PendingGameMapPath + TEXT("?listen"));
+	bTravelingToGameMap = true;
+	if (!World->ServerTravel(PendingGameMapPath + TEXT("?listen")))
+	{
+		CancelMatchTravelPreparation(TEXT("ServerTravel could not start."));
+		return;
+	}
+	bPreparingMatchTravel = false;
+	bStartRoomGamePending = false;
+	PendingMatchTravelPlayers.Reset();
 }
 
 void ALobbyGameMode::HandleStartRoomGameComplete(const bool bWasSuccessful)
 {
+	// 세션 시작 응답을 받았으면 시간 제한을 끝내고 에셋 준비 완료를 기다린다.
+	GetWorldTimerManager().ClearTimer(SessionStartResponseTimer);
 	UGameInstance* GameInstance = GetGameInstance();
 	USessionSubSystem* SessionSubsystem = GameInstance
-		? GameInstance->GetSubsystem<USessionSubSystem>()
-		: nullptr;
+		? GameInstance->GetSubsystem<USessionSubSystem>() : nullptr;
 	if (SessionSubsystem)
 	{
-		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(
-			this,
-			&ThisClass::HandleStartRoomGameComplete);
+		SessionSubsystem->OnStartRoomGameComplete.RemoveDynamic(this, &ThisClass::HandleStartRoomGameComplete);
 	}
-
-	bStartRoomGamePending = false;
-
+	if (!bStartRoomGamePending)
+	{
+		return;
+	}
 	if (bWasSuccessful)
 	{
-		TravelToPendingGameMap();
+		BeginMatchTravelPreparation();
+	}
+	else
+	{
+		CancelMatchTravelPreparation(TEXT("The online session could not start."));
 	}
 }

@@ -4,12 +4,16 @@
 
 #include "Curves/CurveVector.h"
 #include "Engine/DataTable.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Weapon/WeaponTypes.h"
 
 UWeaponAimComponent::UWeaponAimComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
+	ApplySpreadRecoilTuning(FWeaponSpreadRecoilRow{});
+	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
 }
 
 void UWeaponAimComponent::BeginPlay()
@@ -20,6 +24,7 @@ void UWeaponAimComponent::BeginPlay()
 
 	EffectiveBaseSpreadDegrees = BaseSpreadDegrees;
 	EffectiveRecoilMultiplier = 1.f;
+	CurrentADSZoomStep = FMath::Clamp(DefaultADSZoomStep, 0, GetADSZoomStepCount() - 1);
 }
 
 void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
@@ -36,31 +41,71 @@ void UWeaponAimComponent::ApplySpreadRecoilTuningTable()
 		return;
 	}
 
-	BaseSpreadDegrees = Row->BaseSpreadDegrees;
-	BloomPerShotDegrees = Row->BloomPerShotDegrees;
-	MaxBloomDegrees = Row->MaxBloomDegrees;
-	SpreadDecayDelay = Row->SpreadDecayDelay;
-	ConsecutiveShotDecayPerSecond = Row->ConsecutiveShotDecayPerSecond;
-	MovingADSSpreadDegrees = Row->MovingADSSpreadDegrees;
+	ApplySpreadRecoilTuning(*Row);
+}
 
-	RecoilCurve = Row->RecoilCurve;
-	RecoilRandomness = Row->RecoilRandomness;
-	RecoilMaxPitch = Row->RecoilMaxPitch;
-	RecoilRecoveryDelay = Row->RecoilRecoveryDelay;
-	RecoilRecoverySpeed = Row->RecoilRecoverySpeed;
-	RecoilYawMultiplier = Row->RecoilYawMultiplier;
+void UWeaponAimComponent::ApplySpreadRecoilTuning(const FWeaponSpreadRecoilRow& Tuning)
+{
+	BaseSpreadDegrees = Tuning.BaseSpreadDegrees;
+	BloomPerShotDegrees = Tuning.BloomPerShotDegrees;
+	MaxBloomDegrees = Tuning.MaxBloomDegrees;
+	BloomRecoveryDelay = Tuning.BloomRecoveryDelay;
+	BloomRecoveryTime = Tuning.BloomRecoveryTime;
+	MovingADSSpreadDegrees = Tuning.MovingADSSpreadDegrees;
+	CrouchSpreadMultiplier = Tuning.CrouchSpreadMultiplier;
+
+	RecoilCurve = Tuning.RecoilCurve;
+	RecoilRandomness = Tuning.RecoilRandomness;
+	RecoilMaxPitch = Tuning.RecoilMaxPitch;
+	RecoilRecoveryDelay = Tuning.RecoilRecoveryDelay;
+	RecoilRecoverySpeed = Tuning.RecoilRecoverySpeed;
+	RecoilYawMultiplier = Tuning.RecoilYawMultiplier;
 }
 
 void UWeaponAimComponent::SetADS(const bool bNewIsADS)
 {
 	bIsADS = bCanADS && bNewIsADS;
 
-	// ADS 해제 시 반동 값을 즉시 0으로 리셋한다(서서히 복귀하지 않음) - 지향 사격으로 전환되면
-	// 탄퍼짐 계산으로 넘어가므로 잔여 반동이 이어지면 안 된다.
+	// 줌 단계는 여기서 리셋하지 않는다. 마지막으로 선택한 배율을 무기 인스턴스가 기억해서
+	// ADS를 다시 시작해도 같은 배율로 복귀한다.
 	if (!bIsADS)
 	{
 		ResetRecoilState();
 	}
+}
+
+float UWeaponAimComponent::GetADSFieldOfView() const
+{
+	if (!bEnableVariableADSZoom)
+	{
+		return ADSFieldOfView;
+	}
+
+	const float WideFieldOfView = FMath::Max(MinimumMagnificationFieldOfView, MaximumMagnificationFieldOfView);
+	const float NarrowFieldOfView = FMath::Min(MinimumMagnificationFieldOfView, MaximumMagnificationFieldOfView);
+	const int32 StepCount = GetADSZoomStepCount();
+	const int32 ClampedStep = FMath::Clamp(CurrentADSZoomStep, 0, StepCount - 1);
+	const float ZoomAlpha = static_cast<float>(ClampedStep) / static_cast<float>(StepCount - 1);
+
+	return FMath::Lerp(WideFieldOfView, NarrowFieldOfView, ZoomAlpha);
+}
+
+bool UWeaponAimComponent::AdjustADSZoom(const float InputDelta)
+{
+	if (!bIsADS || !bEnableVariableADSZoom || FMath::IsNearlyZero(InputDelta))
+	{
+		return false;
+	}
+
+	const int32 Direction = InputDelta > 0.f ? 1 : -1;
+	const int32 NewStep = FMath::Clamp(CurrentADSZoomStep + Direction, 0, GetADSZoomStepCount() - 1);
+	if (NewStep == CurrentADSZoomStep)
+	{
+		return false;
+	}
+
+	CurrentADSZoomStep = NewStep;
+	return true;
 }
 
 void UWeaponAimComponent::SetMovementSpreadMultiplier(const float NewMultiplier)
@@ -76,6 +121,11 @@ void UWeaponAimComponent::SetIsAirborne(const bool bNewIsAirborne)
 void UWeaponAimComponent::SetIsStationary(const bool bNewIsStationary)
 {
 	bIsStationary = bNewIsStationary;
+}
+
+void UWeaponAimComponent::SetIsCrouching(const bool bNewIsCrouching)
+{
+	bIsCrouching = bNewIsCrouching;
 }
 
 void UWeaponAimComponent::SetEffectiveSpreadDegrees(const float NewSpreadDegrees)
@@ -98,24 +148,56 @@ float UWeaponAimComponent::GetCurrentSpreadDegrees() const
 	return CalculateCurrentSpreadDegrees();
 }
 
+float UWeaponAimComponent::GetCurrentBloomDegrees() const
+{
+	const float MaxBloom = FMath::Max(0.f, MaxBloomDegrees);
+	const float StoredBloom = FMath::Clamp(BloomAtLastShot, 0.f, MaxBloom);
+	const UWorld* World = GetWorld();
+	if (StoredBloom <= 0.f || !World)
+	{
+		return StoredBloom;
+	}
+
+	const double RecoveryElapsed = World->GetTimeSeconds() - BloomRecoveryStartTime;
+	if (RecoveryElapsed < 0.0)
+	{
+		return StoredBloom;
+	}
+	if (BloomRecoveryTime <= 0.f)
+	{
+		return 0.f;
+	}
+
+	// 최대 블룸 기준의 일정한 회복 속도. 작은 점사는 더 빨리, 최대 연사도 정해진 시간에 끝난다.
+	const float RecoveryFraction = static_cast<float>(FMath::Clamp(
+		RecoveryElapsed / static_cast<double>(BloomRecoveryTime), 0.0, 1.0));
+	return FMath::Max(0.f, StoredBloom - MaxBloom * RecoveryFraction);
+}
+
 void UWeaponAimComponent::TickAim(const float DeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UWeaponAimComponent::TickAim);
+
 	TimeSinceLastShot += DeltaTime;
 
-	TickSpreadDecay(DeltaTime);
+	UpdateLegacyShotCount();
 	TickProceduralRecoilGeneration(DeltaTime);
 	TickRecoilRecovery(DeltaTime);
 }
 
-void UWeaponAimComponent::NotifyShotFired()
+void UWeaponAimComponent::NotifyShotFired(const float ShotInterval)
 {
-	// 3.3.1 개정 원칙: 탄퍼짐 블룸은 지향 사격 전용이다. ADS 중에는 늘리지 않는다 - 안 그러면
-	// ADS 중 사격이 화면엔 안 보이게(스프레드 0 고정) 블룸을 몰래 쌓다가, ADS를 풀자마자
-	// 그 값이 한꺼번에 튀어나와 크로스헤어가 갑자기 벌어져 보인다.
 	if (!bIsADS)
 	{
-		ConsecutiveShotCount++;
+		// 이미 회복된 현재 값에 한 발분만 더한다. 최대치 이후 발수는 회복 부채로 남기지 않는다.
+		BloomAtLastShot = FMath::Clamp(GetCurrentBloomDegrees() + FMath::Max(0.f, BloomPerShotDegrees),
+			0.f, FMath::Max(0.f, MaxBloomDegrees));
+		const UWorld* World = GetWorld();
+		BloomRecoveryStartTime = (World ? World->GetTimeSeconds() : 0.0)
+			+ FMath::Max(0.f, ShotInterval) + FMath::Max(0.f, BloomRecoveryDelay);
 	}
+	// ADS 발사는 지향 블룸을 누적하거나 회복을 붙잡지 않는다. 반동 시계는 모든 발사에 반응한다.
+	UpdateLegacyShotCount();
 	TimeSinceLastShot = 0.f;
 }
 
@@ -144,8 +226,23 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 	}
 	else
 	{
-		const float BloomDegrees = FMath::Min(ConsecutiveShotCount * BloomPerShotDegrees, MaxBloomDegrees);
+		const float BloomDegrees = GetCurrentBloomDegrees();
 		SpreadDegrees = (EffectiveBaseSpreadDegrees + BloomDegrees) * MovementSpreadMultiplier;
+	}
+
+	// 정지 상태가 아니면(걷기/스프린트, 공중 포함) ADS로 고정한 0도, 이동 배율을 곱해도 0인
+	// 지향사격(기본 탄퍼짐 0인 무기)도 전부 뚫고 강제로 탄퍼짐이 붙는다 - InAirSpreadPenaltyDegrees와
+	// 같은 이유로 배율과 분리된 덧셈 페널티다.
+	if (!bIsStationary)
+	{
+		SpreadDegrees += MovingSpreadPenaltyDegrees;
+	}
+
+	// 앉아서 쏘면 지상 탄퍼짐(지향 블룸/이동 배율/ADS 이동 탄퍼짐/이동 페널티)이 줄어든다. 공중 페널티는
+	// 앉기와 무관하게 그대로 붙어야 해서 그 앞에서 곱한다.
+	if (bIsCrouching)
+	{
+		SpreadDegrees *= CrouchSpreadMultiplier;
 	}
 
 	// 공중에서는 ADS로 고정한 0도, 이동 배율을 곱해도 0인 지향사격(기본 탄퍼짐 0인 무기)도 전부
@@ -159,20 +256,10 @@ float UWeaponAimComponent::CalculateCurrentSpreadDegrees() const
 	return SpreadDegrees;
 }
 
-void UWeaponAimComponent::TickSpreadDecay(float DeltaTime)
+void UWeaponAimComponent::UpdateLegacyShotCount()
 {
-	if (ConsecutiveShotCount <= 0 || TimeSinceLastShot < SpreadDecayDelay)
-	{
-		return;
-	}
-
-	ConsecutiveShotDecayAccumulator += ConsecutiveShotDecayPerSecond * DeltaTime;
-
-	while (ConsecutiveShotDecayAccumulator >= 1.f && ConsecutiveShotCount > 0)
-	{
-		ConsecutiveShotCount--;
-		ConsecutiveShotDecayAccumulator -= 1.f;
-	}
+	ConsecutiveShotCount = BloomPerShotDegrees > KINDA_SMALL_NUMBER
+		? FMath::CeilToInt(GetCurrentBloomDegrees() / BloomPerShotDegrees) : 0;
 }
 
 void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
@@ -202,6 +289,9 @@ void UWeaponAimComponent::TickProceduralRecoilGeneration(const float DeltaTime)
 	FVector2D Delta = TargetOffset - PrevRecoilOffset;
 	Delta.X += FMath::FRandRange(-RecoilRandomness, RecoilRandomness);
 	Delta *= EffectiveRecoilMultiplier;
+	// 이동 중에는 탄퍼짐과 마찬가지로 반동도 커져야 한다(정지 1.0 / 걷기 1.5 / 공중,뛰기 2.5) -
+	// CombatComponent::UpdateMovementSpreadMultiplier가 매 틱 갱신해서 넘겨주는 값을 그대로 재사용한다.
+	Delta *= MovementSpreadMultiplier;
 	// Yaw(좌우) 반동만 별도로 축소/제거할 수 있게 한다 - 예: 스나이퍼는 X축 반동을 0으로 설정.
 	Delta.X *= RecoilYawMultiplier;
 

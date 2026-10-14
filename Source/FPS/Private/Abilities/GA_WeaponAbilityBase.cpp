@@ -3,6 +3,7 @@
 #include "Abilities/GA_WeaponAbilityBase.h"
 
 #include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Combat/CombatComponent.h"
 #include "GameplayTagContainer.h"
 #include "Player/BaseRoundPlayerController.h"
@@ -46,6 +47,12 @@ bool UGA_WeaponAbilityBase::CanActivateAbility(
 	if (!RequiresWeaponReady())
 	{
 		return true;
+	}
+	// The wrapper owns this during holster, before Combat starts the draw timer.
+	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid()
+		&& ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(RogueTags::State_Combat_IsSwapping))
+	{
+		return false;
 	}
 
 	const UCombatComponent* CombatComponent = GetCombatComponent();

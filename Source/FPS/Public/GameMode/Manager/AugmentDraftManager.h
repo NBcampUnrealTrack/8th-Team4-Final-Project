@@ -5,7 +5,7 @@
 #include "Augment/AugmentDraft.h"
 #include "AugmentDraftManager.generated.h"
 
-class ABaseTeamGameMode;
+class AShooterGameMode;
 class AShooterPlayerState;
 class UAugmentDraftProfile;
 class UAugmentInventoryComponent;
@@ -24,7 +24,7 @@ class FPS_API UAugmentDraftManager : public UObject
 	GENERATED_BODY()
 
 public:
-	void Initialize(ABaseTeamGameMode* InOwnerGameMode, bool bInDraftEnabled,
+	void Initialize(AShooterGameMode* InOwnerGameMode, bool bInDraftEnabled,
 		const UAugmentDraftProfile* InDraftProfile = nullptr);
 	void Shutdown();
 
@@ -37,6 +37,13 @@ public:
 	// 모든 플레이어의 대기열에 등록
 	// ActiveSlot 은 Pool 이 Active 일 때만 사용
 	void GrantToAll(EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
+
+	// Individual join/start rewards must not grant another reward to everyone already playing.
+	void GrantToPlayer(AShooterPlayerState* Recipient, EAugmentRewardPool Pool,
+		int32 RoundNumber, FGameplayTag ActiveSlot = FGameplayTag());
+	// 이미 진행된 전역 보상만 한 플레이어의 기존 큐 뒤에 붙인다.
+	void EnqueueMissingRewards(AShooterPlayerState* Recipient);
+	void ReleasePlayer(AShooterPlayerState* LeavingPlayer);
 
 	// 후보가 없는 항목은 건너뛰고 다음 보상을 제시, 제시할 것이 없으면 false
 	bool ServeNextReward(AShooterPlayerState* PlayerState);
@@ -54,6 +61,20 @@ public:
 	FOnAugmentDraftQueueDrained OnPlayerDraftQueueDrained;
 
 private:
+	struct FRewardLedgerEntry
+	{
+		int32 Sequence = 0;
+		EAugmentRewardPool Pool = EAugmentRewardPool::Passive;
+		FGameplayTag ActiveSlot;
+		EAugmentTier TeamATier = EAugmentTier::Common;
+		EAugmentTier TeamBTier = EAugmentTier::Common;
+		int32 RoundNumber = 0;
+	};
+
+	void GrantToParticipants(const TArray<AShooterPlayerState*>& Recipients,
+		EAugmentRewardPool Pool, int32 RoundNumber, FGameplayTag ActiveSlot);
+	void GrantLedgerEntryToPlayer(const FRewardLedgerEntry& Entry, AShooterPlayerState* Recipient) const;
+
 	UFUNCTION()
 	void HandleRegistryReady();
 
@@ -91,7 +112,7 @@ private:
 	UAugmentInventoryComponent* GetInventory(AShooterPlayerState* PlayerState) const;
 	void GetCurrentPlayerStates(TArray<AShooterPlayerState*>& OutPlayerStates) const;
 
-	TWeakObjectPtr<ABaseTeamGameMode> OwnerGameMode;
+	TWeakObjectPtr<AShooterGameMode> OwnerGameMode;
 	TWeakObjectPtr<UAugmentRegistrySubsystem> BoundRegistry;
 
 	// 프로젝트 설정에서 온 추첨 규칙
@@ -103,4 +124,6 @@ private:
 	// Initialize 에서 받은 제시 설정
 	int32 OfferCount = 0;
 	float SelectionTimeout = 0.f;
+	TArray<FRewardLedgerEntry> RewardLedger;
+	int32 NextRewardSequence = 1;
 };

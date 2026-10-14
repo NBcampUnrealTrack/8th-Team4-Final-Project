@@ -1,10 +1,13 @@
-﻿#include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
+#include "UI/InGame/Menu/ShooterSurrenderVoteScreen.h"
 
 #include "CommonButtonBase.h"
+#include "Components/Button.h"
+#include "Components/PanelSlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBoxSlot.h"
+#include "Components/Widget.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
 #include "GameFramework/GameStateBase.h"
 #include "TimerManager.h"
 #include "UI/InGame/Menu/ShooterSurrenderVoterRow.h"
@@ -18,8 +21,23 @@ void UShooterSurrenderVoteScreen::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	Btn_Approve->OnClicked().AddUObject(this, &ThisClass::HandleApproveClicked);
-	Btn_Reject->OnClicked().AddUObject(this, &ThisClass::HandleRejectClicked);
+	if (UCommonButtonBase* ApproveCommonButton = Cast<UCommonButtonBase>(Btn_Approve))
+	{
+		ApproveCommonButton->OnClicked().AddUObject(this, &ThisClass::HandleApproveClicked);
+	}
+	else if (UButton* ApproveButton = Cast<UButton>(Btn_Approve))
+	{
+		ApproveButton->OnClicked.AddDynamic(this, &ThisClass::HandleApproveClicked);
+	}
+
+	if (UCommonButtonBase* RejectCommonButton = Cast<UCommonButtonBase>(Btn_Reject))
+	{
+		RejectCommonButton->OnClicked().AddUObject(this, &ThisClass::HandleRejectClicked);
+	}
+	else if (UButton* RejectButton = Cast<UButton>(Btn_Reject))
+	{
+		RejectButton->OnClicked.AddDynamic(this, &ThisClass::HandleRejectClicked);
+	}
 }
 
 void UShooterSurrenderVoteScreen::NativeOnActivated()
@@ -27,17 +45,23 @@ void UShooterSurrenderVoteScreen::NativeOnActivated()
 	Super::NativeOnActivated();
 
 	RefreshRemainingTime();
-	GetWorld()->GetTimerManager().SetTimer(
-		RemainingTimeTimerHandle,
-		this,
-		&ThisClass::RefreshRemainingTime,
-		1.0f,
-		true);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			RemainingTimeTimerHandle,
+			this,
+			&ThisClass::RefreshRemainingTime,
+			1.0f,
+			true);
+	}
 }
 
 void UShooterSurrenderVoteScreen::NativeOnDeactivated()
 {
-	GetWorld()->GetTimerManager().ClearTimer(RemainingTimeTimerHandle);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(RemainingTimeTimerHandle);
+	}
 	Super::NativeOnDeactivated();
 }
 
@@ -56,8 +80,14 @@ void UShooterSurrenderVoteScreen::SetVoteState(const FSurrenderVoteState& NewVot
 	RefreshRemainingTime();
 
 	const bool bCanRespond = VoteState.IsActive() && !VoteState.bLocalPlayerHasResponded;
-	Btn_Approve->SetIsEnabled(bCanRespond);
-	Btn_Reject->SetIsEnabled(bCanRespond);
+	if (IsValid(Btn_Approve))
+	{
+		Btn_Approve->SetIsEnabled(bCanRespond);
+	}
+	if (IsValid(Btn_Reject))
+	{
+		Btn_Reject->SetIsEnabled(bCanRespond);
+	}
 }
 
 void UShooterSurrenderVoteScreen::HandleApproveClicked()
@@ -79,34 +109,41 @@ bool UShooterSurrenderVoteScreen::NativeOnHandleBackAction()
 void UShooterSurrenderVoteScreen::RebuildVoterRows()
 {
 	Panel_Voters->ClearChildren();
-	VoterRows.Reset();
 	VoterNames.Reset();
+	VoterRows.Reset();
+
 	if (!ensure(VoterRowClass))
 	{
 		return;
 	}
 
-	APlayerController* PlayerController = GetOwningPlayer();
+	VoterNames.Reserve(VoteState.Voters.Num());
+	VoterRows.Reserve(VoteState.Voters.Num());
+
 	for (const FSurrenderVoterState& VoterState : VoteState.Voters)
 	{
-		UShooterSurrenderVoterRow* Row = CreateWidget<UShooterSurrenderVoterRow>(
-			PlayerController,
-			VoterRowClass);
-		if (!ensure(Row))
+		// 생성에 실패해도 Voters 와 인덱스를 맞추려고 null 도 넣는다
+		UShooterSurrenderVoterRow* Row = CreateWidget<UShooterSurrenderVoterRow>(this, VoterRowClass);
+		if (UVerticalBoxSlot* VerticalSlot = Cast<UVerticalBoxSlot>(Panel_Voters->AddChild(Row)))
 		{
-			return;
+			VerticalSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
 		}
-		Panel_Voters->AddChild(Row);
-		VoterRows.Add(Row);
+
 		VoterNames.Add(VoterState.PlayerName);
+		VoterRows.Add(Row);
 	}
 }
 
 void UShooterSurrenderVoteScreen::RefreshVoterRows()
 {
-	for (int32 Index = 0; Index < VoterRows.Num(); ++Index)
+	const int32 RowCount = FMath::Min(VoteState.Voters.Num(), VoterRows.Num());
+
+	for (int32 Index = 0; Index < RowCount; ++Index)
 	{
-		VoterRows[Index]->SetVoterState(VoteState.Voters[Index]);
+		if (IsValid(VoterRows[Index]))
+		{
+			VoterRows[Index]->SetVoterState(VoteState.Voters[Index]);
+		}
 	}
 }
 
@@ -120,10 +157,16 @@ void UShooterSurrenderVoteScreen::RefreshApprovalSummary()
 
 void UShooterSurrenderVoteScreen::RefreshRemainingTime()
 {
-	const AGameStateBase* GameState = GetWorld()->GetGameState<AGameStateBase>();
+	const UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	const AGameStateBase* GameState = World->GetGameState<AGameStateBase>();
 	const float ServerTime = IsValid(GameState)
 		? GameState->GetServerWorldTimeSeconds()
-		: GetWorld()->GetTimeSeconds();
+		: World->GetTimeSeconds();
 	const int32 RemainingSeconds = FMath::Max(
 		0,
 		FMath::CeilToInt(VoteState.EndServerTime - ServerTime));

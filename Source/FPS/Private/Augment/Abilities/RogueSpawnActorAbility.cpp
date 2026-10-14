@@ -28,12 +28,12 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 		return;
 	}
 
+	UE_CLOG(Entry.SpawnActorClass.IsPending(), LogSpawnActor, Warning,
+		TEXT("[SpawnActor] %s 가 프리로드되지 않아 동기 로드합니다"), *Entry.SpawnActorClass.ToString());
 	UClass* ActorClass = Entry.SpawnActorClass.LoadSynchronous();
-	if (!ActorClass)
+	if (!ensureMsgf(ActorClass,
+		TEXT("[SpawnActor] %s 를 부여한 계열의 SpawnActorClass 가 비어 있거나 로드에 실패했습니다"), *GetName()))
 	{
-		UE_LOG(LogSpawnActor, Error,
-			TEXT("[SpawnActor] %s 를 부여한 계열의 SpawnActorClass 가 비어 있거나 로드에 실패했습니다"),
-			*GetName());
 		return;
 	}
 
@@ -41,21 +41,70 @@ void URogueSpawnActorAbility::Deliver(const FAugmentGrantedAbility& Entry,
 	FRotator EyeRotation;
 	Avatar->GetActorEyesViewPoint(EyeLocation, EyeRotation);
 
-	const FTransform SpawnTransform(
-		EyeRotation, EyeLocation + EyeRotation.Vector() * SpawnForwardOffset);
+	// bSpawnLevel/bSnapSpawnToGround 옵션
+	const FRotator LaunchRotation = bSpawnLevel ? FRotator(0.f, EyeRotation.Yaw, 0.f) : EyeRotation;
+	FTransform SpawnTransform = bSpawnAtAimPoint
+		? ResolveAimSpawnTransform(Avatar, EyeLocation, EyeRotation)
+		: FTransform(LaunchRotation, EyeLocation + LaunchRotation.Vector() * SpawnForwardOffset);
+
+	if (bSnapSpawnToGround)
+	{
+		// 스폰 위치에서 아래로 지면을 찾아 지면 기준 높이로 맞춘다.
+		constexpr float GroundSnapTraceDistance = 1000.f;
+		FCollisionQueryParams GroundParams(SCENE_QUERY_STAT(RogueSpawnGroundSnap), false, Avatar);
+		TArray<AActor*> AttachedToAvatar;
+		Avatar->GetAttachedActors(AttachedToAvatar, true, true);
+		GroundParams.AddIgnoredActors(AttachedToAvatar);
+
+		const FVector TraceFrom = SpawnTransform.GetLocation();
+		FHitResult GroundHit;
+		if (World->LineTraceSingleByChannel(
+			GroundHit, TraceFrom, TraceFrom - FVector(0.f, 0.f, GroundSnapTraceDistance), ECC_Visibility, GroundParams))
+		{
+			FVector SnappedLocation = TraceFrom;
+			SnappedLocation.Z = GroundHit.ImpactPoint.Z + SpawnHeightAboveGround;
+			SpawnTransform.SetLocation(SnappedLocation);
+		}
+	}
 
 	ARogueAugmentActor* Spawned = World->SpawnActorDeferred<ARogueAugmentActor>(
 		ActorClass, SpawnTransform, Avatar, Cast<APawn>(Avatar),
 		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 
-	if (!Spawned)
+	if (!ensureMsgf(Spawned, TEXT("[SpawnActor] %s 스폰에 실패했습니다"), *GetNameSafe(ActorClass)))
 	{
-		UE_LOG(LogSpawnActor, Error,
-			TEXT("[SpawnActor] %s 스폰에 실패했습니다"), *GetNameSafe(ActorClass));
 		return;
 	}
 
 	Spawned->InitializePayload(Payload);
 	Spawned->SetUsedInputTag(UsedInputTag);
 	Spawned->FinishSpawning(SpawnTransform);
+}
+
+FTransform URogueSpawnActorAbility::ResolveAimSpawnTransform(
+	const AActor* Avatar, const FVector& EyeLocation, const FRotator& EyeRotation) const
+{
+	constexpr float GroundTraceDistance = 10000.f;
+
+	const UWorld* World = Avatar->GetWorld();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RogueSpawnAim), false, Avatar);
+	TArray<AActor*> Attached;
+	Avatar->GetAttachedActors(Attached, true, true);
+	Params.AddIgnoredActors(Attached);
+
+	const FVector AimEnd = EyeLocation + EyeRotation.Vector() * MaxAimDistance;
+	FVector Location = AimEnd;
+
+	FHitResult Hit;
+	if (World->LineTraceSingleByChannel(Hit, EyeLocation, AimEnd, ECC_Visibility, Params))
+	{
+		Location = Hit.ImpactPoint;
+	}
+	else if (World->LineTraceSingleByChannel(
+		Hit, AimEnd, AimEnd - FVector(0.f, 0.f, GroundTraceDistance), ECC_Visibility, Params))
+	{
+		Location = Hit.ImpactPoint;
+	}
+
+	return FTransform(FRotator(0.f, EyeRotation.Yaw, 0.f), Location);
 }

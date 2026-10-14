@@ -42,6 +42,8 @@ private:
 	void StartAsyncLoad();
 	void OnCatalogLoaded();
 	void BuildIndex();
+	void StartAssetPreload();
+	void OnAssetPreloaded();
 
 	UPROPERTY()
 	TMap<FPrimaryAssetId, TObjectPtr<UAugmentDefinition>> DefinitionsById;
@@ -56,6 +58,12 @@ private:
 	TArray<UAugmentDefinition*> ActiveDefinitions;
 
 	TSharedPtr<FStreamableHandle> LoadHandle;
+
+	// 증강이 쓰는 GE,GA,액터,메시. 들고 있는 동안 GC 되지 않음
+	TSharedPtr<FStreamableHandle> PreloadHandle;
+
+	// 투척물이 터진 뒤 남기는 후속 액터
+	TSharedPtr<FStreamableHandle> FollowUpPreloadHandle;
 
 	bool bReady = false;
 

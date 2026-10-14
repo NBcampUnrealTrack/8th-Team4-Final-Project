@@ -2,11 +2,16 @@
 
 
 #include "Augment/Actor/RogueThrowableActor.h"
-
+#include "Actor/DominationSpawnBarrier.h"
 #include "Components/SphereComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/RotatingMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Sound/SoundAttenuation.h"
 #include "Tags/GameplayTags.h"
 
 ARogueThrowableActor::ARogueThrowableActor()
@@ -53,18 +58,34 @@ void ARogueThrowableActor::BeginPlay()
 		Movement->Velocity = Lobbed.Vector() * (Movement->InitialSpeed * UnderhandSpeedScale);
 	}
 
-	if (AActor* Thrower = GetInstigator())
+	if (APawn* Thrower = GetInstigator())
 	{
 		Collision->IgnoreActorWhenMoving(Thrower, true);
 
 		// 던진 사람의 이동속도를 더함
 		Movement->Velocity += Thrower->GetVelocity() * InheritVelocityScale;
+		
+		const ABaseTeamPlayerState* ThrowerPlayerState = Thrower->GetPlayerState<ABaseTeamPlayerState>();
+		const EGameTeam ThrowerTeam = IsValid(ThrowerPlayerState) ? ThrowerPlayerState->GetTeam() : EGameTeam::None;
+		if (ThrowerTeam != EGameTeam::None)
+		{
+			for (const TWeakObjectPtr<ADominationSpawnBarrier>& BarrierPtr : ADominationSpawnBarrier::GetActiveBarriers())
+			{
+				ADominationSpawnBarrier* Barrier = BarrierPtr.Get();
+				if (IsValid(Barrier) && Barrier->GetOwnerTeam() == ThrowerTeam)
+				{
+					Collision->IgnoreActorWhenMoving(Barrier, true);
+				}
+			}
+		}
 	}
 
 	Movement->OnProjectileBounce.AddDynamic(this, &ThisClass::HandleBounce);
 	Movement->OnProjectileStop.AddDynamic(this, &ThisClass::HandleStop);
 
 	BaseSpinRate = Spin->RotationRate;
+
+	StartTrail();
 
 	Super::BeginPlay();
 }
@@ -90,7 +111,8 @@ void ARogueThrowableActor::HandleBounce(const FHitResult& ImpactResult, const FV
 		const float Reference = FMath::Max(Movement->InitialSpeed, 1.f);
 		const float Volume = FMath::Clamp(ImpactSpeed / Reference, 0.2f, 1.f);
 
-		UGameplayStatics::PlaySoundAtLocation(this, BounceSound, ImpactResult.ImpactPoint, Volume);
+		UGameplayStatics::PlaySoundAtLocation(this, BounceSound, ImpactResult.ImpactPoint,
+			FRotator::ZeroRotator, Volume, 1.f, 0.f, BounceAttenuation);
 	}
 
 	OnBounced(ImpactResult, ImpactSpeed);
@@ -100,6 +122,8 @@ void ARogueThrowableActor::HandleBounce(const FHitResult& ImpactResult, const FV
 
 void ARogueThrowableActor::HandleStop(const FHitResult& ImpactResult)
 {
+	StopTrail();
+
 	HandleImpact();
 }
 
@@ -116,4 +140,34 @@ void ARogueThrowableActor::HandleImpact()
 	{
 		StartFuse();
 	}
+}
+
+void ARogueThrowableActor::StartTrail()
+{
+	if (!TrailEffect || TrailComponent || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	TrailComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		TrailEffect, Collision, NAME_None, TrailOffset, FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset, /*bAutoDestroy*/ false, /*bAutoActivate*/ true);
+
+	if (TrailComponent && bOverrideTrailColor)
+	{
+		TrailComponent->SetVariableLinearColor(TEXT("User.Team_Color"), TrailColor);
+	}
+}
+
+void ARogueThrowableActor::StopTrail()
+{
+	if (!IsValid(TrailComponent))
+	{
+		return;
+	}
+
+	// 남은 입자가 수명대로 사라진 뒤 자동 정리
+	TrailComponent->SetAutoDestroy(true);
+	TrailComponent->Deactivate();
+	TrailComponent = nullptr;
 }

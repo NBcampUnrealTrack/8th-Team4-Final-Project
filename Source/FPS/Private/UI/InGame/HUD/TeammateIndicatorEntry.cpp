@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "Camera/PlayerCameraManager.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 void UTeammateIndicatorEntry::NativeConstruct()
 {
@@ -31,6 +32,8 @@ void UTeammateIndicatorEntry::NativeConstruct()
 
 void UTeammateIndicatorEntry::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TeammateIndicatorEntry_NativeTick);
+
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	
 	UpdateScreenPositionAndVisibility();
@@ -58,6 +61,9 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 		{
 			Panel_IndicatorVisual->SetVisibility(ESlateVisibility::Collapsed);
 		}
+		
+		// 다시 보일 때 가림 판정을 바로 한다
+		NextLineOfSightCheckTime = 0.0;
 	};
 
 	if (bCachedIsAlive == false)
@@ -125,7 +131,10 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 
 	// 5. 계산된 Canvas 위치로 인디케이터를 옮긴 뒤 보여준다.
 	// 먼저 보여주면 이전 위치나 기본 위치가 한 프레임 보일 수 있다.
-	CachedCanvasSlot->SetPosition(OurLocalPos);
+	if (!GetRenderTransform().Translation.Equals(OurLocalPos, 0.05f))
+	{
+		SetRenderTranslation(OurLocalPos);
+	}
 	
 	if (Panel_IndicatorVisual)
 	{
@@ -134,9 +143,15 @@ void UTeammateIndicatorEntry::UpdateScreenPositionAndVisibility()
 	
 	if (Text_Nickname)
 	{
-		const bool bHeadVisible = HasLineOfSightToTargetHead(HeadLocation, TargetActor);
+		// 가림 판정은 간격마다만 다시 한다
+		const double Now = PC->GetWorld()->GetTimeSeconds();
+		if (Now >= NextLineOfSightCheckTime)
+		{
+			NextLineOfSightCheckTime = Now + LineOfSightCheckInterval;
+			bCachedHeadVisible = HasLineOfSightToTargetHead(HeadLocation, TargetActor);
+		}
 		
-		Text_Nickname->SetVisibility(bHeadVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_Nickname->SetVisibility(bCachedHeadVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
@@ -158,7 +173,6 @@ bool UTeammateIndicatorEntry::GetTargetHeadLocation(FVector& OutHeadLocation, AA
 	const USkeletalMeshComponent* Mesh = IsValid(TargetCharacter) ? TargetCharacter->GetMesh() : nullptr;
 	if (IsValid(Mesh) == false)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("TeammateIndicatorEntry Mesh가 없음"));
 		return false;
 	}
 	
@@ -194,6 +208,8 @@ void UTeammateIndicatorEntry::HandleAliveStateChanged(bool bNewIsAlive)
 
 bool UTeammateIndicatorEntry::HasLineOfSightToTargetHead(const FVector& HeadLocation, const AActor* TargetActor) const
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(TeammateIndicatorEntry_LineOfSight);
+
 	const UWorld* World = GetWorld();
 	const APlayerController* PC = GetOwningPlayer();
 	
@@ -223,10 +239,19 @@ bool UTeammateIndicatorEntry::HasLineOfSightToTargetHead(const FVector& HeadLoca
 
 void UTeammateIndicatorEntry::SetPlayerState(AShooterPlayerState* NewPlayerState)
 {
+	// 같은 대상 재배정은 건너뛴다. 주기 갱신마다 재바인딩하면 인디케이터가 깜빡인다
+	if (NewPlayerState != nullptr && BoundPlayerState.Get() == NewPlayerState)
+	{
+		return;
+	}
+	
 	// 이전 대상의 생사 구독 먼저 끊음
 	UnbindFromPlayerState();
 	
 	BoundPlayerState = NewPlayerState;
+	
+	// 대상이 바뀌면 가림 판정을 바로 한다
+	NextLineOfSightCheckTime = 0.0;
 	
 	if (NewPlayerState == nullptr)
 	{

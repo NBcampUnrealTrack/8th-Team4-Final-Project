@@ -1,21 +1,59 @@
 ﻿#include "Animation/ShooterAnimInstance.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimNode_ReloadHandContact.h"
+#include "AnimationRuntime.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/World.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/ShooterMovementComponent.h"
+#include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
+#include "GameMode/Settings/DominationClassSettings.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Player/DominationPlayerState.h"
 #include "Tags/GameplayTags.h"
+#include "Training/CQB/CQBTrainingAIComponent.h"
 #include "Weapon/WeaponBase.h"
+#include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
 
+
+
+namespace
+{
+	const TCHAR* const PistolReloadMagazineMesh =
+		TEXT("/Game/KINEMATION/TacticalShooterPack/Weapons/WK-11_Viper/Magazine/SKM_Mag_WK-11_Viper.SKM_Mag_WK-11_Viper");
+	const FName ReloadMagazineBone(TEXT("Magazine"));
+	const FName ReloadMagazineHand(TEXT("hand_l"));
+	// The pistol's magazine counts as out once its bone has left the seated reference pose this far (cm).
+	constexpr double ReloadMagazineOutDistance = 1.5;
+	// Magazine bone in the magazine mesh's component frame (bind pose): the mesh keeps the pistol's axes, so the
+	// bone carries the pistol's seated magazine rotation, just above the mesh origin.
+	const FTransform ReloadMagazineBoneInMesh(FQuat(-0.56841, -0.420607, 0.56841, 0.420607).GetNormalized(), FVector(0., 0.1317, 0.3989));
+}
+
 void UShooterAnimInstance::NativeInitializeAnimation()
 {
+	ContactPlayback.Reset();
+	RestoreSupportAnchor();
+	UnregisterSupportAnchor();
+	PreviousWeaponMesh.Reset();
+	bThirdPersonSupportAnchor = false;
 	Super::NativeInitializeAnimation();
 
 	CacheReferences();
+	UpdateHolsterMontageBinding();
+	if (!bFirstPersonAnimation && GetSkelMeshComponent())
+	{
+		SupportAnchorBody = GetSkelMeshComponent();
+		SupportAnchorFinalizedHandle = GetSkelMeshComponent()->RegisterOnBoneTransformsFinalizedDelegate(
+			FOnBoneTransformsFinalizedMultiCast::FDelegate::CreateUObject(this, &UShooterAnimInstance::UpdateSupportAnchor));
+	}
 	LastAnimationWeapon.Reset();
 	bWasReloading = false;
 	bWasUtilityHeld = false;
@@ -23,6 +61,86 @@ void UShooterAnimInstance::NativeInitializeAnimation()
 	if (ShooterCharacter)
 	{
 		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetBaseAimRotation().Yaw, 0.f);
+	}
+}
+
+void UShooterAnimInstance::RestoreSupportAnchor()
+{
+	if (bSupportAnchorActive)
+	{
+		if (USkeletalMeshComponent* WeaponMesh = SupportAnchorMesh.Get())
+		{
+			// Do not undo a reattachment performed by equip/drop while the action ended.
+			if (WeaponMesh->GetAttachParent() == SupportAnchorBody.Get()
+				&& WeaponMesh->GetAttachSocketName() == OriginalWeaponSocket)
+			{
+				WeaponMesh->SetRelativeTransform(OriginalWeaponRelative);
+			}
+		}
+	}
+	bSupportAnchorActive = false;
+	SupportAnchorMesh.Reset();
+}
+
+void UShooterAnimInstance::NativeUninitializeAnimation()
+{
+	ReleaseReloadMagazine();
+	UnbindHolsterMontageSource();
+	RestoreSupportAnchor();
+	UnregisterSupportAnchor();
+	PreviousWeaponMesh.Reset();
+	Super::NativeUninitializeAnimation();
+}
+
+void UShooterAnimInstance::UnregisterSupportAnchor()
+{
+	if (USkeletalMeshComponent* Body = SupportAnchorBody.Get())
+	{
+		Body->UnregisterOnBoneTransformsFinalizedDelegate(SupportAnchorFinalizedHandle);
+	}
+	SupportAnchorFinalizedHandle.Reset();
+	SupportAnchorBody.Reset();
+}
+
+void UShooterAnimInstance::UpdateSupportAnchor()
+{
+	// Finalized bones (after buffer flip), not PostEvaluate's previous-frame sockets.
+	USkeletalMeshComponent* Body = SupportAnchorBody.Get();
+	USkeletalMeshComponent* WeaponMesh = IsValid(CurrentWeapon) ? CurrentWeapon->GetMesh3P() : nullptr;
+	const bool bEligible = !bFirstPersonAnimation && Body && WeaponMesh
+		&& WeaponMesh->GetAttachParent() == Body && Body->DoesSocketExist(TEXT("hand_l"));
+	if (!bEligible || !bThirdPersonSupportAnchor || bIsReloading
+		|| (bSupportAnchorActive && SupportAnchorMesh.Get() != WeaponMesh))
+	{
+		RestoreSupportAnchor();
+	}
+	if (!bEligible)
+	{
+		PreviousWeaponMesh.Reset();
+		return;
+	}
+	const FTransform SupportHand = Body->GetSocketTransform(TEXT("hand_l"));
+	// Socket-attached children are updated after this callback. Reconstruct their
+	// current-frame world transform instead of sampling the stale child transform.
+	const FTransform AttachedWeaponWorld = WeaponMesh->GetRelativeTransform()
+		* Body->GetSocketTransform(WeaponMesh->GetAttachSocketName());
+	if (bThirdPersonSupportAnchor && !bIsReloading)
+	{
+		if (!bSupportAnchorActive)
+		{
+			OriginalWeaponRelative = WeaponMesh->GetRelativeTransform();
+			OriginalWeaponSocket = WeaponMesh->GetAttachSocketName();
+			SupportAnchorLocal = PreviousWeaponMesh.Get() == WeaponMesh
+				? PreviousSupportRelative : AttachedWeaponWorld.GetRelativeTransform(SupportHand);
+			SupportAnchorMesh = WeaponMesh;
+			bSupportAnchorActive = true;
+		}
+		WeaponMesh->SetWorldTransform(SupportAnchorLocal * SupportHand);
+	}
+	else
+	{
+		PreviousSupportRelative = AttachedWeaponWorld.GetRelativeTransform(SupportHand);
+		PreviousWeaponMesh = WeaponMesh;
 	}
 }
 
@@ -35,7 +153,275 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		CacheReferences();
 	}
 
+	UpdateHolsterMontageBinding();
 	UpdateWeaponValues();
+	{
+		// Walk layer: weight follows ground speed while moving on the ground; off in the air and while the
+		// sprint pose plays. GroundSpeed/bIsMoving come from the previous thread-safe update (one frame behind).
+		const UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(CharacterMovementComponent);
+		const bool bSprintPose = ShooterMovement && ShooterMovement->ShouldPlaySprintAnimation();
+		const float SpeedRatio = GroundSpeed / FMath::Max(CurrentWalkAdditiveReferenceSpeed, 1.f);
+		const float TargetAlpha = (CurrentWalkAdditiveAnim && bIsMoving && !bIsFalling && !bSprintPose)
+			? FMath::Clamp(SpeedRatio, 0.f, 1.f) : 0.f;
+		// No sequence (another weapon): drop at once, an empty additive input must never be blended in.
+		WalkAdditiveAlpha = CurrentWalkAdditiveAnim
+			? FMath::FInterpTo(WalkAdditiveAlpha, TargetAlpha, DeltaSeconds, 10.f) : 0.f;
+		WalkAdditivePlayRate = FMath::Clamp(SpeedRatio, 0.5f, 1.5f);
+	}
+	{
+		// Jump/land layer, driven by explicit time. Takeoff plays from 0 and holds at JumpLandHoldTime
+		// while airborne (a walk-off starts at the hold pose instead); touchdown jumps to JumpLandLandStart
+		// and plays to the end. bIsFalling comes from the previous thread-safe update.
+		const float Length = CurrentJumpLandAdditiveAnim ? CurrentJumpLandAdditiveAnim->GetPlayLength() : 0.f;
+		if (Length <= 0.f)
+		{
+			JumpLandPhase = 0;
+			JumpLandAdditiveAlpha = 0.f;
+			JumpLandAdditiveTime = 0.f;
+		}
+		else
+		{
+			const float Hold = FMath::Clamp(CurrentJumpLandHoldTime, 0.f, Length);
+			const float LandStart = FMath::Clamp(CurrentJumpLandLandStart, 0.f, Length);
+			if (bIsFalling && !bJumpLandWasFalling)
+			{
+				const bool bJumped = ShooterCharacter && ShooterCharacter->GetVelocity().Z > 10.f;
+				JumpLandPhase = 1;
+				JumpLandAdditiveTime = bJumped ? 0.f : Hold;
+				if (bJumped)
+				{
+					// Takeoff starts at zero offset, so take full weight at once: easing the weight in
+					// would blunt the takeoff snap. A walk-off starts at the hold pose and keeps the ease.
+					JumpLandAdditiveAlpha = 1.f;
+				}
+			}
+			else if (!bIsFalling && bJumpLandWasFalling && JumpLandPhase == 1)
+			{
+				JumpLandPhase = 2;
+				JumpLandAdditiveTime = LandStart;
+			}
+			else if (JumpLandPhase == 1)
+			{
+				JumpLandAdditiveTime = FMath::Min(JumpLandAdditiveTime + DeltaSeconds, Hold);
+			}
+			else if (JumpLandPhase == 2)
+			{
+				JumpLandAdditiveTime += DeltaSeconds;
+				if (JumpLandAdditiveTime >= Length)
+				{
+					JumpLandPhase = 0;
+					JumpLandAdditiveTime = Length;
+				}
+			}
+			const float TargetAlpha = JumpLandPhase != 0 ? 1.f : 0.f;
+			JumpLandAdditiveAlpha = JumpLandPhase == 0 ? 0.f : FMath::FInterpTo(JumpLandAdditiveAlpha, TargetAlpha, DeltaSeconds, 20.f);
+		}
+		bJumpLandWasFalling = bIsFalling;
+	}
+	{
+		// Fire recoil layer: plays once from 0 per shot (PlayFireRecoil). It starts and ends at zero
+		// offset, so full weight while playing needs no blend.
+		const float Length = CurrentFireRecoilAdditiveAnim ? CurrentFireRecoilAdditiveAnim->GetPlayLength() : 0.f;
+		if (bFireRecoilPlaying && Length > 0.f)
+		{
+			FireRecoilAdditiveTime += DeltaSeconds;
+			if (FireRecoilAdditiveTime >= Length)
+			{
+				bFireRecoilPlaying = false;
+				FireRecoilAdditiveTime = Length;
+			}
+		}
+		else
+		{
+			bFireRecoilPlaying = false;
+		}
+		FireRecoilAdditiveAlpha = bFireRecoilPlaying ? 1.f : 0.f;
+	}
+	if (!bFirstPersonAnimation)
+	{
+		USkeletalMeshComponent* Gun = IsValid(CurrentWeapon) ? CurrentWeapon->GetMesh3P() : nullptr;
+		USkeletalMeshComponent* Parent = Gun ? Cast<USkeletalMeshComponent>(Gun->GetAttachParent()) : nullptr;
+		USkeletalMeshComponent* Desired = Parent ? Parent : GetSkelMeshComponent();
+		if (Desired && SupportAnchorBody.Get() != Desired)
+		{
+			RestoreSupportAnchor();
+			UnregisterSupportAnchor();
+			PreviousWeaponMesh.Reset();
+			SupportAnchorBody = Desired;
+			SupportAnchorFinalizedHandle = Desired->RegisterOnBoneTransformsFinalizedDelegate(
+				FOnBoneTransformsFinalizedMultiCast::FDelegate::CreateUObject(this, &UShooterAnimInstance::UpdateSupportAnchor));
+		}
+	}
+	ContactPlayback.Reset();
+	if (!bFirstPersonAnimation)
+	{
+		for (const FAnimMontageInstance* Action : MontageInstances)
+		{
+			if (Action && Action->IsValid() && Action->Montage->GetPlayLength() > 0.f)
+			{
+				ContactPlayback.Add({Action->Montage, Action->GetPosition() / Action->Montage->GetPlayLength(), Action->GetWeight()});
+			}
+		}
+	}
+	UpdateReloadMagazine();
+}
+
+void UShooterAnimInstance::UpdateReloadMagazine()
+{
+	USkeletalMeshComponent* Gun = nullptr;
+	bool bOut = false;
+	const UWorld* World = GetWorld();
+	if (!bFirstPersonAnimation && ShooterCharacter && GetSkelMeshComponent() == ShooterCharacter->GetMesh()
+		&& World && World->GetNetMode() != NM_DedicatedServer
+		&& IsValid(CurrentWeapon) && CurrentWeaponType.MatchesTagExact(RogueTags::Weapon_Type_Pistol))
+	{
+		Gun = CurrentWeapon->GetMesh3P();
+		const USkeletalMesh* GunMesh = Gun ? Gun->GetSkeletalMeshAsset() : nullptr;
+		const int32 Bone = GunMesh ? Gun->GetBoneIndex(ReloadMagazineBone) : INDEX_NONE;
+		if (Bone != INDEX_NONE && Gun->GetComponentSpaceTransforms().IsValidIndex(Bone) && Gun->IsVisible())
+		{
+			const FTransform Seated = FAnimationRuntime::GetComponentSpaceTransformRefPose(GunMesh->GetRefSkeleton(), Bone);
+			bOut = FVector::Dist(Gun->GetComponentSpaceTransforms()[Bone].GetLocation(), Seated.GetLocation()) > ReloadMagazineOutDistance;
+		}
+	}
+
+	// Weapon swapped, or the magazine is seated again: show the pistol's own magazine.
+	USkeletalMeshComponent* Hidden = HiddenMagazineGun.Get();
+	if (Hidden && (Hidden != Gun || !bOut))
+	{
+		Hidden->UnHideBoneByName(ReloadMagazineBone);
+		HiddenMagazineGun.Reset();
+	}
+
+	USkeletalMeshComponent* Magazine = ReloadMagazine.Get();
+	if (!bOut)
+	{
+		if (Magazine && Magazine->IsVisible())
+		{
+			Magazine->SetVisibility(false);
+		}
+		return;
+	}
+
+	if (!Magazine)
+	{
+		USkeletalMesh* Mesh = bReloadMagazineMissing ? nullptr : LoadObject<USkeletalMesh>(nullptr, PistolReloadMagazineMesh);
+		if (!Mesh)
+		{
+			if (!bReloadMagazineMissing)
+			{
+				UE_LOG(LogShooterAnimation, Warning, TEXT("Reload magazine mesh not found: %s"), PistolReloadMagazineMesh);
+				bReloadMagazineMissing = true;
+			}
+			return;
+		}
+		Magazine = NewObject<USkeletalMeshComponent>(ShooterCharacter,
+			MakeUniqueObjectName(ShooterCharacter, USkeletalMeshComponent::StaticClass(), TEXT("ReloadMagazine")));
+		Magazine->SetSkeletalMeshAsset(Mesh);
+		Magazine->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Magazine->SetGenerateOverlapEvents(false);
+		Magazine->SetCanEverAffectNavigation(false);
+		Magazine->bReceivesDecals = false;
+		Magazine->SetVisibility(false);
+		Magazine->RegisterComponent();
+		ReloadMagazine = Magazine;
+	}
+
+	// The gun hangs from the visible body's right hand. That body's left hand is placed relative to it
+	// so that its hand_l frame matches the contact node's target, so the magazine follows that bone.
+	USkeletalMeshComponent* Body = Cast<USkeletalMeshComponent>(Gun->GetAttachParent());
+	if (!Body || Body->GetBoneIndex(ReloadMagazineHand) == INDEX_NONE)
+	{
+		Body = GetSkelMeshComponent();
+	}
+	if (Magazine->GetAttachParent() != Body || Magazine->GetAttachSocketName() != ReloadMagazineHand)
+	{
+		Magazine->AttachToComponent(Body, FAttachmentTransformRules::KeepRelativeTransform, ReloadMagazineHand);
+	}
+	Magazine->SetRelativeTransform(ReloadMagazineBoneInMesh.Inverse() * ReloadHandContact::PistolHandInMagazine().Inverse());
+	Magazine->SetOwnerNoSee(Gun->bOwnerNoSee);
+	Magazine->SetOnlyOwnerSee(Gun->bOnlyOwnerSee);
+	Magazine->SetCastHiddenShadow(Gun->bCastHiddenShadow);
+	if (!Magazine->IsVisible())
+	{
+		Magazine->SetVisibility(true);
+	}
+	if (HiddenMagazineGun.Get() != Gun)
+	{
+		Gun->HideBoneByName(ReloadMagazineBone, PBO_None);
+		HiddenMagazineGun = Gun;
+	}
+}
+
+void UShooterAnimInstance::ReleaseReloadMagazine()
+{
+	if (USkeletalMeshComponent* Hidden = HiddenMagazineGun.Get())
+	{
+		Hidden->UnHideBoneByName(ReloadMagazineBone);
+	}
+	HiddenMagazineGun.Reset();
+	USkeletalMeshComponent* Magazine = ReloadMagazine.Get();
+	if (Magazine && !Magazine->IsBeingDestroyed() && !IsGarbageCollecting())
+	{
+		Magazine->DestroyComponent();
+	}
+	ReloadMagazine.Reset();
+}
+
+float UShooterAnimInstance::GetIdlePostureSourceWeight() const
+{
+	return 1.f - FMath::Clamp(GetSlotMontageGlobalWeight(TEXT("DefaultSlot")), 0.f, 1.f);
+}
+
+float UShooterAnimInstance::GetPreviewAwareFinalGripAlpha(float GameplayAlpha) const
+{
+	const AActor* Owner = GetOwningActor();
+	return !bFirstPersonAnimation && Owner && Owner->ActorHasTag(CharacterPresentationTags::ClassSelectionPreview)
+		? 1.f : GameplayAlpha;
+}
+
+float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const
+{
+	const float StandingWeight = 1.f - FMath::Clamp(GroundSpeed / 150.f, 0.f, 1.f);
+	const float BaseWeight = GetIdlePostureSourceWeight() * StandingWeight;
+	if (bFirstPersonAnimation || !IsValid(Combat))
+	{
+		return BaseWeight;
+	}
+	const UWeaponData* Data = Combat->GetWeaponData();
+	const UAnimMontage* Active = nullptr;
+	// IsActive excludes natural blend-out, but its pose is still on screen.
+	// Newest DefaultSlot action wins, including its blend-out. This keeps a
+	// completed Draw steady without overriding a newer fire/reload action.
+	for (int32 Index = MontageInstances.Num() - 1; Index >= 0; --Index)
+	{
+		const FAnimMontageInstance* Instance = MontageInstances[Index];
+		if (Instance && Instance->IsValid() && Instance->Montage->SlotAnimTracks.ContainsByPredicate(
+			[](const FSlotAnimationTrack& Slot) { return Slot.SlotName == TEXT("DefaultSlot"); }))
+		{
+			Active = Instance->Montage;
+			break;
+		}
+	}
+	if (!IsValid(Data) || !Active || !CurrentWeaponType.IsValid())
+	{
+		return BaseWeight;
+	}
+	// Match the data-selected equip asset, including remote class overrides.
+	for (const auto& Class : Data->ClassAnimationOverrides)
+	{
+		if (const auto* Reload = Class.Value.ThirdPersonReloadMontages.Find(CurrentWeaponType))
+		{
+			if (Reload->Get() == Active) return 1.f;
+		}
+		if (const auto* Equip = Class.Value.ThirdPersonEquipMontages.Find(CurrentWeaponType))
+		{
+			if (Equip->Get() == Active) return 1.f;
+		}
+	}
+	const auto* Common = Data->FindWeaponMontages(CurrentWeaponType, false);
+	// Keep the fitted torso/shoulder basis through reload and its blend-out.
+	return Common && (Common->EquipMontage == Active || Common->ReloadMontage == Active) ? 1.f : BaseWeight;
 }
 
 void UShooterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -58,12 +444,14 @@ void UShooterAnimInstance::CacheReferences()
 	{
 		CharacterMovementComponent = nullptr;
 		Combat = nullptr;
+		bCQBTrainingAI = false;
 		return;
 	}
 
 	CharacterMovementComponent = ShooterCharacter->GetCharacterMovement();
 	Combat = ShooterCharacter->FindComponentByClass<UCombatComponent>();
 	bFirstPersonAnimation = GetSkelMeshComponent() == ShooterCharacter->GetMesh1P_Implementation();
+	bCQBTrainingAI = ShooterCharacter->FindComponentByClass<UCQBTrainingAIComponent>() != nullptr;
 }
 
 void UShooterAnimInstance::UpdateMovementValues()
@@ -90,7 +478,25 @@ void UShooterAnimInstance::UpdateMovementValues()
 void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 {
 	AimRotation = ShooterCharacter->CalculateFixedAimRotation();
-	AO_Pitch = AimRotation.Pitch;
+	// Remote pawns: smooth the replicated pitch (large jumps such as spawning snap).
+	if (RemoteAimPitchInterpSpeed > 0.f && !ShooterCharacter->IsLocallyControlled()
+		&& FMath::Abs(AimRotation.Pitch - AO_Pitch) < 30.f)
+	{
+		AO_Pitch = FMath::FInterpTo(AO_Pitch, AimRotation.Pitch, DeltaSeconds, RemoteAimPitchInterpSpeed);
+	}
+	else
+	{
+		AO_Pitch = AimRotation.Pitch;
+	}
+
+	if (bCQBTrainingAI)
+	{
+		StartingAimRotation = FRotator(0.f, ShooterCharacter->GetActorRotation().Yaw, 0.f);
+		AO_Yaw = 0.f;
+		InterpAO_Yaw = 0.f;
+		TurningStatus = ETurningInPlace::NotTurning;
+		return;
+	}
 
 	if (!bIsMoving && !bIsFalling)
 	{
@@ -115,7 +521,11 @@ void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 
 void UShooterAnimInstance::UpdateWeaponValues()
 {
-	bAiming = IsValid(Combat) && Combat->bAiming;
+	const EDominationCombatClass AnimationClass = GetCurrentCombatClass();
+	bVanguardAnimationClass = AnimationClass == EDominationCombatClass::Vanguard;
+	bRangerAnimationClass = AnimationClass == EDominationCombatClass::Ranger;
+	bTrooperAnimationClass = AnimationClass == EDominationCombatClass::Trooper;
+	bAiming = IsValid(Combat) && Combat->IsAiming();
 	CurrentWeapon = IsValid(Combat) ? Combat->GetCurrentWeapon() : nullptr;
 	bHasCurrentWeapon = IsValid(CurrentWeapon);
 	bIsCycling = IsValid(Combat) && Combat->IsCycling();
@@ -150,6 +560,9 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 {
 	CurrentIdleAnim = nullptr;
 	CurrentAimIdleAnim = nullptr;
+	CurrentWalkAdditiveAnim = nullptr;
+	CurrentJumpLandAdditiveAnim = nullptr;
+	CurrentFireRecoilAdditiveAnim = nullptr;
 
 	const UWeaponData* WeaponData = IsValid(Combat) ? Combat->GetWeaponData() : nullptr;
 	if (!IsValid(WeaponData) || !CurrentWeaponType.IsValid())
@@ -157,10 +570,76 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 		return;
 	}
 
-	if (const FPlayerAnims* PlayerAnims = WeaponData->FindPlayerAnims(CurrentWeaponType, bFirstPersonAnimation))
+	if (const FPlayerAnims* PlayerAnims = WeaponData->FindPlayerAnims(
+		CurrentWeaponType,
+		bFirstPersonAnimation,
+		GetCurrentCombatClass()))
 	{
 		CurrentIdleAnim = PlayerAnims->IdleAnim;
 		CurrentAimIdleAnim = PlayerAnims->AimIdleAnim;
+		CurrentWalkAdditiveAnim = PlayerAnims->WalkAdditiveAnim;
+		CurrentWalkAdditiveReferenceSpeed = PlayerAnims->WalkAdditiveReferenceSpeed;
+		CurrentJumpLandAdditiveAnim = PlayerAnims->JumpLandAdditiveAnim;
+		CurrentJumpLandHoldTime = PlayerAnims->JumpLandHoldTime;
+		CurrentJumpLandLandStart = PlayerAnims->JumpLandLandStart;
+		CurrentFireRecoilAdditiveAnim = PlayerAnims->FireRecoilAdditiveAnim;
+	}
+}
+
+void UShooterAnimInstance::PlayFireRecoil()
+{
+	if (bFirstPersonAnimation || !CurrentFireRecoilAdditiveAnim)
+	{
+		return;
+	}
+	// Restart from zero offset on every shot; an automatic weapon's previous kick has mostly recovered.
+	FireRecoilAdditiveTime = 0.f;
+	bFireRecoilPlaying = true;
+	FireRecoilAdditiveAlpha = 1.f;
+}
+
+void UShooterAnimInstance::UnbindHolsterMontageSource()
+{
+	if (UAnimInstance* Source = HolsterMontageSource.Get())
+		Source->OnMontageStarted.RemoveDynamic(this, &ThisClass::HandleWeaponMontageStarted);
+	HolsterMontageSource.Reset();
+}
+
+void UShooterAnimInstance::UpdateHolsterMontageBinding()
+{
+	// Only the canonical 3P instance owns audio. The owner's 1P animation can be
+	// a different native class (TacticalShooter), so listen to its public event.
+	UAnimInstance* Desired = nullptr;
+	if (IsValid(ShooterCharacter) && GetSkelMeshComponent() == ShooterCharacter->GetMesh())
+	{
+		USkeletalMeshComponent* SourceMesh = ShooterCharacter->IsLocallyControlled()
+			? ShooterCharacter->GetMesh1P_Implementation() : ShooterCharacter->GetMesh();
+		Desired = SourceMesh ? SourceMesh->GetAnimInstance() : nullptr;
+	}
+	if (Desired == HolsterMontageSource.Get()) return;
+	UnbindHolsterMontageSource();
+	if (Desired)
+	{
+		HolsterMontageSource = Desired;
+		Desired->OnMontageStarted.AddUniqueDynamic(this, &ThisClass::HandleWeaponMontageStarted);
+	}
+}
+
+void UShooterAnimInstance::HandleWeaponMontageStarted(UAnimMontage* Montage)
+{
+	CacheReferences();
+	if (!IsValid(ShooterCharacter) || !IsValid(Combat)) return;
+	if (GetSkelMeshComponent() != ShooterCharacter->GetMesh()) return;
+
+	// CurrentWeapon can already be the incoming weapon after replication. Match
+	// the actual outgoing montage against loadout weapons instead of that pointer.
+	AWeaponBase* const Candidates[] = {Combat->GetCurrentWeapon(),
+		Combat->GetWeaponInSlot(EWeaponSlot::Primary), Combat->GetWeaponInSlot(EWeaponSlot::Secondary),
+		Combat->GetWeaponInSlot(EWeaponSlot::Melee)};
+	for (AWeaponBase* Weapon : Candidates)
+	{
+		if (auto* Effects = IsValid(Weapon) ? Weapon->FindComponentByClass<UWeaponEffectsComponent>() : nullptr)
+			if (Effects->TryPlayHolsterSound(Montage)) return;
 	}
 }
 
@@ -177,13 +656,38 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 		return;
 	}
 
-	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
-	if (!MontageData || !IsValid(MontageData->EquipMontage))
+	EDominationCombatClass DrawClass = GetCurrentCombatClass();
+	// Preview/training pawns and newly replicated pawns can precede PlayerState.
+	if (!bFirstPersonAnimation && DrawClass == EDominationCombatClass::Unselected)
+	{
+		for (const auto& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+		{
+			if (Definition.PawnClass.Get() && ShooterCharacter->IsA(Definition.PawnClass.Get()))
+			{
+				DrawClass = Definition.CombatClass;
+				break;
+			}
+		}
+	}
+	UAnimMontage* EquipMontage = WeaponData->FindEquipMontage(CurrentWeaponType, bFirstPersonAnimation, DrawClass);
+	if (!IsValid(EquipMontage))
 	{
 		return;
 	}
 
-	const float PlayedDuration = Montage_Play(MontageData->EquipMontage);
+	// The presentation relay can start remote Draw before the weapon-state tick.
+	// Adopt that playback instead of restarting the same montage and its notifies.
+	const float PlayedDuration = Montage_IsPlaying(EquipMontage) ? EquipMontage->GetPlayLength()
+		: Montage_Play(EquipMontage, UWeaponData::GetSwitchAnimationRate(CurrentWeaponType));
+	if (PlayedDuration > 0.f && !bFirstPersonAnimation && GetSkelMeshComponent() == ShooterCharacter->GetMesh())
+	{
+		// UpdateWeaponValues calls this only for a weapon change / utility return.
+		// Draw audio must not also be placed on either view's animation notify track.
+		if (auto* Effects = CurrentWeapon->FindComponentByClass<UWeaponEffectsComponent>())
+		{
+			Effects->PlayDrawSound();
+		}
+	}
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(
@@ -193,7 +697,7 @@ void UShooterAnimInstance::PlayEquipMontageForCurrentWeapon()
 			*GetNameSafe(ShooterCharacter.Get()),
 			*CurrentWeaponType.ToString(),
 			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
-			*GetNameSafe(MontageData->EquipMontage));
+			*GetNameSafe(EquipMontage));
 	}
 }
 
@@ -211,12 +715,17 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 	}
 
 	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
-	if (!MontageData || !IsValid(MontageData->ReloadMontage))
+	EDominationCombatClass ReloadClass = GetCurrentCombatClass();
+	if (ReloadClass == EDominationCombatClass::Unselected)
+		for (const auto& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+			if (Definition.PawnClass.Get() && ShooterCharacter->IsA(Definition.PawnClass.Get())) { ReloadClass = Definition.CombatClass; break; }
+	UAnimMontage* ReloadMontage = WeaponData->FindReloadMontage(CurrentWeaponType, bFirstPersonAnimation, ReloadClass);
+	if (!MontageData || !IsValid(ReloadMontage))
 	{
 		return;
 	}
 
-	if (Montage_IsPlaying(MontageData->ReloadMontage))
+	if (Montage_IsPlaying(ReloadMontage))
 	{
 		return;
 	}
@@ -225,11 +734,41 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 	// 결정된다(CanFireNow -> bIsReloading). 몽타주 원본 길이가 그 값과 다르면(무기별 ReloadDuration
 	// 세팅이 실제 애니메이션 길이와 어긋난 경우) 애니메이션이 끝나기 전에 Fire가 풀리는 문제가 생기므로,
 	// PlayRate를 조정해서 몽타주가 항상 EffectiveReloadDuration과 같은 시간에 끝나도록 맞춘다.
-	const float MontageLength = MontageData->ReloadMontage->GetPlayLength();
+	const float MontageLength = ReloadMontage->GetPlayLength();
 	const float TargetDuration = CurrentWeapon->GetEffectiveReloadDuration();
-	const float PlayRate = (MontageLength > 0.f && TargetDuration > 0.f) ? (MontageLength / TargetDuration) : 1.f;
+	const float PlayRate = (MontageLength > 0.f && TargetDuration > 0.f)
+		? MontageLength / (TargetDuration * FMath::Max(ReloadMontage->RateScale, KINDA_SMALL_NUMBER)) : 1.f;
 
-	const float PlayedDuration = Montage_Play(MontageData->ReloadMontage, PlayRate);
+	const float PlayedDuration = Montage_Play(ReloadMontage, PlayRate);
+	if (PlayedDuration > 0.f && IsValid(MontageData->WeaponReloadMontage))
+	{
+		USkeletalMeshComponent* WeaponMesh = bFirstPersonAnimation ? CurrentWeapon->GetMesh1P() : CurrentWeapon->GetMesh3P();
+		UAnimInstance* WeaponAnim = WeaponMesh ? WeaponMesh->GetAnimInstance() : nullptr;
+		if (WeaponAnim && TargetDuration > 0.f)
+		{
+			UAnimMontage* WeaponMontage = MontageData->WeaponReloadMontage;
+			const float WeaponRate = WeaponMontage->GetPlayLength()
+				/ (TargetDuration * FMath::Max(WeaponMontage->RateScale, KINDA_SMALL_NUMBER));
+			WeaponMesh->AddTickPrerequisiteComponent(GetSkelMeshComponent());
+			WeaponAnim->Montage_Play(WeaponMontage, WeaponRate);
+			// Follow a shared authored timeline, including the frame reload starts in
+			// NativeUpdateAnimation (after this instance's montage advance).
+			if (FMath::IsNearlyEqual(WeaponMontage->GetPlayLength(), MontageLength, .001f)
+				&& FMath::IsNearlyEqual(WeaponMontage->RateScale, ReloadMontage->RateScale))
+			{
+				if (FAnimMontageInstance* Leader = GetActiveInstanceForMontage(ReloadMontage))
+				{
+					Leader->MontageSync_PostUpdate();
+					WeaponAnim->MontageSync_Follow(WeaponMontage, this, ReloadMontage);
+					// The body starts this montage after its montage advance. Advancing
+					// the follower now and snapping back to leader position zero repeats
+					// start-of-reload notifies on the next frame. Hold only this first
+					// advance; MontageSync_PostUpdate restores the leader's play rate.
+					WeaponAnim->Montage_SetPlayRate(WeaponMontage, 0.f);
+				}
+			}
+		}
+	}
 	if (PlayedDuration <= 0.f)
 	{
 		UE_LOG(
@@ -239,11 +778,11 @@ void UShooterAnimInstance::PlayReloadMontageForCurrentWeapon()
 			*GetNameSafe(ShooterCharacter.Get()),
 			*CurrentWeaponType.ToString(),
 			bFirstPersonAnimation ? TEXT("1P") : TEXT("3P"),
-			*GetNameSafe(MontageData->ReloadMontage));
+			*GetNameSafe(ReloadMontage));
 	}
 }
 
-void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
+void UShooterAnimInstance::PlayFireMontageForCurrentWeapon(bool bPlayObserverWeaponAction)
 {
 	if (!IsValid(CurrentWeapon) || !IsValid(Combat))
 	{
@@ -256,6 +795,22 @@ void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
 		return;
 	}
 
+	// Third-person body: every machine follows the observer rule of AWeaponBase::Multicast_PlayFireEffects -
+	// only knife, sniper (bolt) and Trooper rifle play a fire action. The other fire montages are full
+	// upper-body poses that override the fitted aim pose (the shotgun one bows the torso and head forward),
+	// and a montage the authority plays on its own pawn also reaches other clients through replicated root
+	// motion. Those weapons show the additive fire recoil instead (PlayFireRecoil).
+	if (!bFirstPersonAnimation && !bPlayObserverWeaponAction)
+	{
+		const bool bObserverFireAction = CurrentWeaponType == RogueTags::Weapon_Type_Knife
+			|| CurrentWeaponType == RogueTags::Weapon_Type_Sniper
+			|| (CurrentWeaponType == RogueTags::Weapon_Type_Rifle && GetCurrentCombatClass() == EDominationCombatClass::Trooper);
+		if (!bObserverFireAction)
+		{
+			return;
+		}
+	}
+
 	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);
 	if (!MontageData || !IsValid(MontageData->FireMontage))
 	{
@@ -263,6 +818,42 @@ void UShooterAnimInstance::PlayFireMontageForCurrentWeapon()
 	}
 
 	Montage_Play(MontageData->FireMontage);
+	// The owner's presentation relay animates the 1P gun only. Its hidden 3P
+	// sniper must also advance the bolt now that bolt audio is a 3P-only notify.
+	// Nonlocal authority already uses the relay's 3P branch; do not restart it.
+	const bool bOwnerSniperAction = ShooterCharacter && ShooterCharacter->IsLocallyControlled()
+		&& CurrentWeaponType == RogueTags::Weapon_Type_Sniper;
+	if ((bPlayObserverWeaponAction || bOwnerSniperAction) && !bFirstPersonAnimation && MontageData->WeaponFireMontage)
+	{
+		USkeletalMeshComponent* Gun = CurrentWeapon->GetMesh3P();
+		if (UAnimInstance* WeaponAnim = Gun ? Gun->GetAnimInstance() : nullptr)
+		{
+			WeaponAnim->Montage_Play(MontageData->WeaponFireMontage);
+		}
+	}
+}
+
+EDominationCombatClass UShooterAnimInstance::GetCurrentCombatClass() const
+{
+	if (!IsValid(ShooterCharacter))
+	{
+		return EDominationCombatClass::Unselected;
+	}
+
+	const ADominationPlayerState* PlayerState = ShooterCharacter->GetPlayerState<ADominationPlayerState>();
+	if (IsValid(PlayerState) && PlayerState->GetCombatClass() != EDominationCombatClass::Unselected)
+	{
+		return PlayerState->GetCombatClass();
+	}
+
+	// Selection previews and newly replicated pawns may not have a PlayerState
+	// yet. Their configured pawn class still provides a stable identity.
+	for (const auto& Definition : GetDefault<UDominationClassSettings>()->CombatClasses)
+	{
+		if (Definition.PawnClass.Get() && ShooterCharacter->IsA(Definition.PawnClass.Get()))
+			return Definition.CombatClass;
+	}
+	return EDominationCombatClass::Unselected;
 }
 
 void UShooterAnimInstance::TurnInPlace(float DeltaSeconds)

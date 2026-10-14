@@ -54,6 +54,7 @@ namespace DominationRules
 {
 	inline constexpr int32 PointCount = 5;
 	inline constexpr int32 SpawnBoundaryCount = PointCount + 2;
+	inline constexpr EDominationPointId InitialPointId = EDominationPointId::C;
 	inline constexpr int32 RoundsToWin = 3;
 	inline constexpr int32 MaxRounds = RoundsToWin * 2 - 1;
 
@@ -134,6 +135,12 @@ namespace DominationRules
 
 		// Team A uses the A-side boundary; Team B uses the E-side boundary.
 		return ActivePointIndex + (AttackDirection < 0 ? 2 : 0);
+	}
+
+	// 중계 비콘 부활 대기 감소 계산. 음수 감소값은 무시
+	FORCEINLINE float GetRespawnDelay(const float BaseDelay, const float Reduction)
+	{
+		return BaseDelay - FMath::Max(0.0f, Reduction);
 	}
 }
 

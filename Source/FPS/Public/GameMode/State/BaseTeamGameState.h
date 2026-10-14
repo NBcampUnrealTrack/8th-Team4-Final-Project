@@ -1,11 +1,14 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/ChatTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/GameState.h"
 #include "GameplayTagContainer.h"
+#include "Templates/Function.h"
 #include "BaseTeamGameState.generated.h"
 
+class AShooterPlayerController;
 class AShooterPlayerState;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnTeamScoreChangedSignature, EGameTeam, Team, int32, NewScore);
@@ -21,6 +24,10 @@ struct FShooterEliminationEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
 	TObjectPtr<AShooterPlayerState> VictimPlayerState = nullptr;
+
+	// 사망한 생명의 식별자. Pawn 참조 복제를 기다리지 않고 늦은 사망 이벤트를 구분한다.
+	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
+	FGuid VictimPawnLifeId;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Game Flow|Elimination")
 	FGameplayTag WeaponTag;

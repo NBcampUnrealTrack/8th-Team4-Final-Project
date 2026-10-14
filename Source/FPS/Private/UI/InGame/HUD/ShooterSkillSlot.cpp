@@ -17,6 +17,8 @@
 #include "Materials/MaterialInterface.h"
 #include "Engine/Texture2D.h"
 #include "Abilities/GameplayAbility.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "Widgets/SWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterSkillSlot, Log, All);
 
@@ -60,8 +62,27 @@ void UShooterSkillSlot::NativePreConstruct()
 	}
 }
 
+void UShooterSkillSlot::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	// 평소에는 RT 를 거치지 않는다
+	if (RetainerBox_Glitch)
+	{
+		RetainerBox_Glitch->SetRetainRendering(false);
+	}
+
+	// 생성 전에 시작된 쿨다운도 여기서 이어 받는다
+	if (RecoveryEndWorldTime > 0.f)
+	{
+		EnsureUpdateScheduled();
+	}
+}
+
 void UShooterSkillSlot::NativeDestruct()
 {
+	StopUpdates();
+
 	// 실데이터 구독 해제는 OnAbilitySystemLost에서 한다
 	// Super::NativeDestruct() 베이스에가 그 함수를 리셋전 불러줌
 	if (UWorld* World = GetWorld())
@@ -72,26 +93,6 @@ void UShooterSkillSlot::NativeDestruct()
 	ReleaseIconResources();
 
 	Super::NativeDestruct();
-}
-
-void UShooterSkillSlot::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
-{
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	// Ready 상태(진행 중인 회복 없음)
-	if (RecoveryEndWorldTime <= 0)
-	{
-		return;
-	}
-
-	const UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	const float Remaining = FMath::Max(0.f, RecoveryEndWorldTime - World->GetTimeSeconds());
-	SetCooldownState(Remaining, DisplayCooldownDuration);
 }
 
 void UShooterSkillSlot::OnAbilitySystemReady(URogueAbilitySystemComponent* ASC)
@@ -139,6 +140,12 @@ void UShooterSkillSlot::OnAbilitySystemLost(URogueAbilitySystemComponent* ASC)
 		AbilityFailedEventHandle.Reset();
 	}
 
+	if (ASC && CooldownTimeChangedHandle.IsValid())
+	{
+		ASC->OnCooldownTimeChanged.Remove(CooldownTimeChangedHandle);
+		CooldownTimeChangedHandle.Reset();
+	}
+
 	if (BoundInventory.IsValid())
 	{
 		BoundInventory->OnInventoryChanged.RemoveDynamic(this, &ThisClass::HandleInventoryChanged);
@@ -159,6 +166,11 @@ void UShooterSkillSlot::HandleGlowReadyAnimFinished()
 	if (CachedGlitchMID)
 	{
 		CachedGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
+	}
+
+	if (RetainerBox_Glitch)
+	{
+		RetainerBox_Glitch->SetRetainRendering(false);
 	}
 }
 
@@ -362,11 +374,13 @@ void UShooterSkillSlot::RefreshCooldownDisplay()
 	{
 		RecoveryEndWorldTime = 0.f;
 		DisplayCooldownDuration = 0.f;
+		StopUpdates();
 	}
 	else if (const UWorld* World = GetWorld())
 	{
 		RecoveryEndWorldTime = World->GetTimeSeconds() + Presentation.RemainingSeconds;
 		DisplayCooldownDuration = SlotState.CooldownDuration;
+		EnsureUpdateScheduled();
 	}
 
 	// 디버그 경로는 이벤트가 없으므로 다음충전이 회복되는 시각에만 재호출
@@ -387,6 +401,62 @@ void UShooterSkillSlot::RefreshCooldownDisplay()
 			}
 		}
 	}
+}
+
+void UShooterSkillSlot::EnsureUpdateScheduled()
+{
+	if (IsDesignTime() || UpdateTimerHandle.IsValid())
+	{
+		return;
+	}
+
+	// Slate 위젯이 아직 없으면 NativeConstruct 가 다시 부른다
+	const TSharedPtr<SWidget> CachedWidget = GetCachedWidget();
+	if (!CachedWidget.IsValid())
+	{
+		return;
+	}
+
+	UpdateTimerHandle = CachedWidget->RegisterActiveTimer(
+		0.f,
+		FWidgetActiveTimerDelegate::CreateUObject(this, &ThisClass::HandleUpdateTimer));
+}
+
+void UShooterSkillSlot::StopUpdates()
+{
+	const TSharedPtr<FActiveTimerHandle> Handle = UpdateTimerHandle.Pin();
+	const TSharedPtr<SWidget> CachedWidget = GetCachedWidget();
+	if (Handle.IsValid() && CachedWidget.IsValid())
+	{
+		CachedWidget->UnRegisterActiveTimer(Handle.ToSharedRef());
+	}
+
+	UpdateTimerHandle.Reset();
+}
+
+EActiveTimerReturnType UShooterSkillSlot::HandleUpdateTimer(double InCurrentTime, float InDeltaTime)
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(ShooterSkillSlot_UpdateTimer);
+
+	const UWorld* World = GetWorld();
+	if (RecoveryEndWorldTime <= 0.f || !World)
+	{
+		UpdateTimerHandle.Reset();
+		return EActiveTimerReturnType::Stop;
+	}
+
+	// 남은 시간은 매번 목표 시각에서 다시 잰다
+	const float Remaining = FMath::Max(0.f, RecoveryEndWorldTime - World->GetTimeSeconds());
+	SetCooldownState(Remaining, DisplayCooldownDuration);
+
+	// 0초 표시 뒤의 정리는 다음 GAS 이벤트가 한다
+	if (Remaining <= 0.f)
+	{
+		UpdateTimerHandle.Reset();
+		return EActiveTimerReturnType::Stop;
+	}
+
+	return EActiveTimerReturnType::Continue;
 }
 
 void UShooterSkillSlot::RebuildChargeBars(int32 InMaxCharges)
@@ -493,6 +563,7 @@ void UShooterSkillSlot::TryBindCooldownTag(URogueAbilitySystemComponent* ASC)
 	CooldownTagEventHandle = ASC->RegisterGameplayTagEvent(CachedCooldownTag, EGameplayTagEventType::AnyCountChange).
 	                              AddUObject(this, &ThisClass::HandleCooldownTagChanged);
 	AbilityFailedEventHandle = ASC->AbilityFailedCallbacks.AddUObject(this, &ThisClass::HandleAbilityFailed);
+	CooldownTimeChangedHandle = ASC->OnCooldownTimeChanged.AddUObject(this, &ThisClass::HandleCooldownTimeChanged);
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	// 늦게 발견 됐을 경우 이미 쿨다운 중일 수 있으므로 즉시 한번 반영
@@ -505,6 +576,12 @@ void UShooterSkillSlot::PlayReadyGlow()
 	{
 		StopAnimation(Anim_ReadyGlow);
 		PlayAnimation(Anim_ReadyGlow, 0.f, 1);
+
+		// 글리치 동안만 RT 로 그린다
+		if (RetainerBox_Glitch)
+		{
+			RetainerBox_Glitch->SetRetainRendering(true);
+		}
 
 		if (UMaterialInstanceDynamic* MID = GetGlitchMID())
 		{
@@ -535,6 +612,14 @@ void UShooterSkillSlot::HandleCooldownTagChanged(FGameplayTag Tag, int32 NewCoun
 {
 	RefreshCooldownDisplay();
 	RefreshSlotIcon();
+}
+
+void UShooterSkillSlot::HandleCooldownTimeChanged(FGameplayTag Tag)
+{
+	if (Tag == CachedCooldownTag)
+	{
+		RefreshCooldownDisplay();
+	}
 }
 
 UMaterialInstanceDynamic* UShooterSkillSlot::GetGlitchMID()

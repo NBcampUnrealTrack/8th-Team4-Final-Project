@@ -39,6 +39,11 @@ namespace
 			return Controller->GetPlayerState<ABaseTeamPlayerState>();
 		}
 
+		if (const ABaseTeamPlayerState* OwnerState = Cast<ABaseTeamPlayerState>(Actor->GetOwner()))
+		{
+			return OwnerState;
+		}
+
 		return nullptr;
 	}
 }

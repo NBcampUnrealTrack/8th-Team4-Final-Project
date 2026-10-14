@@ -193,11 +193,16 @@ void ABaseRoundGameMode::OpenNextRound()
 			AugmentSelectionDuration);
 
 		// 모든 플레이어에게 후보 등록, 폭탄 모드는 모든 증강 풀 적용
+		// 난입자는 직전 라운드 보상을 아직 처리하지 않았으므로, 새 라운드 보상보다 먼저 큐에 붙인다.
+		TArray<AShooterPlayerState*> Participants;
+		PlayerManager->GetRoundParticipants(Participants);
+		for (AShooterPlayerState* Participant : Participants)
+		{
+			DraftManager->EnqueueMissingRewards(Participant);
+		}
 		DraftManager->GrantToAll(EAugmentRewardPool::Any, RoundContext.RoundNumber);
 
 		// 등록된 후보를 모든 참가자에게 제공
-		TArray<AShooterPlayerState*> Participants;
-		PlayerManager->GetRoundParticipants(Participants);
 		for (AShooterPlayerState* Participant : Participants)
 		{
 			DraftManager->ServeNextReward(Participant);

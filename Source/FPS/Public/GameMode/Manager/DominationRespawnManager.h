@@ -12,9 +12,8 @@ class ADominationGameMode;
 class ADominationGameState;
 class ADominationSpawnVolume;
 class AShooterPlayerState;
-class UAbilitySystemComponent;
+class UPlayerRespawnProtection;
 class UDominationObjectiveManager;
-struct FGameplayEventData;
 
 /** 전투 스폰 대기, 전선 기준 스폰 위치, 스폰 직후 보호 수명주기를 관리한다. 실제 Pawn 생성은 GameMode에 요청한다. */
 UCLASS()
@@ -34,6 +33,9 @@ public:
 	// 매치 종료 시 남아 있는 보호 태그, 만료 타이머, 발사 이벤트 구독을 모두 해제한다.
 	void ClearAllRespawnProtections();
 	void ScheduleRespawn(AController* WaitingController);
+	void ScheduleRespawnRetry(AController* WaitingController);
+	// 중계 비콘 소유 팀의 부활 대기 감소값. 0 이하이면 해제
+	void SetTeamRespawnDelayReduction(EGameTeam Team, float Seconds);
 	void BeginRespawnProtection(AShooterPlayerState* PlayerState);
 	bool TryGetSpawnTransform(
 		EGameTeam Team,
@@ -49,22 +51,11 @@ private:
 	void HandleActivePointChanged(EDominationPointId ActivePointId);
 
 	void HandleRespawnTimer(TWeakObjectPtr<AController> WaitingController);
-	void HandleRespawnProtectionExpired(TWeakObjectPtr<AShooterPlayerState> PlayerState);
-	void HandleProtectedPlayerWeaponFired(
-		FGameplayTag EventTag,
-		const FGameplayEventData* Payload,
-		TWeakObjectPtr<AShooterPlayerState> PlayerState);
+	void ScheduleRespawnInternal(AController* WaitingController, float DelaySeconds, float ReductionSeconds = 0.0f);
 	void EndRespawnProtection(AShooterPlayerState* PlayerState);
 
-	struct FActiveRespawnProtection
-	{
-		TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
-		FTimerHandle ExpirationTimer;
-		FDelegateHandle WeaponFiredDelegate;
-		FGameplayTagContainer WeaponFiredEventTags;
-	};
-
-	void ReleaseRespawnProtection(FActiveRespawnProtection& Protection);
+    UPROPERTY(Transient)
+    TObjectPtr<UPlayerRespawnProtection> RespawnProtection;
 
 	// 현재 상태 조회는 공통 기반을 사용하고, 델리게이트 해제를 위해 바인딩 대상만 보관한다.
 	TWeakObjectPtr<ADominationGameState> BoundGameState;
@@ -74,8 +65,8 @@ private:
 	TWeakObjectPtr<ADominationSpawnVolume> TeamASpawnVolume;
 	TWeakObjectPtr<ADominationSpawnVolume> TeamBSpawnVolume;
 	TMap<TWeakObjectPtr<AController>, FTimerHandle> PendingRespawnTimers;
-	TMap<TWeakObjectPtr<AShooterPlayerState>, FActiveRespawnProtection> ActiveRespawnProtections;
+	// 팀별 부활 대기 감소값(중계 비콘)
+	TMap<EGameTeam, float> TeamRespawnDelayReduction;
 	EDominationPointId SpawnObjectivePointId = EDominationPointId::None;
 	float RespawnDelay = 5.0f;
-	float RespawnProtectionDuration = 2.0f;
 };

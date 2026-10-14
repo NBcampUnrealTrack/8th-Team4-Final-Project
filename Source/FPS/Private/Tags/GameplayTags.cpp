@@ -29,6 +29,7 @@ namespace RogueTags
 
 	// 히트 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Angle_Back,          "Hit.Angle.Back",          "배후 공격");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Shot_LastRound,      "Hit.Shot.LastRound",      "탄창의 마지막 탄");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Hit_Instigator_Airborne, "Hit.Instigator.Airborne", "가해자가 공중에 있었음");
 
 	// 가해자, 대상 상태
@@ -70,7 +71,14 @@ namespace RogueTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_ActionBlocked, "State.Combat.ActionBlocked", "이동을 제외한 행동 불가. 사격/조준/재장전/무기 교체 차단");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_SystemOverload, "State.Combat.SystemOverload", "시스템 오버로드 지속 중. 처치 시 재적용 조건");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_UtilityHeld,   "State.Combat.UtilityHeld",   "유틸리티를 손에 든 상태. 장착 무기 태그와 공존한다. 무기 어빌리티가 이 태그로 차단된다");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Combat_Deployable,  "State.Combat.Deployable",  "체력을 가진 설치물/소환물. 파괴돼도 처치로 치지 않는다");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Augment_Ability,            "Augment.Ability",            "증강 어빌리티 공통 식별. 무기 교체나 다른 증강이 진행 중인 증강을 취소하는 기준");
+
+	// 증강 효과 상태
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_RecentlyDamaged, "State.Augment.RecentlyDamaged", "자가 치유: 최근 피격. 있는 동안 회복 정지");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_ShotHit, "State.Augment.ShotHit", "연속 명중 증강: 이번 사격이 명중. 발사 이벤트에서 제거");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_HyperRecharge, "State.Augment.HyperRecharge", "하이퍼 리차지: 스킬 사용 후 지속 중. 사격마다 탄 환급");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Augment_LethalSurvive, "State.Augment.LethalSurvive", "기합의 띠 보유: 치명 피해를 목숨당 1번 체력 1로 버팀");
 
 	// 이동 상태
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Movement_Sprinting, "State.Movement.Sprinting", "전력 질주 중");
@@ -136,6 +144,7 @@ namespace RogueTags
 
 	// 상호 배타 효과 그룹
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Shop_Shield, "Effect.Shop.Shield", "상점 보호막 티어. 새 티어 적용 시 기존 티어를 밀어냄");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Effect_Augment_EnhancedShot, "Effect.Augment.EnhancedShot", "저격 강화 사격 버프. 저격 발사 시 제거");
 
 	// 어빌리티 입력 슬롯
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(InputTag_Ability, "InputTag.Ability", "어빌리티 입력 슬롯 앵커. 고정 입력 슬롯은 에디터에서 추가");

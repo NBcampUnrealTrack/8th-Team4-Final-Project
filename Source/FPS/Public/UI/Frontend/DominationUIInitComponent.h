@@ -2,111 +2,64 @@
 
 #include "CoreMinimal.h"
 #include "GameMode/Types/DominationTypes.h"
-#include "GameplayTagContainer.h"
-#include "Player/PlayerParticipationState.h"
-#include "UI/Frontend/TeamMatchUIInitComponent.h"
+#include "GameMode/Types/DominationSandstormTypes.h"
+#include "UI/Frontend/CombatUIInitComponent.h"
 #include "DominationUIInitComponent.generated.h"
 
 class ADominationGameState;
-class ADominationPlayerState;
-class UDominationClassSelectScreen;
-class UShooterAugmentSelectScreen;
-class UShooterInGameMenuScreen;
-class UShooterPlayerHUD;
-class UShooterPrimaryGameLayout;
-class UShooterSurrenderVoteScreen;
+class UShooterMatchOutcomeScreen;
+class UDominationSandstormWarningWidget;
 
-/**
- * Domination의 전투 HUD 준비와 매치 페이즈별 공통 화면 허용 여부를 담당한다.
- */
 UCLASS(ClassGroup = (UI))
-class FPS_API UDominationUIInitComponent : public UTeamMatchUIInitComponent
+class FPS_API UDominationUIInitComponent : public UCombatUIInitComponent
 {
-	GENERATED_BODY()
-
+    GENERATED_BODY()
 public:
-	UDominationUIInitComponent();
-
+    virtual void ResetWorldBinding() override;
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual bool IsAugmentPresentationAllowed() const override;
-	virtual bool IsSurrenderRequestAllowed() const override;
-
-	virtual TSubclassOf<UShooterInGameMenuScreen> GetInGameMenuWidgetClass() const override;
-	virtual TSubclassOf<UShooterSurrenderVoteScreen> GetSurrenderVoteWidgetClass() const override;
-	virtual TSubclassOf<UShooterAugmentSelectScreen> GetAugmentSelectWidgetClass() const override;
-	virtual UShooterInGameMenuScreen* GetInGameMenuInstance() const override;
-	virtual void SetInGameMenuInstance(UShooterInGameMenuScreen* Instance) override;
-	virtual UShooterSurrenderVoteScreen* GetSurrenderVoteInstance() const override;
-	virtual void SetSurrenderVoteInstance(UShooterSurrenderVoteScreen* Instance) override;
-	virtual UShooterAugmentSelectScreen* GetAugmentSelectInstance() const override;
-	virtual void SetAugmentSelectInstance(UShooterAugmentSelectScreen* Instance) override;
-
+    virtual void BeginPlay() override;
+    virtual bool PrepareModeBindings() override;
+    virtual bool CanInitializeCombatHUD(const ADominationPlayerState& ClassState) const override;
+    virtual bool ShouldPresentClassSelection(const ADominationPlayerState& ClassState) const override;
+    virtual bool IsAugmentModeActive() const override;
+    virtual bool IsSurrenderRequestAllowed() const override;
 private:
-	UFUNCTION()
-	void HandleDominationFlowStateChanged();
+    UFUNCTION()
+    void HandleDominationFlowStateChanged();
+    UFUNCTION()
+    void HandleMatchStateChanged();
+    UFUNCTION()
+    void HandleRewardRoundChanged(EGameTeam Team, int32 NewScore);
+    void TryCaptureMatchResult();
+    // 매치 종료 처리. 
+    void TryPresentMatchEnd();
+    void TryPresentMatchOutcome();
+    void TryScheduleMatchExitTransition();
+    void BeginMatchExitTransition(bool bInstant);
+    UFUNCTION()
+    void HandleSandstormStateChanged(const FDominationSandstormState& SandstormState);
+    void UpdateSandstormWarning();
+    void ClearSandstormWarning(bool bPlayExit = false);
+    UPROPERTY(Transient)
+    TObjectPtr<UDominationSandstormWarningWidget> SandstormWarningWidget;
+    FTimerHandle SandstormWarningTimer;
+    void BindToGameState(ADominationGameState* DominationGameState);
+    void UnbindFromGameState();
 
-	UFUNCTION()
-	void HandleMatchStateChanged();
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Match End")
+    TSubclassOf<UShooterMatchOutcomeScreen> MatchOutcomeScreenClass;
 
-	UFUNCTION()
-	void HandleParticipationStateChanged(EPlayerParticipationState ParticipationState);
+    UPROPERTY(Transient)
+    TObjectPtr<UShooterMatchOutcomeScreen> MatchOutcomeScreen;
 
-	UFUNCTION()
-	void HandleCombatClassChanged(EDominationCombatClass SelectedClass);
+    // Anim_Cover 길이 이상이어야 함
+    UPROPERTY(EditDefaultsOnly, Category = "UI|Match End", meta = (ClampMin = "0.1", Units = "s"))
+    float MatchExitCoverLeadSeconds = 0.7f;
 
-	void RefreshDominationUI();
-	void RefreshClassSelectionPresentation(
-		ADominationGameState* DominationGameState,
-		ADominationPlayerState* PlayerState);
-	void PresentClassSelectionScreen();
-	void RemoveClassSelectionScreen();
-	void TryCaptureMatchResult();
-	void ScheduleInitializationRetry();
-	void ClearInitializationRetry();
-	void BindToGameState(ADominationGameState* DominationGameState);
-	void UnbindFromGameState();
-	void BindToPlayerState(ADominationPlayerState* PlayerState);
-	void UnbindFromPlayerState();
+    FTimerHandle MatchExitTransitionTimer;
+    bool bMatchExitTransitionAttempted = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UShooterPrimaryGameLayout> RootLayoutClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UShooterPlayerHUD> InitialWidgetClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI", meta = (AllowPrivateAccess = "true", Categories = "UI.Layer"))
-	FGameplayTag InitialWidgetLayer;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|Class Selection", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UDominationClassSelectScreen> ClassSelectionWidgetClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|System Menu", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UShooterInGameMenuScreen> InGameMenuClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|Surrender", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UShooterSurrenderVoteScreen> SurrenderVoteClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Domination|UI|Augment", meta = (AllowPrivateAccess = "true"))
-	TSubclassOf<UShooterAugmentSelectScreen> AugmentSelectClass;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UShooterPlayerHUD> InitialWidgetInstance;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UDominationClassSelectScreen> ClassSelectionWidgetInstance;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UShooterInGameMenuScreen> InGameMenuInstance;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UShooterSurrenderVoteScreen> SurrenderVoteInstance;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UShooterAugmentSelectScreen> AugmentSelectInstance;
-
-	TWeakObjectPtr<ADominationGameState> BoundGameState;
-	TWeakObjectPtr<ADominationPlayerState> BoundPlayerState;
-	FTimerHandle InitializationRetryTimerHandle;
+    TWeakObjectPtr<ADominationGameState> BoundGameState;
+    int32 LastObservedRewardRound = 0;
+    EDominationMatchPhase LastObservedMatchPhase = EDominationMatchPhase::WaitingForPlayers;
 };

@@ -29,8 +29,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Rogue|Augment|Actor")
 	void Detonate();
 
+	const TSoftClassPtr<ARogueAugmentActor>& GetSpawnOnDetonateClass() const { return SpawnOnDetonateClass; }
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 페이로드의 적용 반경(cm), 범위는 클라이언트에게도 보여야하므로 복제
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Rogue|Augment|Actor")
@@ -46,6 +49,16 @@ protected:
 
 	// 스폰 직후 기폭을 시작할지 여부
 	virtual bool ShouldStartFuseOnBeginPlay() const { return bAutoDetonate; }
+
+	// 기폭 순간 재생할 GameplayCue. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag DetonateCueTag;
+
+	// 스폰 순간 재생할 GameplayCue. 지속형 설치물의 유지 연출용. 비어 있으면 실행 X
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (Categories = "GameplayCue"))
+	FGameplayTag SpawnCueTag;
 
 	// 연출 훅. 기폭이 확정된 뒤 모든 클라이언트에서 실행
 	UFUNCTION(BlueprintImplementableEvent, Category = "Rogue|Augment|Actor")
@@ -77,6 +90,11 @@ protected:
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
 	bool bDestroyOnDetonate = true;
 
+	// 0 보다 크면 기폭 후 이 시간 뒤 소멸
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
+		meta = (EditCondition = "DetonateInterval <= 0 && bDestroyOnDetonate", EditConditionHides, ClampMin = "0.0"))
+	float DetonateDestroyDelaySeconds = 0.f;
+
 	// 터진 위치에 남길 액터
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Augment|Actor",
 		meta = (EditCondition = "DetonateInterval <= 0", EditConditionHides))
@@ -102,6 +120,12 @@ private:
 
 	// 이번 기폭이 적용될 지점. 산포가 없으면 액터 위치
 	FVector ResolveDetonateOrigin() const;
+
+	// 기폭 큐 재생. 모든 클라이언트에서 각자 실행
+	void PlayDetonateCue(const FVector& Location) const;
+
+	// 스폰 큐 재생. 액터가 복제되므로 각 클라이언트의 BeginPlay 에서 실행
+	void PlaySpawnCue() const;
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_Detonated(FVector_NetQuantize Location);

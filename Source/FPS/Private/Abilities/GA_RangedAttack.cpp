@@ -6,6 +6,8 @@
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/ShooterAnimInstance.h"
+#include "Character/ShooterMovementComponent.h"
+#include "GameFramework/Character.h"
 #include "GAS/RogueAbilitySystemComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Player/NetworkTimeSyncComponent.h"
@@ -27,6 +29,21 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 		return false;
 	}
 
+	// 달리기 애니메이션이 재생되는 동안과, 끝난 뒤 총구가 정면으로 돌아오기 전까지는 사격하지 않는다. 판정은 입력을 받은 로컬에서만 한다 -
+	// 서버는 이동 패킷이 늦게 도착하면 이미 달리기를 멈춘 발사를 막을 수 있고, CurrentAmmo는
+	// 복제되지 않아 그렇게 거절된 발은 클라이언트 탄약과 어긋난다.
+	if (ActorInfo && ActorInfo->IsLocallyControlled())
+	{
+		if (const ACharacter* Character = Cast<ACharacter>(ActorInfo->AvatarActor.Get()))
+		{
+			const UShooterMovementComponent* Movement = Cast<UShooterMovementComponent>(Character->GetCharacterMovement());
+			if (Movement && Movement->IsRecoveringFromSprint())
+			{
+				return false;
+			}
+		}
+	}
+
 	// 연사 입력은 Enhanced Input의 Triggered 동안 매 프레임 활성화를 재시도한다.
 	// CanFireNow()를 여기서도 게이트해 실제 발사 간격이 되기 전의 불필요한 LocalPredicted
 	// 어빌리티 활성화/RPC를 줄이고, Fire()의 동일 검증은 최종 권위 안전망으로 그대로 둔다.
@@ -37,6 +54,17 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 
 	if (Weapon->IsOutOfAmmo() && !Weapon->IsReloading())
 	{
+		// 발사 입력을 누른 채 마지막 탄을 쏴서 탄창이 빈 경우에는 클릭음/떼었다 다시 누르기 없이 바로 재장전한다.
+		if (ActorInfo && ActorInfo->IsLocallyControlled() && Weapon->ConsumeEmptiedDuringHold())
+		{
+			if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+			{
+				static const FGameplayTag HoldReloadInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Reload"));
+				RogueASC->AbilityInputTagPressed(HoldReloadInputTag);
+				return false;
+			}
+		}
+
 		// 탄창이 빈 뒤 첫 사격 입력엔 클릭음만 재생한다(TryPlayEmptyClipSound가 true 반환).
 		// 이미 클릭음을 들은 뒤(false 반환)엔, 발사 버튼을 한 번 떼었다가 다시 누른 경우에만
 		// (IsEmptyReloadArmed) 재장전을 시작한다 - 누르고 있는 동안 자동 재장전되는 걸 막고,

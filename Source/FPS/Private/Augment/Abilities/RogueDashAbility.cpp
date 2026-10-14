@@ -33,7 +33,7 @@ void URogueDashAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
                                        const FGameplayEventData* TriggerEventData)
 {
 	ACharacter* Character = Cast<ACharacter>(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr);
-	if (!Character)
+	if (!ensure(Character))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
@@ -77,7 +77,7 @@ void URogueDashAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 			FVector::ZeroVector,
 			Movement ? Movement->MaxWalkSpeed : 0.f);
 
-	if (!Task)
+	if (!ensure(Task))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;

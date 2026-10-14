@@ -1,17 +1,30 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Combat/CombatComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "GAS/RogueAbilitySystemComponent.h"
+#include "Customization/FirstPersonAppearanceComponent.h"
 
 #include "Camera/CameraComponent.h"
+#include "CollisionQueryParams.h"
+#include "Components/DominationSandstormComponent.h"
 #include "Character/ShooterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "GAS/RogueTargetFilter.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/ShooterPlayerController.h"
+#include "Settings/ShooterGameUserSettings.h"
+#include "Tags/GameplayTags.h"
 #include "TimerManager.h"
+#include "Training/TrainingPlayerComponent.h"
+#include "Training/CQB/CQBTrainingAIComponent.h"
+#include "Training/CQB/CQBTrainingSpawner.h"
 #include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCombatComponent, Log, All);
@@ -32,7 +45,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(UCombatComponent, SecondaryWeapon);
 	DOREPLIFETIME(UCombatComponent, MeleeWeapon);
 	DOREPLIFETIME(UCombatComponent, bIsCycling);
-	DOREPLIFETIME(UCombatComponent, bAiming);
+	DOREPLIFETIME(UCombatComponent, bReplicatedAiming);
 }
 
 void UCombatComponent::BeginPlay()
@@ -45,28 +58,43 @@ void UCombatComponent::BeginPlay()
 		if (const UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor))
 		{
 			DefaultFieldOfView = Camera->FieldOfView;
+			bDefaultFieldOfViewInitialized = true;
 		}
 	}
 }
 
 void UCombatComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SetAimingAtEnemy(false);
+	// 스왑 타이머 등 이 컴포넌트가 건 타이머를 한 번에 정리한다.
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(WeaponSwitchTimerHandle);
+		World->GetTimerManager().ClearAllTimersForObject(this);
 	}
 
-	ClearWeaponLoadout();
+	if (const AActor* OwnerActor = GetOwner(); IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		ClearWeaponLoadout();
+	}
+	else
+	{
+		CancelAimingForWeapon(CurrentWeapon.Get());
+		ResetAiming();
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
 void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
                                      FActorComponentTickFunction* ThisTickFunction)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(UCombatComponent::TickComponent);
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	UpdateMovementSpreadMultiplier();
 	UpdateCameraZoom(DeltaTime);
+	BroadcastCrosshairSpreadInputsIfChanged();
+	UpdateCrosshairTarget();
 
 	// 스왑 타이머가 완료 콜백(FinishCycling) 없이 사라지면 bIsCycling이 true로 굳어
 	// IsWeaponReady()가 계속 false가 되고 사격/재장전이 영구히 막힌다 - 부활 직후
@@ -107,6 +135,17 @@ void UCombatComponent::UpdateMovementSpreadMultiplier() const
 	// 대상은 아니다(스프린트는 지상이라 ADS 자체가 대부분 불가능/취소되므로 별개로 취급).
 	const bool bIsFalling = Movement->IsFalling();
 	Weapon->SetIsAirborne(bIsFalling);
+	// 이동 탄퍼짐을 무시하는 무기(샷건 등)도 앉기 보정은 받아야 해서 아래 조기 반환보다 먼저 넘긴다.
+	Weapon->SetIsCrouching(Movement->IsCrouching());
+
+	// 이동 탄퍼짐을 무시하는 무기(예: 산탄총)는 항상 정지(브레이킹 성공) + 배율 1로 취급한다 -
+	// MovingSpreadPenaltyDegrees/MovingADSSpreadDegrees/걷기·뛰기 배율이 전부 빠지고 공중 페널티만 남는다.
+	if (Weapon->IgnoresMovementSpread())
+	{
+		Weapon->SetIsStationary(true);
+		Weapon->SetMovementSpreadMultiplier(1.f);
+		return;
+	}
 
 	// 이동 입력을 누르고 있는지와 무관하게, 실제 속도가 임계값 이하로 떨어지면 그 즉시 "정지
 	// (브레이킹 성공)"로 취급한다 - 반대 방향 키로 급정지(카운터 스트레이프)해서 속도를 0으로
@@ -151,7 +190,7 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 	const AWeaponBase* Weapon = CurrentWeapon.Get();
 	// 조준 중이고, 장착 무기가 ADS를 지원할 때만 줌 목표 FOV를 쓴다 - 그 외(무기 없음/ADS 불가/
 	// 조준 해제)에는 평상시 FOV로 되돌아간다.
-	const float TargetFieldOfView = (bAiming && IsValid(Weapon) && Weapon->CanADS())
+	const float TargetFieldOfView = IsAiming()
 		? Weapon->GetADSFieldOfView()
 		: DefaultFieldOfView;
 
@@ -160,7 +199,151 @@ void UCombatComponent::UpdateCameraZoom(const float DeltaTime) const
 		return;
 	}
 
-	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, ADSZoomInterpSpeed));
+	float InterpSpeed = ADSZoomInterpSpeed;
+	if (IsValid(Weapon))
+	{
+		const float WeaponInterpSpeed = Weapon->GetADSCameraInterpSpeedOverride();
+		if (WeaponInterpSpeed > 0.f)
+		{
+			InterpSpeed = WeaponInterpSpeed;
+		}
+	}
+
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, TargetFieldOfView, DeltaTime, InterpSpeed));
+}
+
+void UCombatComponent::BroadcastCrosshairSpreadInputsIfChanged()
+{
+	// 크로스헤어 위젯은 로컬 플레이어의 Pawn에만 붙으므로, 구독자가 없는 대다수(서버/시뮬레이티드 프록시)는
+	// 비교 비용조차 쓰지 않는다.
+	if (!OnCrosshairSpreadInputsChanged.IsBound())
+	{
+		return;
+	}
+
+	AWeaponBase* Weapon = CurrentWeapon.Get();
+	const float SpreadDegrees = IsValid(Weapon) ? Weapon->GetCurrentSpreadDegrees() : 0.f;
+
+	float FieldOfView = LastCrosshairFieldOfView;
+	AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		if (const UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor))
+		{
+			FieldOfView = Camera->FieldOfView;
+		}
+	}
+
+	if (LastCrosshairWeapon.Get() == Weapon
+		&& FMath::IsNearlyEqual(LastCrosshairSpreadDegrees, SpreadDegrees, 0.001f)
+		&& FMath::IsNearlyEqual(LastCrosshairFieldOfView, FieldOfView, 0.01f))
+	{
+		return;
+	}
+
+	LastCrosshairWeapon = Weapon;
+	LastCrosshairSpreadDegrees = SpreadDegrees;
+	LastCrosshairFieldOfView = FieldOfView;
+	OnCrosshairSpreadInputsChanged.Broadcast();
+}
+
+void UCombatComponent::UpdateCrosshairTarget()
+{
+	// 상대가 움직여 조준점에 들어올 수 있으므로 탐지만 갱신하고 UI에는 변화만 전달한다.
+	if (!OnCrosshairTargetChanged.IsBound())
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const AWeaponBase* Weapon = CurrentWeapon.Get();
+	const APlayerController* Controller = IsValid(OwnerPawn)
+		? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	UWorld* World = GetWorld();
+	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
+		|| !IsValid(Controller) || !Controller->IsLocalController()
+		|| Controller->GetPawn() != OwnerPawn || Controller->GetViewTarget() != OwnerPawn
+		|| !IsValid(Weapon) || !IsValid(World) || !IsValid(Settings)
+		|| !Settings->IsEnemyCrosshairColorEnabled() || !URogueTargetFilter::IsAlive(OwnerPawn))
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	FHitscanTraceSettings TraceSettings;
+	if (!Weapon->GetAimTraceSettings(TraceSettings))
+	{
+		SetAimingAtEnemy(false);
+		return;
+	}
+
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(CrosshairTarget), TraceSettings.bTraceComplex, OwnerPawn);
+	QueryParams.AddIgnoredActor(Weapon);
+	FHitResult Hit;
+	const bool bBlockingHit = World->LineTraceSingleByChannel(Hit, ViewLocation,
+		ViewLocation + ViewRotation.Vector() * TraceSettings.MaximumRangeCentimeters,
+		TraceSettings.TraceChannel, QueryParams);
+	const ACharacter* Target = bBlockingHit ? Cast<ACharacter>(Hit.GetActor()) : nullptr;
+	bool bEnemy = false;
+	if (IsValid(Target) && URogueTargetFilter::IsAlive(Target))
+	{
+		const ERogueTargetRelation Relation = URogueTargetFilter::GetRelation(OwnerPawn, Target);
+		bEnemy = Relation == ERogueTargetRelation::Hostile;
+		if (Relation == ERogueTargetRelation::TeamUnknown)
+		{
+			// 팀이 없는 CQB AI도 현재 참가 중인 훈련의 살아 있는 적이면 표시한다.
+			const UCQBTrainingAIComponent* CQB = Target->FindComponentByClass<UCQBTrainingAIComponent>();
+			const ACQBTrainingSpawner* Spawner = IsValid(CQB) ? CQB->GetTrainingSpawner() : nullptr;
+			const UTrainingPlayerComponent* Training = Controller->FindComponentByClass<UTrainingPlayerComponent>();
+			bEnemy = IsValid(CQB) && CQB->IsAlive()
+				&& IsValid(Spawner) && Spawner->IsTrainingRunning()
+				&& IsValid(Training) && Training->IsCQBTrainingActiveWith(*Spawner);
+		}
+	}
+	if (bEnemy)
+	{
+		// 폭풍의 기존 적 표시 거리 밖에서 색상으로 위치를 드러내지 않는다.
+		const UDominationSandstormComponent* Sandstorm = Controller->FindComponentByClass<UDominationSandstormComponent>();
+		bEnemy = !IsValid(Sandstorm) || Sandstorm->IsEnemyOutlineInRange(*Target);
+	}
+	SetAimingAtEnemy(bEnemy);
+}
+
+void UCombatComponent::SetAimingAtEnemy(const bool bNewAimingAtEnemy)
+{
+	if (bAimingAtEnemy == bNewAimingAtEnemy)
+	{
+		return;
+	}
+	bAimingAtEnemy = bNewAimingAtEnemy;
+	OnCrosshairTargetChanged.Broadcast(bAimingAtEnemy);
+}
+
+void UCombatComponent::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
+{
+	const AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
+	{
+		return;
+	}
+
+	bInfiniteAmmo = bNewInfiniteAmmo;
+	AWeaponBase* const Weapons[] =
+	{
+		PrimaryWeapon.Get(), SecondaryWeapon.Get(), MeleeWeapon.Get(), CurrentWeapon.Get()
+	};
+	for (AWeaponBase* Weapon : Weapons)
+	{
+		if (IsValid(Weapon))
+		{
+			Weapon->SetInfiniteAmmo(bInfiniteAmmo);
+		}
+	}
 }
 
 AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> WeaponClass)
@@ -184,6 +367,7 @@ AWeaponBase* UCombatComponent::SpawnWeaponInstance(TSubclassOf<AWeaponBase> Weap
 
 	if (IsValid(SpawnedWeapon))
 	{
+		SpawnedWeapon->SetInfiniteAmmo(bInfiniteAmmo);
 		SpawnedWeapon->SetActorHiddenInGame(true);
 	}
 
@@ -320,8 +504,6 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 	AWeaponBase* PreviousWeapon = CurrentWeapon.Get();
 	if (IsValid(PreviousWeapon))
 	{
-		PreviousWeapon->SetADS(false);
-
 		// 재장전 중이어도 스왑을 막지 않는다 - 대신 재장전은 즉시 취소한다(탄약 미충전). 재장전은
 		// 모션이 끝까지 재생돼야만 완료되므로, 스왑으로 중단됐다면 무기로 돌아왔을 때 다시 걸어야 한다.
 		if (PreviousWeapon->IsReloading())
@@ -329,11 +511,6 @@ bool UCombatComponent::SwitchWeaponSlot(const EWeaponSlot WeaponSlot)
 			PreviousWeapon->CancelReload();
 		}
 	}
-	// GA_ADS가 이 스왑을 못 보고(예: 다른 입력으로 트리거된 스왑) 여전히 조준 애니메이션을 유지한 채로
-	// 남지 않도록, 스왑 시점에 조준 상태를 즉시 해제한다. GA_ADS가 나중에 입력 해제로 정상 종료돼도
-	// 자신이 캐싱해둔 이전 무기에 SetADS(false)를 한 번 더 호출할 뿐이라 문제 없다.
-	SetAiming(false);
-
 	ApplyCurrentWeapon(TargetWeapon);
 	BeginEquipCycle(CurrentWeapon.Get());
 
@@ -373,12 +550,6 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 	{
 		if (CurrentWeapon.Get() != PreviousPrimary)
 		{
-			if (IsValid(CurrentWeapon.Get()))
-			{
-				CurrentWeapon->SetADS(false);
-			}
-			SetAiming(false);
-
 			ApplyCurrentWeapon(PreviousPrimary);
 			BeginEquipCycle(PreviousPrimary);
 		}
@@ -414,12 +585,6 @@ bool UCombatComponent::ReplacePrimaryWeapon(const TSubclassOf<AWeaponBase> Prima
 	if (!IsValid(NextCurrent))
 	{
 		NextCurrent = MeleeWeapon.Get();
-	}
-
-	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon.Get() != NextCurrent)
-	{
-		CurrentWeapon->SetADS(false);
-		SetAiming(false);
 	}
 
 	ApplyCurrentWeapon(NextCurrent);
@@ -479,19 +644,100 @@ bool UCombatComponent::IsWeaponReady() const
 	return IsValid(CurrentWeapon.Get()) && !bIsCycling;
 }
 
-void UCombatComponent::SetAiming(const bool bNewAiming)
+bool UCombatComponent::IsAiming() const
 {
-	bAiming = bNewAiming;
+	return bAiming && IsValid(CurrentWeapon.Get()) && CurrentWeapon->CanADS();
+}
+
+void UCombatComponent::SetAiming(const bool bNewAiming, AWeaponBase* ExpectedWeapon)
+{
+	if (ExpectedWeapon && ExpectedWeapon != CurrentWeapon.Get())
+	{
+		if (!bNewAiming && IsValid(ExpectedWeapon))
+		{
+			ExpectedWeapon->SetADS(false);
+		}
+		return;
+	}
+
+	bAiming = bNewAiming && IsValid(CurrentWeapon.Get()) && CurrentWeapon->CanADS();
+	if (const AActor* OwnerActor = GetOwner(); IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		bReplicatedAiming = bAiming;
+	}
+	ApplyAimingPresentation();
+}
+
+bool UCombatComponent::UsesLocalAimingPrediction() const
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	return IsValid(OwnerPawn) && !OwnerPawn->HasAuthority()
+		&& (OwnerPawn->GetLocalRole() == ROLE_AutonomousProxy || OwnerPawn->IsLocallyControlled());
+}
+
+void UCombatComponent::ApplyAimingPresentation()
+{
+	const bool bAppliedAiming = IsAiming();
+	if (AWeaponBase* Previous = AppliedAimingWeapon.Get(); IsValid(Previous) && Previous != CurrentWeapon.Get())
+	{
+		Previous->SetADS(false);
+	}
+	if (IsValid(CurrentWeapon.Get()) && CurrentWeapon->IsADS() != bAppliedAiming)
+	{
+		CurrentWeapon->SetADS(bAppliedAiming);
+	}
+	AppliedAimingWeapon = bAppliedAiming ? CurrentWeapon.Get() : nullptr;
 	RefreshFirstPersonADSPresentation();
 	RefreshMainHUDSuppressionState();
+	if (bLastBroadcastAiming != bAppliedAiming)
+	{
+		bLastBroadcastAiming = bAppliedAiming;
+		OnAimingStateChanged.Broadcast(bAppliedAiming);
+	}
+}
+
+void UCombatComponent::CancelAimingForWeapon(AWeaponBase* Weapon)
+{
+	if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner())))
+	{
+		ASC->CancelADSAbilityForWeapon(Weapon);
+	}
+}
+
+void UCombatComponent::ResetAiming()
+{
+	SetAimingAtEnemy(false);
+	SetAiming(false);
+	AActor* OwnerActor = GetOwner();
+	if (bDefaultFieldOfViewInitialized && IsValid(OwnerActor) && OwnerActor->Implements<UPlayerInterface>())
+	{
+		if (UCameraComponent* Camera = IPlayerInterface::Execute_GetViewCamera(OwnerActor); IsValid(Camera))
+		{
+			Camera->SetFieldOfView(DefaultFieldOfView);
+		}
+	}
 }
 
 bool UCombatComponent::ShouldSuppressMainHUDForADS() const
 {
 	const AWeaponBase* Weapon = CurrentWeapon.Get();
-	return bAiming
-		&& IsValid(Weapon)
-		&& Weapon->ShouldHideMainHUDWhileADS();
+	if (!IsAiming() || !IsValid(Weapon))
+	{
+		return false;
+	}
+
+	// 스나이퍼 ADS는 스코프/기본 크로스헤어/1인칭 표현만 별도로 제어하고,
+	// 체력/탄약/게임 진행 HUD 같은 메인 HUD는 계속 보여준다. 무기 에셋에
+	// bHideMainHUDWhileADS가 켜져 있더라도 스나이퍼만큼은 여기서 최종적으로
+	// 제외해 두면, 기존 무기별 표현 정책 구조를 유지하면서도 스코프 중 HUD
+	// 전체가 사라지는 문제를 한 곳에서 막을 수 있다.
+	if (Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Sniper)
+	{
+		return false;
+	}
+
+	return Weapon->ShouldHideMainHUDWhileADS();
 }
 
 void UCombatComponent::SetPresentationSuppressed(const bool bSuppressed)
@@ -519,8 +765,30 @@ void UCombatComponent::ReEquipCurrentWeapon()
 void UCombatComponent::RefreshFirstPersonADSPresentation() const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled()
-		|| !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	if (!IsValid(OwnerPawn) || !OwnerPawn->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass()))
+	{
+		return;
+	}
+
+	bool bViewedByLocalPlayer = OwnerPawn->IsLocallyControlled();
+	if (!bViewedByLocalPlayer)
+	{
+		if (UWorld* World = OwnerPawn->GetWorld())
+		{
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			{
+				const AShooterPlayerController* LocalController = Cast<AShooterPlayerController>(It->Get());
+				if (IsValid(LocalController) && LocalController->IsLocalController()
+					&& LocalController->GetPresentationViewTarget() == OwnerPawn)
+				{
+					bViewedByLocalPlayer = true;
+					break;
+				}
+			}
+		}
+	}
+
+	if (!bViewedByLocalPlayer)
 	{
 		return;
 	}
@@ -532,7 +800,7 @@ void UCombatComponent::RefreshFirstPersonADSPresentation() const
 	}
 
 	AWeaponBase* Weapon = CurrentWeapon.Get();
-	const bool bHideFirstPerson = bAiming
+	const bool bHideFirstPerson = IsAiming()
 		&& IsValid(Weapon)
 		&& Weapon->ShouldHideFirstPersonPresentationWhileADS();
 
@@ -540,6 +808,8 @@ void UCombatComponent::RefreshFirstPersonADSPresentation() const
 	// 비활성화된 다른 무기까지 ADS 해제 시 다시 보이게 만들 수 있다.
 	// 사망 처리의 HiddenInGame 상태도 건드리지 않는다.
 	CharacterMesh1P->SetVisibility(!bHideFirstPerson, false);
+    if (auto* Appearance = OwnerPawn->FindComponentByClass<UFirstPersonAppearanceComponent>())
+        Appearance->SetPresentationVisible(!bHideFirstPerson);
 
 	if (IsValid(Weapon))
 	{
@@ -581,16 +851,23 @@ void UCombatComponent::SetCurrentWeapon(AWeaponBase* NewWeapon)
 void UCombatComponent::ApplyCurrentWeapon(AWeaponBase* NewWeapon)
 {
 	AActor* OwnerActor = GetOwner();
+	if (CurrentWeapon.Get() != NewWeapon)
+	{
+		SetAimingAtEnemy(false);
+		CancelAimingForWeapon(CurrentWeapon.Get());
+		SetAiming(false);
+	}
 	CurrentWeapon = NewWeapon;
 
 	if (IsValid(CurrentWeapon.Get()) && IsValid(OwnerActor))
 	{
 		CurrentWeapon->SetOwner(OwnerActor);
+		CurrentWeapon->SetInfiniteAmmo(bInfiniteAmmo);
 	}
 
 	RefreshWeaponPresentation();
-	RefreshFirstPersonADSPresentation();
-	RefreshMainHUDSuppressionState();
+	ApplyAimingPresentation();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::ClearWeaponLoadout()
@@ -600,6 +877,9 @@ void UCombatComponent::ClearWeaponLoadout()
 	{
 		return;
 	}
+
+	CancelAimingForWeapon(CurrentWeapon.Get());
+	ResetAiming();
 
 	AWeaponBase* CurrentToDestroy = CurrentWeapon.Get();
 	AWeaponBase* PrimaryToDestroy = PrimaryWeapon.Get();
@@ -646,6 +926,7 @@ void UCombatComponent::BeginEquipCycle(AWeaponBase* Weapon)
 	}
 
 	SetCyclingState(true);
+	Weapon->PlayEquipSound();
 
 	const float EquipDuration = ResolveEquipDuration(Weapon);
 	UE_LOG(
@@ -728,20 +1009,42 @@ void UCombatComponent::SetCyclingState(const bool bNewIsCycling)
 
 void UCombatComponent::OnRep_CurrentWeapon(AWeaponBase* LastWeapon)
 {
-	if (IsValid(LastWeapon) && LastWeapon != CurrentWeapon.Get())
+	SetAimingAtEnemy(false);
+	if (LastWeapon && LastWeapon != CurrentWeapon.Get())
 	{
-		LastWeapon->SetPresentationActive(false);
+		// 이전 무기의 알림은 새 무기에서 시작한 ADS를 취소하지 않는다.
+		CancelAimingForWeapon(LastWeapon);
+		if (IsValid(LastWeapon))
+		{
+			LastWeapon->SetADS(false);
+			LastWeapon->SetPresentationActive(false);
+		}
 	}
 
+	if (UsesLocalAimingPrediction())
+	{
+		if (AppliedAimingWeapon.Get() != CurrentWeapon.Get())
+		{
+			SetAiming(false);
+		}
+	}
+	else
+	{
+		bAiming = bReplicatedAiming;
+	}
 	RefreshWeaponPresentation();
-	RefreshFirstPersonADSPresentation();
-	RefreshMainHUDSuppressionState();
+	ApplyAimingPresentation();
+	OnCurrentWeaponChanged.Broadcast(CurrentWeapon.Get());
 }
 
 void UCombatComponent::OnRep_Aiming()
 {
-	RefreshFirstPersonADSPresentation();
-	RefreshMainHUDSuppressionState();
+	// 소유 클라이언트의 해제 예측은 GAS 종료/취소로 확정한다. 늦은 true는 적용하지 않는다.
+	if (!UsesLocalAimingPrediction())
+	{
+		bAiming = bReplicatedAiming;
+	}
+	ApplyAimingPresentation();
 }
 
 void UCombatComponent::OnRep_WeaponSlots()

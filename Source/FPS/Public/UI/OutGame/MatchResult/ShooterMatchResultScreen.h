@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/Foundation/ShooterActivatableWidget.h"
 #include "UI/OutGame/MatchResult/ShooterMatchResultTypes.h"
 #include "ShooterMatchResultScreen.generated.h"
 
@@ -12,14 +12,13 @@ class UButton;
 class UWidgetSwitcher;
 class UShooterMatchResultRowWidget;
 
-// 닫아 달라는 요청으로 실제 제거는 서브시스템이 함
 DECLARE_MULTICAST_DELEGATE(FOnMatchResultCloseRequested);
 
 /**
  * 매치 결과 화면. 로비 위에 덮인다.
  */
-UCLASS(Abstract)
-class FPS_API UShooterMatchResultScreen : public UUserWidget
+UCLASS(Abstract, meta = (DisableNativeTick))
+class FPS_API UShooterMatchResultScreen : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
 
@@ -31,7 +30,8 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
-	virtual void NativeConstruct() override;
+	virtual UWidget* NativeGetDesiredFocusTarget() const override;
+	virtual bool NativeOnHandleBackAction() override;
 
 	UFUNCTION()
 	void HandleCloseClicked();

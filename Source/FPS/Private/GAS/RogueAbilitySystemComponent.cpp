@@ -1,6 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "Abilities/GA_ADS.h"
 
 #include "GAS/RogueAbilitySet.h"
 #include "Tags/GameplayTags.h"
@@ -26,9 +27,15 @@ URogueAbilitySystemComponent::URogueAbilitySystemComponent()
 	SetIsReplicatedByDefault(true);
 }
 
-void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
+void URogueAbilitySystemComponent::AbilityInputTagPressed(
+	const FGameplayTag& InputTag, const bool bToggleADS, const bool bIsNewPress)
 {
-	if (!InputTag.IsValid() || HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
+	if (!ensure(InputTag.IsValid()))
+	{
+		return;
+	}
+
+	if (HasMatchingGameplayTag(RogueTags::State_Gameplay_InputBlocked))
 	{
 		return;
 	}
@@ -39,6 +46,21 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 	{
 		ABILITYLIST_SCOPE_LOCK();
 
+		// 같은 입력에 ADS 스펙이 여러 개여도 해제 클릭으로 다른 ADS를 켜지 않는다.
+		bool bToggleOffADS = false;
+		if (bToggleADS && bIsNewPress)
+		{
+			for (const FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+			{
+				if (Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag)
+					&& Spec.Ability && Spec.Ability->IsA<UGA_ADS>() && Spec.IsActive())
+				{
+					bToggleOffADS = true;
+					break;
+				}
+			}
+		}
+
 		for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
 		{
 			if (!Spec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -47,6 +69,20 @@ void URogueAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 			}
 
 			++MatchedSpecCount;
+
+			// 같은 입력 태그를 쓰는 다른 어빌리티의 홀드 동작은 그대로 둔다.
+			if (bToggleADS && Spec.Ability && Spec.Ability->IsA<UGA_ADS>())
+			{
+				if (!bIsNewPress)
+				{
+					continue;
+				}
+				if (bToggleOffADS)
+				{
+					ReleaseAbilityInput(Spec);
+					continue;
+				}
+			}
 
 			if (Spec.IsActive())
 			{
@@ -128,9 +164,10 @@ void URogueAbilitySystemComponent::ReportInputResult(
 		*InputTag.ToString(), CandidateCount);
 }
 
-void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& InputTag)
+void URogueAbilitySystemComponent::AbilityInputTagReleased(
+	const FGameplayTag& InputTag, const bool bPreserveADS)
 {
-	if (!InputTag.IsValid())
+	if (!ensure(InputTag.IsValid()))
 	{
 		return;
 	}
@@ -144,18 +181,82 @@ void URogueAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTag& I
 			continue;
 		}
 
-		Spec.InputPressed = false;
-
-		if (!Spec.IsActive())
+		if (bPreserveADS && Spec.Ability && Spec.Ability->IsA<UGA_ADS>())
 		{
 			continue;
 		}
 
-		AbilitySpecInputReleased(Spec);
+		ReleaseAbilityInput(Spec);
+	}
+}
 
-		// WaitInputRelease 태스크는 이 복제 이벤트를 기다림
-		InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
-			Spec.Handle, GetInstanceActivationPredictionKey(Spec));
+void URogueAbilitySystemComponent::ReleaseADSInput()
+{
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		if (!Spec.Ability || !Spec.Ability->IsA<UGA_ADS>())
+		{
+			continue;
+		}
+		ReleaseAbilityInput(Spec);
+	}
+}
+
+void URogueAbilitySystemComponent::ReleaseAbilityInput(FGameplayAbilitySpec& Spec)
+{
+	// 호출부가 어빌리티 목록을 잠근 상태에서 입력 해제를 처리한다.
+	Spec.InputPressed = false;
+	if (!Spec.IsActive())
+	{
+		return;
+	}
+
+	AbilitySpecInputReleased(Spec);
+	// WaitInputRelease 태스크는 이 복제 이벤트를 기다린다.
+	InvokeReplicatedEvent(EAbilityGenericReplicatedEvent::InputReleased,
+		Spec.Handle, GetInstanceActivationPredictionKey(Spec));
+}
+
+void URogueAbilitySystemComponent::CancelADSAbilityForWeapon(const AWeaponBase* Weapon)
+{
+	TArray<FGameplayAbilitySpecHandle> Handles;
+	{
+		ABILITYLIST_SCOPE_LOCK();
+		for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+		{
+			if (!Spec.Ability || !Spec.Ability->IsA<UGA_ADS>())
+			{
+				continue;
+			}
+			bool bMatchesWeapon = !Spec.IsActive();
+			for (UGameplayAbility* Instance : Spec.GetAbilityInstances())
+			{
+				const UGA_ADS* ADS = Cast<UGA_ADS>(Instance);
+				bMatchesWeapon |= ADS && ADS->IsAimingWithWeapon(Weapon);
+			}
+			if (bMatchesWeapon)
+			{
+				Spec.InputPressed = false;
+				if (Spec.IsActive())
+				{
+					Handles.Add(Spec.Handle);
+				}
+			}
+		}
+	}
+	for (const FGameplayAbilitySpecHandle& Handle : Handles)
+	{
+		CancelAbilityHandle(Handle);
+	}
+}
+
+void URogueAbilitySystemComponent::ClearAbilityInput()
+{
+	ABILITYLIST_SCOPE_LOCK();
+	for (FGameplayAbilitySpec& Spec : ActivatableAbilities.Items)
+	{
+		Spec.InputPressed = false;
 	}
 }
 
@@ -186,15 +287,14 @@ void URogueAbilitySystemComponent::SetEquippedWeaponType(FGameplayTag EquippedSt
 
 void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* AbilitySet)
 {
-	if (!IsOwnerActorAuthoritative())
+	if (!ensureMsgf(IsOwnerActorAuthoritative(),
+		TEXT("[RogueAbility] 권한이 없는 곳에서 어빌리티를 부여하려 했습니다. "
+		     "서버에서 주면 스펙이 소유 클라이언트로 복제됩니다")))
 	{
-		UE_LOG(LogRogueAbility, Error,
-			TEXT("[RogueAbility] 권한이 없는 곳에서 어빌리티를 부여하려 했습니다. "
-			     "서버에서 주면 스펙이 소유 클라이언트로 복제됩니다"));
 		return;
 	}
 
-	if (!AbilitySet)
+	if (!ensure(AbilitySet))
 	{
 		return;
 	}
@@ -203,10 +303,9 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 	{
 		const FRogueGrantedAbility& Granted = AbilitySet->Abilities[Index];
 
-		if (!Granted.AbilityClass)
+		if (!ensureMsgf(Granted.AbilityClass,
+			TEXT("[RogueAbility] %s 의 Abilities[%d] 가 비어 있습니다"), *AbilitySet->GetName(), Index))
 		{
-			UE_LOG(LogRogueAbility, Error,
-				TEXT("[RogueAbility] %s 의 Abilities[%d] 가 비어 있습니다"), *AbilitySet->GetName(), Index);
 			continue;
 		}
 
@@ -221,17 +320,24 @@ void URogueAbilitySystemComponent::GrantAbilitySet(const URogueAbilitySet* Abili
 		GiveAbility(Spec);
 	}
 
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : AbilitySet->Effects)
+	{
+		if (ensureMsgf(EffectClass, TEXT("[RogueAbility] %s 의 Effects 에 빈 항목이 있습니다"), *AbilitySet->GetName()))
+		{
+			ApplyGameplayEffectToSelf(EffectClass.GetDefaultObject(), 1.f, MakeEffectContext());
+		}
+	}
+
 	UE_LOG(LogRogueAbility, Log,
 		TEXT("[RogueAbility] %s 어빌리티 %d개 부여"), *AbilitySet->GetName(), AbilitySet->Abilities.Num());
 }
 
 int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
 {
-	if (!IsOwnerActorAuthoritative())
+	if (!ensureMsgf(IsOwnerActorAuthoritative(),
+		TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
+		     "서버에서 제거하면 클라이언트로 복제됩니다")))
 	{
-		UE_LOG(LogRogueAbility, Error,
-			TEXT("[RogueAbility] 권한이 없는 곳에서 라운드 한정 효과를 제거하려 했습니다. "
-			     "서버에서 제거하면 클라이언트로 복제됩니다"));
 		return 0;
 	}
 
@@ -248,4 +354,44 @@ int32 URogueAbilitySystemComponent::RemoveRoundScopedEffects()
 	}
 
 	return RemovedCount;
+}
+
+void URogueAbilitySystemComponent::ReduceActiveCooldowns(float Rate)
+{
+	const UWorld* World = GetWorld();
+	if (Rate <= 0.f || !World || !IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	FGameplayTagContainer CooldownTags;
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot1);
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot2);
+	CooldownTags.AddTag(RogueTags::Cooldown_Augment_Slot3);
+
+	const float Now = World->GetTimeSeconds();
+	for (const FActiveGameplayEffectHandle& Handle : GetActiveEffects(FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTags)))
+	{
+		if (const FActiveGameplayEffect* Active = GetActiveGameplayEffect(Handle))
+		{
+			ModifyActiveEffectStartTime(Handle, -Active->GetTimeRemaining(Now) * FMath::Min(Rate, 1.f));
+		}
+	}
+}
+
+void URogueAbilitySystemComponent::OnGameplayEffectDurationChange(FActiveGameplayEffect& ActiveEffect)
+{
+	Super::OnGameplayEffectDurationChange(ActiveEffect);
+
+	FGameplayTagContainer GrantedTags;
+	ActiveEffect.Spec.GetAllGrantedTags(GrantedTags);
+
+	for (const FGameplayTag& SlotTag : { RogueTags::Cooldown_Augment_Slot1.GetTag(),
+		RogueTags::Cooldown_Augment_Slot2.GetTag(), RogueTags::Cooldown_Augment_Slot3.GetTag() })
+	{
+		if (GrantedTags.HasTagExact(SlotTag))
+		{
+			OnCooldownTimeChanged.Broadcast(SlotTag);
+		}
+	}
 }

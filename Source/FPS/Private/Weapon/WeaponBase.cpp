@@ -1,18 +1,36 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Weapon/WeaponBase.h"
+#include "Customization/GameplayAppearanceComponent.h"
+#include "Customization/AppearanceGrip.h"
+#include "Engine/SkeletalMesh.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Combat/CombatComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/ShooterAnimInstance.h"
+#include "Character/ShooterCharacter.h"
+#include "GameMode/Types/DominationTypes.h"
+#include "Player/BaseTeamPlayerState.h"
+#include "Player/DominationPlayerState.h"
+#include "Player/ShooterPlayerController.h"
+#include "Settings/ShooterAudioSettings.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/Hitscan/HitscanResolverSubsystem.h"
 #include "Combat/Hitscan/Definitions/HitscanSurfaceDefinition.h"
 #include "Combat/Hitscan/Definitions/HitscanWeaponDefinition.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Data/WeaponDamageData.h" 
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
+#include "Sound/SoundBase.h"
+#include "Particles/ParticleSystem.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -39,6 +57,7 @@ AWeaponBase::AWeaponBase()
 	Mesh1P->SetCastShadow(false);
 	Mesh1P->bReceivesDecals = false;
 	Mesh1P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh1P->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 
 	// 3인칭 전용: 오너 본인에게는 숨기고 다른 플레이어에게만 보인다.
 	Mesh3P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh3P"));
@@ -58,7 +77,9 @@ void AWeaponBase::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifet
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AWeaponBase, bIsReloading);
+	DOREPLIFETIME(AWeaponBase, EffectiveReloadDuration);
 	DOREPLIFETIME(AWeaponBase, CurrentReserveAmmo);
+	DOREPLIFETIME(AWeaponBase, bInfiniteAmmo);
 }
 
 void AWeaponBase::BeginPlay()
@@ -73,13 +94,19 @@ void AWeaponBase::BeginPlay()
 	EffectiveRPM = BaseRPM;
 	EffectiveAltRPM = (AltBaseRPM > 0.f) ? AltBaseRPM : BaseRPM;
 	EffectiveMagazineSize = MagazineSize;
-	EffectiveReloadDuration = ReloadDuration;
+	// Initial replication can precede BeginPlay on observers. Do not replace the
+	// server's duration with the weapon BP's fallback (notably 1.4s for pistols).
+	if (HasAuthority()) EffectiveReloadDuration = ReloadDuration;
 	EffectivePelletCount = PelletCountPerShot;
 	EffectiveTraceRange = TraceRange;
 	CurrentAmmo = EffectiveMagazineSize;
-	CurrentReserveAmmo = MaxReserveAmmo;
+	// 초기 복제가 BeginPlay보다 먼저 도착한 클라이언트의 예비탄을 덮어쓰지 않는다.
+	if (HasAuthority()) CurrentReserveAmmo = MaxReserveAmmo;
+	EffectiveMaxReserveAmmo = MaxReserveAmmo;
+	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 
 	// 스나이퍼는 좌우(Yaw) 반동이 없어야 한다 - 무기 BP/DataTable에 설정된 값과 무관하게 코드에서
 	// 강제한다(CanADS()/GetCurrentSpreadDegrees()의 스나이퍼 강제 규칙과 같은 패턴). ApplySpreadRecoilTuningTable이
@@ -88,6 +115,20 @@ void AWeaponBase::BeginPlay()
 	{
 		Aim->SetRecoilYawMultiplier(0.f);
 	}
+
+	if (GetOwner() && GetOwner()->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_OnWeaponSpawned(GetOwner(), this);
+	}
+}
+
+void AWeaponBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 재장전 중 무기가 파괴(스왑 정리/사망/레벨 이동)되면 ReloadTimerHandle 콜백이 파괴된 무기를
+	// 가리키게 되므로, 이 객체가 건 타이머를 전부 한 번에 해제한다.
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AWeaponBase::Tick(float DeltaTime)
@@ -116,6 +157,11 @@ void AWeaponBase::OnRep_Owner()
 		CachedOwnerCamera = OwnerActor->FindComponentByClass<UCameraComponent>();
 	}
 
+	if (OwnerActor->Implements<UPlayerInterface>())
+	{
+		IPlayerInterface::Execute_OnWeaponSpawned(OwnerActor, this);
+	}
+
 	// 현재 손에 든 무기(서버가 SetActorHiddenInGame(false)로 복제한 상태)만 다시 부착/표시한다.
 	// 숨겨진 슬롯 무기는 부착만 확정하고 가시성은 건드리지 않는다.
 	AttachToOwnerMeshes();
@@ -130,10 +176,21 @@ void AWeaponBase::OnRep_Owner()
 
 bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 {
+	if (const AActor* OwnerActor = GetOwner())
+	{
+		if (const UCombatComponent* Combat = OwnerActor->FindComponentByClass<UCombatComponent>())
+		{
+			if (!Combat->IsWeaponReady() || Combat->GetCurrentWeapon() != this) return false;
+		}
+		if (const UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner()))
+		{
+			if (ASC->HasMatchingGameplayTag(RogueTags::State_Combat_IsSwapping)) return false;
+		}
+	}
 	const bool bUseAltRPM = bHeavyAttack && AltBaseRPM > 0.f;
 	const float RPMForRequestedAttack = bUseAltRPM ? EffectiveAltRPM : EffectiveRPM;
 
-	if (bIsReloading || (bUsesAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
+	if (bIsReloading || (bUsesAmmo && !bInfiniteAmmo && CurrentAmmo <= 0) || RPMForRequestedAttack <= 0.f)
 	{
 		return false;
 	}
@@ -144,9 +201,23 @@ bool AWeaponBase::CanFireNow(bool bHeavyAttack) const
 		return false;
 	}
 
+	// 원격 클라이언트가 예측 발사한 요청은 네트워크 지터 때문에 서버 기준으로 간격보다 조금 일찍
+	// 도착할 수 있다. 서버가 이걸 거절하면 클라이언트는 탄약만 줄고(CurrentAmmo 비복제) 사격음·이펙트가
+	// 빠져 연사가 끊겨 보이므로 약간의 여유를 둔다. RegisterFireCooldown이 예정 시각 기준으로 다음
+	// 쿨다운을 잡기 때문에 여유를 줘도 지속 연사 속도는 RPM을 넘지 않는다.
+	float EarlyTolerance = 0.f;
+	if (HasAuthority())
+	{
+		const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+		if (OwnerPawn && !OwnerPawn->IsLocallyControlled())
+		{
+			EarlyTolerance = LastFireInterval * FireIntervalTolerance;
+		}
+	}
+
 	// 쿨다운은 직전에 실제로 발사된 공격(좌/우 무관)의 간격을 기준으로 하므로, 지금 요청한
 	// 공격이 좌/우 어느 쪽이든 그 간격이 지나기 전에는 발사할 수 없다.
-	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval;
+	return (World->GetTimeSeconds() - LastFireTime) >= LastFireInterval - EarlyTolerance;
 }
 
 bool AWeaponBase::TryPlayEmptyClipSound()
@@ -183,8 +254,26 @@ bool AWeaponBase::TryPlayEmptyClipSound()
 	return true;
 }
 
+void AWeaponBase::PlayEquipSound()
+{
+	if (Effects)
+	{
+		Effects->PlayEquipSound();
+	}
+}
+
+void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
+{
+	if (Effects)
+	{
+		Effects->PlayMeleeAttackSound(bHeavyAttack);
+	}
+}
+
 void AWeaponBase::NotifyPrimaryInputReleased()
 {
+	bEmptiedDuringHold = false;
+
 	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
 	// 다음 발사 입력은 "떼었다 다시 누른 새 입력"으로 보고 재장전을 허용한다(GA_RangedAttack).
 	if (IsOutOfAmmo() && bEmptyClipNotified && !bIsReloading)
@@ -227,9 +316,34 @@ void AWeaponBase::SetIsStationary(bool bNewIsStationary)
 	}
 }
 
+void AWeaponBase::SetIsCrouching(bool bNewIsCrouching)
+{
+	if (Aim)
+	{
+		Aim->SetIsCrouching(bNewIsCrouching);
+	}
+}
+
 void AWeaponBase::SetEffectiveMagazineSize(const int32 NewMagazineSize)
 {
 	EffectiveMagazineSize = NewMagazineSize;
+	OnAmmoChanged.Broadcast();
+}
+
+void AWeaponBase::ResizeMagazine(const int32 NewMagazineSize)
+{
+	const int32 Delta = NewMagazineSize - EffectiveMagazineSize;
+	EffectiveMagazineSize = NewMagazineSize;
+	CurrentAmmo = FMath::Clamp(CurrentAmmo + Delta, 0, EffectiveMagazineSize);
+	OnAmmoChanged.Broadcast();
+}
+
+void AWeaponBase::ResizeReserve(const int32 NewMaxReserveAmmo)
+{
+	const int32 Delta = NewMaxReserveAmmo - EffectiveMaxReserveAmmo;
+	EffectiveMaxReserveAmmo = NewMaxReserveAmmo;
+	CurrentReserveAmmo = FMath::Max(CurrentReserveAmmo + Delta, 0);
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::SetEffectiveReloadDuration(const float NewReloadDuration)
@@ -263,6 +377,47 @@ void AWeaponBase::SetEffectiveTraceRange(const float NewTraceRangeCentimeters)
 	EffectiveTraceRange = NewTraceRangeCentimeters;
 }
 
+bool AWeaponBase::GetAimTraceSettings(FHitscanTraceSettings& OutTraceSettings) const
+{
+	if (!IsValid(HitscanDefinition.Get()))
+	{
+		return false;
+	}
+	FHitscanShotRequest Request;
+	HitscanDefinition->ConfigureShotRequest(Request, GetPhysicalTraceRange(false, false));
+	OutTraceSettings = Request.TraceSettings;
+	return FMath::IsFinite(OutTraceSettings.MaximumRangeCentimeters)
+		&& OutTraceSettings.MaximumRangeCentimeters > 0.f;
+}
+
+float AWeaponBase::GetPhysicalTraceRange(const bool bHeavyAttack, const bool bAllowLoadDamageData) const
+{
+	// MaximumRangeMeters를 넘어가도 대미지는 0이 아니라 MinimumDamage로 수렴
+	// EffectiveTraceRange 자체를 바꾸면 이펙트 종료 지점도 같이 늘어나 예광탄이
+	// 1km 밖까지 날아가는 것처럼 보이므로 로컬 변수로만 분리
+	// 근접무기(bUsesAmmo=false)는 사거리 감쇠 표현 대상이 아니므로 이 확장 로직을 타면 안 된다 -
+	// 안 그러면 DamageEntry에 MaximumRangeMeters가 잘못 들어있을 때 칼의 물리 Trace가 1km까지
+	// 늘어나서, 실제 근접 사거리 밖의 적에게도 히트(→히트마커)만 등록되고 대미지는 0(MinimumDamage로
+	// 수렴)인 상황이 생긴다.
+	float PhysicalTraceRangeCentimeters = EffectiveTraceRange;
+	if (bUsesAmmo)
+	{
+		// 조준 표시만으로 동기 로드하지 않는다. 프리로드 전에는 무기 기본 사거리를 쓴다.
+		const FWeaponDamageEntry* DamageEntry =
+			UWeaponDamageData::FindEntry(GetWeaponTag(bHeavyAttack), bAllowLoadDamageData);
+		if (DamageEntry)
+		{
+			if (DamageEntry->MaximumRangeMeters > 0.f)
+			{
+				constexpr float EffectivelyUnlimitedTraceRangeCentimeters = 100000.f; // 1km
+				PhysicalTraceRangeCentimeters = FMath::Max(PhysicalTraceRangeCentimeters, EffectivelyUnlimitedTraceRangeCentimeters);
+			}
+		}
+	}
+
+	return PhysicalTraceRangeCentimeters;
+}
+
 FGameplayTag AWeaponBase::GetWeaponTag(const bool bHeavyAttack) const
 {
 	if (bHeavyAttack && AltWeaponTag.IsValid())
@@ -286,16 +441,53 @@ bool AWeaponBase::IsADS() const
 	return Aim && Aim->IsADS();
 }
 
+float AWeaponBase::GetAccumulatedRecoilPitch() const
+{
+	return Aim ? Aim->GetAccumulatedRecoilPitch() : 0.f;
+}
+
 bool AWeaponBase::CanADS() const
 {
-	// 정조준은 스나이퍼 전용이다 - 다른 무기는 Aim 컴포넌트의 bCanADS 설정과 무관하게 항상 불가능하다
-	// (무기 BP마다 체크박스를 일일이 끌 필요 없이 여기서 한 번에 강제한다).
-	return GetWeaponTag() == RogueTags::Weapon_Type_Sniper && Aim && Aim->CanADS();
+	// 라이플과 스나이퍼는 조준을 지원하고, 각 무기의 Aim 설정을 따른다.
+	const FGameplayTag WeaponTag = GetWeaponTag();
+	const bool bSupportedWeapon = WeaponTag == RogueTags::Weapon_Type_Rifle
+		|| WeaponTag == RogueTags::Weapon_Type_Sniper;
+	return bSupportedWeapon && Aim && Aim->CanADS();
 }
 
 float AWeaponBase::GetADSFieldOfView() const
 {
 	return Aim ? Aim->GetADSFieldOfView() : 0.f;
+}
+
+float AWeaponBase::GetADSCameraInterpSpeedOverride() const
+{
+	return Aim ? Aim->GetADSCameraInterpSpeedOverride() : 0.f;
+}
+
+float AWeaponBase::GetADSMoveSpeedMultiplier() const
+{
+	return Aim ? Aim->GetADSMoveSpeedMultiplier() : 1.f;
+}
+
+bool AWeaponBase::SupportsVariableADSZoom() const
+{
+	return Aim && Aim->SupportsVariableADSZoom();
+}
+
+bool AWeaponBase::AdjustADSZoom(const float InputDelta)
+{
+	return Aim && Aim->AdjustADSZoom(InputDelta);
+}
+
+int32 AWeaponBase::GetCurrentADSZoomStep() const
+{
+	return Aim ? Aim->GetCurrentADSZoomStep() : 0;
+}
+
+int32 AWeaponBase::GetADSZoomStepCount() const
+{
+	return Aim ? Aim->GetADSZoomStepCount() : 0;
 }
 
 bool AWeaponBase::ShouldHideFirstPersonPresentationWhileADS() const
@@ -365,7 +557,6 @@ void AWeaponBase::AttachToOwnerMeshes() const
 	}
 
 	USkeletalMeshComponent* CharacterMesh1P = IPlayerInterface::Execute_GetMesh1P(OwnerActor);
-	USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 
 	if (IsValid(CharacterMesh1P) && IsValid(Mesh1P))
 	{
@@ -377,17 +568,62 @@ void AWeaponBase::AttachToOwnerMeshes() const
 		Mesh1P->SetRelativeRotation(GripOffsetRotation1P);
 	}
 
+    RefreshThirdPersonAttachment();
+}
+
+void AWeaponBase::RefreshThirdPersonAttachment() const
+{
+    AActor* OwnerActor = GetOwner();
+    if (!IsValid(OwnerActor) || !OwnerActor->GetClass()->ImplementsInterface(UPlayerInterface::StaticClass())) return;
+    USkeletalMeshComponent* CharacterMesh3P = IPlayerInterface::Execute_GetMesh3P(OwnerActor);
 	if (IsValid(CharacterMesh3P) && IsValid(Mesh3P))
 	{
-		Mesh3P->AttachToComponent(
-			CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
+        // A missing socket otherwise resolves to the mesh origin (the feet).
+        // Hide this presentation until the correct mesh/socket is available.
+        if (!CharacterMesh3P->DoesSocketExist(GripSocketName3P))
+        {
+            Mesh3P->SetVisibility(false, true);
+            return;
+        }
+        Mesh3P->SetVisibility(!IsHidden(), true);
+        bool bAttachedToAppearance = false;
+        if (const auto* Appearance = OwnerActor->FindComponentByClass<UGameplayAppearanceComponent>())
+        {
+            USkeletalMeshComponent* Body = Appearance->GetReadyBody();
+            FTransform Basis;
+            const FName GripBone = CharacterMesh3P->GetSocketBoneName(GripSocketName3P);
+            if (Body && CharacterMesh3P->GetSkeletalMeshAsset() &&
+                CharacterMesh3P->DoesSocketExist(GripSocketName3P) &&
+                AppearanceGrip::BuildGripBoneBasis(CharacterMesh3P->GetSkeletalMeshAsset()->GetRefSkeleton(),
+                    Body->GetSkeletalMeshAsset()->GetRefSkeleton(), GripBone, Basis))
+            {
+                const FTransform Relative = FTransform(GripOffsetRotation3P, GripOffsetLocation3P) *
+                    CharacterMesh3P->GetSocketTransform(GripSocketName3P, RTS_ParentBoneSpace) * Basis;
+                Mesh3P->AttachToComponent(Body, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripBone);
+                Mesh3P->SetRelativeLocationAndRotation(Relative.GetLocation(), Relative.GetRotation());
+                bAttachedToAppearance = true;
+            }
+        }
+        if (!bAttachedToAppearance)
+        {
+			Mesh3P->AttachToComponent(
+				CharacterMesh3P, FAttachmentTransformRules::SnapToTargetNotIncludingScale, GripSocketName3P);
 
-		// 무기별 보정값
-		Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
-		Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
+			// 무기별 보정값
+			Mesh3P->SetRelativeLocation(GripOffsetLocation3P);
+			Mesh3P->SetRelativeRotation(GripOffsetRotation3P);
+        }
 
-		Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
-		Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+		// 새 무기도 팀/발각/폭풍 거리 조건을 적용한다. 비표시 드라이버 메시 값은 복사하지 않는다.
+		if (AShooterCharacter* Character = Cast<AShooterCharacter>(OwnerActor))
+		{
+			Character->RefreshTeamOutline();
+		}
+		else
+		{
+			Mesh3P->SetCustomDepthStencilValue(CharacterMesh3P->CustomDepthStencilValue);
+			Mesh3P->SetRenderCustomDepth(CharacterMesh3P->bRenderCustomDepth);
+		}
 	}
 }
 
@@ -396,9 +632,22 @@ bool AWeaponBase::Fire(bool bHeavyAttack)
 	return FireMelee(bHeavyAttack);
 }
 
-bool AWeaponBase::FireMelee(bool bHeavyAttack)
+bool AWeaponBase::FireMelee(bool bHeavyAttack, float AnimationRecoverySeconds)
 {
-	return FireInternal(bHeavyAttack, 0.0f);
+	// ClientFireServerTime을 0으로 넘기면 FLagCompensationRewindScope가 아예 생성되지 않아
+	// (LagCompensationRewindScope.cpp의 <= 0.0f 가드) 부위별 정밀 히트박스가 계속 NoCollision
+	// 상태로 남는다. 그러면 트레이스가 본 정보 없는 캡슐에 맞아 항상 폴백(Torso) 판정으로
+	// 떨어지고, 머리를 노려도 헤드샷이 잡히지 않는다. 근접무기는 보정할 클라이언트 지연이
+	// 없으므로 현재 서버 시간을 넘겨 "지금 시점"으로 리와인드시켜 정밀 히트박스를 활성화한다.
+	const UWorld* World = GetWorld();
+	const float CurrentServerTime = World ? World->GetTimeSeconds() : 0.0f;
+	if (!FireInternal(bHeavyAttack, CurrentServerTime)) return false;
+	// Shared by light/heavy attacks, including authority without an animation tick.
+	if (FMath::IsFinite(AnimationRecoverySeconds))
+	{
+		LastFireInterval = FMath::Max(LastFireInterval, AnimationRecoverySeconds);
+	}
+	return true;
 }
 
 bool AWeaponBase::FireRanged(float ClientFireServerTime)
@@ -428,11 +677,11 @@ bool AWeaponBase::FireInternal(bool bHeavyAttack, float ClientFireServerTime)
 	const float RPMUsed = ResolveRPMForShot(bHeavyAttack);
 	RegisterFireCooldown(*World, RPMUsed);
 
-	const int32 ShotIndexInMagazine = ConsumeAmmoForShot();
+	const int32 FiredShotIndex = ConsumeAmmoForShot();
 	const float ShotDamage = ResolveShotDamage(bHeavyAttack);
 	const TArray<FVector> PelletDirections = GeneratePelletDirections();
 
-	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, ShotIndexInMagazine, ClientFireServerTime, bHeavyAttack);
+	ResolveHitscanShot(TraceStart, PelletDirections, ShotDamage, FiredShotIndex, ClientFireServerTime, bHeavyAttack);
 	if (Effects)
 	{
 		Effects->PlayFireCameraShake();
@@ -450,22 +699,40 @@ float AWeaponBase::ResolveRPMForShot(const bool bHeavyAttack) const
 
 void AWeaponBase::RegisterFireCooldown(const UWorld& World, const float RPMUsed)
 {
-	LastFireTime = World.GetTimeSeconds();
+	// 연사 중에는 실제 발사 시각 대신 직전 발의 예정 시각(직전 발 + 간격)을 기준으로 다음 쿨다운을 잡는다.
+	// 실제 시각을 쓰면 프레임/패킷 도착 단위로 생기는 지연이 매 발 누적돼 연사 박자가 불규칙해지고,
+	// 서버는 다음 요청이 상대적으로 일찍 도착한 것처럼 보여 거절하게 된다.
+	const float Now = World.GetTimeSeconds();
+	const float ScheduledTime = LastFireTime + LastFireInterval;
+	const bool bContinuousFire = LastFireInterval > 0.f
+		&& FMath::Abs(Now - ScheduledTime) <= LastFireInterval * FireIntervalTolerance;
+	LastFireTime = bContinuousFire ? ScheduledTime : Now;
 	LastFireInterval = 60.f / RPMUsed;
 }
 
 int32 AWeaponBase::ConsumeAmmoForShot()
 {
-	const int32 ShotIndexInMagazine = bUsesAmmo
-		? FMath::Max(0, EffectiveMagazineSize - CurrentAmmo)
-		: 0;
-
-	if (bUsesAmmo)
+	if (!bUsesAmmo)
 	{
-		CurrentAmmo--;
+		return 0;
 	}
 
-	return ShotIndexInMagazine;
+	const int32 SafeMagazineSize = FMath::Max(EffectiveMagazineSize, 1);
+	const int32 CurrentShotIndex = FMath::Clamp(ShotIndexInMagazine, 0, SafeMagazineSize - 1);
+
+	if (!bInfiniteAmmo)
+	{
+		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+		// 누른 채 쏘다가 마지막 탄을 쏜 순간을 기록한다(바로 재장전 판정용).
+		if (CurrentAmmo <= 0)
+		{
+			bEmptiedDuringHold = true;
+		}
+		OnAmmoChanged.Broadcast();
+	}
+
+	ShotIndexInMagazine = (CurrentShotIndex + 1) % SafeMagazineSize;
+	return CurrentShotIndex;
 }
 
 float AWeaponBase::ResolveShotDamage(const bool bHeavyAttack) const
@@ -492,7 +759,7 @@ void AWeaponBase::AdvanceFireCounters()
 {
 	if (Aim)
 	{
-		Aim->NotifyShotFired();
+		Aim->NotifyShotFired(LastFireInterval);
 	}
 }
 
@@ -536,25 +803,92 @@ void AWeaponBase::PlayFireEffects(
 
 void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscanImpactEffectData>& ImpactEffects)
 {
+	// One shot may carry many shotgun pellet impacts; audio is not a per-impact effect.
+	if (!ImpactEffects.IsEmpty())
+	{
+		if (Effects) Effects->PlayFireSound();
+	}
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
-	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
+	// 킬캠/관전으로 이 폰을 1인칭으로 보는 중이면 1P 총구 이펙트를 써야 숨겨진 3P 총에서 이펙트가 나가지 않는다.
+	const AShooterCharacter* OwningCharacter = Cast<AShooterCharacter>(OwningPawn);
+	const bool bIsFirstPerson = OwningCharacter ? OwningCharacter->IsFirstPersonPresented()
+		: OwningPawn && OwningPawn->IsLocallyControlled();
 
-	// 표면별 임팩트 사운드(사람/벽 등)는 FireEffects BP 그래프와 무관하게 여기서 직접 재생한다 -
-	// FireEffects는 BlueprintImplementableEvent라 C++에서 로직을 얹을 수 없다.
+	// 클라이언트 킬캠 녹화는 받은 비신뢰 멀티캐스트를 다음 무기 복제까지 쌓아 두고, 한 번에 2개(net.MaxRPCPerNetUpdate)만 남긴다.
+	// 무기는 0.3~0.5초에 한 번만 녹화 복제돼 연사가 2발씩 묶이고 나머지는 버려졌다. 받을 때마다 다음 녹화 프레임에 내보내게 한다.
+	if (GetLocalRole() != ROLE_Authority)
+	{
+		ForceNetUpdate();
+	}
+
+	// The predicting owner and authority play rifle/knife animation through the ability.
+	// Simulated observers receive fire effects, but do not execute that ability.
+	// Sniper's gameplay-event relay is owner-local; remote proxies also need the
+	// character action, not just muzzle/impact effects, to operate the bolt.
+	const bool bKnifeAttack = GetWeaponTag() == RogueTags::Weapon_Type_Knife;
+	const bool bSniperAttack = GetWeaponTag() == RogueTags::Weapon_Type_Sniper;
+	if (OwningPawn && OwningPawn->GetLocalRole() == ROLE_SimulatedProxy
+		&& (bKnifeAttack || bSniperAttack || GetWeaponTag() == RogueTags::Weapon_Type_Rifle))
+	{
+		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
+		UShooterAnimInstance* Anim = Character && Character->GetMesh()
+			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
+		const ADominationPlayerState* State = Character ? Character->GetPlayerState<ADominationPlayerState>() : nullptr;
+		if (Anim && (bKnifeAttack || bSniperAttack || (State && State->GetCombatClass() == EDominationCombatClass::Trooper))
+			&& Character->GetCombatComponent()
+			&& Character->GetCombatComponent()->GetCurrentWeapon() == this)
+		{
+			Anim->PlayFireMontageForCurrentWeapon(true);
+		}
+	}
+
+	// Third-person recoil for every view of this pawn from outside (observers and a listen server's view of
+	// remote players), all ranged weapons. The owner sees first-person recoil instead.
+	if (OwningPawn && !OwningPawn->IsLocallyControlled() && !bKnifeAttack)
+	{
+		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
+		UShooterAnimInstance* Anim = Character && Character->GetMesh()
+			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
+		if (Anim && Character->GetCombatComponent() && Character->GetCombatComponent()->GetCurrentWeapon() == this)
+		{
+			Anim->PlayFireRecoil();
+		}
+	}
+
 	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
 	{
-		LastImpactPoint = ImpactEffect.ImpactPoint;
-		LastImpactNormal = ImpactEffect.ImpactNormal;
-		LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
-		LastImpactPelletIndex = ImpactEffect.PelletIndex;
+		const bool bHeadshot = RogueTags::IsHeadZone(ImpactEffect.HitZoneTag);
 
-		if (SurfaceDefinition)
+		if (ImpactEffect.bHasHit)
 		{
-			if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+			LastImpactPoint = ImpactEffect.ImpactPoint;
+			LastImpactNormal = ImpactEffect.ImpactNormal;
+			LastImpactSurfaceType = ImpactEffect.ImpactSurfaceType;
+			LastImpactPelletIndex = ImpactEffect.PelletIndex;
+
+			if (SurfaceDefinition)
 			{
-				UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
+				{
+					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				}
+
+				// 파티클 복구
+				if (ImpactEffect.bSpawnImpactParticle)
+				{
+					if (UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot))
+					{
+						// ImpactNormal.Rotation()은 Roll이 항상 0이라 방향성 있는 파티클(예: P_Blood_Splat_Cone)이
+						// 매번 같은 각도로만 튄다. 노멀 축(Roll)을 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀게 한다.
+						FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
+						ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
+
+						UGameplayStatics::SpawnEmitterAtLocation(
+							this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
+					}
+				}
 			}
 		}
 
@@ -562,19 +896,62 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 			ImpactEffect.ImpactPoint,
 			ImpactEffect.ImpactNormal,
 			ImpactEffect.ImpactSurfaceType.GetValue(),
-			bIsFirstPerson);
+			ImpactEffect.bHasHit && bUsesAmmo,
+			bIsFirstPerson,
+			bHeadshot);
 	}
+}
+
+void AWeaponBase::SetInfiniteAmmo(const bool bNewInfiniteAmmo)
+{
+	if (!HasAuthority() || bInfiniteAmmo == bNewInfiniteAmmo)
+	{
+		return;
+	}
+
+	bInfiniteAmmo = bNewInfiniteAmmo;
+	OnAmmoChanged.Broadcast();
+	ForceNetUpdate();
+}
+
+bool AWeaponBase::CanReceiveReserveAmmo(const int32 Amount) const
+{
+	return HasAuthority() && bUsesAmmo && !bInfiniteAmmo && Amount > 0
+		&& CurrentReserveAmmo >= 0 && CurrentReserveAmmo < MAX_int32;
+}
+
+int32 AWeaponBase::AddReserveAmmo(const int32 Amount)
+{
+	if (!CanReceiveReserveAmmo(Amount))
+	{
+		return 0;
+	}
+
+	const int64 NewReserveAmmo = FMath::Min<int64>(
+		static_cast<int64>(CurrentReserveAmmo) + Amount, static_cast<int64>(MAX_int32));
+	const int32 AppliedAmount = static_cast<int32>(NewReserveAmmo - CurrentReserveAmmo);
+	CurrentReserveAmmo = static_cast<int32>(NewReserveAmmo);
+	OnAmmoChanged.Broadcast();
+	ForceNetUpdate();
+	return AppliedAmount;
+}
+
+bool AWeaponBase::CanReload() const
+{
+	return bUsesAmmo && !bInfiniteAmmo && !bIsReloading
+		&& CurrentAmmo < EffectiveMagazineSize && CurrentReserveAmmo > 0;
 }
 
 void AWeaponBase::StartReload()
 {
-	if (!bUsesAmmo || bIsReloading || CurrentAmmo >= EffectiveMagazineSize || CurrentReserveAmmo <= 0)
+	if (!CanReload())
 	{
 		return;
 	}
 
 	bIsReloading = true;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
 	// 항상 무반동 상태로 시작한다.
 	if (Aim)
@@ -588,28 +965,59 @@ void AWeaponBase::StartReload()
 
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, EffectiveReloadDuration, false);
+		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &AWeaponBase::FinishReload, GetReloadCompleteDelay(), false);
 	}
 }
 
 void AWeaponBase::FinishReload()
 {
-	// 예비 탄약이 부족하면 탄창을 다 못 채우고 남은 예비 탄약만큼만 채운다(예: 탄창 30발 중 12발
-	// 남았는데 예비 탄약이 5발뿐이면 17발만 채우고 예비 탄약은 0이 된다).
-	const int32 AmountToReload = FMath::Clamp(EffectiveMagazineSize - CurrentAmmo, 0, CurrentReserveAmmo);
+	const int32 MissingAmmo = FMath::Max(EffectiveMagazineSize - CurrentAmmo, 0);
+	const int32 AmountToReload = FMath::Clamp(CurrentReserveAmmo, 0, MissingAmmo);
+
 	CurrentAmmo += AmountToReload;
 	CurrentReserveAmmo -= AmountToReload;
+	ShotIndexInMagazine = 0;
 	if (CurrentAmmo > 0)
 	{
 		bEmptyClipNotified = false;
 	}
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false; 
 
 	bIsReloading = false;
+	OnAmmoChanged.Broadcast();
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
 	}
+}
+
+int32 AWeaponBase::AdjustMagazineAmmoLocal(const int32 Delta)
+{
+	if (!bUsesAmmo || bInfiniteAmmo || Delta == 0)
+	{
+		return 0;
+	}
+
+	const int32 NewAmmo = FMath::Clamp(CurrentAmmo + Delta, 0, EffectiveMagazineSize);
+	const int32 Applied = NewAmmo - CurrentAmmo;
+	if (Applied != 0)
+	{
+		CurrentAmmo = NewAmmo;
+		bEmptyClipNotified = false;
+		OnAmmoChanged.Broadcast();
+	}
+	return Applied;
+}
+
+void AWeaponBase::OnRep_CurrentReserveAmmo()
+{
+	OnAmmoChanged.Broadcast();
+}
+
+void AWeaponBase::OnRep_InfiniteAmmo()
+{
+	OnAmmoChanged.Broadcast();
 }
 
 void AWeaponBase::CancelReload()
@@ -625,9 +1033,32 @@ void AWeaponBase::CancelReload()
 	}
 
 	bIsReloading = false;
+	Multicast_StopCancelledReload();
 	if (HasAuthority())
 	{
 		ForceNetUpdate();
+	}
+}
+
+void AWeaponBase::Multicast_StopCancelledReload_Implementation()
+{
+	TArray<USkeletalMeshComponent*> Meshes; GetComponents(Meshes);
+	AActor* OwnerActor = GetOwner();
+	// An old weapon's delayed RPC must not stop the new weapon's reload.
+	if (IsValid(OwnerActor) && OwnerActor->Implements<UPlayerInterface>()
+		&& IPlayerInterface::Execute_GetCurrentWeapon(OwnerActor) == this)
+	{
+		Meshes.AddUnique(IPlayerInterface::Execute_GetMesh1P(OwnerActor));
+		Meshes.AddUnique(IPlayerInterface::Execute_GetMesh3P(OwnerActor));
+	}
+	for (USkeletalMeshComponent* Mesh : Meshes)
+	{
+		UAnimInstance* Anim = IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
+		if (!Anim) continue;
+		TArray<UAnimMontage*> Montages;
+		for (FAnimMontageInstance* Instance : Anim->MontageInstances)
+			if (Instance && Instance->Montage && Instance->Montage->GetName().Contains(TEXT("Reload"))) Montages.AddUnique(Instance->Montage);
+		for (UAnimMontage* Montage : Montages) Anim->Montage_Stop(0.05f, Montage);
 	}
 }
 
@@ -662,7 +1093,7 @@ void AWeaponBase::ResolveHitscanShot(
 	const FVector& TraceStart,
 	const TArray<FVector>& PelletDirections,
 	const float ShotDamage,
-	const int32 ShotIndexInMagazine,
+	const int32 InShotIndexInMagazine,
 	const float ClientFireServerTime,
 	const bool bHeavyAttack)
 {
@@ -688,7 +1119,7 @@ void AWeaponBase::ResolveHitscanShot(
 	(void)ShotDamage;
 
 	FHitscanShotRequest Request;
-	HitscanDefinition->ConfigureShotRequest(Request, EffectiveTraceRange);
+	HitscanDefinition->ConfigureShotRequest(Request, GetPhysicalTraceRange(bHeavyAttack));
 
 	// 좌/우 공격이 서로 다른 Weapon.Type.* 태그를 쓰는 무기(칼 등)는 ConfigureShotRequest가 채운
 	// 기본 태그를 강공격 태그로 덮어써야 한다. AltWeaponTag가 비어있으면 GetWeaponTag가 기본 태그를
@@ -714,10 +1145,105 @@ void AWeaponBase::ResolveHitscanShot(
 
 	Request.PelletDirections = MakeArrayView(PelletDirections);
 	Request.ShotId = FGuid::NewGuid();
-	Request.ShotIndexInMagazine = FMath::Max(0, ShotIndexInMagazine);
+	Request.ShotIndexInMagazine = FMath::Max(0, InShotIndexInMagazine);
 	Request.ClientFireServerTime = ClientFireServerTime;
 
 	TArray<FHitscanImpactEffectData> ImpactEffects;
 	Resolver->ResolveServerShot(Request, ImpactEffects);
+	NotifyBulletNearMisses(Request, ImpactEffects);
 	PlayFireEffects(TraceStart, PelletDirections, ImpactEffects);
+}
+
+void AWeaponBase::NotifyBulletNearMisses(
+	const FHitscanShotRequest& Request,
+	const TArray<FHitscanImpactEffectData>& ImpactEffects)
+{
+	UWorld* World = GetWorld();
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!IsValid(World) || !AudioSettings || AudioSettings->BulletNearMissSound.IsNull()
+		|| AudioSettings->BulletNearMissDistanceCentimeters <= 0.f
+		|| Request.PelletDirections.IsEmpty() || Request.TraceSettings.MaximumRangeCentimeters <= 0.f)
+	{
+		return;
+	}
+
+	const APawn* InstigatorPawn = Cast<APawn>(Request.InstigatorActor);
+	const ABaseTeamPlayerState* InstigatorPlayerState = IsValid(InstigatorPawn)
+		? InstigatorPawn->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const EGameTeam InstigatorTeam = IsValid(InstigatorPlayerState)
+		? InstigatorPlayerState->GetTeam()
+		: EGameTeam::None;
+
+	TSet<TWeakObjectPtr<AActor>> HitActors;
+	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
+	{
+		if (ImpactEffect.bHasHit && ImpactEffect.HitActor.IsValid())
+		{
+			HitActors.Add(ImpactEffect.HitActor);
+		}
+	}
+
+	const double CurrentTime = World->GetTimeSeconds();
+	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
+	{
+		AShooterPlayerController* Recipient = Cast<AShooterPlayerController>(Iterator->Get());
+		APawn* RecipientPawn = IsValid(Recipient) ? Recipient->GetPawn() : nullptr;
+		ABaseTeamPlayerState* RecipientPlayerState = IsValid(RecipientPawn)
+			? RecipientPawn->GetPlayerState<ABaseTeamPlayerState>()
+			: nullptr;
+		if (!IsValid(Recipient) || !IsValid(RecipientPawn) || RecipientPawn == InstigatorPawn
+			|| !IsValid(RecipientPlayerState) || !RecipientPlayerState->IsAlive()
+			|| (InstigatorTeam != EGameTeam::None && RecipientPlayerState->GetTeam() == InstigatorTeam)
+			|| HitActors.Contains(TWeakObjectPtr<AActor>(RecipientPawn)))
+		{
+			continue;
+		}
+
+		if (const double* LastTime = LastBulletNearMissTimes.Find(Recipient);
+			LastTime && CurrentTime - *LastTime < AudioSettings->BulletNearMissCooldownSeconds)
+		{
+			continue;
+		}
+
+		const FVector RecipientLocation = RecipientPawn->GetActorLocation()
+			+ FVector::UpVector * RecipientPawn->GetSimpleCollisionHalfHeight();
+		const float NearMissDistance = AudioSettings->BulletNearMissDistanceCentimeters
+			+ RecipientPawn->GetSimpleCollisionRadius();
+		const float NearMissDistanceSquared = FMath::Square(NearMissDistance);
+		TOptional<FVector> ClosestNearMissPoint;
+		float ClosestDistanceSquared = TNumericLimits<float>::Max();
+
+		for (const FVector& PelletDirection : Request.PelletDirections)
+		{
+			const FVector NormalizedDirection = PelletDirection.GetSafeNormal();
+			if (NormalizedDirection.IsNearlyZero())
+			{
+				continue;
+			}
+
+			const FVector TraceEnd = Request.TraceStart + NormalizedDirection * Request.TraceSettings.MaximumRangeCentimeters;
+			const FVector ClosestPoint = FMath::ClosestPointOnSegment(RecipientLocation, Request.TraceStart, TraceEnd);
+			const float DistanceSquared = FVector::DistSquared(RecipientLocation, ClosestPoint);
+			if (DistanceSquared > NearMissDistanceSquared || DistanceSquared >= ClosestDistanceSquared)
+			{
+				continue;
+			}
+
+			FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BulletNearMiss), Request.TraceSettings.bTraceComplex, Request.CauserActor);
+			QueryParams.AddIgnoredActor(Request.InstigatorActor);
+			QueryParams.AddIgnoredActor(Request.CauserActor);
+			if (!World->LineTraceTestByChannel(Request.TraceStart, ClosestPoint, Request.TraceSettings.TraceChannel, QueryParams))
+			{
+				ClosestNearMissPoint = ClosestPoint;
+				ClosestDistanceSquared = DistanceSquared;
+			}
+		}
+
+		if (ClosestNearMissPoint.IsSet())
+		{
+			LastBulletNearMissTimes.FindOrAdd(Recipient) = CurrentTime;
+			Recipient->ClientPlayBulletNearMiss(ClosestNearMissPoint.GetValue());
+		}
+	}
 }

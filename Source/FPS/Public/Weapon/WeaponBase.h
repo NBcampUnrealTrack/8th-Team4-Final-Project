@@ -18,6 +18,10 @@ class UWeaponAimComponent;
 class UWeaponEffectsComponent;
 struct FHitResult;
 
+// 탄창/예비탄/무한탄약 중 하나라도 바뀔 때마다 브로드캐스트된다. UI(ShooterWeaponStatus)가 매 프레임
+// 폴링하는 대신 이 델리게이트를 구독해서 실제로 값이 바뀐 시점에만 갱신하도록 하기 위함이다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnWeaponAmmoChanged);
+
 
 // 무기 발사 상태와 최종 발사 방향 생성까지 담당한다.
 // GAS 내부 구현에는 의존하지 않으며, 서버 Hit 판정은 B의 Hitscan Resolver 공개 계약으로 전달한다.
@@ -28,6 +32,8 @@ class FPS_API AWeaponBase : public AActor
 	GENERATED_BODY()
 
 public:
+    // Rebind only the third-person presentation after an asynchronous appearance update.
+    void RefreshThirdPersonAttachment() const;
 	AWeaponBase();
 
 	virtual void Tick(float DeltaTime) override;
@@ -44,8 +50,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool Fire(bool bHeavyAttack = false);
 
-	bool FireMelee(bool bHeavyAttack = false);
+	bool FireMelee(bool bHeavyAttack = false, float AnimationRecoverySeconds = 0.f);
 	bool FireRanged(float ClientFireServerTime);
+
+	// 훈련장처럼 탄약 소모가 필요 없는 런타임에서만 켠다.
+	// true면 발사 자체는 정상 처리하되 CurrentAmmo를 줄이지 않고 재장전도 필요하지 않다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	void SetInfiniteAmmo(bool bNewInfiniteAmmo);
+
+	// 예비탄 지급은 서버에서만 처리하며 탄창/증강 최대치는 바꾸지 않는다.
+	UFUNCTION(BlueprintPure, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	bool CanReceiveReserveAmmo(int32 Amount) const;
+
+	// 기본 예비탄 수량을 넘어 누적할 수 있다. 실제 지급량을 반환한다.
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "FPS|Weapon|Ammo")
+	int32 AddReserveAmmo(int32 Amount);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool HasInfiniteAmmo() const { return bUsesAmmo && bInfiniteAmmo; }
+
+	// 무한 탄약에서는 탄창이 비지 않으므로 재장전하지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Ammo")
+	bool CanReload() const;
 
 	// 재장전 상태 머신 진입 (Idle -> Reloading). 재장전 중에는 Fire()가 차단된다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -84,6 +110,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetIsStationary(bool bNewIsStationary);
 
+	// 앉아 있는지. 앉으면 탄퍼짐에 CrouchSpreadMultiplier가 곱해지도록 Aim 컴포넌트에 위임한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
+	void SetIsCrouching(bool bNewIsCrouching);
+
 	// 아래 SetEffective* 계열은 전부 같은 규칙: 증강/스탯 보정을 반영해 "지금 이 무기에 실제로
 	// 적용할 값"을 외부(GA_RangedAttack/GA_MeleeAttack/GA_Reload)가 URogueAugmentStatResolver로
 	// 계산해서 꽂아주는 Setter다. AWeaponBase는 누가 어떻게 계산했는지 몰라도 된다.
@@ -91,6 +121,15 @@ public:
 	// 현재 적용 중인 실제 탄창 크기.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	void SetEffectiveMagazineSize(int32 NewMagazineSize);
+
+	// 탄창 크기를 바꾸고 늘어난(줄어든) 만큼 현재 탄도 조정
+	void ResizeMagazine(int32 NewMagazineSize);
+
+	// 예비 탄약 최대치를 바꾸고 차이만큼 예비 탄약 조정. 서버 전용
+	void ResizeReserve(int32 NewMaxReserveAmmo);
+
+	// 이 머신의 탄창만 조정 (RPC 없음). 탄창 0 ~ 크기로 제한, 실제 바뀐 양 반환. 증강 예측 GA 용
+	int32 AdjustMagazineAmmoLocal(int32 Delta);
 
 	// 현재 적용 중인 실제 재장전 시간(초).
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
@@ -121,7 +160,7 @@ public:
 	// CanFireNow()가 false인 여러 사유(재장전/쿨다운/탄약없음) 중 "탄약이 없어서"만 콕 집어 확인한다.
 	// GA_RangedAttack이 빈 탄창 사운드를 재생할지 판단할 때 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
-	bool IsOutOfAmmo() const { return bUsesAmmo && CurrentAmmo <= 0; }
+	bool IsOutOfAmmo() const { return bUsesAmmo && !bInfiniteAmmo && CurrentAmmo <= 0; }
 
 	// 탄창이 빈 상태에서 사격 입력이 들어왔을 때 호출한다. 탄창이 빈 뒤 첫 호출에서만 클릭음을
 	// 재생하고 true를 반환한다 - 이후 같은 빈 탄창 상태에서 또 호출되면(이미 한 번 클릭음을 들은
@@ -129,6 +168,10 @@ public:
 	// 재장전 여부는 호출부(GA_RangedAttack)가 IsEmptyReloadArmed()로 판단한다.
 	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon")
 	bool TryPlayEmptyClipSound();
+
+	// 기존 WeaponBase.cpp 구현에 대응하는 선언. 재생 시점은 호출자가 결정한다.
+	void PlayEquipSound();
+	void PlayMeleeAttackSound(bool bHeavyAttack);
 
 	// 발사 입력(InputTag.Ability.Primary)이 떼어졌을 때 컨트롤러가 호출한다. 탄창이 빈 상태에서
 	// 클릭음을 이미 들었다면(bEmptyClipNotified), 다음 발사 입력을 "떼었다 다시 누른 새 입력"으로
@@ -139,6 +182,15 @@ public:
 	// 때만 재장전을 시작한다. 재장전 시작/완료 시 리셋된다.
 	bool IsEmptyReloadArmed() const { return bEmptyReloadArmed; }
 	void ConsumeEmptyReloadArm() { bEmptyReloadArmed = false; }
+
+	// 발사 입력을 누른 채 마지막 탄을 쏴서 탄창이 빈 경우인지 확인하고 표시를 지운다.
+	// true면 GA_RangedAttack이 클릭음/재입력 없이 바로 재장전
+	bool ConsumeEmptiedDuringHold()
+	{
+		const bool bWasEmptied = bEmptiedDuringHold;
+		bEmptiedDuringHold = false;
+		return bWasEmptied;
+	}
 
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseRPM() const { return BaseRPM; }
@@ -163,13 +215,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsADS() const;
 
+	// 반동이 현재 카메라 Pitch에 얹어 둔 양. 3인칭 조준 각도에서 반동을 빼는 데 쓴다.
+	float GetAccumulatedRecoilPitch() const;
+
 	// 이 무기가 애초에 ADS를 지원하는지(샷건/칼 등은 false). GA_ADS가 활성화 전에 확인한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	bool CanADS() const;
 
-	// ADS 중 목표 카메라 FOV(도). CombatComponent의 카메라 줌 보간이 참고한다.
+	// ADS 중 목표 카메라 FOV(도). 가변 줌 무기라면 현재 저장된 줌 단계의 FOV를 반환한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
 	float GetADSFieldOfView() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	float GetADSCameraInterpSpeedOverride() const;
+
+	// ADS 중 이동속도에 곱해지는 배율(1=영향 없음). ShooterMovementComponent::GetMaxSpeed가
+	// IsADS()일 때만 GetMoveSpeedMultiplier()와 별개로 추가로 곱한다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	float GetADSMoveSpeedMultiplier() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	bool SupportsVariableADSZoom() const;
+
+	// 양수 입력은 줌 인, 음수 입력은 줌 아웃. 실제 단계 변경은 ADS 중일 때만 허용한다.
+	UFUNCTION(BlueprintCallable, Category = "FPS|Weapon|ADS")
+	bool AdjustADSZoom(float InputDelta);
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	int32 GetCurrentADSZoomStep() const;
+
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
+	int32 GetADSZoomStepCount() const;
 
 	// 스코프 ADS처럼 로컬 1인칭 팔/무기 표현을 숨겨야 하는지 Aim 설정을 그대로 노출한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
@@ -182,7 +258,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentAmmo() const { return CurrentAmmo; }
 
-	// 탄창을 채울 때 소모되는 예비(보유) 탄약. bUsesAmmo가 false인 무기(칼 등)는 항상 0이다.
+	// 실제 예비탄 수량이다. 무한 탄약에서는 이 값이 발사/재장전에 사용되지 않는다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetCurrentReserveAmmo() const { return CurrentReserveAmmo; }
 
@@ -201,6 +277,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetEffectiveReloadDuration() const { return EffectiveReloadDuration; }
 
+	// 재장전 시작부터 실제 완료(FinishReload)까지의 시간. 몽타주 길이보다 ReloadCompleteLeadTime만큼 짧고,
+	// 리드가 재장전 시간의 절반을 넘지 않도록 막는다.
+	float GetReloadCompleteDelay() const
+	{
+		return FMath::Max(EffectiveReloadDuration - ReloadCompleteLeadTime, EffectiveReloadDuration * 0.5f);
+	}
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	int32 GetPelletCountPerShot() const { return PelletCountPerShot; }
 
@@ -218,6 +301,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetTraceRange() const { return TraceRange; }
 
+	// 일반 사격과 같은 채널/정밀도/사거리의 읽기 전용 조준 피드백 설정. 발사 상태는 바꾸지 않는다.
+	bool GetAimTraceSettings(FHitscanTraceSettings& OutTraceSettings) const;
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool UsesAmmo() const { return bUsesAmmo; }
 
@@ -225,6 +311,11 @@ public:
 	// ShooterMovementComponent::GetMaxSpeed()가 참고한다(예: 저격소총은 느리게, 칼/권총은 빠르게).
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetMoveSpeedMultiplier() const { return MoveSpeedMultiplier; }
+
+	// true면 이동 상태(걷기/뛰기/브레이킹 실패)에 따른 탄퍼짐 변화를 받지 않는다(예: 산탄총).
+	// CombatComponent::UpdateMovementSpreadMultiplier가 참고한다. 공중 페널티는 별개로 유지된다.
+	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|Spread")
+	bool IgnoresMovementSpread() const { return bIgnoreMovementSpread; }
 
 	// Hitscan Definition의 Weapon.Type.* 태그를 그대로 노출한다.
 	// 스왑/애니메이션/로그가 DamageRequest와 동일한 태그 원본을 사용하게 하기 위한 접근자다.
@@ -284,21 +375,31 @@ public:
 		FVector ImpactPoint,
 		FVector ImpactNormal,
 		EPhysicalSurface ImpactSurfaceType,
-		bool bIsFirstPerson);
+		bool bHasHit,
+		bool bIsFirstPerson,
+		bool bHeadshot);
+
+	// 탄창/예비탄/무한탄약 변경 시점에 브로드캐스트된다. ShooterWeaponStatus 등 탄약 UI가 구독한다.
+	UPROPERTY(BlueprintAssignable, Category = "FPS|Weapon|Ammo")
+	FOnWeaponAmmoChanged OnAmmoChanged;
 
 protected:
 	virtual void BeginPlay() override;
+	// 재장전 등 이 무기가 건 타이머를 파괴 시점에 일괄 정리한다.
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// --- 사격 방향 및 B Resolver 연결 ---
 	bool GetTraceOrigin(FVector& OutStart) const;
+	float GetPhysicalTraceRange(bool bHeavyAttack, bool bAllowLoadDamageData = true) const;
 	FVector CalculateTraceDirection(const FVector& AimDirection) const;
 	void ResolveHitscanShot(
 		const FVector& TraceStart,
 		const TArray<FVector>& PelletDirections,
 		float ShotDamage,
-		int32 ShotIndexInMagazine,
+		int32 InShotIndexInMagazine,
 		float ClientFireServerTime,
 		bool bHeavyAttack);
+	void NotifyBulletNearMisses(const FHitscanShotRequest& Request, const TArray<FHitscanImpactEffectData>& ImpactEffects);
 
 	bool FireInternal(bool bHeavyAttack, float ClientFireServerTime);
 
@@ -310,12 +411,15 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void Multicast_PlayFireEffects(const TArray<FHitscanImpactEffectData>& ImpactEffects);
 
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_StopCancelledReload();
+
 	// --- Fire() 단계 분리 ---
 	// bHeavyAttack에 따라 이번 발사에 적용할 RPM(Base/Alt)을 고른다.
 	float ResolveRPMForShot(bool bHeavyAttack) const;
 	// LastFireTime/LastFireInterval을 갱신해 다음 CanFireNow() 쿨다운 기준을 세운다.
 	void RegisterFireCooldown(const UWorld& World, float RPMUsed);
-	// 탄창에서 이번 발의 탄약을 소모하고, 관통/데미지 계산에 쓰일 탄창 내 인덱스를 반환한다.
+	// 이번 발의 탄창 내 인덱스를 반환하고, 일반 탄약 모드에서만 CurrentAmmo를 1 소모한다.
 	int32 ConsumeAmmoForShot();
 	// bHeavyAttack에 따라 이번 발사에 적용할 기본 대미지(Base/Alt)를 고른다.
 	float ResolveShotDamage(bool bHeavyAttack) const;
@@ -331,6 +435,8 @@ protected:
 	// SetPresentationActive(true)에서 호출. 오너의 Mesh1P/Mesh3P(IPlayerInterface)에
 	// GripSocketName1P/3P로 Mesh1P/Mesh3P를 재부착한다.
 	void AttachToOwnerMeshes() const;
+
+	TMap<TWeakObjectPtr<class AShooterPlayerController>, double> LastBulletNearMissTimes;
 
 protected:
 	// GetEquippedStateTag() 참고. 무기별 BP 기본값에서 지정.
@@ -367,6 +473,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon", meta = (ClampMin = "0.0"))
 	float MoveSpeedMultiplier = 1.f;
 
+	// IgnoresMovementSpread() 참고. 기본값 false = 기존과 동일하게 이동 상태 탄퍼짐을 받는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread")
+	bool bIgnoreMovementSpread = false;
+
 	// 스나이퍼가 비ADS(노줌)일 때 강제로 적용되는 탄퍼짐(도). 스나이퍼가 아닌 무기에는 영향 없다.
 	// GetCurrentSpreadDegrees() 참고. 실제 값은 기획이 스나이퍼 BP에서 조정한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Spread", meta = (ClampMin = "0.0"))
@@ -401,8 +511,13 @@ protected:
 	float ReloadDuration = 2.1f;
 
 	// 현재 적용 중인 실제 재장전 시간(초). SetEffectiveReloadDuration으로만 갱신되며, 기본값은 ReloadDuration과 동일하게 초기화된다.
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	float EffectiveReloadDuration = 2.1f;
+
+	// 재장전 몽타주가 끝나기 이만큼(초) 전에 탄약을 채우고 사격 차단을 푼다. 몽타주 길이는
+	// EffectiveReloadDuration 그대로라 애니메이션 꼬리 부분은 다음 사격 몽타주가 덮어쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo", meta = (ClampMin = "0.0", Units = "s"))
+	float ReloadCompleteLeadTime = 0.2f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 CurrentAmmo = 30;
@@ -412,9 +527,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Weapon|Ammo")
 	int32 MaxReserveAmmo = 90;
 
-	// 현재 보유 중인 예비 탄약. 재장전 시 부족분만큼 소모되고(탄창을 다 못 채워도 재장전은 진행됨),
-	// 0이면 재장전 자체가 불가능하다(StartReload/GA_Reload::CanActivateAbility가 확인).
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
+	// 현재 적용 중인 예비 탄약 최대치. ResizeReserve 로만 갱신
+	int32 EffectiveMaxReserveAmmo = 90;
+
+	// 런타임 인스턴스 전용. 기본 게임에서는 false이고 Training에서만 서버가 true로 설정한다.
+	// 서버 권한으로만 바뀌므로(SetInfiniteAmmo) OnRep에서 OnAmmoChanged를 브로드캐스트해 클라 UI를 갱신한다.
+	UPROPERTY(Transient, VisibleInstanceOnly, BlueprintReadOnly, ReplicatedUsing = OnRep_InfiniteAmmo, Category = "FPS|Weapon|Ammo")
+	bool bInfiniteAmmo = false;
+
+	// 일반 게임에서 재장전 부족분을 채울 때 사용하는 예비탄 수량이다.
+	// ResizeReserve처럼 서버 전용 경로로만 바뀌는 경우를 대비해 OnRep에서도 OnAmmoChanged를 브로드캐스트한다.
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CurrentReserveAmmo, Category = "FPS|Weapon|Ammo")
 	int32 CurrentReserveAmmo = 90;
 
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "FPS|Weapon|Ammo")
@@ -487,6 +610,10 @@ private:
 
 	FTimerHandle ReloadTimerHandle;
 
+	// 탄약 소모 여부와 분리된 논리적 탄창 인덱스. 무한 탄약에서도 "탄창 첫 N발" 증강 조건이
+	// 매 발 첫 탄으로 오판되지 않도록 0..MagazineSize-1 범위를 순환한다. 재장전 시 0으로 리셋한다.
+	int32 ShotIndexInMagazine = 0;
+
 	float LastFireTime = -1000.f;
 
 	// 탄창이 빈 뒤 TryPlayEmptyClipSound()가 클릭음을 이미 재생했는지. 탄약이 다시 채워지면
@@ -498,7 +625,22 @@ private:
 	// false. 비복제 - bEmptyClipNotified와 동일하게 로컬 입력 판정용이다.
 	bool bEmptyReloadArmed = false;
 
+	// 이번 발사 입력(누르고 있는 동안)에서 마지막 탄을 쏴 탄창이 비었는지. ConsumeAmmoForShot에서 true,
+	// 발사 입력을 떼거나(NotifyPrimaryInputReleased) 재장전 시작/완료, BeginPlay에서 false. 비복제 - 로컬 입력 판정용.
+	bool bEmptiedDuringHold = false;
+
 	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).
 	float LastFireInterval = 0.f;
+
+	// 발사 간격 대비 허용 오차 비율. 연사 판정(RegisterFireCooldown)과 서버가 원격 클라이언트의 예측 발사를
+	// 받아들이는 조기 도착 여유(CanFireNow)에 함께 쓰인다.
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon|Fire", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float FireIntervalTolerance = 0.3f;
+
+	UFUNCTION()
+	void OnRep_CurrentReserveAmmo();
+
+	UFUNCTION()
+	void OnRep_InfiniteAmmo();
 };

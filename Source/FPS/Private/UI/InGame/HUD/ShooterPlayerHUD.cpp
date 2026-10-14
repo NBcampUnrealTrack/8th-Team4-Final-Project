@@ -6,6 +6,7 @@
 #include "Animation/WidgetAnimation.h"
 #include "Components/RetainerBox.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
 UShooterPlayerHUD::UShooterPlayerHUD()
@@ -58,13 +59,26 @@ void UShooterPlayerHUD::NativeConstruct()
 		{
 			HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
 		}
+		
+		// 글리치가 없을 때는 RT 를 거치지 않는다
+		RetainerBox_HUD->SetRetainRendering(false);
 	}
 
-	TryBindCombatComponent();
+	BoundPlayerController = GetOwningPlayer();
+	if (APlayerController* Controller = BoundPlayerController.Get())
+	{
+		Controller->OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	}
+	BindToPawn(GetOwningPlayerPawn());
 }
 
 void UShooterPlayerHUD::NativeDestruct()
 {
+	if (APlayerController* Controller = BoundPlayerController.Get())
+	{
+		Controller->OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	}
+	BoundPlayerController.Reset();
 	UnbindCombatComponent();
 
 	if (HealthBar)
@@ -77,48 +91,32 @@ void UShooterPlayerHUD::NativeDestruct()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(LowHealthGlitchTimerHandle);
-		World->GetTimerManager().ClearTimer(CombatBindingRetryTimerHandle);
 	}
 	
 	Super::NativeDestruct();
 }
 
-void UShooterPlayerHUD::TryBindCombatComponent()
+void UShooterPlayerHUD::HandlePossessedPawnChanged(APawn*, APawn* NewPawn)
 {
-	APawn* OwningPawn = GetOwningPlayerPawn();
-	UCombatComponent* CombatComponent = IsValid(OwningPawn)
-		? OwningPawn->FindComponentByClass<UCombatComponent>()
+	BindToPawn(NewPawn);
+}
+
+void UShooterPlayerHUD::BindToPawn(APawn* Pawn)
+{
+	UCombatComponent* CombatComponent = IsValid(Pawn)
+		? Pawn->FindComponentByClass<UCombatComponent>()
 		: nullptr;
-
-	if (!IsValid(CombatComponent))
-	{
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(
-				CombatBindingRetryTimerHandle,
-				this,
-				&ThisClass::TryBindCombatComponent,
-				0.1f,
-				false);
-		}
-		return;
-	}
-
 	if (BoundCombatComponent.Get() != CombatComponent)
 	{
 		UnbindCombatComponent();
 		BoundCombatComponent = CombatComponent;
-		CombatComponent->OnMainHUDSuppressionChanged.AddUniqueDynamic(
-			this,
-			&ThisClass::HandleMainHUDSuppressionChanged);
+		if (CombatComponent)
+		{
+			CombatComponent->OnMainHUDSuppressionChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleMainHUDSuppressionChanged);
+		}
 	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(CombatBindingRetryTimerHandle);
-	}
-
-	ApplyMainHUDSuppression(CombatComponent->ShouldSuppressMainHUDForADS());
+	ApplyMainHUDSuppression(CombatComponent && CombatComponent->ShouldSuppressMainHUDForADS());
 }
 
 void UShooterPlayerHUD::UnbindCombatComponent()
@@ -188,6 +186,12 @@ void UShooterPlayerHUD::ScheduleNextLowHealthGlitch()
 
 void UShooterPlayerHUD::PlayLowHealthGlitchPulse()
 {
+	// 글리치 동안만 RT 로 그린다
+	if (RetainerBox_HUD)
+	{
+		RetainerBox_HUD->SetRetainRendering(true);
+	}
+	
 	if (HUDGlitchMID)
 	{
 		HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 1.0f);
@@ -251,5 +255,10 @@ void UShooterPlayerHUD::HandleLowHealthAnimationFinished()
 	if (HUDGlitchMID)
 	{
 		HUDGlitchMID->SetScalarParameterValue(TEXT("GlitchStrength"), 0.0f);
+	}
+	
+	if (RetainerBox_HUD)
+	{
+		RetainerBox_HUD->SetRetainRendering(false);
 	}
 }

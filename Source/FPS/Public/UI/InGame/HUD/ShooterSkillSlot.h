@@ -22,6 +22,8 @@ class UMaterialInstanceDynamic;
 class UTextBlock;
 class UTexture2D;
 class UMaterialInterface;
+class FActiveTimerHandle;
+enum class EActiveTimerReturnType : uint8;
 
 /**
  * 스킬 슬롯(Slot1/Slot2/Slot3) 하나의 쿨다운 + 충전 + 아이콘 표시 위젯
@@ -31,7 +33,7 @@ class UMaterialInterface;
  *   ShooterSkillSlot_Display.cpp  취득 → 계산 → 적용 (쿨다운, 충전)
  *   ShooterSkillSlot_Icon.cpp     아이콘 수명 (조회, 비동기 로드)
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterSkillSlot : public UShooterAttributeWidget
 {
 	GENERATED_BODY()
@@ -78,8 +80,8 @@ protected:
 
 	virtual void NativeOnInitialized() override;
 	virtual void NativePreConstruct() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	virtual void OnAbilitySystemReady(URogueAbilitySystemComponent* ASC) override;
 	virtual void OnAbilitySystemLost(URogueAbilitySystemComponent* ASC) override;
@@ -92,7 +94,7 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_KeyLabel;
 	// MaxCharges만큼 채움
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UHorizontalBox> HBox_ChargeBars;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> Image_Icon;
@@ -127,8 +129,6 @@ protected:
 	TObjectPtr<UTexture2D> DefaultIconTexture;
 
 	// true면 Debug_ConsumeCharge로 구동. 증강없이 비주얼 검증 위함
-	// false면 실제 ASC 폴링. 실연동 후에도 디버그 경로는 남겨둬야
-	// 비주얼만 다시 손볼 때 증강을 뽑지 않고 바로 켜서 테스트 가능
 	UPROPERTY(EditDefaultsOnly, Category = "Skill Slot")
 	bool bUseDebugDriver = true;
 
@@ -255,12 +255,19 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UShooterChargeBar>> ChargeBars;
 
-	int32 LastDisplayedTenths = INDEX_NONE;
+	int32 LastDisplayedSeconds = INDEX_NONE;
 	int32 LastSpentCharges = INDEX_NONE;
 
-	// 로컬 시간 진행용 NativeTick은 이 두값만 읽고 ASC/디버그 배열은 안건드림
+	// 쿨다운 갱신 타이머는 이 두값만 읽고 ASC/디버그 배열은 안건드림
 	float RecoveryEndWorldTime = 0.f; // 0이면 READY(진행 중 회복 없음)
 	float DisplayCooldownDuration = 0.f;
+
+	// 쿨다운 중에만 도는 갱신 루프
+	void EnsureUpdateScheduled();
+	void StopUpdates();
+	EActiveTimerReturnType HandleUpdateTimer(double InCurrentTime, float InDeltaTime);
+
+	TWeakPtr<FActiveTimerHandle> UpdateTimerHandle;
 
 	// Unknown 이면 아직 한 번도 적용 안 함. 최초 적용에는 Ready 연출을 내지 않는다
 	EAvailabilityVisual LastAvailabilityVisual = EAvailabilityVisual::Unknown;
@@ -281,6 +288,9 @@ private:
 	void HandleInventoryChanged();
 	void HandleCooldownTagChanged(FGameplayTag Tag, int32 NewCount);
 
+	// 태그 개수 변화 없이 쿨타임 시간만 바뀐 경우 (냉각 장치 등)
+	void HandleCooldownTimeChanged(FGameplayTag Tag);
+
 	// 충전 완료시 연출
 	void PlayReadyGlow();
 
@@ -299,6 +309,7 @@ private:
 	FGameplayTag CachedCooldownTag;
 	FDelegateHandle CooldownTagEventHandle;
 	FDelegateHandle AbilityFailedEventHandle;
+	FDelegateHandle CooldownTimeChangedHandle;
 	TWeakObjectPtr<UAugmentInventoryComponent> BoundInventory;
 
 	// bounded retry 이 횟수만큼 짧게 재확인하고 멈춤

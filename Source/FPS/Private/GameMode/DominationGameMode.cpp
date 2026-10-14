@@ -1,6 +1,9 @@
-#include "GameMode/DominationGameMode.h"
+﻿#include "GameMode/DominationGameMode.h"
 
 #include "Augment/AugmentDraftProfile.h"
+#include "Augment/AugmentInventoryComponent.h"
+#include "Audio/DominationSystemAnnouncer.h"
+#include "GameMode/Manager/DominationAnnouncerManager.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "GameMode/Manager/AugmentDraftManager.h"
@@ -9,6 +12,8 @@
 #include "GameMode/Manager/DominationMatchStartManager.h"
 #include "GameMode/Manager/DominationObjectiveManager.h"
 #include "GameMode/Manager/DominationRespawnManager.h"
+#include "GameMode/Manager/DominationSandstormManager.h"
+#include "GameMode/Settings/DominationSandstormSettings.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "GameMode/Types/SurrenderVoteTypes.h"
 #include "GameMode/Manager/TeamPlayerManager.h"
@@ -25,11 +30,14 @@ ADominationGameMode::ADominationGameMode()
 	PlayerControllerClass = ADominationPlayerController::StaticClass();
 	PlayerStateClass = ADominationPlayerState::StaticClass();
 	bDelayedStart = true;
+	AnnouncerClass = ADominationSystemAnnouncer::StaticClass();
+	AnnouncerManager = CreateDefaultSubobject<UDominationAnnouncerManager>(TEXT("AnnouncerManager"));
 
 	MatchStartManager = CreateDefaultSubobject<UDominationMatchStartManager>(TEXT("MatchStartManager"));
 	LoadoutManager = CreateDefaultSubobject<UDominationLoadoutManager>(TEXT("LoadoutManager"));
 	ObjectiveManager = CreateDefaultSubobject<UDominationObjectiveManager>(TEXT("ObjectiveManager"));
 	RespawnManager = CreateDefaultSubobject<UDominationRespawnManager>(TEXT("RespawnManager"));
+	SandstormManager = CreateDefaultSubobject<UDominationSandstormManager>(TEXT("SandstormManager"));
 	AugmentDraftManager = CreateDefaultSubobject<UAugmentDraftManager>(TEXT("AugmentDraftManager"));
 }
 
@@ -88,6 +96,18 @@ void ADominationGameMode::BeginPlay()
 		return;
 	}
 
+	if (!SandstormManager->Initialize(this, SandstormSettings))
+	{
+		UE_LOG(LogDominationGameMode, Warning,
+			TEXT("Assign a Sandstorm Settings asset in the Domination GameMode to enable storms."));
+	}
+
+	// 음성 설정 실패는 매치를 막지 않는다. 매치 시작 이벤트보다 먼저 구독한다.
+	if (!IsValid(AnnouncerManager) || !AnnouncerManager->Initialize(this, AnnouncerClass))
+	{
+		UE_LOG(LogDominationGameMode, Warning, TEXT("아나운서 초기화 실패. 음성 안내 없이 도미네이션을 진행합니다."));
+	}
+
 	if (!IsValid(MatchStartManager)
 		|| !MatchStartManager->Initialize(
 			this,
@@ -118,7 +138,15 @@ void ADominationGameMode::BeginPlay()
 
 void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	GetWorldTimerManager().ClearTimer(MatchEndTimerHandle);
+	SandstormManager->Shutdown();
+
+	// 다른 매니저가 상태를 초기화하기 전에 구독과 재생을 정리한다.
+	if (IsValid(AnnouncerManager))
+	{
+		AnnouncerManager->Shutdown();
+	}
 
 	AugmentDraftManager->OnDependenciesReady.RemoveAll(this);
 	AugmentDraftManager->OnPlayerDraftQueueDrained.RemoveAll(this);
@@ -149,11 +177,21 @@ void ADominationGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
+ASystemAnnouncer* ADominationGameMode::GetSystemAnnouncer() const
+{
+	return IsValid(AnnouncerManager) ? AnnouncerManager->GetSystemAnnouncer() : nullptr;
+}
+
 void ADominationGameMode::Logout(AController* Exiting)
 {
+	MatchStartManager->NotifyPlayerLeaving(Cast<APlayerController>(Exiting));
 	AShooterPlayerState* ExitingPlayerState = IsValid(Exiting)
 		? Exiting->GetPlayerState<AShooterPlayerState>()
 		: nullptr;
+	if (const ADominationPlayerState* DominationPlayerState = Cast<ADominationPlayerState>(ExitingPlayerState))
+	{
+		CaptureReconnectSnapshot(DominationPlayerState);
+	}
 	if (IsValid(ExitingPlayerState)
 		&& PendingInitialAugmentPlayers.Remove(ExitingPlayerState) > 0)
 	{
@@ -185,8 +223,8 @@ void ADominationGameMode::NotifyPlayerEliminatedBy(
 		PlayerState->SetAlive(false);
 	}
 
-	RespawnManager->ScheduleRespawn(EliminatedController);
 	MovePlayerToSpectator(Cast<APlayerController>(EliminatedController));
+	RespawnManager->ScheduleRespawn(EliminatedController);
 }
 
 void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* PlayerController)
@@ -208,10 +246,16 @@ void ADominationGameMode::NotifyPlayerReadyForGameFlow(APlayerController* Player
 		return;
 	}
 
-	if (PlayerState->GetParticipationState()
-		== EPlayerParticipationState::WaitingForNextSpawn)
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	if (PlayerState->GetParticipationState() == EPlayerParticipationState::WaitingForNextSpawn
+		&& IsValid(DominationGameState)
+		&& DominationGameState->GetDominationPhase() != EDominationMatchPhase::WaitingForPlayers)
 	{
-		DominationPlayerController->ClientHideLoadingScreen();
+		if (PlayerState->HasSelectedCombatClass())
+		{
+			TryJoinPlayerInProgress(DominationPlayerController, PlayerState->GetCombatClass());
+		}
+		DominationPlayerController->ClientFinishLoadingScreen();
 		return;
 	}
 
@@ -268,6 +312,28 @@ void ADominationGameMode::RequestCombatClass(
 	TryJoinPlayerInProgress(PlayerController, RequestedClass);
 }
 
+void ADominationGameMode::RequestPreviewCombatClass(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass RequestedClass)
+{
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>()
+		: nullptr;
+	// WaitingForMatchStart가 아니면 아무것도 하지 않는다
+	if (!HasAuthority()
+		|| !IsValid(PlayerState)
+		|| PlayerState->GetParticipationState()
+			!= EPlayerParticipationState::WaitingForMatchStart)
+	{
+		return;
+	}
+
+	if (IsValid(MatchStartManager))
+	{
+		MatchStartManager->RequestPreviewCombatClass(PlayerController, RequestedClass);
+	}
+}
+
 UDominationLoadoutManager* ADominationGameMode::GetLoadoutManager() const
 {
 	return LoadoutManager.Get();
@@ -314,6 +380,17 @@ bool ADominationGameMode::RestartPlayerAtObjective(
 	return IsValid(SpawnedPawn) && SpawnedPawn->GetController() == PlayerController;
 }
 
+// 거점 기믹(중계 비콘)의 팀별 부활 대기 감소를 RespawnManager로 전달
+void ADominationGameMode::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (IsValid(RespawnManager))
+	{
+		RespawnManager->SetTeamRespawnDelayReduction(Team, Seconds);
+	}
+}
+
 void ADominationGameMode::RespawnPlayer(AController* Controller)
 {
 	APlayerController* PlayerController = Cast<APlayerController>(Controller);
@@ -331,9 +408,20 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 		return;
 	}
 
-	const EDominationPointId SpawnObjectivePointId = DominationGameState->HasActivePoint()
-		? DominationGameState->GetActivePointId()
-		: EDominationPointId::C;
+	if (!DominationGameState->HasActivePoint())
+	{
+		UE_LOG(
+			LogDominationGameMode,
+			Verbose,
+			TEXT("Domination respawn is waiting for the next active objective."));
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
+		return;
+	}
+
+	const EDominationPointId SpawnObjectivePointId = DominationGameState->GetActivePointId();
 
 	if (!RestartPlayerAtObjective(
 		PlayerController,
@@ -341,26 +429,56 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 	{
 		UE_LOG(
 			LogDominationGameMode,
-			Error,
-			TEXT("Could not resolve a Domination respawn for team %d at active point %d."),
+			Warning,
+			TEXT("Domination respawn candidate is temporarily unavailable for team %d at active point %d. Retrying."),
 			static_cast<uint8>(PlayerState->GetTeam()),
 			static_cast<uint8>(SpawnObjectivePointId));
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
 		return;
 	}
 
-	APawn* SpawnedPawn = PlayerController->GetPawn();
-	PlayerState->ServerRespawnReset();
-	if (!IsValid(LoadoutManager)
-		|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
+	if (!PrepareCombatPawn(PlayerController))
 	{
 		UE_LOG(LogDominationGameMode, Error,
-			TEXT("Failed to restore the Domination class loadout for %s."),
+			TEXT("Failed to restore the Domination class loadout for %s. Respawn will retry."),
 			*GetNameSafe(PlayerState));
 		MovePlayerToSpectator(PlayerController);
 		PlayerState->SetAlive(false);
+		if (IsValid(RespawnManager))
+		{
+			RespawnManager->ScheduleRespawnRetry(PlayerController);
+		}
 		return;
 	}
 
+	ActivateCombatPlayer(PlayerController);
+	RespawnManager->BeginRespawnProtection(PlayerState);
+
+	ServeNextAugmentReward(PlayerState);
+}
+
+bool ADominationGameMode::PrepareCombatPawn(APlayerController* PlayerController)
+{
+	ADominationPlayerState* PlayerState = IsValid(PlayerController)
+		? PlayerController->GetPlayerState<ADominationPlayerState>() : nullptr;
+	APawn* Pawn = IsValid(PlayerController) ? PlayerController->GetPawn() : nullptr;
+	if (!IsValid(PlayerState) || !IsValid(Pawn) || Pawn->GetController() != PlayerController)
+	{
+		return false;
+	}
+
+	PlayerState->ServerRespawnReset();
+	return PlayerState->IsAlive()
+		&& LoadoutManager->EnsureCombatClassInventory(PlayerState)
+		&& LoadoutManager->ApplyCombatClassLoadout(PlayerState, Pawn);
+}
+
+void ADominationGameMode::ActivateCombatPlayer(APlayerController* PlayerController)
+{
+	ADominationPlayerState* PlayerState = PlayerController->GetPlayerState<ADominationPlayerState>();
 	PlayerController->ChangeState(NAME_Playing);
 	PlayerController->ClientGotoState(NAME_Playing);
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
@@ -368,9 +486,14 @@ void ADominationGameMode::RespawnPlayer(AController* Controller)
 		ShooterPlayerController->ClientExitSpectatorMode();
 	}
 	PlayerState->SetParticipationState(EPlayerParticipationState::Active);
-	RespawnManager->BeginRespawnProtection(PlayerState);
+}
 
-	ServeNextAugmentReward(PlayerState);
+void ADominationGameMode::RetryDominationMatchStart()
+{
+	if (HasAuthority())
+	{
+		MatchStartManager->RetryMatchStart();
+	}
 }
 
 bool ADominationGameMode::TryJoinPlayerInProgress(
@@ -389,7 +512,9 @@ bool ADominationGameMode::TryJoinPlayerInProgress(
 			!= EPlayerParticipationState::WaitingForNextSpawn
 		|| !IsValid(LoadoutManager)
 		|| !IsValid(RespawnManager)
-		|| !PlayerState->TryConfirmCombatClass(RequestedClass))
+		|| (PlayerState->HasSelectedCombatClass()
+			? PlayerState->GetCombatClass() != RequestedClass
+			: !PlayerState->TryConfirmCombatClass(RequestedClass)))
 	{
 		return false;
 	}
@@ -400,6 +525,21 @@ bool ADominationGameMode::TryJoinPlayerInProgress(
 			TEXT("Failed to initialize the Domination class inventory for join-in-progress player %s."),
 			*GetNameSafe(PlayerState));
 		return false;
+	}
+
+	if (bEnableAugmentDraft && IsValid(AugmentDraftManager))
+	{
+		PendingLateJoinAugmentPlayers.Add(PlayerState);
+		AugmentDraftManager->EnqueueMissingRewards(PlayerState);
+		if (AugmentDraftManager->ServeNextReward(PlayerState))
+		{
+			UE_LOG(LogDominationGameMode, Log,
+				TEXT("Late join player %s is selecting missed augments before spawn."),
+				*GetNameSafe(PlayerState));
+			return true;
+		}
+		// 보상이 없으면 즉시 QueueDrained 콜백이 왔을 수 있으므로, 아래 예약도 안전하다.
+		PendingLateJoinAugmentPlayers.Remove(PlayerState);
 	}
 
 	RespawnManager->ScheduleRespawn(PlayerController);
@@ -527,6 +667,18 @@ void ADominationGameMode::HandleAugmentDraftQueueDrained(
 		return;
 	}
 
+	if (PendingLateJoinAugmentPlayers.Remove(PlayerState) > 0)
+	{
+		if (ADominationPlayerController* Controller = Cast<ADominationPlayerController>(PlayerState->GetOwner()))
+		{
+			RespawnManager->ScheduleRespawn(Controller);
+			UE_LOG(LogDominationGameMode, Log,
+				TEXT("Late join augment catch-up completed for %s. Spawn scheduled."),
+				*GetNameSafe(PlayerState));
+		}
+		return;
+	}
+
 	if (PendingInitialAugmentPlayers.Remove(PlayerState) == 0)
 	{
 		return;
@@ -560,6 +712,7 @@ void ADominationGameMode::TryStartInitialObjectiveTransition()
 	}
 
 	bInitialObjectiveTransitionStarted = true;
+	SandstormManager->StartScheduling();
 	UE_LOG(LogDominationGameMode, Log,
 		TEXT("All initial augment drafts are complete. Starting the center-point transition."));
 	OnDominationMatchStarted.Broadcast();
@@ -647,6 +800,8 @@ void ADominationGameMode::FinishDominationMatch(const EGameTeam WinningTeam)
 		EDominationMatchPhase::MatchEnded,
 		MatchEndDelay);
 
+	SandstormManager->StopStormFlow();
+
 	if (IsValid(ObjectiveManager))
 	{
 		ObjectiveManager->StopObjectiveFlow();
@@ -702,16 +857,27 @@ void ADominationGameMode::ReturnToLobbyAfterMatch()
 void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
 	// BaseTeamGameMode의 Super 경로는 즉시 Pawn을 생성하므로 팀 배정만 수행한다.
-	if (!InitializeTeamPlayer(NewPlayer))
+	ADominationPlayerState* DominationPlayerState = IsValid(NewPlayer)
+		? NewPlayer->GetPlayerState<ADominationPlayerState>() : nullptr;
+	const bool bIsReconnect = RestoreReconnectSnapshot(DominationPlayerState);
+	if (!bIsReconnect && !InitializeTeamPlayer(NewPlayer))
 	{
 		return;
+	}
+	if (bIsReconnect)
+	{
+		// 복원한 팀은 유지하되, TeamPlayerManager의 로스터에는 새 Controller를 다시 등록한다.
+		InitializeTeamPlayer(NewPlayer);
 	}
 
 	const EPlayerParticipationState NewPlayerParticipationState = ResolveParticipationStateForNewPlayer(NewPlayer);
 	if (AShooterPlayerState* PlayerState = NewPlayer->GetPlayerState<AShooterPlayerState>())
 	{
 		PlayerState->SetParticipationState(NewPlayerParticipationState);
-		AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
+		if (!bIsReconnect)
+		{
+			AugmentDraftManager->ResetPlayerForNewMatch(PlayerState);
+		}
 	}
 
 	if (NewPlayerParticipationState == EPlayerParticipationState::WaitingForNextSpawn)
@@ -725,6 +891,76 @@ void ADominationGameMode::HandleStartingNewPlayer_Implementation(APlayerControll
 			PlayerState->SetAlive(false);
 		}
 	}
+}
+
+FString ADominationGameMode::GetReconnectKey(const AShooterPlayerState* PlayerState) const
+{
+	if (!IsValid(PlayerState))
+	{
+		return FString();
+	}
+
+	const TSharedPtr<const FUniqueNetId> NetId = PlayerState->GetUniqueId().GetUniqueNetId();
+	return NetId.IsValid() ? NetId->ToString() : FString();
+}
+
+void ADominationGameMode::PurgeExpiredReconnectSnapshots()
+{
+	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	for (auto It = ReconnectSnapshots.CreateIterator(); It; ++It)
+	{
+		if (It.Value().ExpireServerTime <= Now)
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+void ADominationGameMode::CaptureReconnectSnapshot(const ADominationPlayerState* PlayerState)
+{
+	const ADominationGameState* DominationGameState = GetGameState<ADominationGameState>();
+	const FString Key = GetReconnectKey(PlayerState);
+	if (Key.IsEmpty() || !IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::InProgress)
+	{
+		return;
+	}
+
+	UAugmentInventoryComponent* Inventory = PlayerState->GetAugmentInventory();
+	if (!IsValid(Inventory))
+	{
+		return;
+	}
+
+	PurgeExpiredReconnectSnapshots();
+	FDominationReconnectSnapshot& Snapshot = ReconnectSnapshots.FindOrAdd(Key);
+	Snapshot.Team = PlayerState->GetTeam();
+	Snapshot.CombatClass = PlayerState->GetCombatClass();
+	Snapshot.ExpireServerTime = GetWorld()->GetTimeSeconds() + ReconnectGracePeriod;
+	Inventory->CaptureReconnectSnapshot(Snapshot.AugmentInventory);
+}
+
+bool ADominationGameMode::RestoreReconnectSnapshot(ADominationPlayerState* PlayerState)
+{
+	PurgeExpiredReconnectSnapshots();
+	const FString Key = GetReconnectKey(PlayerState);
+	FDominationReconnectSnapshot* Snapshot = Key.IsEmpty() ? nullptr : ReconnectSnapshots.Find(Key);
+	if (!IsValid(PlayerState) || !Snapshot)
+	{
+		return false;
+	}
+
+	PlayerState->SetTeam(Snapshot->Team);
+	PlayerState->RestoreCombatClassForReconnect(Snapshot->CombatClass);
+	FText Failure;
+	if (!PlayerState->GetAugmentInventory()->RestoreReconnectSnapshot(Snapshot->AugmentInventory, Failure))
+	{
+		UE_LOG(LogDominationGameMode, Warning, TEXT("Reconnect augment restore failed for %s: %s"),
+			*GetNameSafe(PlayerState), *Failure.ToString());
+		return false;
+	}
+	ReconnectSnapshots.Remove(Key);
+	return true;
 }
 
 EPlayerParticipationState ADominationGameMode::ResolveParticipationStateForNewPlayer(APlayerController*) const
@@ -770,4 +1006,14 @@ UClass* ADominationGameMode::GetDefaultPawnClassForController_Implementation(ACo
 	}
 
 	return PawnClass;
+}
+
+void ADominationGameMode::ForceStorm()
+{
+#if !UE_BUILD_SHIPPING
+	if (HasAuthority() && bInitialObjectiveTransitionStarted)
+	{
+		SandstormManager->ForceStorm();
+	}
+#endif
 }

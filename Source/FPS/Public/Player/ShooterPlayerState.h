@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "Player/BaseTeamPlayerState.h"
 #include "Player/PlayerParticipationState.h"
+#include "Customization/ReplicatedAppearance.h"
 
 #include "ShooterPlayerState.generated.h"
 
@@ -14,6 +15,7 @@ class AShooterPlayerState;
 class UAugmentInventoryComponent;
 class UCreditWalletComponent;
 class URogueAbilitySystemComponent;
+class URogueAmmoAttributeSet;
 class URogueAugmentAttributeSet;
 class URogueHealthComponent;
 class URogueVitalAttributeSet;
@@ -35,6 +37,11 @@ class FPS_API AShooterPlayerState : public ABaseTeamPlayerState, public IAbility
 
 public:
 	AShooterPlayerState();
+
+    bool StoreValidatedAppearance(FName ClassId, const FCustomizationAppearance& Appearance);
+    const FReplicatedAppearance* FindAppearance(FName ClassId) const;
+    virtual void CopyProperties(APlayerState* PlayerState) override;
+    virtual void OverrideWith(APlayerState* PlayerState) override;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -114,6 +121,11 @@ public:
 	void ServerAddKill(int32 Amount = 1);
 	void ServerAddDeath(int32 Amount = 1);
 
+	// 서버 전용. 확정된 킬 하나를 등록하고 이번 킬이 몇 연속킬(멀티킬)인지 반환한다.
+	// 직전 킬로부터 MultiKillWindowSeconds 이내면 스트릭 유지(+1), 아니면 1로 리셋.
+	// ShooterGameMode::HandlePlayerEliminated가 자살/팀킬을 걸러낸 뒤 호출.
+	int32 ServerRegisterKillStreak();
+
 	UPROPERTY(BlueprintAssignable, Category = "Shooter|Stats")
 	FShooterKillStatsChangedSignature OnKillStatsChanged;
 
@@ -124,6 +136,11 @@ protected:
 	virtual void OnRep_Team(EGameTeam PreviousTeam) override;
 
 private:
+
+    UPROPERTY(ReplicatedUsing=OnRep_Appearances)
+    TArray<FReplicatedAppearance> SavedAppearances;
+    UFUNCTION() void OnRep_Appearances();
+
 	UFUNCTION()
 	void HandlePawnSet(APlayerState* Player, APawn* NewPawn, APawn* OldPawn);
 
@@ -184,6 +201,9 @@ private:
 	UPROPERTY()
 	TObjectPtr<URogueAugmentAttributeSet> AugmentSet;
 
+	UPROPERTY()
+	TObjectPtr<URogueAmmoAttributeSet> AmmoSet;
+
 	// 사망 상태 관리
 	UPROPERTY(VisibleAnywhere, Category = "Shooter|GAS")
 	TObjectPtr<URogueHealthComponent> HealthComponent;
@@ -221,4 +241,12 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_Deaths, VisibleInstanceOnly, BlueprintReadOnly, Category = "Shooter|Stats", meta = (AllowPrivateAccess = "true"))
 	int32 Deaths = 0;
+
+	// 멀티킬로 인정되는 연속 킬 사이 최대 간격(초). 복제 불필요 - 서버 전용 판정값.
+	UPROPERTY(EditDefaultsOnly, Category = "Shooter|Stats")
+	float MultiKillWindowSeconds = 5.f;
+
+	// 서버 전용 - 마지막 킬 시각/현재 스트릭. 복제 안 함.
+	float LastKillTimeSeconds = -1000.f;
+	int32 CurrentKillStreak = 0;
 };

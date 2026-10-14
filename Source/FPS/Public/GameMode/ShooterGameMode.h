@@ -36,6 +36,10 @@ public:
 
 	void CycleSpectatorTarget(APlayerController* SpectatorController);
 
+	// 트레일러 촬영용 카메라 클라이언트를 기존 관전 흐름으로 옮기는 진입점(개발 전용).
+	// MovePlayerToSpectator는 protected라서 컨트롤러가 직접 부를 수 없어 공개 래퍼를 둔다.
+	void EnterSpectatorForTrailerCamera(APlayerController* PlayerController);
+
 protected:
 	// 사망 통지를 실제 게임 규칙으로 전달한다.
 	virtual void NotifyPlayerEliminatedBy(
@@ -52,8 +56,18 @@ protected:
 	ASpectatorPawn* SpawnSpectatorPawnFor(APlayerController* PlayerController, const FTransform& SpawnTransform);
 	FTransform ResolveSpectatorSpawnTransform(APlayerController* PlayerController) const;
 	APawn* FindNextSpectatorTarget(APlayerController* SpectatorController) const;
+	void ScheduleSpectatorTargetRetry(APlayerController* SpectatorController);
+	void ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController> WeakController);
+	void RetrySpectatorTarget(TWeakObjectPtr<APlayerController> SpectatorController);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true"))
 	TSubclassOf<AShooterSpectatorPawn> ShooterSpectatorPawnClass;
-	
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
+	float SpectatorTargetRetryInterval = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Shooter|Spectator", meta = (AllowPrivateAccess = "true", ClampMin = "0.1", Units = "s"))
+	float CorpseLifeSpanSeconds = 5.0f;
+
+	TMap<TWeakObjectPtr<APlayerController>, FTimerHandle> SpectatorTargetRetryTimers;
 };

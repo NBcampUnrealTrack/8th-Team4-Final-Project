@@ -2,8 +2,10 @@
 
 #include "GAS/RogueVitalAttributeSet.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
+#include "Tags/GameplayTags.h"
 
 URogueVitalAttributeSet::URogueVitalAttributeSet()
 {
@@ -12,6 +14,8 @@ URogueVitalAttributeSet::URogueVitalAttributeSet()
 	InitShield(0.f);
 	InitMaxShield(0.f);
 	InitShopDamageAmplification(0.f);
+	InitStamina(100.f);
+	InitMaxStamina(100.f);
 }
 
 void URogueVitalAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -26,6 +30,8 @@ void URogueVitalAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimePropert
 
 	// 본인 HUD 전용
 	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, Stamina,    COND_OwnerOnly, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(URogueVitalAttributeSet, MaxStamina, COND_OwnerOnly, REPNOTIFY_Always);
 }
 
 void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -55,6 +61,14 @@ void URogueVitalAttributeSet::PreAttributeChange(const FGameplayAttribute& Attri
 		// 상점 공격력 증가 상한 +25%
 		NewValue = FMath::Clamp(NewValue, 0.f, 0.25f);
 	}
+	else if (Attribute == GetMaxStaminaAttribute())
+	{
+		NewValue = FMath::Max(1.f, FMath::RoundToFloat(NewValue));
+	}
+	else if (Attribute == GetStaminaAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxStamina());
+	}
 }
 
 void URogueVitalAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
@@ -68,6 +82,10 @@ void URogueVitalAttributeSet::PostAttributeChange(const FGameplayAttribute& Attr
 	else if (Attribute == GetMaxShieldAttribute())
 	{
 		AdjustCurrentForNewMax(GetShieldAttribute(), GetShield(), OldValue, NewValue);
+	}
+	else if (Attribute == GetMaxStaminaAttribute())
+	{
+		AdjustCurrentForNewMax(GetStaminaAttribute(), GetStamina(), OldValue, NewValue);
 	}
 }
 
@@ -98,7 +116,25 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 
 		if (Delta > 0.f)
 		{
-			SetHealth(FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth()));
+			float NewHealth = FMath::Clamp(GetHealth() - Delta, 0.f, GetMaxHealth());
+
+			// 치명 피해를 목숨당 1번 체력 1로 버팀
+			if (NewHealth <= 0.f && CanSurviveLethal())
+			{
+				NewHealth = 1.f;
+				bLethalSurviveUsed = true;
+
+				if (AActor* Avatar = GetOwningAbilitySystemComponent()->GetAvatarActor())
+				{
+					FGameplayEventData Payload;
+					Payload.EventTag   = RogueTags::Event_Combat_LethalSurvived;
+					Payload.Instigator = Data.EffectSpec.GetContext().GetInstigator();
+					Payload.Target     = Avatar;
+					UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, RogueTags::Event_Combat_LethalSurvived, Payload);
+				}
+			}
+
+			SetHealth(NewHealth);
 		}
 
 		TryDeclareDeath(Data.EffectSpec.GetContext());
@@ -145,6 +181,10 @@ void URogueVitalAttributeSet::PostGameplayEffectExecute(const FGameplayEffectMod
 	{
 		SetShield(FMath::Clamp(GetShield(), 0.f, GetMaxShield()));
 	}
+	else if (Attribute == GetStaminaAttribute())
+	{
+		SetStamina(FMath::Clamp(GetStamina(), 0.f, GetMaxStamina()));
+	}
 }
 
 void URogueVitalAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
@@ -172,6 +212,28 @@ void URogueVitalAttributeSet::OnRep_ShopDamageAmplification(const FGameplayAttri
 	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, ShopDamageAmplification, OldValue);
 }
 
+void URogueVitalAttributeSet::OnRep_Stamina(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, Stamina, OldValue);
+}
+
+void URogueVitalAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(URogueVitalAttributeSet, MaxStamina, OldValue);
+}
+
+void URogueVitalAttributeSet::ServerForceDeath(const FGameplayEffectContextHandle& Context)
+{
+	UAbilitySystemComponent* OwnerASC = GetOwningAbilitySystemComponent();
+	if (!ensure(OwnerASC && OwnerASC->IsOwnerActorAuthoritative()) || bDeathDeclared)
+	{
+		return;
+	}
+
+	SetHealth(0.f);
+	TryDeclareDeath(Context);
+}
+
 void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle& Context)
 {
 	if (GetHealth() > 0.f || bDeathDeclared)
@@ -190,15 +252,20 @@ void URogueVitalAttributeSet::TryDeclareDeath(const FGameplayEffectContextHandle
 
 	// 사망시 HealthComponent 의 OnOutOfHealth 이벤트를 발신
 	// 구독되지 않은 상태면 사망 처리가 정상적으로 진행되지 않음
-	if (!OnOutOfHealth.IsBound())
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
-			     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
-			*GetNameSafe(OwnerASC->GetAvatarActor()));
-	}
+	ensureMsgf(OnOutOfHealth.IsBound(),
+		TEXT("[RogueVital] %s: 사망했지만 OnOutOfHealth 구독자가 없습니다. "
+		     "URogueHealthComponent 부착과 InitializeWithAbilitySystem 호출을 확인하세요."),
+		*GetNameSafe(OwnerASC->GetAvatarActor()));
 
 	OnOutOfHealth.Broadcast(OwnerASC, Context);
+}
+
+bool URogueVitalAttributeSet::CanSurviveLethal() const
+{
+	const UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+
+	return !bLethalSurviveUsed && !bDeathDeclared && ASC && ASC->IsOwnerActorAuthoritative()
+		&& ASC->HasMatchingGameplayTag(RogueTags::State_Augment_LethalSurvive);
 }
 
 void URogueVitalAttributeSet::AdjustCurrentForNewMax(const FGameplayAttribute& CurrentAttribute,

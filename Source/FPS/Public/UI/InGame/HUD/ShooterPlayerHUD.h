@@ -5,6 +5,8 @@
 #include "UI/Foundation/ShooterActivatableWidget.h"
 #include "ShooterPlayerHUD.generated.h"
 
+class APawn;
+class APlayerController;
 class UImage;
 class UCombatComponent;
 class UShooterHealthBar;
@@ -20,7 +22,7 @@ class UMaterialInstanceDynamic;
  * Panel_Status - WBP_ShooterHealthBar
  * Panel_Weapon - WBP_ShooterWeaponStatus
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterPlayerHUD : public UShooterActivatableWidget
 {
 	GENERATED_BODY()
@@ -30,7 +32,6 @@ public:
 	
 protected:
 	virtual void NativeOnInitialized() override;
-	// Effect Material MID를 NativeONInitialized 단계에서 가져올 수 없으므로 추가
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	
@@ -44,7 +45,9 @@ protected:
 	void HandleLowHealthStateChanged(bool bIsLow);
 
 	// 로컬 Pawn의 CombatComponent가 준비되면 ADS HUD 표현 상태를 구독한다.
-	void TryBindCombatComponent();
+	void BindToPawn(APawn* Pawn);
+	UFUNCTION()
+	void HandlePossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 	void UnbindCombatComponent();
 	void ApplyMainHUDSuppression(bool bSuppressed);
 
@@ -88,7 +91,7 @@ protected:
 	float RandomGlitchMax = 4.0f;
 	
 	FTimerHandle LowHealthGlitchTimerHandle;
-	FTimerHandle CombatBindingRetryTimerHandle;
+	TWeakObjectPtr<APlayerController> BoundPlayerController;
 	TWeakObjectPtr<UCombatComponent> BoundCombatComponent;
 	ESlateVisibility MainHUDContentDefaultVisibility = ESlateVisibility::Visible;
 	bool bMainHUDDefaultVisibilityCached = false;

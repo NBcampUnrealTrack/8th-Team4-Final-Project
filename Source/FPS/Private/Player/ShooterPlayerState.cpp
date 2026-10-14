@@ -1,19 +1,24 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/ShooterPlayerState.h"
+#include "Customization/GameplayAppearanceComponent.h"
 
 #include "Augment/AugmentInventoryComponent.h"
+#include "Augment/Actor/RogueDeployableActor.h"
 #include "Character/ShooterCharacter.h"
 #include "Combat/CombatComponent.h"
 #include "Economy/CreditWalletComponent.h"
 #include "GAS/RogueAbilitySet.h"
 #include "GAS/RogueAbilitySystemComponent.h"
+#include "GAS/RogueAmmoAttributeSet.h"
 #include "GAS/RogueGASSettings.h"
 #include "GAS/RogueAugmentAttributeSet.h"
 #include "GAS/RogueHealthComponent.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "GameMode/State/LobbyGameState.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Tags/GameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Shop/ShopComponent.h"
 #include "Shop/ShopPurchaseComponent.h"
@@ -28,6 +33,7 @@ AShooterPlayerState::AShooterPlayerState()
 
 	VitalSet   = CreateDefaultSubobject<URogueVitalAttributeSet>(TEXT("VitalSet"));
 	AugmentSet = CreateDefaultSubobject<URogueAugmentAttributeSet>(TEXT("AugmentSet"));
+	AmmoSet    = CreateDefaultSubobject<URogueAmmoAttributeSet>(TEXT("AmmoSet"));
 
 	HealthComponent  = CreateDefaultSubobject<URogueHealthComponent>(TEXT("HealthComponent"));
 	AugmentInventory = CreateDefaultSubobject<UAugmentInventoryComponent>(TEXT("AugmentInventory"));
@@ -45,6 +51,7 @@ void AShooterPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AShooterPlayerState, bIsLobbyReady);
+    DOREPLIFETIME(AShooterPlayerState, SavedAppearances);
 	DOREPLIFETIME(AShooterPlayerState, bLoadedIntoMatch);
 	DOREPLIFETIME(AShooterPlayerState, ParticipationState);
 	DOREPLIFETIME(AShooterPlayerState, bIsVoiceTalking);
@@ -95,6 +102,17 @@ void AShooterPlayerState::HandlePawnSet(APlayerState* Player, APawn* NewPawn, AP
 	if (NewPawn)
 	{
 		InitializeForAvatar(NewPawn);
+		OnRep_Appearances();
+	}
+	else if (OldPawn && AbilitySystemComponent->GetAvatarActor() == OldPawn)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (UCombatComponent* Combat = OldPawn->FindComponentByClass<UCombatComponent>())
+		{
+			Combat->ResetAiming();
+		}
+		AbilitySystemComponent->InitAbilityActorInfo(this, nullptr);
 	}
 }
 
@@ -106,19 +124,62 @@ void AShooterPlayerState::HandleDeathStateChanged(bool bNewIsDead)
 	if (bNewIsDead && AbilitySystemComponent)
 	{
 		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (AActor* Avatar = AbilitySystemComponent->GetAvatarActor(); IsValid(Avatar))
+		{
+			if (UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+			{
+				Combat->ResetAiming();
+			}
+		}
 	}
 }
 
 void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 {
-	if (!Avatar)
+	if (!ensureMsgf(Avatar, TEXT("[ShooterPlayerState] %s: Avatar 가 없습니다"), *GetName()))
 	{
-		UE_LOG(LogShooterPlayerState, Error, TEXT("[ShooterPlayerState] %s: Avatar 가 없습니다"), *GetName());
 		return;
+	}
+
+	const bool bAvatarChanged = AbilitySystemComponent->GetAvatarActor() != Avatar;
+	if (bAvatarChanged)
+	{
+		// 취소는 새 아바타를 연결하기 전에 수행한다. 같은 아바타 재초기화는 조준을 유지한다.
+		AbilitySystemComponent->CancelAllAbilities();
+		AbilitySystemComponent->ClearAbilityInput();
+		if (AActor* PreviousAvatar = AbilitySystemComponent->GetAvatarActor(); IsValid(PreviousAvatar))
+		{
+			if (UCombatComponent* Combat = PreviousAvatar->FindComponentByClass<UCombatComponent>())
+			{
+				Combat->ResetAiming();
+			}
+		}
 	}
 
 	// 소유자는 PlayerState, 아바타는 캐릭터.
 	AbilitySystemComponent->InitAbilityActorInfo(this, Avatar);
+	const APawn* AvatarPawn = Cast<APawn>(Avatar);
+	const bool bOwnsAimingState = Avatar->HasAuthority() || Avatar->GetLocalRole() == ROLE_AutonomousProxy
+		|| (IsValid(AvatarPawn) && AvatarPawn->IsLocallyControlled());
+	if (bAvatarChanged && bOwnsAimingState)
+	{
+		if (UCombatComponent* Combat = Avatar->FindComponentByClass<UCombatComponent>())
+		{
+			Combat->ResetAiming();
+		}
+	}
+
+	// ASC가 Pawn보다 오래 살기 때문에 서버·클라이언트 모두 새 아바타의 이동 상태로 맞춘다.
+	if (const AShooterCharacter* ShooterAvatar = Cast<AShooterCharacter>(Avatar))
+	{
+		const UCharacterMovementComponent* Movement = ShooterAvatar->GetCharacterMovement();
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_Crouching,
+			ShooterAvatar->bIsCrouched ? 1 : 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_InAir,
+			Movement && Movement->IsFalling() ? 1 : 0);
+		AbilitySystemComponent->SetLooseGameplayTagCount(RogueTags::State_Movement_Sprinting, 0);
+	}
 
 	HealthComponent->InitializeWithAbilitySystem(AbilitySystemComponent);
 	AugmentInventory->InitializeWithAbilitySystem(AbilitySystemComponent);
@@ -163,10 +224,9 @@ void AShooterPlayerState::InitializeForAvatar(AActor* Avatar)
 
 void AShooterPlayerState::ServerRespawnReset()
 {
-	if (!HasAuthority())
+	if (!ensureMsgf(HasAuthority(),
+		TEXT("[ShooterPlayerState] %s: 권한이 없는 곳에서 리스폰 초기화를 하려 했습니다"), *GetName()))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] %s: 권한이 없는 곳에서 리스폰 초기화를 하려 했습니다"), *GetName());
 		return;
 	}
 
@@ -218,6 +278,7 @@ void AShooterPlayerState::OnRep_Team(const EGameTeam PreviousTeam)
 	Super::OnRep_Team(PreviousTeam);
 
 	AShooterCharacter::RefreshTeamOutlineForAll(GetWorld());
+	ARogueDeployableActor::RefreshTeamOutlineForAll(GetWorld());
 
 	// Team 과 LobbyRevision 은 서로 다른 액터에 있어 도착 순서가 보장되지 않음
 	// 리비전이 먼저 도착하면 낡은 팀으로 리스트가 그려지므로 여기서 한 번 더 갱신
@@ -279,7 +340,7 @@ void AShooterPlayerState::OnRep_VoiceTalking()
 
 void AShooterPlayerState::ServerAddKill(const int32 Amount)
 {
-	if (!HasAuthority() || Amount == 0)
+	if (!ensure(HasAuthority()) || Amount == 0)
 	{
 		return;
 	}
@@ -291,7 +352,7 @@ void AShooterPlayerState::ServerAddKill(const int32 Amount)
 
 void AShooterPlayerState::ServerAddDeath(const int32 Amount)
 {
-	if (!HasAuthority() || Amount == 0)
+	if (!ensure(HasAuthority()) || Amount == 0)
 	{
 		return;
 	}
@@ -299,6 +360,22 @@ void AShooterPlayerState::ServerAddDeath(const int32 Amount)
 	Deaths = FMath::Max(0, Deaths + Amount);
 	OnRep_Deaths();
 	ForceNetUpdate();
+}
+
+int32 AShooterPlayerState::ServerRegisterKillStreak()
+{
+	if (!HasAuthority())
+	{
+		return 1;
+	}
+
+	const UWorld* World = GetWorld();
+	const float Now = World ? World->GetTimeSeconds() : 0.f;
+
+	CurrentKillStreak = (Now - LastKillTimeSeconds <= MultiKillWindowSeconds) ? CurrentKillStreak + 1 : 1;
+	LastKillTimeSeconds = Now;
+
+	return CurrentKillStreak;
 }
 
 void AShooterPlayerState::OnRep_Kills()
@@ -315,20 +392,18 @@ void AShooterPlayerState::ServerGrantStartupAbilities()
 {
 	const TSoftObjectPtr<URogueAbilitySet>& SetPtr = GetDefault<URogueGASSettings>()->StartupAbilitySet;
 
-	if (SetPtr.IsNull())
+	if (!ensureMsgf(!SetPtr.IsNull(),
+		TEXT("[ShooterPlayerState] StartupAbilitySet이 지정되지 않았습니다. "
+		     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set을 확인하세요.")))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] StartupAbilitySet이 지정되지 않았습니다. "
-			     "프로젝트 설정 > 게임 > Rogue GAS > Startup Ability Set을 확인하세요."));
 		return;
 	}
 
 	const URogueAbilitySet* AbilitySet = SetPtr.LoadSynchronous();
-	if (!AbilitySet)
+	if (!ensureMsgf(AbilitySet,
+		TEXT("[ShooterPlayerState] StartupAbilitySet 을 로드하지 못했습니다 (%s). "
+		     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요"), *SetPtr.ToString()))
 	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] StartupAbilitySet 을 로드하지 못했습니다 (%s). "
-			     "프로젝트 설정 > 게임 > Rogue GAS 를 확인하세요"), *SetPtr.ToString());
 		return;
 	}
 
@@ -337,12 +412,7 @@ void AShooterPlayerState::ServerGrantStartupAbilities()
 
 void AShooterPlayerState::ServerResetVitals()
 {
-	if (!VitalSet)
-	{
-		UE_LOG(LogShooterPlayerState, Error,
-			TEXT("[ShooterPlayerState] %s: VitalSet 이 없습니다"), *GetName());
-		return;
-	}
+	check(VitalSet);
 
 	// 라운드 한정 GE 제거
 	if (AbilitySystemComponent)
@@ -363,6 +433,8 @@ void AShooterPlayerState::ServerResetVitals()
 
 	// 보호막은 증강이 부여한 기본 보호막으로 초기화
 	VitalSet->SetShield(VitalSet->GetMaxShield());
+
+	VitalSet->SetStamina(VitalSet->GetMaxStamina());
 
 	UE_LOG(LogShooterPlayerState, Log,
 		TEXT("[ShooterPlayerState] %s: 바이탈 초기화 체력 %.0f/%.0f 보호막 %.0f/%.0f"),

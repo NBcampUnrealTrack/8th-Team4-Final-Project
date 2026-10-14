@@ -9,7 +9,7 @@
 class UCommonTextBlock;
 class UImage;
 
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterScoreboardAugmentTooltip : public UUserWidget
 {
 	GENERATED_BODY()

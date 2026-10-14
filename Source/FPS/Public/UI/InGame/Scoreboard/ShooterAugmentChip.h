@@ -32,13 +32,16 @@ struct FShooterAugmentDisplay
 	FText Description;
 	UPROPERTY(BlueprintReadOnly)
 	TSoftObjectPtr<UTexture2D> Icon;
+	// 액티브 슬롯 번호, 패시브는 INDEX_NONE
+	UPROPERTY(BlueprintReadOnly)
+	int32 ActiveSlotIndex = INDEX_NONE;
 };
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAugmentChipHovered, 
 	const FShooterAugmentDisplay&, UShooterAugmentChip*);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAugmentChipUnHovered, UShooterAugmentChip*);
 
-UCLASS(Abstract)
+UCLASS(Abstract, meta = (DisableNativeTick))
 class FPS_API UShooterAugmentChip : public UUserWidget
 {
 	GENERATED_BODY()

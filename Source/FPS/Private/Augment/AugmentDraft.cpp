@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Augment/AugmentDraft.h"
@@ -59,7 +59,7 @@ namespace
 	void ApplyBehindBonus(TArray<float>& Weights, const float Multiplier)
 	{
 		const int32 CommonIndex = static_cast<int32>(EAugmentTier::Common);
-		if (!Weights.IsValidIndex(CommonIndex))
+		if (!ensure(Weights.IsValidIndex(CommonIndex)))
 		{
 			return;
 		}
@@ -88,7 +88,7 @@ namespace
 	{
 		// 총합이 0 이면 오류 상황, Common 반환
 		const float Total = SumWeights(Weights);
-		if (Total <= 0.f)
+		if (!ensureMsgf(Total > 0.f, TEXT("[AugmentDraft] 등급 가중치 합이 0 입니다. TierWeights 설정을 확인하세요")))
 		{
 			return EAugmentTier::Common;
 		}
@@ -116,6 +116,7 @@ namespace
 			}
 		}
 
+		ensureMsgf(false, TEXT("[AugmentDraft] 가중치가 있는 등급을 찾지 못했습니다"));
 		return EAugmentTier::Common;
 	}
 }
@@ -162,6 +163,12 @@ EAugmentTier RogueAugmentDraft::ResolveTier(
 	return IsLowerTier(Result, MinimumTier) ? MinimumTier : Result;
 }
 
+bool RogueAugmentDraft::MeetsUnlockRequirements(
+    const UAugmentDefinition& Definition, const FGameplayTagContainer& UnlockTags)
+{
+    return UnlockTags.HasAll(Definition.RequiredUnlockTags);
+}
+
 // 해당 증강이 이번 라운드 후보로 제시될 수 있는지 판정
 bool RogueAugmentDraft::IsCandidateEligible(
 	const FAugmentDraftRules& Rules,
@@ -169,7 +176,8 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	const UAugmentDefinition& Definition)
 {
 	// 라인 태그가 유효하지 않은 경우
-	if (!Definition.LineTag.IsValid())
+	if (!ensureMsgf(Definition.LineTag.IsValid(),
+		TEXT("[AugmentDraft] %s 의 LineTag 가 비어 있습니다"), *Definition.GetName()))
 	{
 		return false;
 	}
@@ -190,7 +198,8 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	}
 
 	// 수치가 없는 경우
-	if (Definition.GetLevelData() == nullptr)
+	if (!ensureMsgf(Definition.GetLevelData() != nullptr,
+		TEXT("[AugmentDraft] %s 의 Levels 가 비어 있습니다"), *Definition.GetName()))
 	{
 		return false;
 	}
@@ -208,7 +217,7 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	}
 
 	// 필요한 태그가 없는 경우
-	if (!State.UnlockTags.HasAll(Definition.RequiredUnlockTags))
+	if (!MeetsUnlockRequirements(Definition, State.UnlockTags))
 	{
 		return false;
 	}
@@ -234,7 +243,13 @@ bool RogueAugmentDraft::IsCandidateEligible(
 	if (bIsActive)
 	{
 		const FGameplayTag SlotTag = Definition.GetActiveInputSlotTag();
-		if (!SlotTag.IsValid() || State.OccupiedActiveSlots.HasTagExact(SlotTag))
+		if (!ensureMsgf(SlotTag.IsValid(),
+			TEXT("[AugmentDraft] 액티브 증강 %s 에 입력 슬롯 태그가 없습니다"), *Definition.GetName()))
+		{
+			return false;
+		}
+
+		if (State.OccupiedActiveSlots.HasTagExact(SlotTag))
 		{
 			return false;
 		}
@@ -265,7 +280,7 @@ void RogueAugmentDraft::BuildCandidateBucket(
 
 	for (const UAugmentDefinition* Definition : Definitions)
 	{
-		if (!Definition || !IsCandidateEligible(Rules, State, *Definition))
+		if (!ensure(Definition) || !IsCandidateEligible(Rules, State, *Definition))
 		{
 			continue;
 		}
@@ -289,7 +304,7 @@ FAugmentOfferResult RogueAugmentDraft::PickOffers(
 {
 	FAugmentOfferResult Result;
 
-	if (CardCount <= 0 || CardsPerSlot <= 0)
+	if (!ensure(CardCount > 0 && CardsPerSlot > 0))
 	{
 		return Result;
 	}
@@ -310,7 +325,7 @@ FAugmentOfferResult RogueAugmentDraft::PickOffers(
 			const int32 Picked = Stream.RandRange(0, Bucket.Num() - 1);
 
 			Result.SlotCards[Filled++].Add(Bucket[Picked]);
-			Bucket.RemoveAt(Picked);
+			Bucket.RemoveAtSwap(Picked, 1, EAllowShrinking::No);
 		}
 	}
 

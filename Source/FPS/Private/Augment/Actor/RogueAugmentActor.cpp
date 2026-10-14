@@ -3,8 +3,10 @@
 
 #include "Augment/Actor/RogueAugmentActor.h"
 
+#include "AbilitySystemGlobals.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "GameplayCueManager.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -40,6 +42,8 @@ void ARogueAugmentActor::BeginPlay()
 
 	ScatterAnchor = GetActorLocation();
 
+	PlaySpawnCue();
+
 	if (!HasAuthority())
 	{
 		return;
@@ -54,6 +58,13 @@ void ARogueAugmentActor::BeginPlay()
 	{
 		StartFuse();
 	}
+}
+
+void ARogueAugmentActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ARogueAugmentActor::StartFuse()
@@ -113,6 +124,13 @@ void ARogueAugmentActor::Detonate()
 
 	SpawnFollowUpActor();
 
+	if (bDestroyOnDetonate && DetonateDestroyDelaySeconds > 0.f)
+	{
+		GetWorldTimerManager().ClearTimer(LifeTimer);
+		SetLifeSpan(DetonateDestroyDelaySeconds);
+		return;
+	}
+
 	if (bDestroyOnDetonate)
 	{
 		Destroy();
@@ -156,12 +174,13 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		return;
 	}
 
+	UE_CLOG(SpawnOnDetonateClass.IsPending(), LogAugmentActor, Warning,
+		TEXT("[AugmentActor] %s 가 프리로드되지 않아 동기 로드합니다"), *SpawnOnDetonateClass.ToString());
 	UClass* FollowUpClass = SpawnOnDetonateClass.LoadSynchronous();
 	UWorld* World = GetWorld();
-	if (!FollowUpClass || !World)
+	if (!ensureMsgf(FollowUpClass && World,
+		TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName()))
 	{
-		UE_LOG(LogAugmentActor, Error,
-			TEXT("[AugmentActor] %s 의 SpawnOnDetonateClass 로드에 실패했습니다"), *GetName());
 		return;
 	}
 
@@ -172,7 +191,8 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 		FollowUpClass, SpawnTransform, GetOwner(), GetInstigator(),
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
-	if (!FollowUp)
+	if (!ensureMsgf(FollowUp, TEXT("[AugmentActor] %s 의 후속 액터 %s 스폰에 실패했습니다"),
+		*GetName(), *GetNameSafe(FollowUpClass)))
 	{
 		return;
 	}
@@ -182,9 +202,51 @@ void ARogueAugmentActor::SpawnFollowUpActor()
 	FollowUp->FinishSpawning(SpawnTransform);
 }
 
+void ARogueAugmentActor::PlayDetonateCue(const FVector& Location) const
+{
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!DetonateCueTag.IsValid() || !CueManager)
+	{
+		return;
+	}
+
+	AActor* Self = const_cast<ARogueAugmentActor*>(this);
+
+	FGameplayCueParameters CueParams;
+	CueParams.Location     = Location;
+	CueParams.Normal       = FVector::UpVector;
+	CueParams.Instigator   = GetInstigator();
+	CueParams.EffectCauser = Self;
+	CueParams.RawMagnitude = EffectRadius;
+
+	CueManager->HandleGameplayCue(Self, DetonateCueTag, EGameplayCueEvent::Executed, CueParams);
+}
+
+void ARogueAugmentActor::PlaySpawnCue() const
+{
+	UGameplayCueManager* CueManager = UAbilitySystemGlobals::Get().GetGameplayCueManager();
+	if (!SpawnCueTag.IsValid() || !CueManager)
+	{
+		return;
+	}
+
+	AActor* Self = const_cast<ARogueAugmentActor*>(this);
+
+	FGameplayCueParameters CueParams;
+	CueParams.Location     = GetActorLocation();
+	CueParams.Normal       = FVector::UpVector;
+	CueParams.Instigator   = GetInstigator();
+	CueParams.EffectCauser = Self;
+	CueParams.RawMagnitude = EffectRadius;
+
+	CueManager->HandleGameplayCue(Self, SpawnCueTag, EGameplayCueEvent::Executed, CueParams);
+}
+
 void ARogueAugmentActor::Multicast_Detonated_Implementation(const FVector_NetQuantize Location)
 {
 	LastDetonateLocation = Location;
+
+	PlayDetonateCue(Location);
 
 	OnDetonated();
 }

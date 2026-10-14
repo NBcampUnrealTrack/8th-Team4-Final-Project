@@ -1,11 +1,19 @@
 #include "Weapon/WeaponEffectsComponent.h"
+#include "Audio/CharacterSoundPlayback.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/ActiveMontageInstanceScope.h"
+#include "Animation/AnimNotifyQueue.h"
 
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundBase.h"
 #include "Weapon/WeaponBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Tags/GameplayTags.h"
 
 UWeaponEffectsComponent::UWeaponEffectsComponent()
 {
@@ -34,6 +42,16 @@ void UWeaponEffectsComponent::PlayFireCameraShake() const
 	}
 }
 
+void UWeaponEffectsComponent::PlayFireSound() const
+{
+	const auto* Weapon = GetWeaponOwner();
+	if (!FireSound || !Weapon || GetNetMode() == NM_DedicatedServer
+		|| Weapon->GetWeaponTag() == RogueTags::Weapon_Type_Knife) return;
+	// Mesh3P는 소켓/외형 바디가 준비되지 않으면 부착되지 못하고 무기 스폰 위치(리스폰 지점)에 남는다.
+	// 거기에 붙이면 총소리가 엉뚱한 곳에서 나므로, 항상 캐릭터를 따라가는 무기 소유자 루트에 붙인다.
+	CharacterSoundPlayback::PlayAttached(Weapon, FireSound, GetSoundAttachComponent(), FireAttenuation);
+}
+
 void UWeaponEffectsComponent::PlayEmptyClipSound()
 {
 	const AActor* Owner = GetOwner();
@@ -45,16 +63,141 @@ void UWeaponEffectsComponent::PlayEmptyClipSound()
 
 void UWeaponEffectsComponent::Multicast_PlayEmptyClipSound_Implementation()
 {
-	if (!EmptyClipSound || !GetOwner())
+	const auto* Weapon = GetWeaponOwner();
+	if (!EmptyClipSound || !Weapon || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	UGameplayStatics::SpawnSoundAttached(
-		EmptyClipSound,
-		GetOwner()->GetRootComponent(),
-		NAME_None,
-		FVector::ZeroVector,
-		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset);
+	CharacterSoundPlayback::PlayAttached(Weapon, EmptyClipSound, GetSoundAttachComponent(), ActionAttenuation);
+}
+
+void UWeaponEffectsComponent::PlayEquipSound()
+{
+	const AActor* Owner = GetOwner();
+	// A configured DrawSound owns equip audio. Do not layer the legacy owner RPC.
+	if (IsValid(Owner) && Owner->HasAuthority() && EquipSound && !DrawSound)
+	{
+		// 무기 액터는 Pawn(→PlayerController) 소유라 Client RPC는 무기를 든 본인 연결에만 간다.
+		// 리슨 서버 호스트 본인이면 로컬에서 바로 실행된다.
+		Client_PlayEquipSound();
+	}
+}
+
+void UWeaponEffectsComponent::Client_PlayEquipSound_Implementation()
+{
+	if (EquipSound && !DrawSound && IsOwnerLocallyControlled())
+	{
+		CharacterSoundPlayback::TryPlayLocal2D(GetWeaponOwner(), EquipSound);
+	}
+}
+
+void UWeaponEffectsComponent::PlayDrawSound() const
+{
+	const AWeaponBase* Weapon = GetWeaponOwner();
+	if (!DrawSound || !Weapon || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	CharacterSoundPlayback::PlayAttached(Weapon, DrawSound, GetSoundAttachComponent(), ActionAttenuation);
+}
+
+bool UWeaponEffectsComponent::TryPlayHolsterSound(const UAnimMontage* Montage) const
+{
+	if (!Montage || !HolsterMontages.Contains(Montage)) return false;
+	const AWeaponBase* Weapon = GetWeaponOwner();
+	if (HolsterSound && Weapon && GetNetMode() != NM_DedicatedServer)
+	{
+		CharacterSoundPlayback::PlayAttached(Weapon, HolsterSound, GetSoundAttachComponent(), ActionAttenuation);
+	}
+	return true;
+}
+
+bool UWeaponEffectsComponent::ConsumeMontageSoundNotify(UAnimInstance* Source, const FAnimNotifyEventReference& EventReference)
+{
+	const auto* Context = EventReference.GetContextData<UE::Anim::FAnimNotifyMontageInstanceContext>();
+	const FAnimNotifyEvent* Event = EventReference.GetNotify();
+	// Sequence/editor playback has no montage identity and keeps its normal routing.
+	if (!Source || !Context || !Event) return true;
+	PlayedMontageSounds.RemoveAll([](const FPlayedMontageSound& Played)
+	{
+		return !Played.Source.IsValid()
+			|| !Played.Source->GetMontageInstanceForID(Played.MontageInstanceID);
+	});
+	for (const FPlayedMontageSound& Played : PlayedMontageSounds)
+	{
+		if (Played.Source == Source && Played.MontageInstanceID == Context->MontageInstanceID && Played.Event == Event)
+			return false;
+	}
+	PlayedMontageSounds.Add({Source, Context->MontageInstanceID, Event});
+	return true;
+}
+
+void UWeaponEffectsComponent::PlayMeleeAttackSound(const bool bHeavyAttack)
+{
+	const AActor* Owner = GetOwner();
+	USoundBase* Sound = ResolveMeleeAttackSound(bHeavyAttack);
+	if (!IsValid(Owner) || !Sound)
+	{
+		return;
+	}
+
+	// 공격한 본인(예측 클라이언트 또는 리슨 서버 호스트)은 몽타주와 같은 프레임에 2D로 바로 재생한다.
+	if (IsOwnerLocallyControlled())
+	{
+		CharacterSoundPlayback::TryPlayLocal2D(GetWeaponOwner(), Sound);
+	}
+
+	if (Owner->HasAuthority())
+	{
+		Multicast_PlayMeleeAttackSound(bHeavyAttack);
+	}
+}
+
+void UWeaponEffectsComponent::Multicast_PlayMeleeAttackSound_Implementation(const bool bHeavyAttack)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// 공격한 본인은 PlayMeleeAttackSound에서 이미 로컬 재생했으므로 중복 재생하지 않는다.
+	if (IsOwnerLocallyControlled())
+	{
+		return;
+	}
+
+	USoundBase* Sound = ResolveMeleeAttackSound(bHeavyAttack);
+	USceneComponent* AttachComponent = GetSoundAttachComponent();
+	if (!Sound || !AttachComponent)
+	{
+		return;
+	}
+
+	// 다른 플레이어에게는 공격자 위치에 붙여 3D로 재생해, 멀어질수록 작아지게 한다.
+	CharacterSoundPlayback::PlayAttached(GetWeaponOwner(), Sound, AttachComponent, MeleeAttackAttenuation);
+}
+
+USoundBase* UWeaponEffectsComponent::ResolveMeleeAttackSound(const bool bHeavyAttack) const
+{
+	return (bHeavyAttack && HeavyMeleeAttackSound) ? HeavyMeleeAttackSound.Get() : MeleeAttackSound.Get();
+}
+
+bool UWeaponEffectsComponent::IsOwnerLocallyControlled() const
+{
+	return CharacterSoundPlayback::IsLocalPlayer(GetWeaponOwner());
+}
+
+USceneComponent* UWeaponEffectsComponent::GetSoundAttachComponent() const
+{
+	if (!GetOwner())
+	{
+		return nullptr;
+	}
+
+	// 무기 액터 루트는 캐릭터에 부착되지 않을 수 있으므로(메쉬만 소켓에 부착), 무기를 든
+	// 캐릭터의 루트에 붙여 소리가 플레이어를 따라가게 한다.
+	const AActor* WeaponHolder = GetOwner()->GetOwner();
+	return IsValid(WeaponHolder) && WeaponHolder->GetRootComponent()
+		? WeaponHolder->GetRootComponent()
+		: GetOwner()->GetRootComponent();
 }

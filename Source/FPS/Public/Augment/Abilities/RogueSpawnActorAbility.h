@@ -23,4 +23,28 @@ protected:
 	// 시전자의 전방으로 SpawnForwardOffset 만큼 떨어진 위치에 스폰
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn", meta = (ClampMin = "0.0"))
 	float SpawnForwardOffset = 100.f;
+
+	// 켜면 조준점(최대 MaxAimDistance)에 스폰. 닿지 않으면 최대 사거리 지점의 지면
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn")
+	bool bSpawnAtAimPoint = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn",
+		meta = (EditCondition = "bSpawnAtAimPoint", EditConditionHides, ClampMin = "0.0", Units = "cm"))
+	float MaxAimDistance = 4000.f;
+
+	// 액터가 눈높이/시선 각도 때문에 너무 높이 나가는 문제 해결
+	// 켜면 시선의 상하각(Pitch)을 무시하고 수평 방향(Yaw만)으로 스폰한다. 위/아래를 보고 써도 액터가 비스듬히 나가지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn")
+	bool bSpawnLevel = false;
+
+	// 켜면 스폰 위치 아래로 지면을 찾아 지면 위 SpawnHeightAboveGround 높이에 스폰한다(눈높이 스폰 대체). 지면을 못 찾으면 원래 높이를 쓴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn")
+	bool bSnapSpawnToGround = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Rogue|Spawn",
+		meta = (EditCondition = "bSnapSpawnToGround", EditConditionHides, ClampMin = "0.0", Units = "cm"))
+	float SpawnHeightAboveGround = 80.f;
+
+private:
+	FTransform ResolveAimSpawnTransform(const AActor* Avatar, const FVector& EyeLocation, const FRotator& EyeRotation) const;
 };

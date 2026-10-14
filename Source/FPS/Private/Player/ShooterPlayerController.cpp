@@ -1,42 +1,81 @@
-#include "Player/ShooterPlayerController.h"
+﻿#include "Player/ShooterPlayerController.h"
+
+#include "AudioDevice.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
+#include "Camera/PlayerCameraManager.h"
+#include "CollisionQueryParams.h"
+#include "CollisionShape.h"
 
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Character/ShooterCharacter.h"
+#include "Combat/CombatComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
+#include "WorldPartition/WorldPartitionSubsystem.h"
+#include "Engine/GameViewportClient.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UnrealClient.h"
+#include "GameFramework/InputSettings.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Input/UIActionBindingHandle.h"
+#include "Input/CommonUIActionRouterBase.h"
+#include "UI/Foundation/ShooterActionRouter.h"
 #include "GAS/RogueAbilitySystemComponent.h"
-#include "GAS/RogueHealthComponent.h"
 #include "GameMode/BaseTeamGameMode.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GameMode/LobbyGameMode.h"
 #include "GameMode/ShooterGameMode.h"
 #include "Input/ShooterInputConfig.h"
+#include "Input/ShooterInteractionComponent.h"
+#include "InputAction.h"
 #include "InputActionValue.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Killcam/KillcamReplaySubsystem.h"
+#include "Killcam/KillcamCameraActor.h"
 #include "Loading/LoadingScreenSubsystem.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/BaseTeamPlayerState.h"
 #include "Player/NetworkTimeSyncComponent.h"
 #include "Player/ShooterPlayerState.h"
+#include "Preload/DominationPreloadSubsystem.h"
 #include "Session/SessionSubSystem.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundClass.h"
+#include "Sound/SoundMix.h"
+#include "Minimap/ShooterMinimapSubsystem.h"
+#include "Settings/ShooterAudioSettings.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "Tags/GameplayTags.h"
 #include "UI/Loading/LoadingScreenWidget.h"
 #include "UI/Frontend/TeamMatchUIInitComponent.h"
+#include "UI/InGame/HUD/ShooterChatInputBox.h"
+#include "Chat/ShooterChatRouting.h"
+#include "Tags/UITags.h"
+#include "UI/Subsystem/ShooterUIManagerSubsystem.h"
 #include "UI/InGame/Spectator/ShooterSpectatorWidget.h"
 #include "Voice/SteamVoiceComponent.h"
 #include "Voice/VoiceChatSubsystem.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Weapon/WeaponBase.h"
+#include "UObject/UObjectGlobals.h"
+#include "Engine/Engine.h"
+#include "Trailer/TrailerCameraActor.h"
+#include "Trailer/TrailerCameraSubsystem.h"
 
 AShooterPlayerController::AShooterPlayerController()
 {
 	NetworkTimeSyncComponent = CreateDefaultSubobject<UNetworkTimeSyncComponent>(TEXT("NetworkTimeSyncComponent"));
 	SteamVoiceComponent = CreateDefaultSubobject<USteamVoiceComponent>(TEXT("SteamVoiceComponent"));
+	InteractionComponent = CreateDefaultSubobject<UShooterInteractionComponent>(TEXT("InteractionComponent"));
 }
 
 void AShooterPlayerController::GetLifetimeReplicatedProps(
@@ -54,10 +93,52 @@ void AShooterPlayerController::GetLifetimeReplicatedProps(
 void AShooterPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+    SubmitSavedAppearances();
 
 	if (!IsLocalController())
 	{
 		return;
+	}
+	OnPossessedPawnChanged.AddUniqueDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().AddUObject(this, &ThisClass::HandleViewTargetBlendComplete);
+	}
+
+	// FPS 마우스 입력은 보간/가속 없이 선형 입력으로 사용한다.
+	if (UInputSettings* EngineInputSettings = GetMutableDefault<UInputSettings>())
+	{
+		EngineInputSettings->bEnableMouseSmoothing = false;
+		EngineInputSettings->bEnableFOVScaling = false;
+		EngineInputSettings->bEnableLegacyInputScales = false;
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			KillcamSubsystem->SetUpForWorld(GetWorld());
+		}
+	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->ApplyLanguageCulture();
+	}
+
+	InitializeAudioSettings();
+	PreloadCombatFeedbackSounds();
+	InitializeRuntimeInputMappings();
+	BindApplicationActivation();
+
+	// 이전 화면(커스터마이징 등)이 FInputModeUIOnly로 남긴 GameViewportClient의 bIgnoreInput(true)을 게임플레이 시작 전에 해제한다.
+	// 이 값이 true로 남으면 Slate에는 키/마우스가 도착해도 게임(이동/시점/메뉴) 입력이 전부 무시된다. CommonUI는 이 값을 건드리지 않는다.
+	if (const ULocalPlayer* ResetLocalPlayer = GetLocalPlayer())
+	{
+		if (UGameViewportClient* ResetViewportClient = ResetLocalPlayer->ViewportClient)
+		{
+			ResetViewportClient->SetIgnoreInput(false);
+		}
 	}
 
 	if (GetTeamMatchUIInitComponent())
@@ -68,30 +149,20 @@ void AShooterPlayerController::BeginPlay()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
-
-	if (!InputConfig || !InputConfig->DefaultMappingContext)
-	{
-		return;
-	}
-
-	ULocalPlayer* LocalPlayer = GetLocalPlayer();
-	if (!LocalPlayer)
-	{
-		return;
-	}
-
-	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	if (InputSubsystem)
-	{
-		InputSubsystem->AddMappingContext(InputConfig->DefaultMappingContext, InputConfig->MappingPriority);
-	}
 }
 
 void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	OnPossessedPawnChanged.RemoveDynamic(this, &ThisClass::HandlePossessedPawnChanged);
+	if (IsValid(PlayerCameraManager))
+	{
+		PlayerCameraManager->OnBlendComplete().RemoveAll(this);
+	}
+    GetWorldTimerManager().ClearTimer(AppearanceSubmitTimer);
 	if (HasAuthority())
 	{
 		if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
@@ -102,24 +173,283 @@ void AShooterPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsLocalController())
 	{
+		if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+		{
+			if (UKillcamReplaySubsystem* KillcamSubsystem = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+			{
+				KillcamSubsystem->ReleaseWorld(GetWorld());
+			}
+		}
+
+		ShutdownAudioSettings();
+		ReleaseCombatFeedbackSounds();
+		UnbindApplicationActivation();
 		HideSpectatorWidget();
 
 		if (GetTeamMatchUIInitComponent())
 		{
 			SetSystemMappingContextEnabled(false);
 		}
+		ShutdownRuntimeInputMappings();
 		StopMatchLoadReadyCheck();
+		StopMatchTravelPreparationCheck();
 
 		if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 		{
 			// GameInstanceSubsystem은 World보다 오래 산다. World Actor 참조는
 			// PlayerController가 끝나는 경계에서 명시적으로 끊는다.
 			ClearLoadingScreenGameStateBinding(LoadingScreenSubsystem);
-			LoadingScreenSubsystem->HideLoadingScreen();
+
+			// seamless 교체로 LocalPlayer를 넘긴 PC는 걷지 않음
+			if (GetLocalPlayer())
+			{
+				LoadingScreenSubsystem->HideLoadingScreen();
+			}
 		}
 	}
 
 	Super::EndPlay(EndPlayReason);
+}
+
+// 창이 다시 활성화되면 CommonUI 입력 설정을 강제로 재적용
+void AShooterPlayerController::BindApplicationActivation()
+{
+	if (!FSlateApplication::IsInitialized() || ApplicationActivationHandle.IsValid())
+	{
+		return;
+	}
+
+	ApplicationActivationHandle = FSlateApplication::Get().OnApplicationActivationStateChanged().AddUObject(
+		this, &AShooterPlayerController::HandleApplicationActivationChanged);
+}
+
+void AShooterPlayerController::UnbindApplicationActivation()
+{
+	if (ApplicationActivationHandle.IsValid() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(ApplicationActivationHandle);
+	}
+	ApplicationActivationHandle.Reset();
+}
+
+void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIsActive)
+{
+	if (IsLocalController() && !bIsActive)
+	{
+		// 키를 누른 채(예: 채팅을 연 Enter) 알트탭하면 떼는 입력을 못 받아 돌아와서도 눌린 상태로 남고,
+		// 그 키를 다시 눌러도 "눌림"으로 인식되지 않는다. 창을 벗어날 때 눌린 키를 모두 떼어 둔다.
+		FlushPressedKeys();
+	}
+	if (!bIsActive || !IsLocalController())
+	{
+		return;
+	}
+
+	// 활성화 이벤트 직후에는 창 포커스와 뷰포트 상태가 아직 정리되지 않았을 수 있어 다음 틱에 적용한다.
+	GetWorldTimerManager().SetTimerForNextTick(this, &AShooterPlayerController::ReapplyCommonUIInputConfig);
+}
+
+void AShooterPlayerController::ReapplyCommonUIInputConfig()
+{
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	if (!LocalPlayer)
+	{
+		return;
+	}
+
+	// 여러개의 창을 활용하기 위한 처리
+	const UGameViewportClient* ViewportClient = LocalPlayer->ViewportClient;
+	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
+	if (!Viewport || !Viewport->IsForegroundWindow())
+	{
+		return;
+	}
+	
+	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
+	{
+		Router->RecalculateActiveInputConfig();
+	}
+
+	// 채팅 입력 중 알트탭하고 돌아오면 키보드 포커스가 게임 뷰포트로 가 있어 입력란이 먹통이 되고
+	// (Enter/Esc도 입력란에 안 들어가서) 채팅창을 닫을 수도 없었다. 입력 설정을 다시 적용한 뒤 입력란 포커스를 되돌린다.
+	if (bIsChatInputOpen)
+	{
+		if (UShooterChatInputBox* ChatInput = ChatInputWidget.Get())
+		{
+			ChatInput->RestoreMessageFocus();
+
+			// 창 활성화 직후 Slate가 포커스를 게임 뷰포트로 다시 가져가는 경우가 있어 잠시 뒤 한 번 더 되돌린다.
+			// (그래도 놓치면 Enter를 다시 눌렀을 때 OpenChatInput이 포커스를 되돌린다.)
+			const TWeakObjectPtr<UShooterChatInputBox> WeakChatInput = ChatInput;
+			FTimerHandle RetryFocusHandle;
+			GetWorldTimerManager().SetTimer(RetryFocusHandle, FTimerDelegate::CreateWeakLambda(this, [this, WeakChatInput]()
+			{
+				if (bIsChatInputOpen && WeakChatInput.IsValid())
+				{
+					WeakChatInput->RestoreMessageFocus();
+				}
+			}), 0.2f, false);
+		}
+	}
+}
+
+void AShooterPlayerController::InitializeAudioSettings()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	Settings->OnAudioSettingsChanged.AddUObject(this, &ThisClass::HandleAudioSettingsChanged);
+
+	ActiveUserSettingsSoundMix = Settings->GetUserSettingsSoundMix();
+	if (ActiveUserSettingsSoundMix)
+	{
+		UGameplayStatics::PushSoundMixModifier(this, ActiveUserSettingsSoundMix);
+	}
+
+	HandleAudioSettingsChanged();
+}
+
+void AShooterPlayerController::PreloadCombatFeedbackSounds()
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
+
+	// 실드 히트 사운드는 기획 요청으로 재생하지 않으므로 로드 대상에서 뺀다.
+	TArray<FSoftObjectPath> Paths;
+	for (const FSoftObjectPath& Path : {
+		AudioSettings->HitMarkerSound_Body.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Headshot.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Kill.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_HeadshotKill.ToSoftObjectPath(),
+		AudioSettings->HitMarkerSound_Confirmation.ToSoftObjectPath(),
+		AudioSettings->BulletNearMissSound.ToSoftObjectPath(),
+		AudioSettings->LocalKillSound.ToSoftObjectPath(),
+		AudioSettings->DoubleKillSound.ToSoftObjectPath(),
+		AudioSettings->TripleKillSound.ToSoftObjectPath(),
+		AudioSettings->QuadraKillSound.ToSoftObjectPath(),
+		AudioSettings->PingSound_Location.ToSoftObjectPath(),
+		AudioSettings->PingSound_Enemy.ToSoftObjectPath() })
+	{
+		if (!Path.IsNull())
+		{
+			Paths.Add(Path);
+		}
+	}
+
+	if (!Paths.IsEmpty())
+	{
+		CombatFeedbackSoundsHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths);
+	}
+}
+
+void AShooterPlayerController::ReleaseCombatFeedbackSounds()
+{
+	if (CombatFeedbackSoundsHandle.IsValid())
+	{
+		CombatFeedbackSoundsHandle->CancelHandle();
+		CombatFeedbackSoundsHandle.Reset();
+	}
+}
+
+void AShooterPlayerController::ShutdownAudioSettings()
+{
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnAudioSettingsChanged.RemoveAll(this);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (FAudioDevice* AudioDevice = World->GetAudioDeviceRaw())
+		{
+			AudioDevice->SetTransientPrimaryVolume(1.0f);
+		}
+	}
+
+	if (ActiveUserSettingsSoundMix)
+	{
+		UGameplayStatics::PopSoundMixModifier(this, ActiveUserSettingsSoundMix);
+		ActiveUserSettingsSoundMix = nullptr;
+	}
+}
+
+void AShooterPlayerController::HandleAudioSettingsChanged()
+{
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	if (SteamVoiceComponent)
+	{
+		SteamVoiceComponent->SetOutputVolume(Settings->GetVoiceChatOutputVolume());
+		if (!Settings->IsVoiceChatEnabled() || !SupportsVoiceChat())
+		{
+			if (SteamVoiceComponent->IsCapturingVoice())
+			{
+				StopVoiceTalking();
+			}
+			SteamVoiceComponent->StopPlayback();
+		}
+	}
+
+	const float MasterVolume = Settings->IsMasterAudioMuted()
+		? 0.0f
+		: Settings->GetAudioVolume(EShooterAudioChannel::Master);
+
+	// Master volume must work even when project SoundClass assets are not configured yet.
+	// Apply it at the world's audio-device output stage; channel sliders still use SoundMix/SoundClass.
+	if (UWorld* World = GetWorld())
+	{
+		if (FAudioDevice* AudioDevice = World->GetAudioDeviceRaw())
+		{
+			AudioDevice->SetTransientPrimaryVolume(FMath::Clamp(MasterVolume, 0.0f, 2.0f));
+		}
+	}
+
+	if (!ActiveUserSettingsSoundMix)
+	{
+		return;
+	}
+
+	const auto SetClassVolume = [this, Settings](
+		const EShooterAudioChannel Channel,
+		const float Volume,
+		const bool bApplyToChildren)
+	{
+		USoundClass* SoundClass = Settings->GetAudioChannelSoundClass(Channel);
+		if (!SoundClass)
+		{
+			return;
+		}
+
+		UGameplayStatics::SetSoundMixClassOverride(
+			this,
+			ActiveUserSettingsSoundMix,
+			SoundClass,
+			FMath::Clamp(Volume, 0.0f, 2.0f),
+			1.0f,
+			0.0f,
+			bApplyToChildren);
+	};
+
+	// Channel overrides are multiplied by the already-applied master value.
+	SetClassVolume(EShooterAudioChannel::Master, 1.0f, false);
+	SetClassVolume(EShooterAudioChannel::Music,
+		Settings->GetAudioVolume(EShooterAudioChannel::Music), true);
+	SetClassVolume(EShooterAudioChannel::SoundEffects,
+		Settings->GetAudioVolume(EShooterAudioChannel::SoundEffects), true);
+	SetClassVolume(EShooterAudioChannel::UserInterface,
+		Settings->GetAudioVolume(EShooterAudioChannel::UserInterface), true);
+	// Voice is the game's announcer/dialogue channel. Voice chat has its own output
+	// multiplier on USteamVoiceComponent, so disabling chat must not mute announcers.
+	SetClassVolume(EShooterAudioChannel::Voice,
+		Settings->GetAudioVolume(EShooterAudioChannel::Voice),
+		true);
 }
 
 void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bFinalDest)
@@ -134,11 +464,14 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 	// 이 플래그는 World 단위의 1회성 상태다. 로비에서 한 번 소비한 값을
 	// 다음 인게임 World까지 들고 가지 않도록 최종 목적지마다 재무장한다.
 	bNotifiedLoadedIntoMatch = false;
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
 
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		RefreshLoadingScreenGameStateBinding(LoadingScreenSubsystem);
 		LoadingScreenSubsystem->ShowLoadingScreen(this, LoadingScreenWidgetClass, 0.5f);
+		LoadingScreenSubsystem->NotifyWorldLoaded();
 	}
 
 	StartMatchLoadReadyCheck();
@@ -147,6 +480,7 @@ void AShooterPlayerController::NotifyLoadedWorld(FName WorldPackageName, bool bF
 void AShooterPlayerController::ReceivedPlayer()
 {
 	Super::ReceivedPlayer();
+    SubmitSavedAppearances();
 
 	if (IsLocalController() && NetworkTimeSyncComponent)
 	{
@@ -172,6 +506,11 @@ void AShooterPlayerController::SetupInputComponent()
 	{
 		EnhancedInputComponent->BindAction(InputConfig->LookAction, ETriggerEvent::Triggered, this, &ThisClass::Input_Look);
 	}
+	if (InputConfig->AdjustADSZoomAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->AdjustADSZoomAction, ETriggerEvent::Triggered, this, &ThisClass::Input_AdjustADSZoom);
+	}
 	if (InputConfig->JumpAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->JumpAction, ETriggerEvent::Started, this, &ThisClass::Input_JumpPressed);
@@ -185,14 +524,27 @@ void AShooterPlayerController::SetupInputComponent()
 	if (InputConfig->CrouchAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Started, this, &ThisClass::Input_CrouchPressed);
-		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased);
-		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Completed, this, &ThisClass::Input_CrouchReleased, false);
+		EnhancedInputComponent->BindAction(InputConfig->CrouchAction, ETriggerEvent::Canceled, this, &ThisClass::Input_CrouchReleased, true);
 	}
-	if (InputConfig->PushToTalkAction)
+	if (SupportsVoiceChat() && InputConfig->PushToTalkAction)
 	{
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Started, this, &ThisClass::Input_PushToTalkPressed);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Completed, this, &ThisClass::Input_PushToTalkReleased);
 		EnhancedInputComponent->BindAction(InputConfig->PushToTalkAction, ETriggerEvent::Canceled, this, &ThisClass::Input_PushToTalkReleased);
+	}
+	if (InputConfig->OpenChatAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->OpenChatAction, ETriggerEvent::Started, this, &ThisClass::Input_OpenChat);
+	}
+	if (InputConfig->PingAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->PingAction, ETriggerEvent::Started, this, &ThisClass::Input_Ping);
+	}
+	if (InputConfig->ToggleFullMapAction)
+	{
+		EnhancedInputComponent->BindAction(
+			InputConfig->ToggleFullMapAction, ETriggerEvent::Started, this, &ThisClass::Input_ToggleFullMap);
 	}
 	if (InputConfig->ToggleInGameMenuAction)
 	{
@@ -202,7 +554,8 @@ void AShooterPlayerController::SetupInputComponent()
 			this,
 			&ThisClass::Input_ToggleInGameMenu);
 	}
-	if (InputConfig->ShowScoreboardAction)
+	const UTeamMatchUIInitComponent* ScoreboardUI = GetTeamMatchUIInitComponent();
+	if (InputConfig->ShowScoreboardAction && ScoreboardUI && ScoreboardUI->SupportsScoreboard())
 	{
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
@@ -215,17 +568,28 @@ void AShooterPlayerController::SetupInputComponent()
 			ETriggerEvent::Completed,
 			this,
 			&ThisClass::Input_HideScoreboard);
-		
+
 		EnhancedInputComponent->BindAction(
 			InputConfig->ShowScoreboardAction,
 			ETriggerEvent::Canceled,
 			this,
-			&ThisClass::Input_HideScoreboard);	
+			&ThisClass::Input_HideScoreboard);
+	}
+
+	if (InputConfig->InteractAction)
+	{
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Started,
+			this, &ThisClass::Input_InteractPressed);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Completed,
+			this, &ThisClass::Input_InteractReleased);
+		EnhancedInputComponent->BindAction(InputConfig->InteractAction, ETriggerEvent::Canceled,
+			this, &ThisClass::Input_InteractReleased);
 	}
 
 	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
 	{
-		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid())
+		if (!IsValid(AbilityInput.InputAction) || !AbilityInput.InputTag.IsValid()
+			|| AbilityInput.InputAction == InputConfig->InteractAction)
 		{
 			continue;
 		}
@@ -239,9 +603,41 @@ void AShooterPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(
 			AbilityInput.InputAction, PressEvent, this, &ThisClass::Input_AbilityPressed, AbilityInput.InputTag);
 		EnhancedInputComponent->BindAction(
-			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+			AbilityInput.InputAction, ETriggerEvent::Completed, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag, false);
 		EnhancedInputComponent->BindAction(
-			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag);
+			AbilityInput.InputAction, ETriggerEvent::Canceled, this, &ThisClass::Input_AbilityReleased, AbilityInput.InputTag, true);
+	}
+}
+
+void AShooterPlayerController::Input_InteractPressed(const FInputActionValue& Value)
+{
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+	ActiveInteractionFallbackTag = FGameplayTag();
+	if (InteractionComponent->TryInteract())
+	{
+		return;
+	}
+
+	for (const FShooterAbilityInputAction& AbilityInput : InputConfig->AbilityInputActions)
+	{
+		if (AbilityInput.InputAction == InputConfig->InteractAction && AbilityInput.InputTag.IsValid())
+		{
+			ActiveInteractionFallbackTag = AbilityInput.InputTag;
+			Input_AbilityPressed(Value, ActiveInteractionFallbackTag);
+			break;
+		}
+	}
+}
+
+void AShooterPlayerController::Input_InteractReleased(const FInputActionValue& Value)
+{
+	if (ActiveInteractionFallbackTag.IsValid())
+	{
+		Input_AbilityReleased(Value, ActiveInteractionFallbackTag);
+		ActiveInteractionFallbackTag = FGameplayTag();
 	}
 }
 
@@ -276,9 +672,20 @@ void AShooterPlayerController::SetLobbyReady(bool bNewLobbyReady)
 
 void AShooterPlayerController::StartVoiceTalking()
 {
-	if (IsLocalController() && SteamVoiceComponent)
+	if (!IsLocalController() || !SupportsVoiceChat())
 	{
-		SteamVoiceComponent->StartCapture();
+		return;
+	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		!Settings || !Settings->IsVoiceChatEnabled())
+	{
+		return;
+	}
+
+	if (!SteamVoiceComponent || !SteamVoiceComponent->StartCapture())
+	{
+		return;
 	}
 
 	if (HasAuthority())
@@ -312,9 +719,38 @@ void AShooterPlayerController::StopVoiceTalking()
 	ServerSetVoiceTalking(false);
 }
 
+bool AShooterPlayerController::IsPushToTalkKey(const FKey& Key) const
+{
+	if (!SupportsVoiceChat() || !Key.IsValid() || !IsValid(InputConfig) || !IsValid(InputConfig->PushToTalkAction))
+	{
+		return false;
+	}
+
+	const auto IsMappedToPushToTalk = [this, &Key](const UInputMappingContext* MappingContext)
+	{
+		if (!IsValid(MappingContext))
+		{
+			return false;
+		}
+
+		for (const FEnhancedActionKeyMapping& Mapping : MappingContext->GetMappings())
+		{
+			if (Mapping.Action == InputConfig->PushToTalkAction && Mapping.Key == Key)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	};
+
+	return IsMappedToPushToTalk(RuntimeDefaultMappingContext)
+		|| IsMappedToPushToTalk(RuntimeSystemMappingContext);
+}
+
 void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& CompressedVoiceData)
 {
-	if (!IsLocalController() || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || !SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
@@ -334,46 +770,22 @@ void AShooterPlayerController::SubmitCompressedVoicePacket(const TArray<uint8>& 
 		}
 	}
 
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	const float MicrophoneVolume = Settings
+		? FMath::Clamp(Settings->GetVoiceChatMicrophoneVolume(), 0.0f, 2.0f)
+		: 1.0f;
+	if (MicrophoneVolume <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
 	if (HasAuthority())
 	{
-		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience);
+		ServerSubmitCompressedVoicePacket_Implementation(CompressedVoiceData, Audience, MicrophoneVolume);
 		return;
 	}
 
-	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience);
-}
-
-void AShooterPlayerController::ToggleDynamicCrosshair()
-{
-	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
-	if (!Settings)
-	{
-		return;
-	}
-
-	Settings->SetDynamicCrosshairEnabled(!Settings->IsDynamicCrosshairEnabled());
-}
-
-void AShooterPlayerController::TestHitIndicator()
-{
-	AShooterPlayerState* ShooterPS = GetPlayerState<AShooterPlayerState>();
-	URogueHealthComponent* HealthComponent = ShooterPS ? ShooterPS->GetHealthComponent() : nullptr;
-	if (!HealthComponent)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] PlayerState=%s HealthComponent=%s - 둘 중 하나가 없어서 중단."),
-			*GetNameSafe(ShooterPS), *GetNameSafe(HealthComponent));
-		return;
-	}
-
-	// 데미지 파이프라인을 거치지 않고, 실제로 오른쪽에서 맞은 것처럼 방향만 흉내내서
-	// 인디케이터 UI(회전/페이드)가 직접 잘 동작하는지만 검증한다.
-	const APawn* ControlledPawn = GetPawn();
-	const FVector TestDirection = IsValid(ControlledPawn) ? ControlledPawn->GetActorRightVector() : FVector::RightVector;
-
-	UE_LOG(LogTemp, Warning, TEXT("[TestHitIndicator] 브로드캐스트 시도. 구독자 있음=%s"),
-		HealthComponent->OnHitReactionReceived.IsBound() ? TEXT("true") : TEXT("false"));
-
-	HealthComponent->OnHitReactionReceived.Broadcast(TestDirection);
+	ServerSubmitCompressedVoicePacket(CompressedVoiceData, Audience, MicrophoneVolume);
 }
 
 void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
@@ -388,6 +800,35 @@ void AShooterPlayerController::SetLobbyTeam(const EGameTeam RequestedTeam)
 	}
 
 	ServerSetLobbyTeam(RequestedTeam);
+}
+
+void AShooterPlayerController::RequestStartRoomGame()
+{
+	if (HasAuthority())
+	{
+		ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr;
+		if (!IsValid(LobbyGameMode) || !LobbyGameMode->RequestStartRoomGame(this))
+		{
+			ClientNotifyLobbyStartFailed();
+		}
+		return;
+	}
+
+	ServerRequestStartRoomGame();
+}
+
+void AShooterPlayerController::RequestLobbyMatchMode(const ELobbyMatchMode RequestedMatchMode)
+{
+	if (HasAuthority())
+	{
+		if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+		{
+			LobbyGameMode->RequestLobbyMatchMode(this, RequestedMatchMode);
+		}
+		return;
+	}
+
+	ServerRequestLobbyMatchMode(RequestedMatchMode);
 }
 
 void AShooterPlayerController::ShowLoadingScreen(const float InitialProgress)
@@ -447,6 +888,19 @@ void AShooterPlayerController::HideLoadingScreen()
 	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
 	{
 		LoadingScreenSubsystem->HideLoadingScreen();
+	}
+}
+
+void AShooterPlayerController::FinishLoadingScreen()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->FinishLoadingScreen();
 	}
 }
 
@@ -595,17 +1049,154 @@ void AShooterPlayerController::ClientHideLoadingScreen_Implementation()
 	HideLoadingScreen();
 }
 
-void AShooterPlayerController::ClientPlayHitMarker_Implementation(const bool bRed)
+void AShooterPlayerController::ClientFinishLoadingScreen_Implementation()
 {
-	OnHitMarker.Broadcast(bRed);
+	FinishLoadingScreen();
 }
 
-void AShooterPlayerController::ClientPlayKillSound_Implementation()
+void AShooterPlayerController::ClientPlayHitMarker_Implementation(const ERogueHitMarkerType Type, const bool bKill, const bool bPlaySound)
 {
-	if (LocalKillSound)
+	OnHitMarker.Broadcast(Type, bKill);
+
+	if (!bPlaySound)
 	{
-		UGameplayStatics::PlaySound2D(this, LocalKillSound);
+		return;
 	}
+
+	// 사운드는 PlayerController 하위 클래스마다 따로 두지 않고 UShooterAudioSettings 하나로 통합돼 있다.
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
+
+	// 처치 전용 타격음이 없으면 부위별 타격음을 사용한다.
+	// 명중 확인음은 아래에서 독립적으로 재생한다.
+	const TSoftObjectPtr<USoundBase>* ImpactSoundRef = nullptr;
+	if (bKill && Type == ERogueHitMarkerType::Headshot && !AudioSettings->HitMarkerSound_HeadshotKill.IsNull())
+	{
+		ImpactSoundRef = &AudioSettings->HitMarkerSound_HeadshotKill;
+	}
+	if (!ImpactSoundRef && bKill && !AudioSettings->HitMarkerSound_Kill.IsNull())
+	{
+		ImpactSoundRef = &AudioSettings->HitMarkerSound_Kill;
+	}
+	if (!ImpactSoundRef)
+	{
+		switch (Type)
+		{
+		case ERogueHitMarkerType::Headshot:
+			ImpactSoundRef = &AudioSettings->HitMarkerSound_Headshot;
+			break;
+		case ERogueHitMarkerType::Shield:
+			// 실드 히트 사운드는 뺀다(기획 요청).
+			break;
+		case ERogueHitMarkerType::Body:
+		default:
+			ImpactSoundRef = &AudioSettings->HitMarkerSound_Body;
+			break;
+		}
+	}
+
+	if (ImpactSoundRef)
+	{
+		PlayCombatFeedbackSound(*ImpactSoundRef);
+	}
+
+	// 같은 에셋을 두 칸에 지정한 경우에는 중복 재생하지 않는다.
+	if (!ImpactSoundRef || *ImpactSoundRef != AudioSettings->HitMarkerSound_Confirmation)
+	{
+		PlayCombatFeedbackSound(AudioSettings->HitMarkerSound_Confirmation);
+	}
+}
+
+void AShooterPlayerController::ClientPlayKillEffect_Implementation()
+{
+	OnKillEffect.Broadcast();
+}
+
+void AShooterPlayerController::ClientPlayKillSound_Implementation(const int32 KillStreak)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
+
+	// 스트릭별 사운드가 지정돼 있으면 그걸 우선 재생하고, 없으면 기본 킬 사운드로 대체한다.
+	const TSoftObjectPtr<USoundBase>* SoundRef = nullptr;
+	switch (KillStreak)
+	{
+	case 2:
+		SoundRef = &AudioSettings->DoubleKillSound;
+		break;
+	case 3:
+		SoundRef = &AudioSettings->TripleKillSound;
+		break;
+	default:
+		if (KillStreak >= 4)
+		{
+			SoundRef = &AudioSettings->QuadraKillSound;
+		}
+		break;
+	}
+
+	if (!SoundRef || SoundRef->IsNull())
+	{
+		SoundRef = &AudioSettings->LocalKillSound;
+	}
+
+	PlayCombatFeedbackSound(*SoundRef);
+}
+
+void AShooterPlayerController::ClientPlayBulletNearMiss_Implementation(const FVector_NetQuantize SoundLocation)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	PlayCombatFeedbackSound(AudioSettings->BulletNearMissSound, FVector(SoundLocation));
+}
+
+void AShooterPlayerController::PlayCombatFeedbackSound(const TSoftObjectPtr<USoundBase>& SoundRef, const TOptional<FVector>& WorldLocation)
+{
+	if (SoundRef.IsNull())
+	{
+		return;
+	}
+
+	// BeginPlay 시점에 아직 로컬 컨트롤러로 확정되지 않은 경우(리슨 서버 호스트의 seamless travel 등)
+	// 프리로드가 건너뛰어졌을 수 있으므로, 첫 재생 요청 때 한 번 더 걸어 둔다.
+	if (!CombatFeedbackSoundsHandle.IsValid())
+	{
+		PreloadCombatFeedbackSounds();
+	}
+
+	auto PlayLoaded = [this, WorldLocation](USoundBase* Sound)
+	{
+		if (WorldLocation.IsSet())
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, WorldLocation.GetValue());
+		}
+		else
+		{
+			UGameplayStatics::PlaySound2D(this, Sound);
+		}
+	};
+
+	if (USoundBase* LoadedSound = SoundRef.Get())
+	{
+		PlayLoaded(LoadedSound);
+		return;
+	}
+
+	// 아직 로드 전이면 동기 로드(히치) 대신 이 사운드만 비동기 로드를 요청하고, 끝나는 즉시 재생한다.
+	// 그 사이 PlayerController가 파괴되면 WeakLambda라 콜백이 호출되지 않는다.
+	UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		SoundRef.ToSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [SoundRef, PlayLoaded]()
+		{
+			if (USoundBase* Sound = SoundRef.Get())
+			{
+				PlayLoaded(Sound);
+			}
+		}));
 }
 
 void AShooterPlayerController::ClientEnterSpectatorMode_Implementation(APlayerState* ViewTargetPlayerState)
@@ -620,7 +1211,282 @@ void AShooterPlayerController::ClientSetSpectatorTarget_Implementation(APlayerSt
 
 void AShooterPlayerController::ClientExitSpectatorMode_Implementation()
 {
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			// The owning Pawn may still be the spectator; invalidate first, restore on actual possession.
+			Killcam->CancelForRespawn();
+		}
+	}
 	HideSpectatorWidget();
+}
+
+void AShooterPlayerController::HandlePossessedPawnChanged(APawn* PreviousPawn, APawn* NewPawn)
+{
+	if (IsLocalController() && PreviousPawn != NewPawn)
+	{
+		if (AShooterCharacter* PreviousCharacter = Cast<AShooterCharacter>(PreviousPawn))
+		{
+			PreviousCharacter->HandleCrouchReleased();
+		}
+		ResetInputModeState();
+	}
+	if (!IsLocalController() || NewPawn == PreviousPawn || GetPawn() != NewPawn
+		|| !UKillcamReplaySubsystem::IsLiveWorldActor(NewPawn) || !NewPawn->IsA<AShooterCharacter>())
+	{
+		return;
+	}
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UKillcamReplaySubsystem* Killcam = LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>())
+		{
+			Killcam->HandleOwnedPawnChanged(NewPawn);
+		}
+	}
+	if (!bKillcamViewTargetSuppressed)
+	{
+		SetViewTarget(NewPawn);
+	}
+}
+
+void AShooterPlayerController::HandleViewTargetBlendComplete()
+{
+	RefreshViewedPawnWeaponPresentation();
+	OnViewPresentationChanged.Broadcast();
+}
+
+void AShooterPlayerController::RefreshViewedPawnWeaponPresentation()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (AShooterCharacter* ViewedCharacter = Cast<AShooterCharacter>(GetPresentationViewTarget()))
+	{
+		if (UCombatComponent* ViewedCombat = ViewedCharacter->GetCombatComponent())
+		{
+			ViewedCombat->RefreshEquippedWeaponPresentation();
+		}
+	}
+}
+
+AActor* AShooterPlayerController::GetPresentationViewTarget() const
+{
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		return KillcamCamera->GetTrackedActor();
+	}
+
+	return GetViewTarget();
+}
+
+void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
+{
+	// 트레일러 카메라가 켜져 있는 동안 서버의 관전 대상 전환(ClientSetViewTarget)이 시점을 빼앗지 못하게 막는다.
+#if !UE_BUILD_SHIPPING
+	if (const UTrailerCameraSubsystem* TrailerCamera = UTrailerCameraSubsystem::Get(this))
+	{
+		if (TrailerCamera->IsActive() && NewViewTarget != TrailerCamera->GetCamera())
+		{
+			return;
+		}
+	}
+#endif
+
+	if (bKillcamViewTargetSuppressed)
+	{
+		const bool bUsableCandidate = NewViewTarget != this
+			&& UKillcamReplaySubsystem::IsLiveWorldActor(NewViewTarget);
+		if (bUsableCandidate)
+		{
+			PendingViewTarget = NewViewTarget;
+			PendingViewTargetTransitionParams = TransitionParams;
+		}
+		return;
+	}
+
+	AActor* PreviousViewTarget = GetViewTarget();
+	Super::SetViewTarget(NewViewTarget, TransitionParams);
+	if (GetViewTarget() != PreviousViewTarget)
+	{
+		RefreshViewedPawnWeaponPresentation();
+		OnViewPresentationChanged.Broadcast();
+	}
+}
+
+void AShooterPlayerController::UpdateHiddenComponents(
+	const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents)
+{
+	Super::UpdateHiddenComponents(ViewLocation, HiddenComponents);
+
+	// TEMP: 킬캠 후 관전 시 팀원 1P 무기 미표시 원인 확인용. 상태가 바뀔 때만 남긴다.
+	if (IsLocalController())
+	{
+		const AShooterCharacter* Viewed = Cast<AShooterCharacter>(GetViewTarget());
+		FString DiagnosticState;
+		if (IsValid(Viewed) && Viewed != GetPawn())
+		{
+			const UCombatComponent* ViewedCombat = Viewed->GetCombatComponent();
+			const AWeaponBase* Weapon = IsValid(ViewedCombat) ? ViewedCombat->GetCurrentWeapon() : nullptr;
+			const USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+			const USkeletalMeshComponent* ArmsMesh1P = IPlayerInterface::Execute_GetMesh1P(const_cast<AShooterCharacter*>(Viewed));
+			DiagnosticState = FString::Printf(
+				TEXT("Target=%s Suppressed=%d Weapon=%s WeaponOwner=%s ActorHidden=%d Mesh1PVisible=%d Mesh1PHidden=%d Mesh1PRegistered=%d Mesh1PParent=%s ArmsVisible=%d ArmsHidden=%d Aiming=%d"),
+				*GetNameSafe(Viewed),
+				bKillcamViewTargetSuppressed ? 1 : 0,
+				*GetNameSafe(Weapon),
+				IsValid(Weapon) ? *GetNameSafe(Weapon->GetOwner()) : TEXT("None"),
+				IsValid(Weapon) && Weapon->IsHidden() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsVisible() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsRegistered() ? 1 : 0,
+				IsValid(WeaponMesh1P) ? *GetNameSafe(WeaponMesh1P->GetAttachParent()) : TEXT("None"),
+				IsValid(ArmsMesh1P) && ArmsMesh1P->IsVisible() ? 1 : 0,
+				IsValid(ArmsMesh1P) && ArmsMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(ViewedCombat) && ViewedCombat->IsAiming() ? 1 : 0);
+		}
+		if (DiagnosticState != LastSpectateDiagnosticState)
+		{
+			LastSpectateDiagnosticState = DiagnosticState;
+			if (!DiagnosticState.IsEmpty())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[SpectateDiag] %s"), *DiagnosticState);
+			}
+		}
+	}
+
+	if (!bKillcamViewTargetSuppressed || !IsLocalController() || !GetWorld())
+	{
+		return;
+	}
+
+	// 킬캠 시점 액터는 어떤 폰의 오너도 아니라 1P 메시 아래의 OwnerNoSee 파츠(스나 1P 스코프 등)가
+	// 오너 판정 없이 그대로 그려진다. 킬러의 현재 무기 외에는 1P 표현을 전부 숨긴다.
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		AActor* Tracked = KillcamCamera->GetTrackedActor();
+		const AWeaponBase* TrackedWeapon = IsValid(Tracked) && Tracked->Implements<UPlayerInterface>()
+			? IPlayerInterface::Execute_GetCurrentWeapon(Tracked)
+			: nullptr;
+		if (const FLevelCollection* ReplayCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels))
+		{
+			for (ULevel* Level : ReplayCollection->GetLevels())
+			{
+				if (!IsValid(Level))
+				{
+					continue;
+				}
+
+				for (AActor* Actor : Level->Actors)
+				{
+					const AWeaponBase* Weapon = Cast<AWeaponBase>(Actor);
+					USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) && Weapon != TrackedWeapon
+						? Weapon->GetMesh1P()
+						: nullptr;
+					if (!IsValid(WeaponMesh1P))
+					{
+						continue;
+					}
+
+					TArray<USceneComponent*> Mesh1PTree;
+					WeaponMesh1P->GetChildrenComponents(true, Mesh1PTree);
+					Mesh1PTree.Add(WeaponMesh1P);
+					for (USceneComponent* Child : Mesh1PTree)
+					{
+						if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Child);
+							IsValid(Primitive) && Primitive->IsRegistered())
+						{
+							HiddenComponents.Add(Primitive->GetPrimitiveSceneId());
+						}
+					}
+				}
+			}
+		}
+	}
+
+	const FLevelCollection* LiveCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
+	if (!LiveCollection)
+	{
+		return;
+	}
+
+	TSet<AActor*> LiveActors;
+	for (ULevel* Level : LiveCollection->GetLevels())
+	{
+		if (!IsValid(Level))
+		{
+			continue;
+		}
+
+		for (AActor* Actor : Level->Actors)
+		{
+			if (!IsValid(Actor) || (!Actor->IsA<APawn>() && !Actor->IsA<AWeaponBase>()))
+			{
+				continue;
+			}
+
+			LiveActors.Add(Actor);
+			TArray<AActor*> AttachedActors;
+			Actor->GetAttachedActors(AttachedActors, true, true);
+			for (AActor* AttachedActor : AttachedActors)
+			{
+				if (IsValid(AttachedActor) && UKillcamReplaySubsystem::IsLiveWorldActor(AttachedActor))
+				{
+					LiveActors.Add(AttachedActor);
+				}
+			}
+		}
+	}
+
+	for (AActor* Actor : LiveActors)
+	{
+		TInlineComponentArray<UPrimitiveComponent*> Components;
+		Actor->GetComponents(Components);
+		for (UPrimitiveComponent* Component : Components)
+		{
+			if (IsValid(Component) && Component->IsRegistered())
+			{
+				HiddenComponents.Add(Component->GetPrimitiveSceneId());
+			}
+		}
+	}
+}
+
+void AShooterPlayerController::SetKillcamViewTargetSuppressed(const bool bSuppressed)
+{
+	if (bKillcamViewTargetSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	bKillcamViewTargetSuppressed = bSuppressed;
+	if (bSuppressed)
+	{
+		PendingViewTarget.Reset();
+		PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	}
+	OnViewPresentationChanged.Broadcast();
+}
+
+void AShooterPlayerController::ApplyKillcamViewTarget(AActor* KillcamCamera)
+{
+	if (!IsValid(KillcamCamera))
+	{
+		return;
+	}
+
+	Super::SetViewTarget(KillcamCamera, FViewTargetTransitionParams());
+	OnViewPresentationChanged.Broadcast();
+}
+
+AActor* AShooterPlayerController::ConsumePendingViewTarget()
+{
+	AActor* Pending = PendingViewTarget.Get();
+	PendingViewTarget.Reset();
+	PendingViewTargetTransitionParams = FViewTargetTransitionParams();
+	return Pending;
 }
 
 void AShooterPlayerController::ServerSetLobbyReady_Implementation(bool bNewLobbyReady)
@@ -635,15 +1501,16 @@ void AShooterPlayerController::ServerSetVoiceTalking_Implementation(bool bNewVoi
 {
 	if (AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>())
 	{
-		ShooterPlayerState->SetVoiceTalking(bNewVoiceTalking);
+		ShooterPlayerState->SetVoiceTalking(SupportsVoiceChat() && bNewVoiceTalking);
 	}
 }
 
 void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+	const EVoiceChatAudience Audience,
+	const float MicrophoneVolume)
 {
-	if (CompressedVoiceData.IsEmpty())
+	if (!SupportsVoiceChat() || CompressedVoiceData.IsEmpty())
 	{
 		return;
 	}
@@ -671,7 +1538,6 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		return;
 	}
 
-	int32 RoutedTargetCount = 0;
 	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
 	{
 		AShooterPlayerController* ListenerController = Cast<AShooterPlayerController>(It->Get());
@@ -683,23 +1549,28 @@ void AShooterPlayerController::ServerSubmitCompressedVoicePacket_Implementation(
 		APlayerState* ListenerPlayerState = ListenerController->PlayerState;
 		if (VoiceChatSubsystem->CanHearVoice(ListenerPlayerState, SpeakerPlayerState, Audience))
 		{
-			++RoutedTargetCount;
-			ListenerController->ClientReceiveCompressedVoicePacket(PlayerState, CompressedVoiceData, Audience);
+			ListenerController->ClientReceiveCompressedVoicePacket(
+				PlayerState,
+				CompressedVoiceData,
+				Audience,
+				FMath::Clamp(MicrophoneVolume, 0.0f, 2.0f));
 		}
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ServerRoute] Speaker=%s CompressedBytes=%d Targets=%d"),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num(),
-		RoutedTargetCount);
 }
 
 void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation(
 	APlayerState* SpeakerPlayerState,
 	const TArray<uint8>& CompressedVoiceData,
-	const EVoiceChatAudience Audience)
+	const EVoiceChatAudience Audience,
+	const float MicrophoneVolume)
 {
-	if (!IsLocalController() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
+	if (!IsLocalController() || !SupportsVoiceChat() || !IsValid(SpeakerPlayerState) || CompressedVoiceData.IsEmpty())
+	{
+		return;
+	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		!Settings || !Settings->IsVoiceChatEnabled())
 	{
 		return;
 	}
@@ -715,17 +1586,195 @@ void AShooterPlayerController::ClientReceiveCompressedVoicePacket_Implementation
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("[VoiceTrace][ClientReceive] Listener=%s Speaker=%s CompressedBytes=%d"),
-		*GetNameSafe(PlayerState),
-		*GetNameSafe(SpeakerPlayerState),
-		CompressedVoiceData.Num());
-
 	if (SteamVoiceComponent)
 	{
-		SteamVoiceComponent->PlayCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
+		SteamVoiceComponent->PlayCompressedVoicePacket(
+			SpeakerPlayerState,
+			CompressedVoiceData,
+			FMath::Clamp(MicrophoneVolume, 0.0f, 2.0f));
 	}
 
 	ReceiveCompressedVoicePacket(SpeakerPlayerState, CompressedVoiceData);
+}
+
+void AShooterPlayerController::ServerSendChatMessage_Implementation(const FString& MessageText, const EChatChannel Channel)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastChatMessageServerTime >= 0.0 && Now - LastChatMessageServerTime < ShooterChatLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+
+	FString Trimmed = MessageText;
+	Trimmed.TrimStartAndEndInline();
+	if (Trimmed.IsEmpty())
+	{
+		return;
+	}
+	if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+	{
+		Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+	}
+
+	LastChatMessageServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	// 인게임(ABaseTeamGameState)과 대기방(ALobbyGameState)에서 모두 써야 해서 베이스 타입으로 받는다.
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return;
+	}
+
+	FChatMessage Message;
+	Message.SenderName = PlayerState->GetPlayerName();
+	Message.MessageText = Trimmed;
+	Message.Channel = Channel;
+
+	ShooterChatRouting::ForEachChatRecipient(GameState, PlayerState, Channel, [&Message](AShooterPlayerController* Recipient)
+	{
+		Recipient->ClientReceiveChatMessage(Message);
+	});
+}
+
+void AShooterPlayerController::ServerSendWhisperMessage_Implementation(const FString& TargetName, const FString& MessageText)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastChatMessageServerTime >= 0.0 && Now - LastChatMessageServerTime < ShooterChatLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+
+	FString Trimmed = MessageText;
+	Trimmed.TrimStartAndEndInline();
+	if (Trimmed.IsEmpty())
+	{
+		return;
+	}
+	if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+	{
+		Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+	}
+
+	LastChatMessageServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	const AGameStateBase* GameState = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return;
+	}
+
+	AShooterPlayerController* TargetController = ShooterChatRouting::FindChatRecipientByName(GameState, TargetName);
+	if (!TargetController)
+	{
+		// MVP: 닉네임을 못 찾아도 별도 에러 메시지는 없다. 채팅창은 이미 닫힌 뒤라 조용히 무시.
+		return;
+	}
+
+	FChatMessage ToReceiver;
+	ToReceiver.SenderName = PlayerState->GetPlayerName();
+	ToReceiver.MessageText = Trimmed;
+	ToReceiver.Channel = EChatChannel::Whisper;
+	ToReceiver.bIsOutgoingEcho = false;
+	TargetController->ClientReceiveChatMessage(ToReceiver);
+
+	// 보낸 사람 본인에게는 "-> 대상" 형태로 에코해 무엇을 누구에게 보냈는지 확인시켜준다.
+	FChatMessage Echo;
+	Echo.SenderName = FString::Printf(TEXT("-> %s"), *TargetName);
+	Echo.MessageText = Trimmed;
+	Echo.Channel = EChatChannel::Whisper;
+	Echo.bIsOutgoingEcho = true;
+	ClientReceiveChatMessage(Echo);
+}
+
+void AShooterPlayerController::ClientReceiveChatMessage_Implementation(const FChatMessage& Message)
+{
+	// 남이 나한테 보낸 진짜 귓속말(내 에코가 아님)이면, 오버워치처럼 자동으로 그 사람과의
+	// 채널로 전환하고 최근 귓말 큐(Tab 토글용)에도 등록한다.
+	if (Message.Channel == EChatChannel::Whisper && !Message.bIsOutgoingEcho)
+	{
+		RegisterWhisperTarget(Message.SenderName);
+
+		if (ChatInputWidget.IsValid())
+		{
+			ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+		}
+	}
+
+	OnChatMessageReceived.Broadcast(Message);
+}
+
+void AShooterPlayerController::ServerSendPing_Implementation(const FVector_NetQuantize Location, const EShooterPingType Type)
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (LastPingServerTime >= 0.0 && Now - LastPingServerTime < ShooterPingLimits::MinSendIntervalSeconds)
+	{
+		return;
+	}
+	LastPingServerTime = Now;
+
+	if (!IsValid(PlayerState))
+	{
+		return;
+	}
+
+	ABaseTeamGameState* TeamGameState = GetWorld() ? GetWorld()->GetGameState<ABaseTeamGameState>() : nullptr;
+	if (!IsValid(TeamGameState))
+	{
+		return;
+	}
+
+	FPingEvent Ping;
+	Ping.Location = Location;
+	Ping.Type = Type;
+
+	// 핑도 팀 전용이라 채팅의 Team 채널 라우팅(같은 팀 전원, 본인 포함)을 그대로 재사용한다.
+	ShooterChatRouting::ForEachChatRecipient(TeamGameState, PlayerState, EChatChannel::Team, [&Ping](AShooterPlayerController* Recipient)
+	{
+		Recipient->ClientReceivePing(Ping);
+	});
+}
+
+void AShooterPlayerController::ClientReceivePing_Implementation(const FPingEvent& Ping)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	check(AudioSettings);
+
+	const TSoftObjectPtr<USoundBase>& SoundRef =
+		(Ping.Type == EShooterPingType::Enemy && !AudioSettings->PingSound_Enemy.IsNull())
+		? AudioSettings->PingSound_Enemy
+		: AudioSettings->PingSound_Location;
+
+	// 위치 핑 특성상 방향을 듣고 찾아갈 수 있어야 하므로 2D가 아니라 핑 찍힌 지점에서
+	// 나는 3D 사운드로 재생한다. 감쇠(Attenuation)는 사운드 에셋 쪽 설정을 따른다.
+	PlayCombatFeedbackSound(SoundRef, Ping.Location);
+
+	OnPingReceived.Broadcast(Ping);
+}
+
+void AShooterPlayerController::RegisterWhisperTarget(const FString& PlayerName)
+{
+	RecentWhisperTargets.RemoveAll([&PlayerName](const FString& Existing)
+	{
+		return Existing.Equals(PlayerName, ESearchCase::IgnoreCase);
+	});
+	RecentWhisperTargets.Insert(PlayerName, 0);
+	if (RecentWhisperTargets.Num() > 2)
+	{
+		RecentWhisperTargets.SetNum(2);
+	}
+
+	CurrentChatChannel = EChatChannel::Whisper;
+	CurrentWhisperTarget = PlayerName;
 }
 
 void AShooterPlayerController::ServerNotifyLoadedIntoMatch_Implementation()
@@ -758,6 +1807,99 @@ void AShooterPlayerController::ServerCycleSpectatorTarget_Implementation()
 	if (IsValid(ShooterGameMode))
 	{
 		ShooterGameMode->CycleSpectatorTarget(this);
+	}
+}
+
+void AShooterPlayerController::ClientPrepareMatchTravel_Implementation(
+	const FString& DestinationMap, const int32 RequestId)
+{
+	if (!IsLocalController() || RequestId <= 0)
+	{
+		return;
+	}
+
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = RequestId;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->BeginTravelConnectionGrace(DestinationMap);
+		}
+	}
+	ShowLoadingScreen(0.2f);
+
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		ServerNotifyMatchTravelPrepared(RequestId, false);
+		return;
+	}
+	PreloadSubsystem->PrepareForMap(DestinationMap);
+	GetWorldTimerManager().SetTimer(MatchTravelPreparationCheckTimer, this,
+		&ThisClass::CheckMatchTravelPreparation, 0.2f, true);
+	CheckMatchTravelPreparation();
+}
+
+void AShooterPlayerController::CheckMatchTravelPreparation()
+{
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (MatchTravelPreparationRequestId <= 0)
+	{
+		StopMatchTravelPreparationCheck();
+		return;
+	}
+	if (IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& !PreloadSubsystem->IsPreloadReady())
+	{
+		return;
+	}
+
+	const bool bSuccess = IsValid(PreloadSubsystem) && !PreloadSubsystem->HasPreloadFailed()
+		&& PreloadSubsystem->IsPreloadReady();
+	const int32 RequestId = MatchTravelPreparationRequestId;
+	StopMatchTravelPreparationCheck();
+	ServerNotifyMatchTravelPrepared(RequestId, bSuccess);
+}
+
+void AShooterPlayerController::StopMatchTravelPreparationCheck()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MatchTravelPreparationCheckTimer);
+	}
+}
+
+void AShooterPlayerController::ClientCancelMatchTravelPreparation_Implementation(const int32 RequestId)
+{
+	if (RequestId != MatchTravelPreparationRequestId)
+	{
+		return;
+	}
+	StopMatchTravelPreparationCheck();
+	MatchTravelPreparationRequestId = 0;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UDominationPreloadSubsystem* PreloadSubsystem = GameInstance->GetSubsystem<UDominationPreloadSubsystem>())
+		{
+			PreloadSubsystem->ReleasePreload();
+		}
+		if (USessionSubSystem* SessionSubsystem = GameInstance->GetSubsystem<USessionSubSystem>())
+		{
+			SessionSubsystem->EndTravelConnectionGrace();
+		}
+	}
+	HideLoadingScreen();
+}
+
+void AShooterPlayerController::ServerNotifyMatchTravelPrepared_Implementation(
+	const int32 RequestId, const bool bSuccess)
+{
+	if (ALobbyGameMode* LobbyGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ALobbyGameMode>() : nullptr)
+	{
+		LobbyGameMode->NotifyMatchTravelPrepared(this, RequestId, bSuccess);
 	}
 }
 
@@ -816,7 +1958,33 @@ void AShooterPlayerController::CheckMatchLoadReady()
 		return;
 	}
 
+	UDominationPreloadSubsystem* PreloadSubsystem = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UDominationPreloadSubsystem>() : nullptr;
+	if (!IsValid(PreloadSubsystem))
+	{
+		return;
+	}
+	PreloadSubsystem->EnsurePreloadStarted(World);
+	if (!PreloadSubsystem->IsPreloadReady() || !World->HasBegunPlay())
+	{
+		return;
+	}
+
+	// 현재 요청된 WP 셀의 배치까지 기다린다. 클래스 선택 뒤 생성될 Pawn은 이 조건에 넣지 않는다.
+	if (World->GetWorldPartition())
+	{
+		UWorldPartitionSubsystem* Partition = World->GetSubsystem<UWorldPartitionSubsystem>();
+		if (!Partition || !Partition->IsAllStreamingCompleted()) return;
+	}
+
 	SetLoadingProgress(0.9f);
+
+	if (ULoadingScreenSubsystem* LoadingScreenSubsystem = GetLoadingScreenSubsystem())
+	{
+		LoadingScreenSubsystem->NotifyWorldLoaded();
+		LoadingScreenSubsystem->NotifyMatchLoadReady();
+	}
+
 	bNotifiedLoadedIntoMatch = true;
 	StopMatchLoadReadyCheck();
 
@@ -839,6 +2007,21 @@ void AShooterPlayerController::ServerSetLobbyTeam_Implementation(const EGameTeam
 	}
 }
 
+void AShooterPlayerController::ServerRequestStartRoomGame_Implementation()
+{
+	RequestStartRoomGame();
+}
+
+void AShooterPlayerController::ServerRequestLobbyMatchMode_Implementation(const ELobbyMatchMode RequestedMatchMode)
+{
+	RequestLobbyMatchMode(RequestedMatchMode);
+}
+
+void AShooterPlayerController::ClientNotifyLobbyStartFailed_Implementation()
+{
+	OnLobbyStartFailed.Broadcast();
+}
+
 bool AShooterPlayerController::CanProcessGameplayInput() const
 {
 	const URogueAbilitySystemComponent* AbilitySystem = GetRogueAbilitySystemComponent();
@@ -850,6 +2033,13 @@ void AShooterPlayerController::Input_ToggleInGameMenu()
 {
 	if (!IsLocalController())
 	{
+		return;
+	}
+
+	// 전체 맵이 열려 있으면 ESC는 맵 닫기로만 쓴다.
+	if (bFullMapOpen)
+	{
+		SetFullMapOpen(false);
 		return;
 	}
 
@@ -885,6 +2075,343 @@ void AShooterPlayerController::Input_HideScoreboard()
 	}
 }
 
+FName AShooterPlayerController::MakeInputBindingId(
+	const FName ContextId,
+	const FEnhancedActionKeyMapping& Mapping,
+	const int32 MappingIndex)
+{
+	const FString ActionName = IsValid(Mapping.Action) ? Mapping.Action->GetName() : TEXT("None");
+	return FName(*FString::Printf(
+		TEXT("%s|%s|%s|%d"),
+		*ContextId.ToString(),
+		*ActionName,
+		*Mapping.Key.GetFName().ToString(),
+		MappingIndex));
+}
+
+bool AShooterPlayerController::IsRebindableKey(const FKey& Key)
+{
+	if (!Key.IsValid() || Key.IsGamepadKey())
+	{
+		return false;
+	}
+
+	return Key != EKeys::MouseX
+		&& Key != EKeys::MouseY
+		&& Key != EKeys::MouseWheelAxis;
+}
+
+void AShooterPlayerController::InitializeRuntimeInputMappings()
+{
+	if (!IsLocalController() || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnInputBindingsChanged.RemoveAll(this);
+		Settings->OnInputBindingsChanged.AddUObject(this, &ThisClass::HandleInputBindingsChanged);
+		Settings->OnInputModesChanged.RemoveAll(this);
+		Settings->OnInputModesChanged.AddUObject(this, &ThisClass::ResetInputModeState);
+	}
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UCommonUIActionRouterBase* Router = LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>())
+		{
+			Router->OnActiveInputConfigChanged().RemoveAll(this);
+			Router->OnActiveInputConfigChanged().AddUObject(this, &ThisClass::HandleUIInputConfigChanged);
+		}
+	}
+
+	RebuildRuntimeInputMappings();
+}
+
+void AShooterPlayerController::ShutdownRuntimeInputMappings()
+{
+	ResetInputModeState();
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->OnInputBindingsChanged.RemoveAll(this);
+		Settings->OnInputModesChanged.RemoveAll(this);
+	}
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UCommonUIActionRouterBase* Router = LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>())
+		{
+			Router->OnActiveInputConfigChanged().RemoveAll(this);
+		}
+		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+			LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			if (RuntimeDefaultMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(RuntimeDefaultMappingContext);
+			}
+			if (RuntimeSystemMappingContext)
+			{
+				InputSubsystem->RemoveMappingContext(RuntimeSystemMappingContext);
+			}
+		}
+	}
+
+	RuntimeDefaultMappingContext = nullptr;
+	RuntimeSystemMappingContext = nullptr;
+	bSystemMappingContextEnabled = false;
+}
+
+void AShooterPlayerController::ApplySavedBindingsToContext(
+	UInputMappingContext* RuntimeContext,
+	const UInputMappingContext* SourceContext,
+	const FName ContextId) const
+{
+	if (!IsValid(RuntimeContext) || !IsValid(SourceContext))
+	{
+		return;
+	}
+
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return;
+	}
+
+	// Rebuild mappings action-by-action so source modifiers/triggers are preserved while
+	// the authored mapping context remains untouched.
+	TSet<const UInputAction*> ClearedActions;
+	const TArray<FEnhancedActionKeyMapping>& SourceMappings = SourceContext->GetMappings();
+	for (const FEnhancedActionKeyMapping& Mapping : SourceMappings)
+	{
+		if (IsValid(Mapping.Action) && !ClearedActions.Contains(Mapping.Action))
+		{
+			RuntimeContext->UnmapAllKeysFromAction(Mapping.Action);
+			ClearedActions.Add(Mapping.Action);
+		}
+	}
+
+	for (int32 Index = 0; Index < SourceMappings.Num(); ++Index)
+	{
+		const FEnhancedActionKeyMapping& Mapping = SourceMappings[Index];
+		if (!IsValid(Mapping.Action))
+		{
+			continue;
+		}
+
+		FKey EffectiveKey = Mapping.Key;
+		const FName OverrideName = Settings->GetKeyBindingOverride(
+			MakeInputBindingId(ContextId, Mapping, Index));
+		if (!OverrideName.IsNone())
+		{
+			const FKey OverrideKey(OverrideName);
+			if (OverrideKey.IsValid())
+			{
+				EffectiveKey = OverrideKey;
+			}
+		}
+
+		FEnhancedActionKeyMapping& NewMapping = RuntimeContext->MapKey(Mapping.Action, EffectiveKey);
+		NewMapping.Modifiers = Mapping.Modifiers;
+		NewMapping.Triggers = Mapping.Triggers;
+	}
+}
+
+void AShooterPlayerController::RebuildRuntimeInputMappings()
+{
+	ResetInputModeState();
+	if (!IsLocalController() || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UEnhancedInputLocalPlayerSubsystem* InputSubsystem = IsValid(LocalPlayer)
+		? LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>()
+		: nullptr;
+	if (!IsValid(InputSubsystem))
+	{
+		return;
+	}
+
+	if (RuntimeDefaultMappingContext)
+	{
+		InputSubsystem->RemoveMappingContext(RuntimeDefaultMappingContext);
+	}
+	if (RuntimeSystemMappingContext)
+	{
+		InputSubsystem->RemoveMappingContext(RuntimeSystemMappingContext);
+	}
+
+	RuntimeDefaultMappingContext = IsValid(InputConfig->DefaultMappingContext)
+		? DuplicateObject<UInputMappingContext>(
+			InputConfig->DefaultMappingContext,
+			this,
+			MakeUniqueObjectName(this, UInputMappingContext::StaticClass(), TEXT("RuntimeDefaultMappingContext")))
+		: nullptr;
+	RuntimeSystemMappingContext = IsValid(InputConfig->SystemMappingContext)
+		? DuplicateObject<UInputMappingContext>(
+			InputConfig->SystemMappingContext,
+			this,
+			MakeUniqueObjectName(this, UInputMappingContext::StaticClass(), TEXT("RuntimeSystemMappingContext")))
+		: nullptr;
+
+	ApplySavedBindingsToContext(RuntimeDefaultMappingContext, InputConfig->DefaultMappingContext, TEXT("Default"));
+	ApplySavedBindingsToContext(RuntimeSystemMappingContext, InputConfig->SystemMappingContext, TEXT("System"));
+
+	if (RuntimeDefaultMappingContext)
+	{
+		InputSubsystem->AddMappingContext(RuntimeDefaultMappingContext, InputConfig->MappingPriority);
+	}
+	if (bSystemMappingContextEnabled && RuntimeSystemMappingContext)
+	{
+		InputSubsystem->AddMappingContext(RuntimeSystemMappingContext, InputConfig->SystemMappingPriority);
+	}
+}
+
+void AShooterPlayerController::ResetInputModeState()
+{
+	PressedAbilityInputTags.Reset();
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		ASC->ReleaseADSInput();
+	}
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
+		ShooterCharacter->HandleCrouchReleased();
+	}
+}
+
+void AShooterPlayerController::FlushPressedKeys()
+{
+	ResetInputModeState();
+	Super::FlushPressedKeys();
+}
+
+void AShooterPlayerController::HandleUIInputConfigChanged(const FUIInputConfig Config)
+{
+	if (Config.GetInputMode() == ECommonInputMode::Menu || Config.bIgnoreMoveInput)
+	{
+		ResetInputModeState();
+	}
+}
+
+void AShooterPlayerController::HandleInputBindingsChanged()
+{
+	RebuildRuntimeInputMappings();
+}
+
+void AShooterPlayerController::AppendRebindableBindings(
+	const UInputMappingContext* SourceContext,
+	const FName ContextId,
+	TArray<FShooterInputBindingEntry>& OutBindings) const
+{
+	if (!IsValid(SourceContext) || !IsValid(InputConfig))
+	{
+		return;
+	}
+
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	const TArray<FEnhancedActionKeyMapping>& Mappings = SourceContext->GetMappings();
+	for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+	{
+		const FEnhancedActionKeyMapping& Mapping = Mappings[Index];
+		if (!IsValid(Mapping.Action)
+			|| Mapping.Action == InputConfig->LookAction
+			|| Mapping.Action == InputConfig->AdjustADSZoomAction
+			|| (Mapping.Action == InputConfig->PushToTalkAction && !SupportsVoiceChat())
+			|| !IsRebindableKey(Mapping.Key))
+		{
+			continue;
+		}
+
+		FShooterInputBindingEntry& Entry = OutBindings.AddDefaulted_GetRef();
+		Entry.BindingId = MakeInputBindingId(ContextId, Mapping, Index);
+		Entry.ContextId = ContextId;
+		Entry.ActionName = Mapping.Action->GetFName();
+		Entry.DefaultKey = Mapping.Key;
+		Entry.CurrentKey = Mapping.Key;
+		if (Settings)
+		{
+			const FName OverrideName = Settings->GetKeyBindingOverride(Entry.BindingId);
+			if (!OverrideName.IsNone())
+			{
+				const FKey OverrideKey(OverrideName);
+				if (OverrideKey.IsValid())
+				{
+					Entry.CurrentKey = OverrideKey;
+				}
+			}
+		}
+	}
+}
+
+void AShooterPlayerController::GetRebindableInputBindings(TArray<FShooterInputBindingEntry>& OutBindings) const
+{
+	OutBindings.Reset();
+	if (!IsValid(InputConfig))
+	{
+		return;
+	}
+
+	AppendRebindableBindings(InputConfig->DefaultMappingContext, TEXT("Default"), OutBindings);
+	AppendRebindableBindings(InputConfig->SystemMappingContext, TEXT("System"), OutBindings);
+}
+
+bool AShooterPlayerController::RebindInput(const FName BindingId, const FKey NewKey)
+{
+	if (!IsLocalController() || BindingId.IsNone() || !IsRebindableKey(NewKey))
+	{
+		return false;
+	}
+
+	UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!Settings)
+	{
+		return false;
+	}
+
+	TArray<FShooterInputBindingEntry> Bindings;
+	GetRebindableInputBindings(Bindings);
+	const FShooterInputBindingEntry* Target = Bindings.FindByPredicate(
+		[BindingId](const FShooterInputBindingEntry& Entry)
+		{
+			return Entry.BindingId == BindingId;
+		});
+	if (!Target)
+	{
+		return false;
+	}
+
+	if (Target->CurrentKey == NewKey)
+	{
+		return true;
+	}
+
+	// Default/System contexts can be active at the same time. Treat all exposed bindings
+	// as one key space so a remap never leaves two live actions on the same key.
+	const FShooterInputBindingEntry* Conflict = Bindings.FindByPredicate(
+		[Target, NewKey](const FShooterInputBindingEntry& Entry)
+		{
+			return Entry.BindingId != Target->BindingId
+				&& Entry.CurrentKey == NewKey;
+		});
+
+	if (Conflict)
+	{
+		Settings->SetKeyBindingOverride(Conflict->BindingId, Target->CurrentKey.GetFName());
+	}
+	Settings->SetKeyBindingOverride(Target->BindingId, NewKey.GetFName());
+	return true;
+}
+
+void AShooterPlayerController::ResetInputBindings()
+{
+	if (UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		Settings->ResetKeyBindingOverrides();
+	}
+}
+
 void AShooterPlayerController::SetSystemMappingContextEnabled(const bool bEnabled)
 {
 	if (!IsValid(InputConfig))
@@ -892,8 +2419,12 @@ void AShooterPlayerController::SetSystemMappingContextEnabled(const bool bEnable
 		return;
 	}
 
+	bSystemMappingContextEnabled = bEnabled;
+	UInputMappingContext* Context = IsValid(RuntimeSystemMappingContext)
+		? RuntimeSystemMappingContext.Get()
+		: InputConfig->SystemMappingContext.Get();
 	SetMappingContextEnabled(
-		InputConfig->SystemMappingContext,
+		Context,
 		InputConfig->SystemMappingPriority,
 		bEnabled);
 }
@@ -927,6 +2458,7 @@ void AShooterPlayerController::SetMappingContextEnabled(
 	}
 	else
 	{
+		ResetInputModeState();
 		InputSubsystem->RemoveMappingContext(MappingContext);
 	}
 }
@@ -943,7 +2475,8 @@ bool AShooterPlayerController::CanProcessMovementInput() const
 
 bool AShooterPlayerController::CanProcessActionInput() const
 {
-	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock();
+	// 채팅창이 열려있는 동안은 오버워치처럼 이동은 계속 허용하고 사격/어빌리티 입력만 막는다.
+	return CanProcessGameplayInput() && !HasDataJackInteractionInputBlock() && !bIsChatInputOpen;
 }
 
 bool AShooterPlayerController::HasDataJackInteractionInputBlock() const
@@ -973,9 +2506,27 @@ void AShooterPlayerController::Input_Look(const FInputActionValue& Value)
 		return;
 	}
 
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	bool bAiming = false;
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
-		ShooterCharacter->HandleLookInput(Value);
+		const UCombatComponent* CombatComponent = ShooterCharacter->GetCombatComponent();
+		bAiming = CombatComponent && CombatComponent->IsAiming();
+	}
+
+	if (const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get())
+	{
+		LookAxisVector = Settings->ApplyLookSensitivity(LookAxisVector, bAiming);
+	}
+
+	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
+	{
+		ShooterCharacter->HandleLookInput(LookAxisVector);
+	}
+	else if (GetPawn<AShooterSpectatorPawn>())
+	{
+		AddYawInput(LookAxisVector.X);
+		AddPitchInput(LookAxisVector.Y);
 	}
 }
 
@@ -1030,12 +2581,26 @@ void AShooterPlayerController::Input_CrouchPressed()
 
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
-		ShooterCharacter->HandleCrouchPressed();
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		const UCharacterMovementComponent* Movement = ShooterCharacter->GetCharacterMovement();
+		if (Settings && Settings->IsCrouchToggleEnabled() && Movement && Movement->bWantsToCrouch)
+		{
+			ShooterCharacter->HandleCrouchReleased();
+		}
+		else
+		{
+			ShooterCharacter->HandleCrouchPressed();
+		}
 	}
 }
 
-void AShooterPlayerController::Input_CrouchReleased()
+void AShooterPlayerController::Input_CrouchReleased(const bool bCanceled)
 {
+	const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+	if (!bCanceled && Settings && Settings->IsCrouchToggleEnabled() && CanProcessMovementInput())
+	{
+		return;
+	}
 	if (AShooterCharacter* ShooterCharacter = GetPawn<AShooterCharacter>())
 	{
 		ShooterCharacter->HandleCrouchReleased();
@@ -1052,8 +2617,387 @@ void AShooterPlayerController::Input_PushToTalkReleased()
 	StopVoiceTalking();
 }
 
+void AShooterPlayerController::Input_OpenChat()
+{
+	OpenChatInput();
+}
+
+void AShooterPlayerController::OpenChatInput(const FVector2D& ScreenOffset)
+{
+	// 채팅이 열린 상태인데 Enter가 게임 입력으로 들어왔다면 입력란이 포커스를 잃은 것(알트탭 등)이다.
+	// 예전에는 여기서 그냥 return해서 다시 Enter를 눌러도 복구할 방법이 없었으므로 입력란 포커스를 되돌린다.
+	if (IsLocalController() && bIsChatInputOpen)
+	{
+		if (UShooterChatInputBox* OpenChatInputWidget = ChatInputWidget.Get())
+		{
+			OpenChatInputWidget->RestoreMessageFocus();
+			return;
+		}
+		// 입력창 위젯은 없는데 열림 상태만 남은 경우는 상태를 정리하고 새로 연다.
+		CloseChatInput();
+	}
+
+	if (!IsLocalController() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent();
+	if (!UIInitComponent)
+	{
+		return;
+	}
+
+	UShooterChatInputBox* ChatInput = UIInitComponent->OpenChat();
+	if (IsValid(ChatInput))
+	{
+		ChatInput->SetRenderTranslation(ScreenOffset);
+	}
+	BeginChatInput(ChatInput);
+}
+
+void AShooterPlayerController::BeginChatInput(UShooterChatInputBox* Widget)
+{
+	if (!IsLocalController() || bIsChatInputOpen || !IsValid(Widget))
+	{
+		return;
+	}
+
+	if (!bMatchChatChannelAllowed && CurrentChatChannel == EChatChannel::Match)
+	{
+		CurrentChatChannel = EChatChannel::Team;
+	}
+
+	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
+	{
+		ASC->ReleaseADSInput();
+	}
+
+	bIsChatInputOpen = true;
+	ChatInputWidget = Widget;
+	Widget->ResetForOpen(CurrentChatChannel, CurrentWhisperTarget);
+	OnChatInputOpenChanged.Broadcast(true);
+}
+
+void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
+{
+	bMatchChatChannelAllowed = bAllowed;
+	if (bAllowed || CurrentChatChannel != EChatChannel::Match)
+	{
+		return;
+	}
+
+	CurrentChatChannel = EChatChannel::Team;
+	if (ChatInputWidget.IsValid())
+	{
+		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+	}
+}
+
+// 채팅 로그가 입력창을 자기 아래에 맞춰 붙일 때 사용
+UShooterChatInputBox* AShooterPlayerController::GetChatInputWidget() const
+{
+	return ChatInputWidget.Get();
+}
+
+// 채팅 입력 중 내역 스크롤
+void AShooterPlayerController::RequestChatScroll(const float Steps)
+{
+	if (bIsChatInputOpen)
+	{
+		OnChatScrollRequested.Broadcast(Steps);
+	}
+}
+
+bool AShooterPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	// 채팅 입력창이 열려 있으면 휠은 내역 스크롤에만 쓰고 게임 입력으로 넘기지 않는다.
+	if (bIsChatInputOpen && (Params.Key == EKeys::MouseScrollUp || Params.Key == EKeys::MouseScrollDown))
+	{
+		if (Params.Event == IE_Pressed)
+		{
+			RequestChatScroll(Params.Key == EKeys::MouseScrollUp ? -1.0f : 1.0f);
+		}
+		return true;
+	}
+
+	return Super::InputKey(Params);
+}
+
+void AShooterPlayerController::CloseChatInput()
+{
+	if (!bIsChatInputOpen)
+	{
+		return;
+	}
+
+	UShooterChatInputBox* Widget = ChatInputWidget.Get();
+	bIsChatInputOpen = false;
+	ChatInputWidget.Reset();
+	OnChatInputOpenChanged.Broadcast(false);
+
+	if (UTeamMatchUIInitComponent* UIInitComponent = GetTeamMatchUIInitComponent())
+	{
+		UIInitComponent->CloseChat();
+		return;
+	}
+
+	// 대기방에는 UTeamMatchUIInitComponent가 없다. UShooterRoomScreen이 Modal에 Push한 입력창을 직접 뺀다.
+	UGameInstance* GameInstance = GetGameInstance();
+	UShooterUIManagerSubsystem* UIManager = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UShooterUIManagerSubsystem>()
+		: nullptr;
+	if (IsValid(UIManager) && IsValid(Widget))
+	{
+		UIManager->RemoveWidgetFromLayer(UITags::UI_Layer_Modal, Widget);
+	}
+}
+
+void AShooterPlayerController::Input_Ping()
+{
+	if (!IsLocalController() || !CanProcessActionInput() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	APawn* MyPawn = GetPawn();
+	if (!MyPawn || !PlayerCameraManager)
+	{
+		return;
+	}
+
+	const FVector TraceStart = PlayerCameraManager->GetCameraLocation();
+	const FVector TraceEnd =
+		TraceStart + PlayerCameraManager->GetCameraRotation().Vector() * ShooterPingLimits::TraceDistance;
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(Ping), false, MyPawn);
+
+	// 순수 라인트레이스 대신 작은 반경의 스피어로 스윕한다 - 크로스헤어가 캐릭터를 정확히
+	// 안 맞추고 살짝 빗나가도 적 핑으로 잡히도록(오차 허용).
+	const FCollisionShape SphereShape = FCollisionShape::MakeSphere(ShooterPingLimits::EnemyPingToleranceRadius);
+
+	FHitResult Hit;
+	if (!GetWorld() || !GetWorld()->SweepSingleByChannel(
+		Hit, TraceStart, TraceEnd, FQuat::Identity, ECC_Visibility, SphereShape, QueryParams))
+	{
+		return;
+	}
+
+	EShooterPingType Type = EShooterPingType::Location;
+
+	if (const AShooterCharacter* HitCharacter = Cast<AShooterCharacter>(Hit.GetActor()))
+	{
+		const ABaseTeamPlayerState* HitTeamState = HitCharacter->GetPlayerState<ABaseTeamPlayerState>();
+		const ABaseTeamPlayerState* MyTeamState = GetPlayerState<ABaseTeamPlayerState>();
+		if (HitTeamState && MyTeamState
+			&& HitTeamState->GetTeam() != EGameTeam::None
+			&& HitTeamState->GetTeam() != MyTeamState->GetTeam())
+		{
+			Type = EShooterPingType::Enemy;
+		}
+	}
+
+	ServerSendPing(Hit.Location, Type);
+}
+
+void AShooterPlayerController::Input_ToggleFullMap()
+{
+	// 맵은 보기 전용 UI라 사망·관전·라운드 잠금 중에도 열 수 있다. 채팅 입력 중 M은 글자로 쳐야 하므로 제외.
+	if (!IsLocalController() || bIsChatInputOpen)
+	{
+		return;
+	}
+
+	SetFullMapOpen(!bFullMapOpen);
+}
+
+void AShooterPlayerController::SetFullMapOpen(const bool bOpen)
+{
+	// 전체 맵 위젯이 없거나 맵 기준 액터가 없는 레벨(훈련장 등)에서 보이지 않는 맵이 "열림"으로 남아 ESC를 한 번 먹는 걸 막는다.
+	const UShooterMinimapSubsystem* MinimapSubsystem = UShooterMinimapSubsystem::Get(this);
+	const bool bNewOpen = bOpen && OnFullMapOpenChanged.IsBound() && MinimapSubsystem && MinimapSubsystem->GetMapBounds();
+	if (bFullMapOpen == bNewOpen)
+	{
+		return;
+	}
+
+	bFullMapOpen = bNewOpen;
+	OnFullMapOpenChanged.Broadcast(bFullMapOpen);
+}
+
+void AShooterPlayerController::HandleChatSubmit(const FString& RawText)
+{
+	FString Trimmed = RawText;
+	Trimmed.TrimStartAndEndInline();
+
+	if (!Trimmed.IsEmpty())
+	{
+		FString TargetName, WhisperMessage;
+		if (TryParseWhisperCommand(Trimmed, TargetName, WhisperMessage))
+		{
+			if (WhisperMessage.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				WhisperMessage.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
+
+			RegisterWhisperTarget(TargetName);
+			ServerSendWhisperMessage(TargetName, WhisperMessage);
+		}
+		else if (CurrentChatChannel == EChatChannel::Whisper && !CurrentWhisperTarget.IsEmpty())
+		{
+			// Tab으로 귓말 채널을 골라놓은 상태에서 "/w 이름" 없이 바로 메시지만 친 경우.
+			if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
+
+			ServerSendWhisperMessage(CurrentWhisperTarget, Trimmed);
+		}
+		else
+		{
+			if (Trimmed.Len() > ShooterChatLimits::MaxMessageLength)
+			{
+				Trimmed.LeftInline(ShooterChatLimits::MaxMessageLength);
+			}
+
+			ServerSendChatMessage(Trimmed, CurrentChatChannel);
+		}
+	}
+
+	CloseChatInput();
+}
+
+void AShooterPlayerController::HandleChatCancel()
+{
+	CloseChatInput();
+}
+
+bool AShooterPlayerController::TryParseWhisperCommand(const FString& Text, FString& OutTargetName, FString& OutMessage)
+{
+	FString Remainder;
+	if (!ShooterChatLimits::StripWhisperCommandPrefix(Text, Remainder))
+	{
+		return false;
+	}
+
+	Remainder.TrimStartInline();
+
+	FString Name, Message;
+	if (!Remainder.Split(TEXT(" "), &Name, &Message))
+	{
+		return false;
+	}
+
+	Name.TrimEndInline();
+	Message.TrimStartInline();
+	if (Name.IsEmpty() || Message.IsEmpty())
+	{
+		return false;
+	}
+
+	OutTargetName = Name;
+	OutMessage = Message;
+	return true;
+}
+
+void AShooterPlayerController::HandleChatChannelSwitchRequested()
+{
+	if (!bIsChatInputOpen)
+	{
+		return;
+	}
+
+	// 순환 순서: Team -> Match -> 최근 귓말 대상(최대 2명, 최신순) -> Team ...
+	const int32 WhisperCount = RecentWhisperTargets.Num();
+	const int32 SlotCount = 2 + WhisperCount;
+
+	int32 CurrentIndex = 0;
+	if (CurrentChatChannel == EChatChannel::Match)
+	{
+		CurrentIndex = 1;
+	}
+	else if (CurrentChatChannel == EChatChannel::Whisper)
+	{
+		const int32 WhisperIndex = RecentWhisperTargets.IndexOfByPredicate([this](const FString& Name)
+		{
+			return Name.Equals(CurrentWhisperTarget, ESearchCase::IgnoreCase);
+		});
+		CurrentIndex = 2 + FMath::Max(WhisperIndex, 0);
+	}
+
+	int32 NextIndex = (CurrentIndex + 1) % SlotCount;
+	// 전체 채널이 막힌 화면(클래스 선택창)에서는 Match 칸을 건너뛴다. 귓말 대상이 없으면 Team으로 돌아온다.
+	if (NextIndex == 1 && !bMatchChatChannelAllowed)
+	{
+		NextIndex = (NextIndex + 1) % SlotCount;
+	}
+
+	if (NextIndex == 0)
+	{
+		CurrentChatChannel = EChatChannel::Team;
+		CurrentWhisperTarget.Empty();
+	}
+	else if (NextIndex == 1)
+	{
+		CurrentChatChannel = EChatChannel::Match;
+		CurrentWhisperTarget.Empty();
+	}
+	else
+	{
+		CurrentChatChannel = EChatChannel::Whisper;
+		CurrentWhisperTarget = RecentWhisperTargets[NextIndex - 2];
+	}
+
+	if (ChatInputWidget.IsValid())
+	{
+		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
+	}
+}
+
+void AShooterPlayerController::Input_AdjustADSZoom(const FInputActionValue& Value)
+{
+	const float ZoomInput = Value.Get<float>();
+	if (FMath::IsNearlyZero(ZoomInput))
+	{
+		return;
+	}
+
+	// 전체 맵이 열려 있으면 휠은 무기 배율 대신 맵 확대/축소로 쓴다. 보기 전용이라 행동 입력 게이트와 무관하다.
+	if (bFullMapOpen)
+	{
+		OnFullMapZoomInput.Broadcast(ZoomInput);
+		return;
+	}
+
+	if (!CanProcessActionInput())
+	{
+		return;
+	}
+
+	APawn* ControlledPawn = GetPawn();
+	if (!IsValid(ControlledPawn) || !ControlledPawn->Implements<UPlayerInterface>())
+	{
+		return;
+	}
+
+	if (AWeaponBase* Weapon = IPlayerInterface::Execute_GetCurrentWeapon(ControlledPawn))
+	{
+		Weapon->AdjustADSZoom(ZoomInput);
+	}
+}
+
 void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, const FGameplayTag InputTag)
 {
+	if (IsSpectatorCycleInput(InputTag))
+	{
+		const bool bIsNewPress = !PressedAbilityInputTags.Contains(InputTag);
+		if (TryHandleKillcamSkipInput(bIsNewPress))
+		{
+			PressedAbilityInputTags.Add(InputTag);
+			return;
+		}
+	}
+
 	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
 	{
 		if (HasAuthority())
@@ -1074,12 +3018,22 @@ void AShooterPlayerController::Input_AbilityPressed(const FInputActionValue&, co
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		ASC->AbilityInputTagPressed(InputTag);
+		const bool bIsNewPress = !PressedAbilityInputTags.Contains(InputTag);
+		PressedAbilityInputTags.Add(InputTag);
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		ASC->AbilityInputTagPressed(InputTag, Settings && Settings->IsADSToggleEnabled(), bIsNewPress);
 	}
 }
 
-void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, const FGameplayTag InputTag)
+void AShooterPlayerController::Input_AbilityReleased(
+	const FInputActionValue&, const FGameplayTag InputTag, const bool bCanceled)
 {
+	PressedAbilityInputTags.Remove(InputTag);
+	if (IsSpectatorCycleInput(InputTag) && TryHandleKillcamSkipInput(false))
+	{
+		return;
+	}
+
 	if (IsSpectatorCycleInput(InputTag) && IsInSpectatorFlow())
 	{
 		return;
@@ -1087,7 +3041,9 @@ void AShooterPlayerController::Input_AbilityReleased(const FInputActionValue&, c
 
 	if (URogueAbilitySystemComponent* ASC = GetRogueAbilitySystemComponent())
 	{
-		ASC->AbilityInputTagReleased(InputTag);
+		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
+		ASC->AbilityInputTagReleased(InputTag,
+			!bCanceled && Settings && Settings->IsADSToggleEnabled() && CanProcessActionInput());
 	}
 
 	// 발사 입력을 뗀 순간을 장착 무기에 알린다 - 빈 탄창에서 "클릭음 → 떼고 다시 클릭 → 재장전"
@@ -1125,6 +3081,25 @@ bool AShooterPlayerController::IsInSpectatorFlow() const
 	const AShooterPlayerState* ShooterPlayerState = GetPlayerState<AShooterPlayerState>();
 	return IsValid(ShooterPlayerState)
 		&& ShooterPlayerState->GetParticipationState() != EPlayerParticipationState::Active;
+}
+
+bool AShooterPlayerController::TryHandleKillcamSkipInput(const bool bFreshPress)
+{
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	UKillcamReplaySubsystem* Killcam = IsValid(LocalPlayer)
+		? LocalPlayer->GetSubsystem<UKillcamReplaySubsystem>()
+		: nullptr;
+	if (!IsValid(Killcam) || !Killcam->IsPlaying())
+	{
+		return false;
+	}
+
+	if (bFreshPress)
+	{
+		Killcam->SkipPlayback();
+	}
+
+	return true;
 }
 
 void AShooterPlayerController::ShowSpectatorWidget(APlayerState* ViewTargetPlayerState)
@@ -1197,4 +3172,197 @@ ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() c
 	}
 
 	return nullptr;
+}
+
+// 트레일러 촬영용 카메라(개발 전용). 쉬핑 빌드에서는 모든 함수가 아무 일도 하지 않는다.
+namespace
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* FindTrailerCamera(const APlayerController* PlayerController)
+	{
+		const UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(PlayerController);
+		return Subsystem ? Subsystem->GetCamera() : nullptr;
+	}
+
+	void ShowTrailerMessage(const FString& Message)
+	{
+		UE_LOG(LogTemp, Display, TEXT("%s"), *Message);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, Message);
+		}
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamOn()
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// 살아있는 캐릭터가 있으면 서버가 기존 관전 흐름으로 옮긴 뒤 ClientTrailerCamActivate로 카메라를 켠다.
+	if (GetPawn<AShooterCharacter>())
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 관전 상태로 이동 후 카메라를 켭니다."));
+		ServerTrailerCamEnterSpectator();
+		return;
+	}
+
+	ClientTrailerCamActivate_Implementation();
+#endif
+}
+
+void AShooterPlayerController::ServerTrailerCamEnterSpectator_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	if (UWorld* World = GetWorld())
+	{
+		if (AShooterGameMode* GameMode = World->GetAuthGameMode<AShooterGameMode>())
+		{
+			GameMode->EnterSpectatorForTrailerCamera(this);
+		}
+	}
+
+	// 서버가 보낸 관전 대상 시점 전환보다 뒤에 도착하도록 같은 연결에서 순서대로 보낸다.
+	ClientTrailerCamActivate();
+#endif
+}
+
+void AShooterPlayerController::ClientTrailerCamActivate_Implementation()
+{
+#if !UE_BUILD_SHIPPING
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	// 관전 UI는 촬영에 방해되므로 숨긴다.
+	HideSpectatorWidget();
+
+	UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this);
+	if (Subsystem && Subsystem->Activate(this))
+	{
+		ShowTrailerMessage(Subsystem->GetCamera()->DescribeState());
+	}
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라를 만들지 못했습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamOff()
+{
+#if !UE_BUILD_SHIPPING
+	if (UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this))
+	{
+		Subsystem->Deactivate(this);
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라를 껐습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamMode(const FString& ModeName)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (ModeName.Equals(TEXT("free"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Free); }
+	else if (ModeName.Equals(TEXT("follow"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Follow); }
+	else if (ModeName.Equals(TEXT("orbit"), ESearchCase::IgnoreCase)) { Camera->SetMode(ETrailerCameraMode::Orbit); }
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 모드는 Free / Follow / Orbit 중 하나입니다."));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamTarget(const FString& Arg)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (Arg.IsEmpty() || Arg.Equals(TEXT("next"), ESearchCase::IgnoreCase)) { Camera->CycleTarget(1); }
+	else if (Arg.Equals(TEXT("prev"), ESearchCase::IgnoreCase)) { Camera->CycleTarget(-1); }
+	else if (Arg.IsNumeric()) { Camera->SetTargetIndex(FCString::Atoi(*Arg)); }
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 대상은 next / prev / 번호(0부터)로 지정하세요."));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamSet(const FString& Name, const float Value)
+{
+#if !UE_BUILD_SHIPPING
+	ATrailerCameraActor* Camera = FindTrailerCamera(this);
+	if (!Camera)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다. TrailerCamOn 먼저 실행하세요."));
+		return;
+	}
+
+	if (!Camera->SetParameter(Name, Value))
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 이름: distance, height, side, lookheight, orbitspeed, speed, look, smooth, focal, aperture, dof"));
+		return;
+	}
+
+	ShowTrailerMessage(Camera->DescribeState());
+#endif
+}
+
+void AShooterPlayerController::TrailerCamInfo()
+{
+#if !UE_BUILD_SHIPPING
+	if (const ATrailerCameraActor* Camera = FindTrailerCamera(this))
+	{
+		ShowTrailerMessage(Camera->DescribeState());
+	}
+	else
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] 카메라가 꺼져 있습니다."));
+	}
+#endif
+}
+
+void AShooterPlayerController::TrailerCamHud(const FString& Arg)
+{
+#if !UE_BUILD_SHIPPING
+	UTrailerCameraSubsystem* Subsystem = UTrailerCameraSubsystem::Get(this);
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	bool bHide = !Subsystem->IsHudHidden();
+	if (Arg.Equals(TEXT("on"), ESearchCase::IgnoreCase) || Arg.Equals(TEXT("hide"), ESearchCase::IgnoreCase) || Arg == TEXT("1")) { bHide = true; }
+	else if (Arg.Equals(TEXT("off"), ESearchCase::IgnoreCase) || Arg.Equals(TEXT("show"), ESearchCase::IgnoreCase) || Arg == TEXT("0")) { bHide = false; }
+
+	Subsystem->SetHudHidden(bHide);
+	UE_LOG(LogTemp, Display, TEXT("[TrailerCam] HUD %s"), bHide ? TEXT("숨김") : TEXT("표시"));
+	if (!bHide)
+	{
+		ShowTrailerMessage(TEXT("[TrailerCam] HUD 표시"));
+	}
+#endif
 }

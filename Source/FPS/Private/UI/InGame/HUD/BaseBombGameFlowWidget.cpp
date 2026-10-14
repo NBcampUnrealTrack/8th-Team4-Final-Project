@@ -1,4 +1,4 @@
-#include "UI/InGame/HUD/BaseBombGameFlowWidget.h"
+﻿#include "UI/InGame/HUD/BaseBombGameFlowWidget.h"
 
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
@@ -30,6 +30,11 @@ void UBaseBombGameFlowWidget::NativeConstruct()
 
 void UBaseBombGameFlowWidget::NativeDestruct()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearAllTimersForObject(this);
+	}
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(StateBindingTimerHandle);

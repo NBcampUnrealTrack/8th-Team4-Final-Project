@@ -5,12 +5,52 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "GAS/RogueAugmentAttributeSet.h"
+#include "GAS/RogueVitalAttributeSet.h"
+#include "Combat/CombatComponent.h"
+#include "Weapon/WeaponBase.h"
 
 namespace
 {
 	// 나눗셈과 제곱근에 들어가는 배율의 하한.
 	// 밸런스 상한이 아니라 연산 안전장치다 — 0 이 들어오면 inf/NaN 이 되어 전파된다.
 	constexpr float MinMultiplier = 0.01f;
+
+	// 잃은 체력 비례 보너스 단계
+	constexpr float LostHealthStepPct  = 2.f;
+	constexpr int32 MaxLostHealthSteps = 40;
+
+	float GetLostHealthBonus(const AActor* Actor, const URogueAugmentAttributeSet* Set)
+	{
+		if (Set->GetLostHealthBonusRate() <= 0.f)
+		{
+			return 0.f;
+		}
+
+		const UAbilitySystemComponent* ASC =
+			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(Actor));
+		const URogueVitalAttributeSet* Vital = ASC ? ASC->GetSet<URogueVitalAttributeSet>() : nullptr;
+
+		return Vital
+			? URogueAugmentStatResolver::CalcLostHealthBonus(
+				Vital->GetHealth(), Vital->GetMaxHealth(), Set->GetLostHealthBonusRate())
+			: 0.f;
+	}
+
+	// 장착 무기 탄창이 절반 이상이면 연사 보너스. 발사 어빌리티가 쏘기 직전 서버와 예측 클라에서 각자 계산
+	float GetHighAmmoFireRateBonus(const AActor* Actor, const URogueAugmentAttributeSet* Set)
+	{
+		if (Set->GetHighAmmoFireRateBonus() <= 0.f || !IsValid(Actor))
+		{
+			return 0.f;
+		}
+
+		const UCombatComponent* Combat = Actor->FindComponentByClass<UCombatComponent>();
+		const AWeaponBase* Weapon = Combat ? Combat->GetEquippedWeapon() : nullptr;
+		const bool bHalfFull = IsValid(Weapon) && Weapon->UsesAmmo() && Weapon->GetEffectiveMagazineSize() > 0
+			&& Weapon->GetCurrentAmmo() * 2 >= Weapon->GetEffectiveMagazineSize();
+
+		return bHalfFull ? Set->GetHighAmmoFireRateBonus() : 0.f;
+	}
 }
 
 const URogueAugmentAttributeSet* URogueAugmentStatResolver::FindAugmentSet(const AActor* Actor)
@@ -30,7 +70,8 @@ float URogueAugmentStatResolver::GetFinalRPM(const AActor* Actor, float BaseRPM)
 		return BaseRPM;
 	}
 
-	return BaseRPM * FMath::Max(MinMultiplier, Set->GetFireRateMultiplier());
+	return BaseRPM * FMath::Max(MinMultiplier, Set->GetFireRateMultiplier()) * (1.f + GetLostHealthBonus(Actor, Set))
+		* (1.f + GetHighAmmoFireRateBonus(Actor, Set));
 }
 
 float URogueAugmentStatResolver::GetFinalReloadTime(const AActor* Actor, float BaseReloadTime)
@@ -134,7 +175,7 @@ float URogueAugmentStatResolver::GetFinalMoveSpeed(const AActor* Actor, float Ba
 		return BaseSpeed;
 	}
 
-	return BaseSpeed * Set->GetMoveSpeedMultiplier();
+	return BaseSpeed * Set->GetMoveSpeedMultiplier() * (1.f + GetLostHealthBonus(Actor, Set));
 }
 
 float URogueAugmentStatResolver::GetFinalSprintSpeed(const AActor* Actor, float BaseSprintSpeed)
@@ -146,7 +187,7 @@ float URogueAugmentStatResolver::GetFinalSprintSpeed(const AActor* Actor, float 
 	}
 
 	// 달리기 속도는 이동 속도와 별개로 배율을 적용
-	return BaseSprintSpeed * Set->GetSprintSpeedMultiplier();
+	return BaseSprintSpeed * Set->GetSprintSpeedMultiplier() * (1.f + GetLostHealthBonus(Actor, Set));
 }
 
 float URogueAugmentStatResolver::GetFinalJumpVelocity(const AActor* Actor, float BaseJumpVelocity)
@@ -199,4 +240,26 @@ int32 URogueAugmentStatResolver::GetBonusRerollCount(const AActor* Actor)
 	}
 
 	return FMath::Max(0, FMath::FloorToInt(Set->GetBonusFreeRerolls()));
+}
+
+float URogueAugmentStatResolver::CalcLostHealthBonus(float Health, float MaxHealth, float RatePerStep)
+{
+	if (RatePerStep <= 0.f || MaxHealth <= 0.f)
+	{
+		return 0.f;
+	}
+
+	const float LostPct = (1.f - FMath::Clamp(Health / MaxHealth, 0.f, 1.f)) * 100.f;
+	const int32 Steps = FMath::Min(FMath::FloorToInt(LostPct / LostHealthStepPct + KINDA_SMALL_NUMBER), MaxLostHealthSteps);
+	return Steps * RatePerStep;
+}
+
+bool URogueAugmentStatResolver::RollChance(float Chance)
+{
+	return Chance >= 1.f || (Chance > 0.f && FMath::FRand() < Chance);
+}
+
+float URogueAugmentStatResolver::RollRange(float Min, float Max)
+{
+	return FMath::FRandRange(FMath::Min(Min, Max), FMath::Max(Min, Max));
 }

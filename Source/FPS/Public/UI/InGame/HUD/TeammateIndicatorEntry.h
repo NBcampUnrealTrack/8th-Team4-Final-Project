@@ -86,6 +86,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Shooter|UI")
 	TEnumAsByte<ECollisionChannel> VisibilityTraceChannel = ECC_Visibility;
 	
+	// 닉네임 가림 트레이스 간격(초). 0이면 매 프레임
+	UPROPERTY(EditDefaultsOnly, Category = "Shooter|UI", meta = (ClampMin = "0.0"))
+	float LineOfSightCheckInterval = 0.1f;
+	
 private:
 	TWeakObjectPtr<AShooterPlayerState> BoundPlayerState;
 	
@@ -94,4 +98,8 @@ private:
 	TWeakObjectPtr<UCanvasPanelSlot> CachedCanvasSlot;
 	
 	bool bCachedIsAlive = false;
+	
+	// 다음 가림 트레이스 월드 시각. 0이면 다음 표시 프레임에 바로 검사
+	double NextLineOfSightCheckTime = 0.0;
+	bool bCachedHeadVisible = false;
 };

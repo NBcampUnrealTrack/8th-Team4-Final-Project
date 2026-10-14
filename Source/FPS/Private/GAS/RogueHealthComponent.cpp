@@ -6,7 +6,10 @@
 #include "GAS/Damage/RogueGameplayEffectContext.h"
 #include "GAS/RogueVitalAttributeSet.h"
 #include "Interfaces/RogueDamageableTarget.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/DominationPlayerState.h"
+#include "Settings/ShooterAudioSettings.h"
 #include "Tags/GameplayTags.h"
 
 URogueHealthComponent::URogueHealthComponent()
@@ -37,7 +40,7 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 
 	UninitializeFromAbilitySystem();
 
-	if (!InASC)
+	if (!ensure(InASC))
 	{
 		return;
 	}
@@ -45,11 +48,9 @@ void URogueHealthComponent::InitializeWithAbilitySystem(UAbilitySystemComponent*
 	URogueVitalAttributeSet* Set =
 		const_cast<URogueVitalAttributeSet*>(InASC->GetSet<URogueVitalAttributeSet>());
 
-	if (!Set)
+	if (!ensureMsgf(Set, TEXT("[RogueHealth] %s: ASC 에 URogueVitalAttributeSet 이 없습니다."),
+		*GetNameSafe(GetOwner())))
 	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[RogueHealth] %s: ASC 에 URogueVitalAttributeSet 이 없습니다."),
-			*GetNameSafe(GetOwner()));
 		return;
 	}
 
@@ -96,13 +97,14 @@ void URogueHealthComponent::UninitializeFromAbilitySystem()
 void URogueHealthComponent::ServerResetDeathState()
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Owner->HasAuthority())
+	if (!ensure(Owner && Owner->HasAuthority()))
 	{
 		return;
 	}
 
 	// 데미지 처리를 위한 AttributeSet의 플래그 초기화
-	if (VitalSet)
+	if (ensureMsgf(VitalSet, TEXT("[RogueHealth] %s: VitalSet 이 없어 사망 플래그를 지우지 못했습니다"),
+		*GetNameSafe(Owner)))
 	{
 		VitalSet->ClearDeathDeclared();
 	}
@@ -171,8 +173,13 @@ void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, 
 		return;
 	}
 
+	// 고통 사운드는 피격 방향을 못 구해도(자해/낙사 등) 재생돼야 하므로 아래 방향 계산과 무관하게 먼저 처리.
+	PlayPainSoundIfDue();
+
 	const AActor* InstigatorActor = Payload->Instigator;
 	const FVector Direction = ComputeHitDirection(Payload->ContextHandle, InstigatorActor);
+	OnDamageTakenNative.Broadcast(InstigatorActor, Direction);
+
 	if (Direction.IsZero())
 	{
 		return;
@@ -186,10 +193,91 @@ void URogueHealthComponent::HandleDamageTakenEvent(const FGameplayTag EventTag, 
 	OnHitReactionReceived.Broadcast(Direction);
 }
 
+void URogueHealthComponent::PlayPainSoundIfDue()
+{
+	AActor* Owner = GetOwner();
+	const UWorld* World = GetWorld();
+	if (!IsValid(Owner) || !World)
+	{
+		return;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastPainSoundTime < PainSoundCooldownSeconds)
+	{
+		// 순식간에 여러 발 맞은 경우(펠릿, 동시 피격 등) - 최초 사운드만 유지하고 스킵한다.
+		return;
+	}
+
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const EDominationCombatClass CombatClass = ResolveOwnerCombatClass();
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolvePainSoundPool(CombatClass);
+	if (Pool.IsEmpty())
+	{
+		return;
+	}
+
+	// 고통음은 맞은 플레이어 본인만 듣는다. 플레이어가 조종하지 않는 아바타(훈련장 더미 등)는 들을 사람이
+	// 없고, 소유 연결이 없는 액터의 Client RPC는 서버에서 실행돼 리슨서버 호스트에게 들리므로 스킵한다.
+	const APawn* AvatarPawn = AbilitySystemComponent ? Cast<APawn>(AbilitySystemComponent->GetAvatarActor()) : nullptr;
+	if (!IsValid(AvatarPawn) || !AvatarPawn->IsPlayerControlled())
+	{
+		return;
+	}
+
+	LastPainSoundTime = Now;
+
+	const int32 SoundIndex = FMath::RandHelper(Pool.Num());
+	Client_PlayPainSound(CombatClass, SoundIndex);
+}
+
+EDominationCombatClass URogueHealthComponent::ResolveOwnerCombatClass() const
+{
+	// 플레이어는 PlayerState에, 훈련장 캐릭터 등은 Pawn 자신에 이 컴포넌트가 붙는다. 둘 다 처리해야
+	// 클래스별 고통음 풀을 찾는다 - Pawn만 보면 플레이어는 항상 Unselected(빈 Default 풀)가 되어 무음.
+	const ADominationPlayerState* PlayerState = Cast<ADominationPlayerState>(GetOwner());
+	if (!IsValid(PlayerState))
+	{
+		if (const APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			PlayerState = OwnerPawn->GetPlayerState<ADominationPlayerState>();
+		}
+	}
+
+	return IsValid(PlayerState) ? PlayerState->GetCombatClass() : EDominationCombatClass::Unselected;
+}
+
+void URogueHealthComponent::Client_PlayPainSound_Implementation(
+	const EDominationCombatClass CombatClass, const int32 SoundIndex)
+{
+	const UShooterAudioSettings* AudioSettings = GetDefault<UShooterAudioSettings>();
+	if (!AudioSettings)
+	{
+		return;
+	}
+
+	const TArray<TSoftObjectPtr<USoundBase>>& Pool = AudioSettings->ResolvePainSoundPool(CombatClass);
+	if (!Pool.IsValidIndex(SoundIndex))
+	{
+		return;
+	}
+
+	if (USoundBase* Sound = Pool[SoundIndex].LoadSynchronous())
+	{
+		// 듣는 사람이 맞은 본인뿐이므로 위치 감쇠 없이 2D로 재생한다.
+		UGameplayStatics::PlaySound2D(this, Sound);
+	}
+}
+
 void URogueHealthComponent::HandleOutOfHealth(UAbilitySystemComponent* VictimASC,
                                               const FGameplayEffectContextHandle& ContextHandle)
 {
-	if (!VictimASC || VictimASC != AbilitySystemComponent)
+	if (!ensure(VictimASC && VictimASC == AbilitySystemComponent))
 	{
 		return;
 	}
@@ -272,7 +360,13 @@ void URogueHealthComponent::ServerBuildDeathReaction(const FGameplayEffectContex
 void URogueHealthComponent::NotifyDeath(const FGameplayEffectContextHandle& ContextHandle) const
 {
 	AActor* Victim = AbilitySystemComponent ? AbilitySystemComponent->GetAvatarActor() : nullptr;
-	if (!Victim || !Victim->Implements<URogueDamageableTarget>())
+	if (!Victim)
+	{
+		return;
+	}
+
+	if (!ensureMsgf(Victim->Implements<URogueDamageableTarget>(),
+		TEXT("[RogueHealth] %s 가 IRogueDamageableTarget 을 구현하지 않았습니다"), *GetNameSafe(Victim)))
 	{
 		return;
 	}

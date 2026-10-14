@@ -8,8 +8,11 @@ void UShooterScoreboardEntry::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 	
-	// BindWidget 이라 여기 도달했으면 5개 다 유효
-	AugmentChips = { Chip_Augment0, Chip_Augment1, Chip_Augment2, Chip_Augment3, Chip_Augment4 };
+	// BindWidget 이라 여기 도달했으면 8개 다 유효
+	AugmentChips = {
+		Chip_Augment0, Chip_Augment1, Chip_Augment2, Chip_Augment3,
+		Chip_Augment4, Chip_Augment5, Chip_Augment6, Chip_Augment7
+	};
 
 	for (const TObjectPtr<UShooterAugmentChip>& Chip : AugmentChips)
 	{
@@ -84,17 +87,43 @@ void UShooterScoreboardEntry::SetData(
 				: ESlateVisibility::Hidden);
 	}
 
-	// 증강
-	for (int32 i = 0; i < AugmentChips.Num(); ++i)
+	// 액티브는 슬롯 번호 칸에
+	for (int32 i = 0; i < ActiveChipCount; ++i)
 	{
-		if (InData.Augments.IsValidIndex(i))
+		const FShooterAugmentDisplay* ActiveAugment = InData.Augments.FindByPredicate(
+			[i](const FShooterAugmentDisplay& Augment)
+			{
+				return Augment.ActiveSlotIndex == i;
+			});
+
+		if (ActiveAugment)
 		{
-			AugmentChips[i]->SetData(InData.Augments[i]);
+			AugmentChips[i]->SetData(*ActiveAugment);
 		}
 		else
 		{
 			AugmentChips[i]->SetEmpty();
 		}
+	}
+
+	// 패시브는 나머지 칸에 차례로
+	int32 ChipIndex = ActiveChipCount;
+	for (const FShooterAugmentDisplay& Augment : InData.Augments)
+	{
+		if (!AugmentChips.IsValidIndex(ChipIndex))
+		{
+			break;
+		}
+
+		if (Augment.ActiveSlotIndex == INDEX_NONE)
+		{
+			AugmentChips[ChipIndex++]->SetData(Augment);
+		}
+	}
+
+	for (; ChipIndex < AugmentChips.Num(); ++ChipIndex)
+	{
+		AugmentChips[ChipIndex]->SetEmpty();
 	}
 }
 

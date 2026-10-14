@@ -5,6 +5,7 @@
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Settings/DominationClassSettings.h"
 #include "GameMode/Manager/DominationLoadoutManager.h"
+#include "GameMode/Manager/TeamPlayerManager.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
@@ -48,6 +49,8 @@ void UDominationMatchStartManager::Shutdown()
 	}
 
 	InitialParticipants.Reset();
+	SpawnRetryCount = 0;
+	bStartSuspended = false;
 	OnInitialPlayersSpawned.Clear();
 	Super::Shutdown();
 }
@@ -55,7 +58,7 @@ void UDominationMatchStartManager::Shutdown()
 void UDominationMatchStartManager::NotifyPlayerLoaded()
 {
 	const ADominationGameState* DominationGameState = GetDominationGameState();
-	if (!IsValid(DominationGameState)
+	if (bStartSuspended || !IsValid(DominationGameState)
 		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::WaitingForPlayers
 		|| !CaptureInitialParticipants())
 	{
@@ -65,7 +68,84 @@ void UDominationMatchStartManager::NotifyPlayerLoaded()
 	BeginClassSelection();
 }
 
+void UDominationMatchStartManager::NotifyPlayerLeaving(APlayerController* PlayerController)
+{
+	ADominationGameState* GameState = GetDominationGameState();
+	if (!IsValid(GameState) || bStartSuspended)
+	{
+		return;
+	}
+
+	const EDominationMatchPhase Phase = GameState->GetDominationPhase();
+	if (Phase != EDominationMatchPhase::WaitingForPlayers
+		&& Phase != EDominationMatchPhase::ClassSelecting)
+	{
+		return;
+	}
+
+	InitialParticipants.RemoveAll(
+		[PlayerController](const TWeakObjectPtr<ADominationPlayerController>& Participant)
+		{
+			return !Participant.IsValid() || Participant.Get() == PlayerController;
+		});
+
+	if (Phase == EDominationMatchPhase::ClassSelecting && HasRequiredParticipants())
+	{
+		if (AreAllParticipantsClassSelected())
+		{
+			CompleteClassSelection();
+		}
+		return;
+	}
+
+	ResetStartAttempt();
+	// Logout 이전에는 World의 컨트롤러 목록에 이탈자가 아직 남아 있다.
+	if (CaptureInitialParticipants(PlayerController))
+	{
+		BeginClassSelection();
+	}
+}
+
+void UDominationMatchStartManager::RetryMatchStart()
+{
+	const ADominationGameState* GameState = GetDominationGameState();
+	if (IsValid(GameState)
+		&& GameState->GetDominationPhase() == EDominationMatchPhase::WaitingForPlayers)
+	{
+		bStartSuspended = false;
+		NotifyPlayerLoaded();
+	}
+}
+
 void UDominationMatchStartManager::RequestCombatClass(
+	ADominationPlayerController* PlayerController,
+	const EDominationCombatClass)
+{
+	const ADominationGameState* DominationGameState = GetDominationGameState();
+	if (!IsValid(DominationGameState)
+		|| DominationGameState->GetDominationPhase() != EDominationMatchPhase::ClassSelecting
+		|| !IsInitialParticipant(PlayerController))
+	{
+		return;
+	}
+
+	ADominationPlayerState* DominationPlayerState =
+		PlayerController->GetPlayerState<ADominationPlayerState>();
+	if (!IsValid(DominationPlayerState)
+		|| !DominationPlayerState->HasPreviewCombatClass()
+		|| !DominationPlayerState->TryConfirmCombatClass(
+			DominationPlayerState->GetPreviewCombatClass()))
+	{
+		return;
+	}
+
+	if (AreAllParticipantsClassSelected())
+	{
+		CompleteClassSelection();
+	}
+}
+
+void UDominationMatchStartManager::RequestPreviewCombatClass(
 	ADominationPlayerController* PlayerController,
 	const EDominationCombatClass RequestedClass)
 {
@@ -79,16 +159,12 @@ void UDominationMatchStartManager::RequestCombatClass(
 
 	ADominationPlayerState* DominationPlayerState =
 		PlayerController->GetPlayerState<ADominationPlayerState>();
-	if (!IsValid(DominationPlayerState)
-		|| !DominationPlayerState->TryConfirmCombatClass(RequestedClass))
+	if (!IsValid(DominationPlayerState))
 	{
 		return;
 	}
 
-	if (AreAllParticipantsClassSelected())
-	{
-		CompleteClassSelection();
-	}
+	DominationPlayerState->TrySetPreviewCombatClass(RequestedClass);
 }
 
 void UDominationMatchStartManager::GetInitialParticipantPlayerStates(
@@ -108,7 +184,8 @@ void UDominationMatchStartManager::GetInitialParticipantPlayerStates(
 	}
 }
 
-bool UDominationMatchStartManager::CaptureInitialParticipants()
+bool UDominationMatchStartManager::CaptureInitialParticipants(
+	const APlayerController* ExcludedPlayer)
 {
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
@@ -120,6 +197,10 @@ bool UDominationMatchStartManager::CaptureInitialParticipants()
 	TArray<ADominationPlayerController*> TeamBPlayers;
 	for (FConstPlayerControllerIterator Iterator = World->GetPlayerControllerIterator(); Iterator; ++Iterator)
 	{
+		if (Iterator->Get() == ExcludedPlayer)
+		{
+			continue;
+		}
 		ADominationPlayerController* PlayerController =
 			Cast<ADominationPlayerController>(Iterator->Get());
 		const ADominationPlayerState* PlayerState = IsValid(PlayerController)
@@ -162,6 +243,57 @@ bool UDominationMatchStartManager::CaptureInitialParticipants()
 	}
 
 	return true;
+}
+
+bool UDominationMatchStartManager::HasRequiredParticipants() const
+{
+	int32 TeamACount = 0;
+	int32 TeamBCount = 0;
+	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
+	{
+		const ADominationPlayerState* PlayerState = Participant.IsValid()
+			? Participant->GetPlayerState<ADominationPlayerState>() : nullptr;
+		if (!IsValid(PlayerState))
+		{
+			return false;
+		}
+		TeamACount += PlayerState->GetTeam() == EGameTeam::TeamA ? 1 : 0;
+		TeamBCount += PlayerState->GetTeam() == EGameTeam::TeamB ? 1 : 0;
+	}
+	return TeamACount + TeamBCount >= MinimumPlayersToStart
+		&& TeamACount >= MinimumPlayersPerTeam && TeamBCount >= MinimumPlayersPerTeam;
+}
+
+void UDominationMatchStartManager::CleanupInitialSpawns()
+{
+	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
+	{
+		if (ADominationPlayerController* PlayerController = Participant.Get())
+		{
+			UTeamPlayerManager::RemovePlayerPawn(PlayerController);
+			if (ADominationPlayerState* PlayerState = PlayerController->GetPlayerState<ADominationPlayerState>())
+			{
+				PlayerState->SetParticipationState(EPlayerParticipationState::WaitingForMatchStart);
+			}
+		}
+	}
+}
+
+void UDominationMatchStartManager::ResetStartAttempt()
+{
+	GetTimerManager()->ClearTimer(ClassSelectionTimerHandle);
+	CleanupInitialSpawns();
+	InitialParticipants.Reset();
+	SpawnRetryCount = 0;
+	GetDominationGameState()->SetDominationPhase(EDominationMatchPhase::WaitingForPlayers);
+}
+
+void UDominationMatchStartManager::SuspendMatchStart(const TCHAR* Reason)
+{
+	ResetStartAttempt();
+	bStartSuspended = true;
+	UE_LOG(LogDominationMatchStart, Error,
+		TEXT("Domination start suspended: %s Fix the cause and call RetryDominationMatchStart()."), Reason);
 }
 
 bool UDominationMatchStartManager::IsInitialParticipant(
@@ -217,7 +349,10 @@ void UDominationMatchStartManager::BeginClassSelection()
 	{
 		if (ADominationPlayerController* PlayerController = Participant.Get())
 		{
-			PlayerController->ClientHideLoadingScreen();
+			ADominationPlayerState* PlayerState = PlayerController->GetPlayerState<ADominationPlayerState>();
+			PlayerState->ResetCombatClassSelection();
+			PlayerState->SetParticipationState(EPlayerParticipationState::WaitingForMatchStart);
+			PlayerController->ClientFinishLoadingScreen();
 		}
 	}
 
@@ -243,7 +378,12 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 				GetDefault<UDominationClassSettings>();
 			if (IsValid(ClassSettings))
 			{
-				PlayerState->TryConfirmCombatClass(ClassSettings->DefaultCombatClass);
+				// LOCK IN을 누르지 않아도 임시 선택이 그대로 확정된다.
+				const EDominationCombatClass FallbackClass =
+					PlayerState->HasPreviewCombatClass()
+						? PlayerState->GetPreviewCombatClass()
+						: ClassSettings->DefaultCombatClass;
+				PlayerState->TryConfirmCombatClass(FallbackClass);
 			}
 		}
 	}
@@ -254,74 +394,77 @@ void UDominationMatchStartManager::HandleClassSelectionTimeout()
 void UDominationMatchStartManager::CompleteClassSelection()
 {
 	ADominationGameMode* GameMode = GetOwnerGameMode();
-	ADominationGameState* DominationGameState = GetDominationGameState();
-	FTimerManager* TimerManager = GetTimerManager();
-	if (!IsValid(GameMode)
-		|| !IsValid(DominationGameState)
-		|| TimerManager == nullptr)
+	ADominationGameState* GameState = GetDominationGameState();
+	if (bStartSuspended || !IsValid(GameMode) || !IsValid(GameState)
+		|| GameState->GetDominationPhase() != EDominationMatchPhase::ClassSelecting)
 	{
 		return;
 	}
 
-	TimerManager->ClearTimer(ClassSelectionTimerHandle);
-	if (!SpawnInitialParticipants())
+	GetTimerManager()->ClearTimer(ClassSelectionTimerHandle);
+	const EInitialSpawnResult Result = SpawnInitialParticipants();
+	if (Result == EInitialSpawnResult::InvalidConfiguration)
 	{
-		UE_LOG(LogDominationMatchStart, Error,
-			TEXT("Domination match start stopped because an initial player could not be spawned with its class loadout."));
+		SuspendMatchStart(TEXT("An initial participant's class or loadout is invalid."));
+		return;
+	}
+	if (Result == EInitialSpawnResult::TemporarilyBlocked)
+	{
+		if (SpawnRetryCount >= MaxSpawnRetries)
+		{
+			SuspendMatchStart(TEXT("Initial spawns remained blocked after the retry limit."));
+			return;
+		}
+		CleanupInitialSpawns();
+		++SpawnRetryCount;
+		GetTimerManager()->SetTimer(ClassSelectionTimerHandle, this,
+			&ThisClass::CompleteClassSelection, SpawnRetryDelay, false);
+		UE_LOG(LogDominationMatchStart, Warning, TEXT("Retrying initial spawns (%d/%d)."),
+			SpawnRetryCount, MaxSpawnRetries);
 		return;
 	}
 
+	SpawnRetryCount = 0;
 	GameMode->StartMatch();
-	DominationGameState->SetDominationPhase(EDominationMatchPhase::InProgress);
+	GameState->SetDominationPhase(EDominationMatchPhase::InProgress);
 	OnInitialPlayersSpawned.Broadcast();
 }
 
-bool UDominationMatchStartManager::SpawnInitialParticipants()
+UDominationMatchStartManager::EInitialSpawnResult UDominationMatchStartManager::SpawnInitialParticipants()
 {
 	ADominationGameMode* GameMode = GetOwnerGameMode();
-	UDominationLoadoutManager* LoadoutManager = IsValid(GameMode)
-		? GameMode->GetLoadoutManager()
-		: nullptr;
-	if (!IsValid(GameMode) || !IsValid(LoadoutManager))
+	UDominationLoadoutManager* LoadoutManager = GameMode->GetLoadoutManager();
+	if (!IsValid(LoadoutManager) || !AreAllParticipantsClassSelected()
+		|| !GetDefault<UDominationClassSettings>()->HasValidDefinitions()
+		|| !LoadoutManager->HasRequiredWeaponRegistryEntries())
 	{
-		return false;
+		return EInitialSpawnResult::InvalidConfiguration;
 	}
 
+	// 모든 인벤토리를 먼저 준비하고, 모든 Pawn이 성공한 뒤 참가 상태를 확정한다.
+	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
+	{
+		if (!LoadoutManager->InitializeCombatClassInventory(
+			Participant->GetPlayerState<ADominationPlayerState>()))
+		{
+			return EInitialSpawnResult::InvalidConfiguration;
+		}
+	}
 	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
 	{
 		ADominationPlayerController* PlayerController = Participant.Get();
-		ADominationPlayerState* PlayerState = IsValid(PlayerController)
-			? PlayerController->GetPlayerState<ADominationPlayerState>()
-			: nullptr;
-		if (!IsValid(PlayerController) || !IsValid(PlayerState))
+		if (!GameMode->RestartPlayerAtObjective(PlayerController, DominationRules::InitialPointId))
 		{
-			return false;
+			return EInitialSpawnResult::TemporarilyBlocked;
 		}
-
-		if (!LoadoutManager->InitializeCombatClassInventory(PlayerState)
-			|| !GameMode->RestartPlayerAtObjective(
-				PlayerController,
-				EDominationPointId::C))
+		if (!GameMode->PrepareCombatPawn(PlayerController))
 		{
-			return false;
+			return EInitialSpawnResult::InvalidConfiguration;
 		}
-
-		APawn* SpawnedPawn = PlayerController->GetPawn();
-		if (!IsValid(SpawnedPawn)
-			|| SpawnedPawn->GetController() != PlayerController
-			|| !LoadoutManager->ApplyCombatClassLoadout(PlayerState, SpawnedPawn))
-		{
-			return false;
-		}
-
-		// 초기 참가자는 입장 시 WaitingForMatchStart 상태다.
-		// 실제 Pawn/로드아웃 준비가 끝난 이 시점에만 Active로 전환해야
-		// ShooterPlayerController가 Primary 입력을 관전자 전환 입력으로 소비하지 않는다.
-		PlayerController->ChangeState(NAME_Playing);
-		PlayerController->ClientGotoState(NAME_Playing);
-		PlayerController->ClientExitSpectatorMode();
-		PlayerState->SetParticipationState(EPlayerParticipationState::Active);
 	}
-
-	return true;
+	for (const TWeakObjectPtr<ADominationPlayerController>& Participant : InitialParticipants)
+	{
+		GameMode->ActivateCombatPlayer(Participant.Get());
+	}
+	return EInitialSpawnResult::Succeeded;
 }

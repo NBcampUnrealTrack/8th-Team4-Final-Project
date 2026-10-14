@@ -1,9 +1,10 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Containers/RingBuffer.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
 #include "Augment/AugmentAssembler.h"
@@ -41,6 +42,11 @@ public:
 	// 매치 초기화. 서버 전용
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Rogue|Augment")
 	void RemoveAllAugments();
+
+    // Server-only full loadout replacement. The caller owns access/selection policy.
+    // Reuses the existing assembler, owned handles, replication and conditional-rule cache.
+    // Not an RPC: callers must validate the requesting player's authority/context first.
+    bool ReplaceLoadout(const TArray<FAugmentInventoryEntry>& RequestedEntries, FText& OutFailure);
 
 	// 드래프트 매니저가 추첨한 결과를 후보로 저장, 서버 전용
 	// SlotCards 는 슬롯별 카드 체인, 각 체인의 첫 장이 이번에 제시할 후보
@@ -86,6 +92,12 @@ public:
 
 	// 첫 항목을 버린다. 서버 전용
 	void PopPendingReward();
+
+	// Late Join은 이 순번 다음부터의 매치 보상만 받는다.
+	int32 GetLastProcessedRewardSequence() const { return LastProcessedRewardSequence; }
+	bool HasPendingRewards() const { return !PendingRewards.IsEmpty(); }
+	void CaptureReconnectSnapshot(FAugmentInventoryReconnectSnapshot& OutSnapshot) const;
+	bool RestoreReconnectSnapshot(const FAugmentInventoryReconnectSnapshot& Snapshot, FText& OutFailure);
 
 	// 선택 마감 시각(서버 월드 시간). 0 이면 제한 없음
 	// 클라이언트는 GameState 의 GetServerWorldTimeSeconds 와 비교해 남은 시간을 구한다
@@ -149,7 +161,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
 
-	// 보유 목록. 서버에서만 변경하고 소유자에게만 복제
+	// 보유 목록. 서버에서만 변경하고 모든 클라이언트에 복제
 	// 수명은 매치 내내. 비어 있다 = 증강 없음
 	UPROPERTY(ReplicatedUsing = OnRep_Entries)
 	TArray<FAugmentInventoryEntry> Entries;
@@ -183,7 +195,10 @@ private:
 	bool bOfferSelectionEnabled = false;
 
 	// 적립된 증강 보상 후보. 서버 전용
-	TArray<FAugmentPendingReward> PendingRewards;
+	TRingBuffer<FAugmentPendingReward> PendingRewards;
+
+	// 처리 완료한 마지막 매치 보상. 큐/후보 자체는 기존 상태가 담당한다.
+	int32 LastProcessedRewardSequence = 0;
 
 	UPROPERTY(Replicated)
 	float SelectionDeadline = 0.f;

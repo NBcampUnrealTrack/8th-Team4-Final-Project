@@ -53,6 +53,8 @@ private:
 	void HandleCaptureUpdateTimer();
 	void HandleSuddenDeathTimerExpired();
 	void HandlePointTransitionComplete();
+	void RefreshCaptureState();
+	void AdvanceCaptureToCurrentTime();
 	void UpdateCaptureState(float DeltaSeconds);
 	void CountActivePlayers(int32& OutTeamAPlayerCount, int32& OutTeamBPlayerCount) const;
 	void PublishCaptureState(
@@ -73,6 +75,8 @@ private:
 	bool bCaptureCompleted = false;
 	bool bSuddenDeathActive = false;
 	double LastCaptureUpdateTime = 0.0;
+	int32 CaptureTeamAPlayerCount = 0;
+	int32 CaptureTeamBPlayerCount = 0;
 
 	// 거점에 아무도 없는 상태가 지속된 시간. 사람이 들어오면 즉시 0으로 리셋된다.
 	float EmptyZoneElapsedSeconds = 0.0f;

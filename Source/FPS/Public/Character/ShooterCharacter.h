@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -11,15 +11,22 @@
 
 class UAbilitySystemComponent;
 class UCameraComponent;
+class UCameraShakeBase;
+class UShooterSprintCameraShake;
+class APlayerCameraManager;
 class UCombatHitZoneDefinition;
 class UCombatComponent;
 class UFootstepComponent;
 class UInputAction;
 class ULagCompensationComponent;
 class UPlayerCustomizationComponent;
+class UGameplayAppearanceComponent;
+class UFirstPersonAppearanceComponent;
 class USpringArmComponent;
 class AWeaponBase;
 struct FInputActionValue;
+struct FOnAttributeChangeData;
+struct FGameplayEventData;
 
 UCLASS()
 class FPS_API AShooterCharacter : public ACharacter,
@@ -34,16 +41,22 @@ public:
 
 	// ASC 는 AShooterPlayerState 소유
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	FGuid GetPawnLifeId() const { return PawnLifeId; }
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+    virtual void UnPossessed() override;
+    virtual void OnRep_Controller() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
 public:
-	// 팀 윤곽선 초기화
-	void RefreshTeamOutline();
+	// 이벤트는 새 외형/무기까지 갱신하고, 거리 타이머는 결과가 같으면 메시 순회를 생략한다.
+	void RefreshTeamOutline(bool bForceRefresh = true);
 
 	// 모든 플레이어 캐릭터의 팀 윤곽선 초기화
 	static void RefreshTeamOutlineForAll(UWorld* World);
@@ -51,6 +64,8 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+	virtual void OnJumped_Implementation() override;
+	virtual void Landed(const FHitResult& Hit) override;
 	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 
@@ -61,6 +76,8 @@ public:
 	virtual UCameraComponent* GetViewCamera_Implementation() const override;
 	virtual FRotator GetFixedAimRotation_Implementation() const override;
 	virtual AWeaponBase* GetCurrentWeapon_Implementation() const override;
+	virtual UCombatComponent* GetCombatComponent_Implementation() const override;
+	virtual void OnWeaponSpawned_Implementation(AWeaponBase* Weapon) override;
 	virtual void HandleDeath_Implementation(const FRogueDeathContext& Context) override;
 	virtual UCombatHitZoneDefinition* GetCombatHitZoneDefinition_Implementation() const override;
 	virtual void PlayDeathReaction_Implementation(const FRogueDeathReaction& Reaction) override;
@@ -75,13 +92,20 @@ public:
 	FTransform FabricSocketTransform;
 
 	void HandleMoveInput(const FInputActionValue& Value);
-	void HandleLookInput(const FInputActionValue& Value);
+	void HandleLookInput(const FVector2D& LookAxisVector);
 	void HandleJumpPressed();
 	void HandleJumpReleased();
 	void HandleSprintPressed();
 	void HandleSprintReleased();
 	void HandleCrouchPressed();
 	void HandleCrouchReleased();
+
+	UCombatComponent* GetCombatComponent() const { return Combat; }
+
+	// 로컬 플레이어가 이 캐릭터를 1인칭으로 보고 있는지. 직접 조종 중이거나 킬캠/관전으로 시점을 빌린 경우 true.
+	// 1P/3P 몽타주 선택은 IsLocallyControlled 대신 이걸 써야 킬캠 리플레이에서도 1P 장전/스왑이 보인다.
+	UFUNCTION(BlueprintPure, Category = "Presentation")
+	bool IsFirstPersonPresented() const;
 
 protected:
 	bool InitializeDefaultWeaponLoadout();
@@ -123,6 +147,50 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Camera")
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
+	TSubclassOf<UCameraShakeBase> JumpCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float JumpCameraShakeScale = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
+	TSubclassOf<UCameraShakeBase> LandingCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float LandingCameraShakeScale = 1.f;
+
+	// Share the existing shake class with walking; keep the property name for Blueprint compatibility.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement")
+	TSubclassOf<UShooterSprintCameraShake> SprintCameraShake;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float WalkCameraShakeScale = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "1.0", Units = "cm"))
+	float WalkCameraStepDistance = 230.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float SprintCameraShakeScale = 1.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "1.0", Units = "cm"))
+	float SprintCameraStepDistance = 190.f;
+
+	// Small steps do not cause a landing impulse. Speeds are relative to the hit surface.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0", Units = "cm/s"))
+	float MinLandingImpactSpeed = 180.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "1.0", Units = "cm/s"))
+	float FullLandingImpactSpeed = 600.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0"))
+	float MaxLandingImpactScale = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPS|Camera|Movement", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AimingMovementCameraShakeScale = 0.35f;
+
+	FVector StandingCameraRelativeLocation = FVector::ZeroVector;
+	bool bInterpolatingCrouchCamera = false;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Avatar")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 
@@ -143,8 +211,23 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Customization")
 	TObjectPtr<UPlayerCustomizationComponent> Customization;
+    UPROPERTY(VisibleAnywhere, Category="FPS|Customization")
+    TObjectPtr<UGameplayAppearanceComponent> GameplayAppearance;
+    UPROPERTY(VisibleAnywhere, Category="Customization")
+    TObjectPtr<UFirstPersonAppearanceComponent> FirstPersonAppearance;
 
 private:
+	UPROPERTY(Replicated)
+	FGuid PawnLifeId;
+
+	int32 CachedTeamOutlineState = INDEX_NONE;
+
+	// 달리기 태그 - 이동 갱신마다 CMC 상태와 비교
+	UFUNCTION()
+	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+
+	bool bSprintTagApplied = false;
+
 	// 태그 구독 갱신
 	void UpdateTagSubscriptions();
 	void UnsubscribeTags();
@@ -155,15 +238,64 @@ private:
 	// 유틸리티 홀드 태그 - 무기 표현 억제와 복귀 시 장착 사이클
 	void HandleUtilityHeldChanged(const FGameplayTag ChangedTag, int32 NewCount);
 
+	// 스태미너 - 0 이면 달리기 차단
+	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
+	void UpdateSprintBlocked(float Stamina);
+	void PlayExhaustedBreathSound() const;
+	APlayerCameraManager* GetLocalMovementCameraManager() const;
+	void PlayMovementCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass, float Scale);
+	void StopMovementCameraShake();
+	void UpdateLocomotionCameraShake();
+	void StopLocomotionCameraShake(bool bImmediately);
+
+	TWeakObjectPtr<UCameraShakeBase> ActiveMovementCameraShake;
+	TWeakObjectPtr<APlayerCameraManager> MovementShakeCameraManager;
+	TWeakObjectPtr<UShooterSprintCameraShake> ActiveLocomotionCameraShake;
+	TWeakObjectPtr<APlayerCameraManager> LocomotionShakeCameraManager;
+
+	// 탄창 증강 - 배율이 바뀌면 보유 무기에 즉시 반영
+	void HandleMagazineMultiplierChanged(const FOnAttributeChangeData& Data);
+	void ApplyAugmentMagazine(AWeaponBase* Weapon);
+
+	// 조준 시작과 발사(근접 포함) 시 달리기 중단
+	void HandleAimingTagChanged(const FGameplayTag ChangedTag, int32 NewCount);
+	void HandleWeaponFired(FGameplayTag EventTag, const FGameplayEventData* Payload);
+
 	TWeakObjectPtr<UAbilitySystemComponent> SubscribedAbilitySystem;
 	FDelegateHandle RevealTagEventHandle;
 	FDelegateHandle UtilityHeldEventHandle;
+	FDelegateHandle StaminaChangedHandle;
+	FDelegateHandle MagazineMultiplierChangedHandle;
+
+	// 생성 알림을 보낸 무기. 슬롯 복제 순서와 무관하게 배율 재적용
+	TArray<TWeakObjectPtr<AWeaponBase>> AugmentedWeapons;
+	FDelegateHandle AimingTagEventHandle;
+	FDelegateHandle WeaponFiredEventHandle;
 
 	// 랙돌에 피격 임펄스 적용
-	void ApplyDeathImpulse(USkeletalMeshComponent& Mesh3P, const FRogueDeathReaction& Reaction) const;
 
 	// 사망 연출 중복 진입 방지
 	bool bDeathStateApplied = false;
+
+	// 관전 전환으로 ASC 아바타가 바뀌어도 시체 폰 채널로 래그돌 전달
+	UFUNCTION()
+	void OnRep_ReplicatedDeath();
+
+	UPROPERTY(Replicated)
+	FRogueDeathReaction ReplicatedDeathReaction;
+
+	UPROPERTY(ReplicatedUsing = OnRep_ReplicatedDeath)
+	bool bReplicatedDeath = false;
+
+	// 사격 반동이 카메라 Pitch에 얹어 둔 양(0.5도 단위). 다른 플레이어 화면의 3인칭 조준 각도가
+	// 반동으로 들렸다 내려오지 않도록 서버가 보내고, 관찰자가 조준 Pitch에서 되돌린다.
+	UPROPERTY(Replicated)
+	int8 ReplicatedRecoilPitchHalfDegrees = 0;
+
+	// 반동을 빼기 전 조준 회전(킬캠 등 실제 시점이 필요한 곳용).
+	FRotator CalculateRawAimRotation() const;
+	// 지금 이 캐릭터의 카메라 Pitch에 들어 있는 반동량(도).
+	float GetRecoilPitchForAim() const;
 
 	UPROPERTY(EditAnywhere, Category = "FPS|Input")
 	TObjectPtr<UInputAction> CycleWeaponAction;

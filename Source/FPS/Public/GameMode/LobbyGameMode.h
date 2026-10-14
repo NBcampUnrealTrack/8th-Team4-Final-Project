@@ -4,8 +4,10 @@
 #include "GameMode/Types/LobbyTypes.h"
 #include "GameMode/Types/TeamTypes.h"
 #include "GameFramework/GameModeBase.h"
+#include "TimerManager.h"
 #include "LobbyGameMode.generated.h"
 
+class AShooterPlayerController;
 class AShooterPlayerState;
 class APlayerState;
 
@@ -17,6 +19,9 @@ class FPS_API ALobbyGameMode : public AGameModeBase
 public:
 	ALobbyGameMode();
 
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void InitGameState() override;
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void PostSeamlessTravel() override;
 	virtual void Logout(AController* Exiting) override;
@@ -26,8 +31,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	bool RequestStartRoomGame(APlayerController* RequestingPlayer, const FString& GameMapName = TEXT(""));
 
+	void NotifyMatchTravelPrepared(AShooterPlayerController* PlayerController, int32 RequestId, bool bSuccess);
+	void CancelPendingMatchTravel(const FString& Reason);
+
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	bool CanStartRoomGame() const;
+
+	// 방 화면이 읽을 시작 가능 여부
+	FLobbyStartState BuildStartState() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Lobby|Game Mode")
 	bool RequestLobbyMatchMode(APlayerController* RequestingPlayer, ELobbyMatchMode RequestedMatchMode);
@@ -71,9 +82,12 @@ private:
 	void ReassignHostPlayerIfNeeded(const APlayerState* ExitingPlayerState);
 	void NotifyLobbyPlayerListChanged();
 	bool AreAllClientsReady() const;
+	// 로그 없는 레디 집계
+	void CountClientReady(int32& OutReady, int32& OutTotal) const;
 	bool HasMinimumPlayersToStart() const;
 	bool CanFinalizeTeamsForMatchStart() const;
 	bool IsHostPlayerState(const APlayerState* PlayerState) const;
+	bool IsHostInTeam() const;
 	bool IsSupportedMatchMode(ELobbyMatchMode MatchMode) const;
 	bool TryResolveMatchModeFromMapName(const FString& MapName, ELobbyMatchMode& OutMatchMode) const;
 	void GetTeamAssignmentCounts(int32& OutTeamA, int32& OutTeamB, int32& OutUnassigned) const;
@@ -81,6 +95,11 @@ private:
 	FString GetMatchTypeForMatchMode(ELobbyMatchMode MatchMode) const;
 	bool UpdateSessionAdvertisementForMatchMode(ELobbyMatchMode MatchMode);
 	FString ResolveMapPathFromName(const FString& MapName) const;
+	bool CaptureMatchTravelParticipants();
+	bool IsMatchTravelRosterValid() const;
+	void BeginMatchTravelPreparation();
+	void CancelMatchTravelPreparation(const TCHAR* Reason);
+	void HandleSessionStartResponseTimeout();
 	void TravelToPendingGameMap();
 
 	// Only unassigned players are auto-filled. Explicit team choices are preserved.
@@ -91,7 +110,12 @@ private:
 
 private:
 	TWeakObjectPtr<APlayerState> HostPlayerState;
-	FString PendingGameMapPath = TEXT("/Game/Maps/BombMap");
+	FString PendingGameMapPath = TEXT("/Game/Maps/DominationMap");
+	TMap<TWeakObjectPtr<AShooterPlayerController>, EGameTeam> MatchTravelParticipants;
+	TSet<TWeakObjectPtr<AShooterPlayerController>> PendingMatchTravelPlayers;
+	FTimerHandle SessionStartResponseTimer;
+	int32 MatchTravelRequestId = 0;
+	bool bPreparingMatchTravel = false;
 	bool bStartRoomGamePending = false;
 	bool bTravelingToGameMap = false;
 };

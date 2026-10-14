@@ -26,6 +26,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Shooter|Voice")
 	void TogglePlayerMute();
 
+	APlayerState* GetVoicePlayerState() const { return VoicePlayerState; }
+
+	// Steam 아바타를 아직 못 받았으면 다시 요청한다
+	void RefreshProfileImage();
+
 protected:
 	virtual void NativeDestruct() override;
 
@@ -75,4 +80,6 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<APlayerState> LocalPlayerState;
+
+	bool bHasProfileImage = false;
 };

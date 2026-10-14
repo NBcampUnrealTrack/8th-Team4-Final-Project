@@ -2,7 +2,7 @@
 
 #include "Abilities/GA_SwitchWeapon.h"
 
-#include "AbilitySystemComponent.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Player/ShooterPlayerState.h"
 #include "Tags/GameplayTags.h"
@@ -41,7 +41,15 @@ void UGA_SwitchWeapon::ActivateAbility(const FGameplayAbilitySpecHandle Handle, 
 		return;
 	}
 
-	const AWeaponBase* PreviousWeapon = CombatComponent->GetCurrentWeapon();
+	AWeaponBase* PreviousWeapon = CombatComponent->GetCurrentWeapon();
+	if (CombatComponent->GetWeaponInSlot(TargetWeaponSlot) != PreviousWeapon)
+	{
+		if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+		{
+			ASC->CancelADSAbilityForWeapon(PreviousWeapon);
+		}
+		CombatComponent->SetAiming(false, PreviousWeapon);
+	}
 	const bool bSwitched = CombatComponent->SwitchWeaponSlot(TargetWeaponSlot);
 
 	if (bSwitched && CombatComponent->GetCurrentWeapon() != PreviousWeapon)

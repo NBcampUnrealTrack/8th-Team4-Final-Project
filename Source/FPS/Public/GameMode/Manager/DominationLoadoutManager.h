@@ -21,6 +21,9 @@ public:
 	// 최초 스폰 전에 클래스 무기를 보유·해금 상태로 확정한다.
 	bool InitializeCombatClassInventory(ADominationPlayerState* PlayerState) const;
 
+	// 재스폰에서는 기존 인벤토리를 초기화하지 않고, 선택 클래스의 주무기 상태만 보장한다.
+	bool EnsureCombatClassInventory(ADominationPlayerState* PlayerState) const;
+
 	bool ApplyCombatClassLoadout(
 		const ADominationPlayerState* PlayerState,
 		APawn* Pawn) const;

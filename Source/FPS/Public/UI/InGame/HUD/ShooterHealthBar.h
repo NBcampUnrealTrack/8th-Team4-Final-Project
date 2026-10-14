@@ -5,6 +5,7 @@
 #include "ShooterAttributeWidget.h"
 #include "ShooterHealthBar.generated.h"
 
+class UShooterVitalBar;
 class UShooterGauge;
 class UCommonTextBlock;
 class UImage;
@@ -12,6 +13,7 @@ class UMaterialInstanceDynamic;
 class URogueAbilitySystemComponent;
 class UWidgetAnimation;
 struct FOnAttributeChangeData;
+struct FShooterVitalValues;
 
 // HUD가 구독해서 피격시 화면 전체 Feedback 연출 재생
 DECLARE_MULTICAST_DELEGATE(FOnHealthDamaged);
@@ -24,7 +26,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnLowHealthStateChanged, bool /*bIsLow*/);
  * 체력 / 보호막 표시하는 HUD의 자식
  * 체력 델리게이트가 없으므로 ASC 직접 구독 
  */
-UCLASS()
+UCLASS(meta = (DisableNativeTick))
 class FPS_API UShooterHealthBar : public UShooterAttributeWidget
 {
 	GENERATED_BODY()
@@ -50,10 +52,17 @@ protected:
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShieldChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxShieldChanged(const FOnAttributeChangeData& Data);
+	void HandleStaminaChanged(const FOnAttributeChangeData& Data);
+	void HandleMaxStaminaChanged(const FOnAttributeChangeData& Data);
 	
-	// 캐싱 된 값으로 텍스트 갱신 후 목표 비율을 다시 계산한다.
+	// 캐싱 된 값으로 텍스트 갱신 후 바에 전달한다.
 	void RefreshHealth();
 	void RefreshShield();
+	// 게이지 갱신, 가득 참 여부가 바뀔 때만 페이드
+	void RefreshStamina();
+
+	// 캐시 4개로 만든 바 입력
+	FShooterVitalValues MakeVitalValues() const;
 	
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Health;
@@ -67,17 +76,22 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_Shield;
-	// WBP_ShooterGauge 
+	// WBP_ShooterVitalBar
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterGauge> Gauge_Health;
+	TObjectPtr<UShooterVitalBar> VitalBar;
+	// 쉴드 용량이 있을 때만 보이는 장식
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_ShieldDeco;
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UShooterGauge> Gauge_Shield;
+	TObjectPtr<UShooterGauge> Gauge_Stamina;
 	
 	// 체력 바 자체 피격 연출
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_HealthHit;
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
 	TObjectPtr<UWidgetAnimation> Anim_ShieldHit;
+	UPROPERTY(Transient, meta = (BindWidgetAnim))
+	TObjectPtr<UWidgetAnimation> Anim_StaminaShow;
 	
 	// 이 비율 이하면 저체력으로 본다
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
@@ -88,6 +102,9 @@ protected:
 	float CachedMaxHealth = 0.f; 
 	float CachedShield = 0.f;
 	float CachedMaxShield = 0.f; 
+	float CachedStamina = 0.f;
+	float CachedMaxStamina = 0.f;
 	
 	bool bIsLowHealth = false;
+	bool bStaminaShown = false;
 };

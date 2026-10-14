@@ -2,8 +2,7 @@
 
 #include "Abilities/GA_Reload.h"
 
-#include "AbilitySystemComponent.h"
-#include "Abilities/GA_ADS.h"
+#include "GAS/RogueAbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "Animation/AnimInstance.h"
 #include "Augment/RogueAugmentStatResolver.h"
@@ -15,6 +14,7 @@
 UGA_Reload::UGA_Reload()
 {
 	ActivationOwnedTags.AddTag(RogueTags::State_Combat_IsReloading);
+	SetAssetTags(FGameplayTagContainer(RogueTags::State_Combat_IsReloading));
 }
 
 bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -32,9 +32,7 @@ bool UGA_Reload::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, con
 		return false;
 	}
 
-	return Weapon->UsesAmmo() && !Weapon->IsReloading()
-		&& Weapon->GetCurrentAmmo() < Weapon->GetEffectiveMagazineSize()
-		&& Weapon->GetCurrentReserveAmmo() > 0;
+	return Weapon->CanReload();
 }
 
 void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -47,25 +45,14 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 		return;
 	}
 
-	// 재장전을 시작하면 정조준(GA_ADS)을 즉시 취소한다 - 줌을 유지한 채 재장전되는 문제 방지
-	// (특히 스나이퍼). GA_ADS::EndAbility가 모든 종료 경로에서 SetADS(false)/SetAiming(false)를
-	// 처리하므로 취소만으로 줌/조준 상태가 깔끔히 풀린다. GA_ADS는 Started 트리거라 재장전이 끝나도
-	// 자동 재줌되지 않고 다시 우클릭해야 한다. 태그(Asset Tag) 매칭에 의존하지 않도록 어빌리티
-	// 클래스로 직접 찾아 취소한다.
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo())
+	// 재장전은 현재 무기의 ADS 능력과 눌림 상태를 함께 정리한다.
+	if (URogueAbilitySystemComponent* ASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
 	{
-		TArray<FGameplayAbilitySpecHandle> ADSHandles;
-		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-		{
-			if (Spec.IsActive() && Spec.Ability && Spec.Ability->IsA(UGA_ADS::StaticClass()))
-			{
-				ADSHandles.Add(Spec.Handle);
-			}
-		}
-		for (const FGameplayAbilitySpecHandle& ADSHandle : ADSHandles)
-		{
-			ASC->CancelAbilityHandle(ADSHandle);
-		}
+		ASC->CancelADSAbilityForWeapon(Weapon);
+	}
+	if (UCombatComponent* Combat = GetCombatComponent())
+	{
+		Combat->SetAiming(false, Weapon);
 	}
 
 	// 재장전 시간의 기준값은 실제 리로드 몽타주 길이다(무기 BP의 ReloadDuration 필드는 몽타주가
@@ -96,6 +83,7 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 		Weapon->SetEffectiveReloadDuration(FinalReloadDuration);
 	}
 
+	ReloadingWeapon = Weapon;
 	Weapon->StartReload();
 	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadStart);
 
@@ -108,9 +96,10 @@ void UGA_Reload::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const 
 	}
 
 	// AWeaponBase가 내부 타이머로 재장전을 끝내는 시점과 맞춰서, 같은 시간만큼 대기한 뒤
-	// 이 어빌리티도 종료한다(위에서 배선한 것과 같은 FinalReloadDuration을 써야 서로 어긋나지 않는다).
+	// 이 어빌리티도 종료한다. 완료 시점은 몽타주 끝보다 ReloadCompleteLeadTime만큼 이르다
+	// (GetReloadCompleteDelay - 위에서 배선한 FinalReloadDuration 기준이라 서로 어긋나지 않는다).
 	// 재장전 도중 사격 차단은 AWeaponBase::IsReloading()이 이미 처리한다.
-	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, FinalReloadDuration))
+	if (UAbilityTask_WaitDelay* WaitTask = UAbilityTask_WaitDelay::WaitDelay(this, Weapon->GetReloadCompleteDelay()))
 	{
 		WaitTask->OnFinish.AddDynamic(this, &UGA_Reload::HandleReloadFinished);
 		WaitTask->ReadyForActivation();
@@ -125,4 +114,12 @@ void UGA_Reload::HandleReloadFinished()
 {
 	SendWeaponGameplayEvent(RogueTags::Event_Weapon_ReloadComplete);
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, false, false);
+}
+
+void UGA_Reload::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
+{
+	if (bWasCancelled && ReloadingWeapon.IsValid()) ReloadingWeapon->CancelReload();
+	ReloadingWeapon.Reset();
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

@@ -25,7 +25,7 @@ namespace
 		{
 			const FStructProperty* Property =
 				FindFProperty<FStructProperty>(UGameplayAbility::StaticClass(), GateName);
-			if (!Property)
+			if (!ensure(Property))
 			{
 				continue;
 			}

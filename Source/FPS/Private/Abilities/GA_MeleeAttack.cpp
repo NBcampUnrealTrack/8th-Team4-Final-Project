@@ -5,8 +5,12 @@
 #include "AbilitySystemComponent.h"
 #include "Augment/RogueAugmentStatResolver.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/ShooterAnimInstance.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Interfaces/PlayerInterface.h"
 
 bool UGA_MeleeAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
                                           const FGameplayTagContainer* SourceTags, const FGameplayTagContainer* TargetTags,
@@ -24,7 +28,17 @@ bool UGA_MeleeAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handle
 	}
 
 	// 근접무기는 탄약이 없으므로(bUsesAmmo=false) 재장전 여부만 확인한다.
-	return !Weapon->IsReloading();
+	if (Weapon->IsReloading())
+	{
+		return false;
+	}
+
+	// Primary 입력은 AR 연사용으로 Triggered(누르고 있는 동안 매 프레임) 바인딩이라 칼도 매 프레임
+	// 활성화를 재시도한다. 쿨다운 중에도 활성화되면 몽타주가 매 프레임 처음부터 다시 재생돼
+	// 버튼을 뗄 때서야 휘두르는 것처럼 보이므로, GA_RangedAttack과 같이 CanFireNow()로 게이트한다.
+	// 이렇게 하면 꾹 누르고 있는 동안 RPM 간격마다 연속으로 휘두른다.
+	// Rejected input must not restart either attack montage.
+	return Weapon->CanFireNow(bIsHeavyAttack);
 }
 
 void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
@@ -64,20 +78,42 @@ void UGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Handle, c
 		Weapon->SetEffectiveTraceRange(FinalMeleeRangeMeters * 100.f);
 	}
 
+	const float RecoverySeconds = AttackMontage
+		? AttackMontage->GetPlayLength() / FMath::Max(FMath::Abs(AttackMontage->RateScale), KINDA_SMALL_NUMBER)
+		: 0.f;
+	if (!Weapon->FireMelee(bIsHeavyAttack, RecoverySeconds))
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	if (AttackMontage && ActorInfo)
 	{
-		if (UAnimInstance* AnimInstance = ActorInfo->GetAnimInstance())
+		UAnimInstance* BodyAnimInstance = ActorInfo->GetAnimInstance();
+		if (UShooterAnimInstance* BodyShooterAnim = Cast<UShooterAnimInstance>(BodyAnimInstance))
 		{
-			AnimInstance->Montage_Play(AttackMontage);
+			// The body requires its own skeleton/slot montage from WeaponData.
+			BodyShooterAnim->PlayFireMontageForCurrentWeapon();
+		}
+
+		// GAS caches CharacterMesh0, not the separate owner-visible first-person arms.
+		// The ability's authored montage and recovery remain specific to these arms.
+		AActor* Avatar = GetAvatarActorFromActorInfo();
+		if (IsValid(Avatar) && Avatar->Implements<UPlayerInterface>())
+		{
+			USkeletalMeshComponent* Arms = IPlayerInterface::Execute_GetMesh1P(Avatar);
+			UAnimInstance* ArmsAnimInstance = IsValid(Arms) ? Arms->GetAnimInstance() : nullptr;
+			if (ArmsAnimInstance && ArmsAnimInstance != BodyAnimInstance)
+			{
+				ArmsAnimInstance->Montage_Play(AttackMontage);
+			}
 		}
 	}
 
-	const bool bAttacked = Weapon->FireMelee(bIsHeavyAttack);
+	// FireMelee 승인 직후에 재생해, 꾹 누르기 연속 공격 시에도 휘두를 때마다 한 번씩 난다.
+	Weapon->PlayMeleeAttackSound(bIsHeavyAttack);
 
-	if (bAttacked)
-	{
-		SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
-	}
+	SendWeaponGameplayEvent(RogueTags::Event_Weapon_Fired);
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, false, false);
 }

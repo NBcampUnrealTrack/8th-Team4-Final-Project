@@ -1,7 +1,6 @@
 #include "GameMode/Manager/DominationRespawnManager.h"
 
-#include "Abilities/GameplayAbilityTypes.h"
-#include "AbilitySystemComponent.h"
+#include "GameMode/Manager/PlayerRespawnProtection.h"
 #include "Actor/DominationCapturePoint.h"
 #include "Actor/DominationSpawnVolume.h"
 #include "EngineUtils.h"
@@ -9,10 +8,15 @@
 #include "GameMode/DominationGameMode.h"
 #include "GameMode/State/DominationGameState.h"
 #include "GameMode/Manager/DominationObjectiveManager.h"
+#include "Player/DominationPlayerState.h"
 #include "Player/ShooterPlayerState.h"
-#include "Tags/GameplayTags.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDominationRespawn, Log, All);
+
+namespace
+{
+	constexpr float RespawnRetryDelaySeconds = 0.5f;
+}
 
 bool UDominationRespawnManager::Initialize(
 	ADominationGameMode* InOwnerGameMode,
@@ -32,8 +36,10 @@ bool UDominationRespawnManager::Initialize(
 	}
 
 	ObjectiveManager = InObjectiveManager;
-	RespawnDelay = InRespawnDelay;
-	RespawnProtectionDuration = InRespawnProtectionDuration;
+	RespawnDelay = FMath::Max(0.1f, InRespawnDelay);
+	if (IsValid(RespawnProtection)) { RespawnProtection->Shutdown(); }
+	RespawnProtection = NewObject<UPlayerRespawnProtection>(this);
+	RespawnProtection->Initialize(GetWorld(), InRespawnProtectionDuration);
 	if (!CacheSpawnVolumes())
 	{
 		Shutdown();
@@ -48,7 +54,7 @@ bool UDominationRespawnManager::Initialize(
 	}
 
 	// 최초 참가자는 활성 거점 공개 전에 중앙 C를 기준으로 스폰한다.
-	if (!UpdateTeamSpawnVolumes(EDominationPointId::C))
+	if (!UpdateTeamSpawnVolumes(DominationRules::InitialPointId))
 	{
 		Shutdown();
 		return false;
@@ -64,7 +70,8 @@ bool UDominationRespawnManager::Initialize(
 void UDominationRespawnManager::Shutdown()
 {
 	CancelPendingRespawns();
-	ClearAllRespawnProtections();
+	if (IsValid(RespawnProtection)) { RespawnProtection->Shutdown(); }
+	RespawnProtection = nullptr;
 	if (ADominationGameState* GameState = BoundGameState.Get())
 	{
 		GameState->OnActivePointChanged.RemoveDynamic(
@@ -77,6 +84,8 @@ void UDominationRespawnManager::Shutdown()
 	SpawnObjectivePointId = EDominationPointId::None;
 	NextSpawnCandidateIndices.Reset();
 	SpawnVolumes.Reset();
+	// 부활 대기 감소값 초기화
+	TeamRespawnDelayReduction.Reset();
 	BoundGameState.Reset();
 	ObjectiveManager.Reset();
 	Super::Shutdown();
@@ -97,16 +106,57 @@ void UDominationRespawnManager::CancelPendingRespawns()
 
 void UDominationRespawnManager::ClearAllRespawnProtections()
 {
-	for (TPair<TWeakObjectPtr<AShooterPlayerState>, FActiveRespawnProtection>& Entry
-		: ActiveRespawnProtections)
-	{
-		ReleaseRespawnProtection(Entry.Value);
-	}
-
-	ActiveRespawnProtections.Reset();
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->ClearAll();
+    }
 }
 
 void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
+{
+	// 소속 팀의 부활 대기 감소값(중계 비콘)을 반영한다.
+	// ScheduleRespawnInternal(WaitingController, RespawnDelay); // Removed: 팀별 감소값 적용으로 대체
+	const ABaseTeamPlayerState* PlayerState = IsValid(WaitingController)
+		? WaitingController->GetPlayerState<ABaseTeamPlayerState>()
+		: nullptr;
+	const float Reduction = IsValid(PlayerState)
+		? TeamRespawnDelayReduction.FindRef(PlayerState->GetTeam())
+		: 0.0f;
+	ScheduleRespawnInternal(
+		WaitingController,
+		DominationRules::GetRespawnDelay(RespawnDelay, Reduction),
+		Reduction);
+}
+
+// 중계 비콘 부활 대기 감소값 설정
+void UDominationRespawnManager::SetTeamRespawnDelayReduction(
+	const EGameTeam Team,
+	const float Seconds)
+{
+	if (Team == EGameTeam::None)
+	{
+		return;
+	}
+
+	if (Seconds <= 0.0f)
+	{
+		TeamRespawnDelayReduction.Remove(Team);
+		return;
+	}
+
+	TeamRespawnDelayReduction.Add(Team, Seconds);
+}
+
+void UDominationRespawnManager::ScheduleRespawnRetry(AController* WaitingController)
+{
+	// 스폰 지점이 잠깐 막혀도 관전 상태에 고정되지 않도록 재시도한다.
+	ScheduleRespawnInternal(WaitingController, RespawnRetryDelaySeconds);
+}
+
+void UDominationRespawnManager::ScheduleRespawnInternal(
+	AController* WaitingController,
+	const float DelaySeconds,
+	const float ReductionSeconds)
 {
 	const TWeakObjectPtr<AController> ControllerKey(WaitingController);
 	if (IsValid(WaitingController))
@@ -116,11 +166,20 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 	}
 
 	FTimerManager* TimerManager = GetTimerManager();
-	if (TimerManager == nullptr
-		|| !IsValid(WaitingController)
-		|| PendingRespawnTimers.Contains(ControllerKey))
+	if (TimerManager == nullptr || !IsValid(WaitingController))
 	{
 		return;
+	}
+
+	if (FTimerHandle* ExistingTimer = PendingRespawnTimers.Find(ControllerKey))
+	{
+		if (TimerManager->TimerExists(*ExistingTimer))
+		{
+			return;
+		}
+
+		// 타이머는 끝났는데 키만 남아 있으면 이후 사망/재시도 예약이 영구 차단된다.
+		PendingRespawnTimers.Remove(ControllerKey);
 	}
 
 	FTimerHandle& RespawnTimer = PendingRespawnTimers.Add(ControllerKey);
@@ -130,53 +189,23 @@ void UDominationRespawnManager::ScheduleRespawn(AController* WaitingController)
 			this,
 			&ThisClass::HandleRespawnTimer,
 			ControllerKey),
-		RespawnDelay,
+		FMath::Max(0.1f, DelaySeconds),
 		false);
+
+	// 부활 대기 타이머 UI용으로 부활 예정 시각과 적용된 감소 시간을 플레이어 상태에 알린다.
+	if (ADominationPlayerState* DominationPlayerState =
+		WaitingController->GetPlayerState<ADominationPlayerState>())
+	{
+		DominationPlayerState->SetRespawnTimer(FMath::Max(0.1f, DelaySeconds), ReductionSeconds);
+	}
 }
 
-void UDominationRespawnManager::BeginRespawnProtection(
-	AShooterPlayerState* PlayerState)
+void UDominationRespawnManager::BeginRespawnProtection(AShooterPlayerState* PlayerState)
 {
-	FTimerManager* TimerManager = GetTimerManager();
-	if (TimerManager == nullptr
-		|| !IsValid(PlayerState)
-		|| !PlayerState->HasAuthority()
-		|| RespawnProtectionDuration <= 0.0f)
-	{
-		return;
-	}
-
-	EndRespawnProtection(PlayerState);
-
-	UAbilitySystemComponent* AbilitySystem =
-		PlayerState->GetAbilitySystemComponent();
-	if (!IsValid(AbilitySystem))
-	{
-		return;
-	}
-
-	FActiveRespawnProtection& Protection =
-		ActiveRespawnProtections.Add(PlayerState);
-	Protection.AbilitySystem = AbilitySystem;
-	Protection.WeaponFiredEventTags.AddTag(RogueTags::Event_Weapon_Fired);
-	Protection.WeaponFiredDelegate =
-		AbilitySystem->AddGameplayEventTagContainerDelegate(
-			Protection.WeaponFiredEventTags,
-			FGameplayEventTagMulticastDelegate::FDelegate::CreateUObject(
-				this,
-				&ThisClass::HandleProtectedPlayerWeaponFired,
-				TWeakObjectPtr<AShooterPlayerState>(PlayerState)));
-
-	AbilitySystem->AddLooseGameplayTag(
-		RogueTags::State_Combat_Invulnerable);
-	TimerManager->SetTimer(
-		Protection.ExpirationTimer,
-		FTimerDelegate::CreateUObject(
-			this,
-			&ThisClass::HandleRespawnProtectionExpired,
-			TWeakObjectPtr<AShooterPlayerState>(PlayerState)),
-		RespawnProtectionDuration,
-		false);
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->BeginProtection(PlayerState);
+    }
 }
 
 bool UDominationRespawnManager::TryGetSpawnTransform(
@@ -184,6 +213,14 @@ bool UDominationRespawnManager::TryGetSpawnTransform(
 	const EDominationPointId ActivePointId,
 	FTransform& OutSpawnTransform)
 {
+	// 리스폰 타이머와 거점 전환 이벤트의 실행 순서에 의존하지 않는다.
+	// 실제 스폰을 시도하는 순간의 활성 거점 기준으로 캐시를 동기화한다.
+	if (ActivePointId == EDominationPointId::None
+		|| !UpdateTeamSpawnVolumes(ActivePointId))
+	{
+		return false;
+	}
+
 	ADominationSpawnVolume* SpawnVolume = GetTeamSpawnVolume(Team);
 	UDominationObjectiveManager* Manager = ObjectiveManager.Get();
 	ADominationCapturePoint* ActiveCapturePoint = IsValid(Manager)
@@ -357,48 +394,16 @@ void UDominationRespawnManager::HandleRespawnTimer(
 	}
 }
 
-void UDominationRespawnManager::HandleRespawnProtectionExpired(
-	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
+
+
+
+
+void UDominationRespawnManager::EndRespawnProtection(AShooterPlayerState* PlayerState)
 {
-	EndRespawnProtection(PlayerState.Get());
+    if (IsValid(RespawnProtection))
+    {
+        RespawnProtection->EndProtection(PlayerState);
+    }
 }
 
-void UDominationRespawnManager::HandleProtectedPlayerWeaponFired(
-	const FGameplayTag,
-	const FGameplayEventData*,
-	const TWeakObjectPtr<AShooterPlayerState> PlayerState)
-{
-	EndRespawnProtection(PlayerState.Get());
-}
 
-void UDominationRespawnManager::EndRespawnProtection(
-	AShooterPlayerState* PlayerState)
-{
-	FActiveRespawnProtection Protection;
-	if (!ActiveRespawnProtections.RemoveAndCopyValue(
-		TWeakObjectPtr<AShooterPlayerState>(PlayerState),
-		Protection))
-	{
-		return;
-	}
-
-	ReleaseRespawnProtection(Protection);
-}
-
-void UDominationRespawnManager::ReleaseRespawnProtection(
-	FActiveRespawnProtection& Protection)
-{
-	if (FTimerManager* TimerManager = GetTimerManager())
-	{
-		TimerManager->ClearTimer(Protection.ExpirationTimer);
-	}
-
-	if (UAbilitySystemComponent* AbilitySystem = Protection.AbilitySystem.Get())
-	{
-		AbilitySystem->RemoveGameplayEventTagContainerDelegate(
-			Protection.WeaponFiredEventTags,
-			Protection.WeaponFiredDelegate);
-		AbilitySystem->RemoveLooseGameplayTag(
-			RogueTags::State_Combat_Invulnerable);
-	}
-}

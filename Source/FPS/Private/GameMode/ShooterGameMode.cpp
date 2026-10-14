@@ -2,17 +2,21 @@
 
 
 #include "GameMode/ShooterGameMode.h"
+#include "Character/ShooterCharacter.h"
 
 #include "EngineUtils.h"
 #include "GAS/Damage/RogueDamageTypes.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameMode/State/BaseTeamGameState.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/SpectatorPawn.h"
+#include "Interfaces/RogueCombatFeedbackPolicy.h"
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterSpectatorPawn.h"
 #include "Player/ShooterPlayerState.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -53,48 +57,67 @@ void AShooterGameMode::HandleStartingNewPlayer_Implementation(APlayerController*
 }
 
 void AShooterGameMode::HandlePlayerEliminated(
-	AController* EliminatedController,
-	const FRogueDeathContext& DeathContext)
+    AController* EliminatedController,
+    const FRogueDeathContext& DeathContext)
 {
-	if (!HasAuthority() || !IsValid(EliminatedController))
-	{
-		return;
-	}
+    if (!HasAuthority() || !IsValid(EliminatedController))
+    {
+        return;
+    }
 
-	AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
-	AShooterPlayerState* VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+    AShooterPlayerState* KillerPlayerState = ResolveKillerPlayerState(DeathContext);
+    AShooterPlayerState* VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
+    APawn* VictimPawn = EliminatedController->GetPawn();
+    const IRogueCombatFeedbackPolicy* FeedbackPolicy = RogueCombatFeedbackPolicy::Resolve(
+        IsValid(VictimPawn) ? static_cast<AActor*>(VictimPawn) : static_cast<AActor*>(EliminatedController));
+    const bool bUsesStandardEliminationFeedback = !FeedbackPolicy || FeedbackPolicy->UsesStandardEliminationFeedback();
+    const bool bIsEnemyElimination = IsValid(KillerPlayerState)
+        && KillerPlayerState != VictimPlayerState
+        && (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam());
+    AShooterPlayerController* KillerController = bIsEnemyElimination
+        ? Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()) : nullptr;
 
-	if (IsValid(VictimPlayerState))
-	{
-		VictimPlayerState->ServerAddDeath();
-	}
+    // 중앙 킬 이펙트는 CQB의 전적·킬로그·연속킬 사운드 억제와 별도로 전달한다.
+    if (KillerController && (!FeedbackPolicy || FeedbackPolicy->CountsAsCombatKill()))
+    {
+        KillerController->ClientPlayKillEffect();
+    }
 
-	// 자살/팀킬은 킬 증가 X
-	if (IsValid(KillerPlayerState)
-		&& KillerPlayerState != VictimPlayerState
-		&& (!IsValid(VictimPlayerState) || KillerPlayerState->GetTeam() != VictimPlayerState->GetTeam()))
-	{
-		KillerPlayerState->ServerAddKill();
+    if (bUsesStandardEliminationFeedback)
+    {
+        if (IsValid(VictimPlayerState))
+        {
+            VictimPlayerState->ServerAddDeath();
+        }
 
-		if (AShooterPlayerController* KillerController =
-			Cast<AShooterPlayerController>(KillerPlayerState->GetPlayerController()))
-		{
-			KillerController->ClientPlayKillSound();
-		}
-	}
+        if (bIsEnemyElimination)
+        {
+            KillerPlayerState->ServerAddKill();
 
-	if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
-	{
-		FShooterEliminationEvent EliminationEvent;
-		EliminationEvent.KillerPlayerState = KillerPlayerState;
-		EliminationEvent.VictimPlayerState = EliminatedController->GetPlayerState<AShooterPlayerState>();
-		EliminationEvent.WeaponTag = DeathContext.WeaponTag;
-		EliminationEvent.bHeadshot = DeathContext.bHeadshot;
+            const int32 KillStreak = KillerPlayerState->ServerRegisterKillStreak();
+            if (KillerController)
+            {
+                KillerController->ClientPlayKillSound(KillStreak);
+            }
+        }
 
-		TeamGameState->BroadcastPlayerEliminated(EliminationEvent);
-	}
+        if (ABaseTeamGameState* TeamGameState = GetGameState<ABaseTeamGameState>())
+        {
+            FShooterEliminationEvent EliminationEvent;
+            EliminationEvent.KillerPlayerState = KillerPlayerState;
+            EliminationEvent.VictimPlayerState = VictimPlayerState;
+            if (const AShooterCharacter* VictimCharacter = Cast<AShooterCharacter>(VictimPawn))
+            {
+                EliminationEvent.VictimPawnLifeId = VictimCharacter->GetPawnLifeId();
+            }
+            EliminationEvent.WeaponTag = DeathContext.WeaponTag;
+            EliminationEvent.bHeadshot = DeathContext.bHeadshot;
+            TeamGameState->BroadcastPlayerEliminated(EliminationEvent);
+        }
+    }
 
-	NotifyPlayerEliminatedBy(EliminatedController, KillerPlayerState);
+    // Mode-specific death flow (respawn, objectives, etc.) still runs for synthetic training eliminations.
+    NotifyPlayerEliminatedBy(EliminatedController, KillerPlayerState);
 }
 
 AShooterPlayerState* AShooterGameMode::ResolveKillerPlayerState(const FRogueDeathContext& DeathContext)
@@ -158,7 +181,7 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 	if (APawn* ExistingPawn = PlayerController->GetPawn())
 	{
 		PlayerController->UnPossess();
-		ExistingPawn->Destroy();
+		ExistingPawn->SetLifeSpan(CorpseLifeSpanSeconds);
 	}
 
 	ASpectatorPawn* SpectatorPawn = SpawnSpectatorPawnFor(PlayerController, SpawnTransform);
@@ -167,8 +190,6 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 		return;
 	}
 
-	PlayerController->ChangeState(NAME_Spectating);
-	PlayerController->ClientGotoState(NAME_Spectating);
 	PlayerController->Possess(SpectatorPawn);
 
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(PlayerController))
@@ -176,6 +197,14 @@ void AShooterGameMode::MovePlayerToSpectator(APlayerController* PlayerController
 		ShooterPlayerController->ClientEnterSpectatorMode(nullptr);
 	}
 	CycleSpectatorTarget(PlayerController);
+}
+
+void AShooterGameMode::EnterSpectatorForTrailerCamera(APlayerController* PlayerController)
+{
+	// 트레일러 촬영용 개발 기능. 쉬핑 빌드에서는 아무 일도 하지 않는다.
+#if !UE_BUILD_SHIPPING
+	MovePlayerToSpectator(PlayerController);
+#endif
 }
 
 void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorController)
@@ -188,17 +217,67 @@ void AShooterGameMode::CycleSpectatorTarget(APlayerController* SpectatorControll
 	APawn* TargetPawn = FindNextSpectatorTarget(SpectatorController);
 	if (!IsValid(TargetPawn))
 	{
+		ScheduleSpectatorTargetRetry(SpectatorController);
 		return;
 	}
 
+	ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController>(SpectatorController));
+
 	FViewTargetTransitionParams TransitionParams;
 	TransitionParams.BlendTime = 0.15f;
+	SpectatorController->SetViewTarget(TargetPawn, TransitionParams);
 	SpectatorController->ClientSetViewTarget(TargetPawn, TransitionParams);
 
 	if (AShooterPlayerController* ShooterPlayerController = Cast<AShooterPlayerController>(SpectatorController))
 	{
 		ShooterPlayerController->ClientSetSpectatorTarget(TargetPawn->GetPlayerState());
 	}
+}
+
+void AShooterGameMode::ScheduleSpectatorTargetRetry(APlayerController* SpectatorController)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !IsValid(SpectatorController))
+	{
+		return;
+	}
+
+	const TWeakObjectPtr<APlayerController> WeakController(SpectatorController);
+	FTimerHandle& RetryHandle = SpectatorTargetRetryTimers.FindOrAdd(WeakController);
+	if (World->GetTimerManager().IsTimerActive(RetryHandle))
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimer(
+		RetryHandle,
+		FTimerDelegate::CreateUObject(this, &AShooterGameMode::RetrySpectatorTarget, WeakController),
+		SpectatorTargetRetryInterval,
+		true);
+}
+
+void AShooterGameMode::ClearSpectatorTargetRetry(TWeakObjectPtr<APlayerController> WeakController)
+{
+	if (FTimerHandle* RetryHandle = SpectatorTargetRetryTimers.Find(WeakController))
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(*RetryHandle);
+		}
+		SpectatorTargetRetryTimers.Remove(WeakController);
+	}
+}
+
+void AShooterGameMode::RetrySpectatorTarget(TWeakObjectPtr<APlayerController> SpectatorController)
+{
+	APlayerController* Controller = SpectatorController.Get();
+	if (!IsValid(Controller) || !Controller->GetPawn<AShooterSpectatorPawn>())
+	{
+		ClearSpectatorTargetRetry(SpectatorController);
+		return;
+	}
+
+	CycleSpectatorTarget(Controller);
 }
 
 ASpectatorPawn* AShooterGameMode::SpawnSpectatorPawnFor(

@@ -1,0 +1,72 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "Training/TrainingTypes.h"
+#include "TimerManager.h"
+#include "TrainingSessionHUDWidget.generated.h"
+
+class UProgressBar;
+class UTextBlock;
+class UWidget;
+
+UCLASS(Blueprintable)
+class FPS_API UTrainingSessionHUDWidget : public UUserWidget
+{
+    GENERATED_BODY()
+
+public:
+    UTrainingSessionHUDWidget(const FObjectInitializer& ObjectInitializer);
+    void StartSession(ETrainingMode Mode, double StartSeconds, float DurationSeconds);
+    void StartCQBSession(int32 TotalTroopers);
+    void PresentHit(int32 TotalKills, bool bKilled);
+    void PresentCQBKill(int32 CurrentKills, int32 TotalTroopers);
+    void FinishCQBSession();
+    void StopSession();
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float KillFadeInSeconds = 0.10f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "5.0", Units = "s"))
+    float KillHoldSeconds = 0.55f;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Training|HUD|Kill Feedback", meta = (ClampMin = "0.0", ClampMax = "2.0", Units = "s"))
+    float KillFadeOutSeconds = 0.35f;
+
+protected:
+    virtual void NativePreConstruct() override;
+    virtual void NativeDestruct() override;
+
+private:
+    void RefreshClock();
+    void StartKillFeedbackAnimation();
+    void UpdateKillFeedback();
+    void ApplyKillFeedbackAppearance();
+    void ResetKillFeedback();
+
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> SessionInfoContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Mode;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Timer;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_TimerLabel;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Kills;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_KillLabel;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> KillCounterContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UWidget> CQBProgressContent;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_Progress;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Txt_ProgressLabel;
+    UPROPERTY(Transient, meta = (BindWidgetOptional)) TObjectPtr<UProgressBar> Bar_TimeRemaining;
+
+    FTimerHandle ClockTimer;
+    FTimerHandle KillFeedbackTimer;
+    double StartSeconds = 0.0;
+    float ActiveDurationSeconds = 0.0f;
+    double KillFeedbackStartSeconds = 0.0;
+    float KillFeedbackOpacity = 0.0f;
+    float KillFadeStartOpacity = 0.0f;
+    bool bKillFeedbackActive = false;
+    int32 DisplayedSeconds = INDEX_NONE;
+    int32 DisplayedKills = 0;
+    int32 CQBTotalTroopers = 0;
+    bool bCQBSession = false;
+    bool bSessionActive = false;
+};
