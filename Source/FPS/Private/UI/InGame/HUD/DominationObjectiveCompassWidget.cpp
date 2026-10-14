@@ -236,7 +236,8 @@ void UDominationObjectiveCompassWidget::RefreshScreenPlacement()
 	}
 
 	// 목표 거점의 점령 구역 안에 있으면 표시하지 않는다.
-	if (CapturePoint->ContainsWorldLocation(LocalPawn->GetActorLocation()))
+	// 중심점 대신 서버 점령 판정과 같은 캡슐 기준
+	if (CapturePoint->ContainsPawn(LocalPawn))
 	{
 		bShouldShow = false;
 		return;

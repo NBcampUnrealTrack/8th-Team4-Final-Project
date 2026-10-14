@@ -385,6 +385,13 @@ private:
 	UFUNCTION() void HandleInvertYToggle();
 	UFUNCTION() void HandleADSModeChanged();
 	UFUNCTION() void HandleCrouchModeChanged();
+	// 채팅 표시 옵션 (WBP에 Btn_ChatOpacityPrev/Next, Btn_ChatSizePrev/Next 등 추가)
+	UFUNCTION() void HandleChatOpacityPrev();
+	UFUNCTION() void HandleChatOpacityNext();
+	UFUNCTION() void HandleChatSizePrev();
+	UFUNCTION() void HandleChatSizeNext();
+	void StepChatOpacityLevel(int32 Delta);
+	void StepChatSizeLevel(int32 Delta);
 	UFUNCTION() void HandleDynamicCrosshairToggle();
 	UFUNCTION() void HandleEnemyCrosshairColorToggle();
 	UFUNCTION() void HandleMasterMuteToggle();

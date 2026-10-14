@@ -1288,6 +1288,11 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_ADSModeNext", HandleADSModeChanged);
 	BIND_CLICK("Btn_CrouchModePrev", HandleCrouchModeChanged);
 	BIND_CLICK("Btn_CrouchModeNext", HandleCrouchModeChanged);
+	// 채팅 표시 옵션
+	BIND_CLICK("Btn_ChatOpacityPrev", HandleChatOpacityPrev);
+	BIND_CLICK("Btn_ChatOpacityNext", HandleChatOpacityNext);
+	BIND_CLICK("Btn_ChatSizePrev", HandleChatSizePrev);
+	BIND_CLICK("Btn_ChatSizeNext", HandleChatSizeNext);
 	BIND_CLICK("Btn_DynamicCrosshairToggle", HandleDynamicCrosshairToggle);
 	BIND_CLICK("Btn_EnemyCrosshairColorToggle", HandleEnemyCrosshairColorToggle);
 	BIND_CLICK("Btn_MasterMuteToggle", HandleMasterMuteToggle);
@@ -1352,6 +1357,7 @@ void UShooterOptionsScreen::ApplyOptionStaticStyles()
 		TEXT("GlobalIllumination"), TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"),
 		TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"), TEXT("Language"),
 		TEXT("ADSMode"), TEXT("CrouchMode"),
+		TEXT("ChatOpacity"), TEXT("ChatSize"), // 채팅 표시 옵션
 	};
 
 	if (bOverrideValueBoxStyle)
@@ -1545,6 +1551,9 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_InvertY"), TEXT("Y축 반전"), TEXT("Invert Y"));
 	Set(TEXT("TXT_Label_ADSMode"), TEXT("ADS"), TEXT("ADS"));
 	Set(TEXT("TXT_Label_CrouchMode"), TEXT("앉기"), TEXT("Crouch"));
+	// 채팅 표시 옵션
+	Set(TEXT("TXT_Label_ChatOpacity"), TEXT("채팅 투명도"), TEXT("Chat Opacity"));
+	Set(TEXT("TXT_Label_ChatSize"), TEXT("채팅 크기"), TEXT("Chat Size"));
 	Set(TEXT("TXT_Label_DynamicCrosshair"), TEXT("동적 크로스헤어"), TEXT("Dynamic Crosshair"));
 
 	Set(TEXT("TXT_Label_MasterVolume"), TEXT("마스터"), TEXT("Master"));
@@ -1854,6 +1863,24 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 		? Localize(TEXT("토글"), TEXT("Toggle")) : Localize(TEXT("유지"), TEXT("Hold")));
 	SetChoiceSegments(TEXT("ADSMode"), bADSToggle ? 1 : 0, 2);
 	SetChoiceSegments(TEXT("CrouchMode"), bCrouchToggle ? 1 : 0, 2);
+
+	// 채팅 표시 옵션
+	if (const UShooterGameUserSettings* ChatSettings = GetGameUserSettings())
+	{
+		const int32 ChatOpacityLevel = ChatSettings->GetChatOpacityLevel();
+		const FText ChatOpacityText = ChatOpacityLevel == 0
+			? Localize(TEXT("끄기"), TEXT("Off"))
+			: FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(ChatSettings->GetChatOpacity() * 100.0f)));
+		SetOptionText(TEXT("TXT_ChatOpacityValue"), ChatOpacityText);
+		SetChoiceSegments(TEXT("ChatOpacity"), ChatOpacityLevel, UShooterGameUserSettings::ChatOpacityLevelCount);
+
+		const int32 ChatSizeLevel = ChatSettings->GetChatSizeLevel();
+		const FText ChatSizeText = ChatSizeLevel == 0
+			? Localize(TEXT("작게"), TEXT("Small"))
+			: (ChatSizeLevel == 1 ? Localize(TEXT("보통"), TEXT("Medium")) : Localize(TEXT("크게"), TEXT("Large")));
+		SetOptionText(TEXT("TXT_ChatSizeValue"), ChatSizeText);
+		SetChoiceSegments(TEXT("ChatSize"), ChatSizeLevel, UShooterGameUserSettings::ChatSizeLevelCount);
+	}
 
 	// Header is intentionally not navigation; it summarizes the current runtime state.
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Display"), ResolutionText);
@@ -2249,6 +2276,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
 		TEXT("ADSMode"), TEXT("CrouchMode"),
+		TEXT("ChatOpacity"), TEXT("ChatSize"), // 채팅 표시 옵션
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"),
 		TEXT("VoiceChat"), TEXT("VoiceChatMicrophoneVolume"), TEXT("VoiceChatOutputVolume"),
 		TEXT("Language"),
@@ -2400,6 +2428,40 @@ void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveOption = TEX
 void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); }
 void UShooterOptionsScreen::HandleADSModeChanged() { ActiveOption = TEXT("ADSMode"); SetADSToggleEnabled(!IsADSToggleEnabled()); }
 void UShooterOptionsScreen::HandleCrouchModeChanged() { ActiveOption = TEXT("CrouchMode"); SetCrouchToggleEnabled(!IsCrouchToggleEnabled()); }
+
+// 채팅 표시 옵션. 끝에서 반대쪽 끝으로 순환
+void UShooterOptionsScreen::HandleChatOpacityPrev() { StepChatOpacityLevel(-1); }
+void UShooterOptionsScreen::HandleChatOpacityNext() { StepChatOpacityLevel(+1); }
+void UShooterOptionsScreen::HandleChatSizePrev() { StepChatSizeLevel(-1); }
+void UShooterOptionsScreen::HandleChatSizeNext() { StepChatSizeLevel(+1); }
+
+void UShooterOptionsScreen::StepChatOpacityLevel(const int32 Delta)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	ActiveOption = TEXT("ChatOpacity");
+	constexpr int32 Count = UShooterGameUserSettings::ChatOpacityLevelCount;
+	Settings->SetChatOpacityLevel((Settings->GetChatOpacityLevel() + Delta + Count) % Count);
+	OnSettingsChanged.Broadcast();
+}
+
+void UShooterOptionsScreen::StepChatSizeLevel(const int32 Delta)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	ActiveOption = TEXT("ChatSize");
+	constexpr int32 Count = UShooterGameUserSettings::ChatSizeLevelCount;
+	Settings->SetChatSizeLevel((Settings->GetChatSizeLevel() + Delta + Count) % Count);
+	OnSettingsChanged.Broadcast();
+}
 void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); }
 void UShooterOptionsScreen::HandleEnemyCrosshairColorToggle() { ActiveOption = TEXT("EnemyCrosshairColor"); SetEnemyCrosshairColorEnabled(!IsEnemyCrosshairColorEnabled()); }
 void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); }

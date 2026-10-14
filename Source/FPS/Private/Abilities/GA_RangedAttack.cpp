@@ -54,6 +54,17 @@ bool UGA_RangedAttack::CanActivateAbility(const FGameplayAbilitySpecHandle Handl
 
 	if (Weapon->IsOutOfAmmo() && !Weapon->IsReloading())
 	{
+		// 발사 입력을 누른 채 마지막 탄을 쏴서 탄창이 빈 경우에는 클릭음/떼었다 다시 누르기 없이 바로 재장전한다.
+		if (ActorInfo && ActorInfo->IsLocallyControlled() && Weapon->ConsumeEmptiedDuringHold())
+		{
+			if (URogueAbilitySystemComponent* RogueASC = Cast<URogueAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+			{
+				static const FGameplayTag HoldReloadInputTag = FGameplayTag::RequestGameplayTag(TEXT("InputTag.Ability.Reload"));
+				RogueASC->AbilityInputTagPressed(HoldReloadInputTag);
+				return false;
+			}
+		}
+
 		// 탄창이 빈 뒤 첫 사격 입력엔 클릭음만 재생한다(TryPlayEmptyClipSound가 true 반환).
 		// 이미 클릭음을 들은 뒤(false 반환)엔, 발사 버튼을 한 번 떼었다가 다시 누른 경우에만
 		// (IsEmptyReloadArmed) 재장전을 시작한다 - 누르고 있는 동안 자동 재장전되는 걸 막고,

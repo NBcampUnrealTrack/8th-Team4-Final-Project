@@ -108,6 +108,29 @@ bool ADominationCapturePoint::ContainsWorldLocation(const FVector& WorldLocation
 		&& FMath::Abs(LocalLocation.Z) <= LocalExtent.Z;
 }
 
+// 캡슐 반지름/절반 높이만큼 박스를 넓혀 캡슐-박스 겹침을 근사
+bool ADominationCapturePoint::ContainsPawn(const APawn* Pawn) const
+{
+	if (!IsValid(Pawn))
+	{
+		return false;
+	}
+
+	float Radius = 0.0f;
+	float HalfHeight = 0.0f;
+	Pawn->GetSimpleCollisionCylinder(Radius, HalfHeight);
+
+	const FTransform& ZoneTransform = CaptureZone->GetComponentTransform();
+	const FVector Scale = ZoneTransform.GetScale3D().GetAbs().ComponentMax(FVector(KINDA_SMALL_NUMBER));
+	const FVector LocalLocation = ZoneTransform.InverseTransformPosition(Pawn->GetActorLocation());
+	const FVector LocalExtent = CaptureZone->GetUnscaledBoxExtent()
+		+ FVector(Radius / Scale.X, Radius / Scale.Y, HalfHeight / Scale.Z);
+
+	return FMath::Abs(LocalLocation.X) <= LocalExtent.X
+		&& FMath::Abs(LocalLocation.Y) <= LocalExtent.Y
+		&& FMath::Abs(LocalLocation.Z) <= LocalExtent.Z;
+}
+
 void ADominationCapturePoint::GetOverlappingPawns(TArray<APawn*>& OutPawns) const
 {
 	OutPawns.Reset();
