@@ -1503,7 +1503,9 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Btn_Side_Controls"), TEXT("조작 설정"), TEXT("Controls"));
 	Set(TEXT("TXT_Btn_Side_KeyBindings"), TEXT("키 설정"), TEXT("Key Bindings"));
 	Set(TEXT("TXT_Btn_Side_Audio"), TEXT("오디오 설정"), TEXT("Audio"));
-	Set(TEXT("TXT_Btn_Side_VoiceChat"), TEXT("보이스 채팅"), TEXT("Voice Chat"));
+	// Set(TEXT("TXT_Btn_Side_VoiceChat"), TEXT("보이스 채팅"), TEXT("Voice Chat")); // Removed
+	// Modified: 보이스 채팅 탭에 채팅 옵션도 들어가서 탭 이름을 "채팅 설정"으로 변경 (WBP 위젯 이름도 TXT_Btn_Side_Chat으로 변경)
+	Set(TEXT("TXT_Btn_Side_Chat"), TEXT("채팅 설정"), TEXT("Chat"));
 	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("언어 설정"), TEXT("Language"));
 	Set(TEXT("TXT_Btn_Side_Crosshair"), TEXT("크로스헤어"), TEXT("Crosshair"));
 
