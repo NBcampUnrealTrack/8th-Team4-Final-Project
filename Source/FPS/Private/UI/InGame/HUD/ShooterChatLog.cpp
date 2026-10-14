@@ -7,9 +7,10 @@
 #include "Blueprint/WidgetLayoutLibrary.h" // 화면 폭 비율로 채팅창 폭 계산
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h" // 화면 폭 비율로 채팅창 폭 계산
+#include "Components/SizeBoxSlot.h" // 메시지 줄 폭 계산
 #include "Components/VerticalBox.h"
 #include "Player/ShooterPlayerController.h"
-#include "Settings/ShooterGameUserSettings.h" // 채팅 투명도/크기 옵션
+#include "Settings/ShooterGameUserSettings.h" // 채팅 불투명도/크기 옵션
 #include "UI/InGame/HUD/ShooterChatEntry.h"
 #include "UI/InGame/HUD/ShooterChatInputBox.h" // 입력창을 채팅 로그 아래에 맞춤
 
@@ -112,6 +113,7 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 
 	EntryWidget->SetData(Message);
 	EntryWidget->ApplyFontScale(AppliedFontScale); // 채팅 크기 옵션
+	EntryWidget->SetRowWidth(GetEntryRowWidth()); // 메시지 줄바꿈 폭을 채팅창 폭 기준으로 직접 지정
 	Box_Entries->AddChildToVerticalBox(EntryWidget);
 	ActiveEntries.Add(EntryWidget);
 	// 메시지별 페이드 기준 시각. 일시정지/슬로모션과 무관하게 실시간을 쓴다.
@@ -135,7 +137,7 @@ void UShooterChatLog::HandleChatMessageReceived(const FChatMessage& Message)
 
 	if (bAutoHide)
 	{
-		// 채팅 투명도 옵션이 "끄기"면 입력창을 열었을 때만 보인다(내역은 그대로 쌓인다).
+		// 채팅 불투명도 옵션이 "끄기"면 입력창을 열었을 때만 보인다(내역은 그대로 쌓인다).
 		const UShooterGameUserSettings* Settings = UShooterGameUserSettings::Get();
 		if (bChatInputOpen || !IsValid(Settings) || Settings->GetChatOpacity() > 0.0f)
 		{
@@ -218,6 +220,36 @@ void UShooterChatLog::ShowPanelAndResetInactivityTimer()
 		false);
 }
 
+// 메시지 한 줄에 쓸 수 있는 폭(로컬 단위). 채팅창 SizeBox 폭에서 배경 Border의 바깥/안쪽 여백과
+// 스크롤바 자리를 뺀다. 배치 결과(캐시된 크기)가 아니라 지정된 값으로 계산해 숨겨져 있던 중에도 정확하다.
+float UShooterChatLog::GetEntryRowWidth() const
+{
+	float Width = AppliedWidthOverride > 0.0f ? AppliedWidthOverride : 0.0f;
+	if (Width <= 0.0f && WidthSizeBox.IsValid())
+	{
+		Width = WidthSizeBox->GetWidthOverride();
+	}
+	if (Width <= 0.0f)
+	{
+		// 폭 지정이 없으면 마지막 배치 결과를 쓴다.
+		return ScrollBox_Entries ? ScrollBox_Entries->GetCachedGeometry().GetLocalSize().X : 0.0f;
+	}
+
+	if (const UBorder* Border = BackgroundBorder.Get())
+	{
+		if (const USizeBoxSlot* BorderSlot = Cast<USizeBoxSlot>(Border->Slot))
+		{
+			Width -= BorderSlot->GetPadding().Left + BorderSlot->GetPadding().Right;
+		}
+		Width -= Border->GetPadding().Left + Border->GetPadding().Right;
+	}
+	if (ScrollBox_Entries)
+	{
+		Width -= ScrollBox_Entries->GetScrollbarThickness().X;
+	}
+	return FMath::Max(0.0f, Width);
+}
+
 float UShooterChatLog::GetPanelHideDelaySeconds() const
 {
 	return EntryVisibleSeconds + EntryFadeSeconds;
@@ -275,6 +307,20 @@ void UShooterChatLog::RefreshAutoHideVisuals()
 			{
 				AppliedWidthOverride = DesiredWidth;
 				SizeBox->SetWidthOverride(DesiredWidth);
+			}
+		}
+	}
+
+	// 채팅창 폭이 바뀌면(해상도/창 크기) 기존 메시지들의 줄바꿈 폭도 새 폭으로 다시 계산한다.
+	const float EntryRowWidth = GetEntryRowWidth();
+	if (EntryRowWidth > 0.0f && !FMath::IsNearlyEqual(EntryRowWidth, AppliedEntryRowWidth, 0.5f))
+	{
+		AppliedEntryRowWidth = EntryRowWidth;
+		for (UShooterChatEntry* Entry : ActiveEntries)
+		{
+			if (Entry)
+			{
+				Entry->SetRowWidth(EntryRowWidth);
 			}
 		}
 	}

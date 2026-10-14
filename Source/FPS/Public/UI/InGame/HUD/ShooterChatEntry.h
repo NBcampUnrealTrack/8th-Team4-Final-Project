@@ -27,6 +27,9 @@ public:
 	// 채팅 크기 옵션. WBP 글자 크기에 Scale을 곱해 적용
 	void ApplyFontScale(float Scale);
 
+	// 한 줄에 쓸 수 있는 폭(로컬 단위)을 받아 메시지 줄바꿈 폭을 직접 계산한다
+	void SetRowWidth(float InRowWidth);
+
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UCommonTextBlock> Text_SenderName;
@@ -83,4 +86,8 @@ private:
 	// 채널 아이콘을 첫 줄 글자 높이에 맞춘다(크기 배율 포함). BaseIconSize는 WBP 원래 아이콘 크기.
 	void RefreshChannelIconLayout();
 	FVector2D BaseIconSize = FVector2D::ZeroVector;
+
+	// 채팅 로그가 넘겨준 한 줄 폭과, 그 기준으로 메시지 줄바꿈 폭을 다시 계산하는 함수
+	void RefreshMessageWrap();
+	float RowWidth = 0.0f;
 };

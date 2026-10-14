@@ -151,4 +151,8 @@ private:
 	TWeakObjectPtr<class USizeBox> WidthSizeBox;
 	float AppliedWidthOverride = -1.0f;
 	float AppliedFontScale = 1.0f;
+
+	// 메시지 한 줄 폭 계산과 마지막으로 엔트리들에 넘긴 값
+	float GetEntryRowWidth() const;
+	float AppliedEntryRowWidth = -1.0f;
 };

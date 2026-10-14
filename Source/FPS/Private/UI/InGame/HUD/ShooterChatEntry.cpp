@@ -36,6 +36,7 @@ void UShooterChatEntry::ApplyFontScale(const float Scale)
 	ApplyTo(Text_Message, BaseMessageFontSize);
 
 	RefreshChannelIconLayout(); // 글자 크기가 바뀌면 아이콘 크기/위치도 다시 맞춘다
+	RefreshMessageWrap(); // 글자/아이콘 크기가 바뀌면 메시지 줄바꿈 폭도 다시 계산
 }
 
 // 채널 아이콘을 첫 줄 글자 높이에 맞춘다.
@@ -101,6 +102,52 @@ void UShooterChatEntry::RefreshChannelIconLayout()
 	Image_ChannelIcon->SetRenderTranslation(FVector2D(0.0f, IconVerticalNudge * AppliedFontScale));
 }
 
+// 채팅 로그가 한 줄에 쓸 수 있는 폭(로컬 단위)을 넘겨준다. 폭이 바뀔 때마다 다시 불린다.
+void UShooterChatEntry::SetRowWidth(const float InRowWidth)
+{
+	if (FMath::IsNearlyEqual(RowWidth, InRowWidth, 0.5f))
+	{
+		return;
+	}
+	RowWidth = InRowWidth;
+	RefreshMessageWrap();
+}
+
+// 메시지 줄바꿈 폭 = 줄 폭 - 아이콘 - 이름(실제 글자 폭 측정) - 각 칸 여백.
+// 배치 결과에 기대지 않고 폰트로 직접 재므로 컨테이너 종류나 폭 변경 순서와 무관하게 항상 같은 결과가 나온다.
+void UShooterChatEntry::RefreshMessageWrap()
+{
+	if (!Text_Message || RowWidth <= 0.0f || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	auto HorizontalPadding = [](const UWidget* Widget)
+	{
+		const UHorizontalBoxSlot* BoxSlot = Widget ? Cast<UHorizontalBoxSlot>(Widget->Slot) : nullptr;
+		return BoxSlot ? BoxSlot->GetPadding().Left + BoxSlot->GetPadding().Right : 0.0f;
+	};
+
+	float UsedWidth = HorizontalPadding(Text_Message);
+	if (Image_ChannelIcon && Image_ChannelIcon->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		const FVector2D IconSize = (BaseIconSize.IsZero() ? Image_ChannelIcon->GetBrush().ImageSize : BaseIconSize) * AppliedFontScale;
+		UsedWidth += IconSize.X + HorizontalPadding(Image_ChannelIcon);
+	}
+	if (Text_SenderName)
+	{
+		const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+		UsedWidth += FontMeasure->Measure(Text_SenderName->GetText(), Text_SenderName->GetFont()).X
+			+ FMath::Max(0.0f, static_cast<float>(TextShadowOffset.X))
+			+ HorizontalPadding(Text_SenderName);
+	}
+
+	// 반올림·그림자 오차로 마지막 글자가 잘리지 않도록 약간 여유를 둔다.
+	constexpr float SafetyMargin = 4.0f;
+	constexpr float MinWrapWidth = 16.0f;
+	Text_Message->SetWrapTextAt(FMath::Max(MinWrapWidth, RowWidth - UsedWidth - SafetyMargin));
+}
+
 void UShooterChatEntry::SetData(const FChatMessage& InMessage)
 {
 	FLinearColor ChannelColor = MatchChannelColor;
@@ -127,7 +174,7 @@ void UShooterChatEntry::SetData(const FChatMessage& InMessage)
 		Text_Message->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
 		// 줄바꿈 폭을 고정값(WrapTextAt)이 아니라 실제 배치 폭으로 잡아, 해상도에 따라 채팅창 폭이
 		// 바뀌어도 그 폭에 맞춰 자동으로 줄바꿈되게 한다(WBP 설정과 무관하게 보장).
-		Text_Message->SetAutoWrapText(true);
+		Text_Message->SetAutoWrapText(false);
 		if (UHorizontalBoxSlot* MessageSlot = Cast<UHorizontalBoxSlot>(Text_Message->Slot))
 		{
 			MessageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -173,6 +220,7 @@ void UShooterChatEntry::SetData(const FChatMessage& InMessage)
 	}
 
 	RefreshChannelIconLayout(); // 채널 아이콘을 첫 줄 글자 높이에 맞춤
+	RefreshMessageWrap(); // 이름 길이에 맞춰 메시지 줄바꿈 폭 계산
 
 	OnChannelApplied(InMessage.Channel);
 }
