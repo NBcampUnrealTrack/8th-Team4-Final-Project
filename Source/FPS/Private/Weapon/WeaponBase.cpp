@@ -106,6 +106,7 @@ void AWeaponBase::BeginPlay()
 	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 
 	// 스나이퍼는 좌우(Yaw) 반동이 없어야 한다 - 무기 BP/DataTable에 설정된 값과 무관하게 코드에서
 	// 강제한다(CanADS()/GetCurrentSpreadDegrees()의 스나이퍼 강제 규칙과 같은 패턴). ApplySpreadRecoilTuningTable이
@@ -271,6 +272,8 @@ void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
 
 void AWeaponBase::NotifyPrimaryInputReleased()
 {
+	bEmptiedDuringHold = false;
+
 	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
 	// 다음 발사 입력은 "떼었다 다시 누른 새 입력"으로 보고 재장전을 허용한다(GA_RangedAttack).
 	if (IsOutOfAmmo() && bEmptyClipNotified && !bIsReloading)
@@ -720,6 +723,11 @@ int32 AWeaponBase::ConsumeAmmoForShot()
 	if (!bInfiniteAmmo)
 	{
 		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+		// 누른 채 쏘다가 마지막 탄을 쏜 순간을 기록한다(바로 재장전 판정용).
+		if (CurrentAmmo <= 0)
+		{
+			bEmptiedDuringHold = true;
+		}
 		OnAmmoChanged.Broadcast();
 	}
 
@@ -943,6 +951,7 @@ void AWeaponBase::StartReload()
 
 	bIsReloading = true;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
 	// 항상 무반동 상태로 시작한다.
 	if (Aim)
@@ -973,6 +982,7 @@ void AWeaponBase::FinishReload()
 		bEmptyClipNotified = false;
 	}
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false; 
 
 	bIsReloading = false;
 	OnAmmoChanged.Broadcast();
