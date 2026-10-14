@@ -188,6 +188,9 @@ void UShooterGameUserSettings::SetToDefaults()
 	SetScreenResolution(GetMaxSupportedResolution());
 	SetFrameRateLimit(GetDefaultFrameRateLimit());
 	ResetInputModes();
+	// 채팅 표시 옵션 기본값
+	ChatOpacityLevel = 3;
+	ChatSizeLevel = 1;
 	ApplyScreenBrightness();
 	OnAudioSettingsChanged.Broadcast();
 	OnCrosshairSettingsChanged.Broadcast();
@@ -238,6 +241,29 @@ void UShooterGameUserSettings::SetCrouchToggleEnabled(const bool bEnabled)
 		bToggleCrouch = bEnabled;
 		OnInputModesChanged.Broadcast();
 	}
+}
+
+// 채팅 표시 옵션. 채팅 로그가 매 틱 읽으므로 별도 변경 이벤트는 두지 않는다.
+void UShooterGameUserSettings::SetChatOpacityLevel(const int32 NewLevel)
+{
+	ChatOpacityLevel = FMath::Clamp(NewLevel, 0, ChatOpacityLevelCount - 1);
+}
+
+float UShooterGameUserSettings::GetChatOpacity() const
+{
+	static constexpr float Opacities[ChatOpacityLevelCount] = { 0.0f, 0.5f, 0.75f, 1.0f };
+	return Opacities[FMath::Clamp(ChatOpacityLevel, 0, ChatOpacityLevelCount - 1)];
+}
+
+void UShooterGameUserSettings::SetChatSizeLevel(const int32 NewLevel)
+{
+	ChatSizeLevel = FMath::Clamp(NewLevel, 0, ChatSizeLevelCount - 1);
+}
+
+float UShooterGameUserSettings::GetChatScale() const
+{
+	static constexpr float Scales[ChatSizeLevelCount] = { 0.85f, 1.0f, 1.15f };
+	return Scales[FMath::Clamp(ChatSizeLevel, 0, ChatSizeLevelCount - 1)];
 }
 
 void UShooterGameUserSettings::ResetInputModes()
