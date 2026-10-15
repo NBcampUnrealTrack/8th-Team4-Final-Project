@@ -106,6 +106,8 @@ private:
 	TWeakObjectPtr<AActor> SavedLiveViewTarget;
 	FNetworkGUID KillerActorGuid;
 	FNetworkGUID VictimActorGuid;
+	// 시킹 중 큐에 묶이면 킬러 무기가 늦게 스폰돼 킬캠 초반에 총이 비어 보인다.
+	TArray<FNetworkGUID> KillerWeaponGuids;
 	FTimerHandle PostDeathTimerHandle;
 	FTimerHandle PlaybackTimerHandle;
 	FTimerHandle PlaybackCleanupTimerHandle;

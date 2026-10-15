@@ -30,6 +30,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "Sound/SoundBase.h"
+#include "Particles/ParticleSystem.h"
 #include "Tags/GameplayTags.h"
 #include "Weapon/WeaponAimComponent.h"
 #include "Weapon/WeaponEffectsComponent.h"
@@ -105,6 +106,7 @@ void AWeaponBase::BeginPlay()
 	ShotIndexInMagazine = 0;
 	bEmptyClipNotified = false;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 
 	// 스나이퍼는 좌우(Yaw) 반동이 없어야 한다 - 무기 BP/DataTable에 설정된 값과 무관하게 코드에서
 	// 강제한다(CanADS()/GetCurrentSpreadDegrees()의 스나이퍼 강제 규칙과 같은 패턴). ApplySpreadRecoilTuningTable이
@@ -270,6 +272,8 @@ void AWeaponBase::PlayMeleeAttackSound(const bool bHeavyAttack)
 
 void AWeaponBase::NotifyPrimaryInputReleased()
 {
+	bEmptiedDuringHold = false;
+
 	// 탄창이 빈 상태에서 클릭음을 이미 들었을 때만 의미가 있다 - 이 시점에 발사 입력을 떼었으니
 	// 다음 발사 입력은 "떼었다 다시 누른 새 입력"으로 보고 재장전을 허용한다(GA_RangedAttack).
 	if (IsOutOfAmmo() && bEmptyClipNotified && !bIsReloading)
@@ -435,6 +439,11 @@ void AWeaponBase::SetADS(bool bNewIsADS)
 bool AWeaponBase::IsADS() const
 {
 	return Aim && Aim->IsADS();
+}
+
+float AWeaponBase::GetAccumulatedRecoilPitch() const
+{
+	return Aim ? Aim->GetAccumulatedRecoilPitch() : 0.f;
 }
 
 bool AWeaponBase::CanADS() const
@@ -714,6 +723,11 @@ int32 AWeaponBase::ConsumeAmmoForShot()
 	if (!bInfiniteAmmo)
 	{
 		CurrentAmmo = FMath::Max(CurrentAmmo - 1, 0);
+		// 누른 채 쏘다가 마지막 탄을 쏜 순간을 기록한다(바로 재장전 판정용).
+		if (CurrentAmmo <= 0)
+		{
+			bEmptiedDuringHold = true;
+		}
 		OnAmmoChanged.Broadcast();
 	}
 
@@ -795,7 +809,17 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 		if (Effects) Effects->PlayFireSound();
 	}
 	const APawn* OwningPawn = Cast<APawn>(GetOwner());
-	const bool bIsFirstPerson = OwningPawn && OwningPawn->IsLocallyControlled();
+	// 킬캠/관전으로 이 폰을 1인칭으로 보는 중이면 1P 총구 이펙트를 써야 숨겨진 3P 총에서 이펙트가 나가지 않는다.
+	const AShooterCharacter* OwningCharacter = Cast<AShooterCharacter>(OwningPawn);
+	const bool bIsFirstPerson = OwningCharacter ? OwningCharacter->IsFirstPersonPresented()
+		: OwningPawn && OwningPawn->IsLocallyControlled();
+
+	// 클라이언트 킬캠 녹화는 받은 비신뢰 멀티캐스트를 다음 무기 복제까지 쌓아 두고, 한 번에 2개(net.MaxRPCPerNetUpdate)만 남긴다.
+	// 무기는 0.3~0.5초에 한 번만 녹화 복제돼 연사가 2발씩 묶이고 나머지는 버려졌다. 받을 때마다 다음 녹화 프레임에 내보내게 한다.
+	if (GetLocalRole() != ROLE_Authority)
+	{
+		ForceNetUpdate();
+	}
 
 	// The predicting owner and authority play rifle/knife animation through the ability.
 	// Simulated observers receive fire effects, but do not execute that ability.
@@ -818,6 +842,19 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 		}
 	}
 
+	// Third-person recoil for every view of this pawn from outside (observers and a listen server's view of
+	// remote players), all ranged weapons. The owner sees first-person recoil instead.
+	if (OwningPawn && !OwningPawn->IsLocallyControlled() && !bKnifeAttack)
+	{
+		const AShooterCharacter* Character = Cast<AShooterCharacter>(OwningPawn);
+		UShooterAnimInstance* Anim = Character && Character->GetMesh()
+			? Cast<UShooterAnimInstance>(Character->GetMesh()->GetAnimInstance()) : nullptr;
+		if (Anim && Character->GetCombatComponent() && Character->GetCombatComponent()->GetCurrentWeapon() == this)
+		{
+			Anim->PlayFireRecoil();
+		}
+	}
+
 	UHitscanSurfaceDefinition* SurfaceDefinition = HitscanDefinition ? HitscanDefinition->GetSurfaceDefinition() : nullptr;
 
 	for (const FHitscanImpactEffectData& ImpactEffect : ImpactEffects)
@@ -836,6 +873,21 @@ void AWeaponBase::Multicast_PlayFireEffects_Implementation(const TArray<FHitscan
 				if (USoundBase* ImpactSound = SurfaceDefinition->ResolveImpactSound(ImpactEffect.ImpactSurfaceType))
 				{
 					UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, ImpactEffect.ImpactPoint);
+				}
+
+				// 파티클 복구
+				if (ImpactEffect.bSpawnImpactParticle)
+				{
+					if (UParticleSystem* ImpactParticle = SurfaceDefinition->ResolveImpactParticle(ImpactEffect.ImpactSurfaceType, bHeadshot))
+					{
+						// ImpactNormal.Rotation()은 Roll이 항상 0이라 방향성 있는 파티클(예: P_Blood_Splat_Cone)이
+						// 매번 같은 각도로만 튄다. 노멀 축(Roll)을 랜덤으로 돌려 맞을 때마다 다른 방향으로 튀게 한다.
+						FRotator ImpactRotation = ImpactEffect.ImpactNormal.Rotation();
+						ImpactRotation.Roll = FMath::FRandRange(0.f, 360.f);
+
+						UGameplayStatics::SpawnEmitterAtLocation(
+							this, ImpactParticle, ImpactEffect.ImpactPoint, ImpactRotation);
+					}
 				}
 			}
 		}
@@ -899,6 +951,7 @@ void AWeaponBase::StartReload()
 
 	bIsReloading = true;
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false;
 	// 재장전 진입 즉시 반동을 리셋한다(전투 시스템 명세서 7장 엣지 케이스) - 재장전 후 첫 발은
 	// 항상 무반동 상태로 시작한다.
 	if (Aim)
@@ -929,6 +982,7 @@ void AWeaponBase::FinishReload()
 		bEmptyClipNotified = false;
 	}
 	bEmptyReloadArmed = false;
+	bEmptiedDuringHold = false; 
 
 	bIsReloading = false;
 	OnAmmoChanged.Broadcast();

@@ -28,6 +28,7 @@ protected:
 private:
 	void UpdateHealth(APawn* Pawn, UTextBlock* Text, UProgressBar* Bar) const;
 	void UpdateReticle();
+	void SendSniperScopeToBack();
 	bool IsScoreboardOrMenuActive() const;
 	void UpdateOverlayVisibility();
 	void EnsureSkipHint();

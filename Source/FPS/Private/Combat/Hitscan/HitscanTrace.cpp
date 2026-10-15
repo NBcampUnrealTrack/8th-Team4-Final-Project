@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
+#include "GAS/RogueTargetFilter.h"
 #include "Interfaces/RogueDamageableTarget.h"
 #include "Interfaces/RogueHitscanReactiveTarget.h"
 #include "Interfaces/RoguePenetrableSurface.h"
@@ -271,6 +272,19 @@ FHitscanImpactEffectData FHitscanTrace::BuildImpactEffectData(
 	ImpactEffectData.ImpactSurfaceType = ResolveImpactSurfaceType(HitResult);
 	ImpactEffectData.PelletIndex = PelletIndex;
 	ImpactEffectData.bHasHit = true;
+
+	// 파티클 복구
+	if (AActor* TargetActor = HitResult.GetActor();
+		IsValid(TargetActor) && TargetActor->Implements<URogueDamageableTarget>())
+	{
+		ImpactEffectData.bSpawnImpactParticle =
+			IRogueDamageableTarget::Execute_ShouldSpawnHitscanImpactParticle(TargetActor);
+		
+		if (URogueTargetFilter::GetRelation(Request.InstigatorActor, TargetActor) == ERogueTargetRelation::Friendly)
+		{
+			ImpactEffectData.bSpawnImpactParticle = false;
+		}
+	}
 
 	return ImpactEffectData;
 }

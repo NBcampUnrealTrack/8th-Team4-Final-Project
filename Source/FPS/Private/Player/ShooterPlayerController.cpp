@@ -131,7 +131,7 @@ void AShooterPlayerController::BeginPlay()
 	InitializeRuntimeInputMappings();
 	BindApplicationActivation();
 
-	// Modified: 이전 화면(커스터마이징 등)이 FInputModeUIOnly로 남긴 GameViewportClient의 bIgnoreInput(true)을 게임플레이 시작 전에 해제한다.
+	// 이전 화면(커스터마이징 등)이 FInputModeUIOnly로 남긴 GameViewportClient의 bIgnoreInput(true)을 게임플레이 시작 전에 해제한다.
 	// 이 값이 true로 남으면 Slate에는 키/마우스가 도착해도 게임(이동/시점/메뉴) 입력이 전부 무시된다. CommonUI는 이 값을 건드리지 않는다.
 	if (const ULocalPlayer* ResetLocalPlayer = GetLocalPlayer())
 	{
@@ -236,7 +236,9 @@ void AShooterPlayerController::HandleApplicationActivationChanged(const bool bIs
 {
 	if (IsLocalController() && !bIsActive)
 	{
-		ResetInputModeState();
+		// 키를 누른 채(예: 채팅을 연 Enter) 알트탭하면 떼는 입력을 못 받아 돌아와서도 눌린 상태로 남고,
+		// 그 키를 다시 눌러도 "눌림"으로 인식되지 않는다. 창을 벗어날 때 눌린 키를 모두 떼어 둔다.
+		FlushPressedKeys();
 	}
 	if (!bIsActive || !IsLocalController())
 	{
@@ -266,6 +268,28 @@ void AShooterPlayerController::ReapplyCommonUIInputConfig()
 	if (UShooterActionRouter* Router = Cast<UShooterActionRouter>(LocalPlayer->GetSubsystem<UCommonUIActionRouterBase>()))
 	{
 		Router->RecalculateActiveInputConfig();
+	}
+
+	// 채팅 입력 중 알트탭하고 돌아오면 키보드 포커스가 게임 뷰포트로 가 있어 입력란이 먹통이 되고
+	// (Enter/Esc도 입력란에 안 들어가서) 채팅창을 닫을 수도 없었다. 입력 설정을 다시 적용한 뒤 입력란 포커스를 되돌린다.
+	if (bIsChatInputOpen)
+	{
+		if (UShooterChatInputBox* ChatInput = ChatInputWidget.Get())
+		{
+			ChatInput->RestoreMessageFocus();
+
+			// 창 활성화 직후 Slate가 포커스를 게임 뷰포트로 다시 가져가는 경우가 있어 잠시 뒤 한 번 더 되돌린다.
+			// (그래도 놓치면 Enter를 다시 눌렀을 때 OpenChatInput이 포커스를 되돌린다.)
+			const TWeakObjectPtr<UShooterChatInputBox> WeakChatInput = ChatInput;
+			FTimerHandle RetryFocusHandle;
+			GetWorldTimerManager().SetTimer(RetryFocusHandle, FTimerDelegate::CreateWeakLambda(this, [this, WeakChatInput]()
+			{
+				if (bIsChatInputOpen && WeakChatInput.IsValid())
+				{
+					WeakChatInput->RestoreMessageFocus();
+				}
+			}), 0.2f, false);
+		}
 	}
 }
 
@@ -1260,7 +1284,7 @@ AActor* AShooterPlayerController::GetPresentationViewTarget() const
 
 void AShooterPlayerController::SetViewTarget(AActor* NewViewTarget, FViewTargetTransitionParams TransitionParams)
 {
-	// Modified: 트레일러 카메라가 켜져 있는 동안 서버의 관전 대상 전환(ClientSetViewTarget)이 시점을 빼앗지 못하게 막는다.
+	// 트레일러 카메라가 켜져 있는 동안 서버의 관전 대상 전환(ClientSetViewTarget)이 시점을 빼앗지 못하게 막는다.
 #if !UE_BUILD_SHIPPING
 	if (const UTrailerCameraSubsystem* TrailerCamera = UTrailerCameraSubsystem::Get(this))
 	{
@@ -1296,9 +1320,90 @@ void AShooterPlayerController::UpdateHiddenComponents(
 	const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents)
 {
 	Super::UpdateHiddenComponents(ViewLocation, HiddenComponents);
+
+	// TEMP: 킬캠 후 관전 시 팀원 1P 무기 미표시 원인 확인용. 상태가 바뀔 때만 남긴다.
+	if (IsLocalController())
+	{
+		const AShooterCharacter* Viewed = Cast<AShooterCharacter>(GetViewTarget());
+		FString DiagnosticState;
+		if (IsValid(Viewed) && Viewed != GetPawn())
+		{
+			const UCombatComponent* ViewedCombat = Viewed->GetCombatComponent();
+			const AWeaponBase* Weapon = IsValid(ViewedCombat) ? ViewedCombat->GetCurrentWeapon() : nullptr;
+			const USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) ? Weapon->GetMesh1P() : nullptr;
+			const USkeletalMeshComponent* ArmsMesh1P = IPlayerInterface::Execute_GetMesh1P(const_cast<AShooterCharacter*>(Viewed));
+			DiagnosticState = FString::Printf(
+				TEXT("Target=%s Suppressed=%d Weapon=%s WeaponOwner=%s ActorHidden=%d Mesh1PVisible=%d Mesh1PHidden=%d Mesh1PRegistered=%d Mesh1PParent=%s ArmsVisible=%d ArmsHidden=%d Aiming=%d"),
+				*GetNameSafe(Viewed),
+				bKillcamViewTargetSuppressed ? 1 : 0,
+				*GetNameSafe(Weapon),
+				IsValid(Weapon) ? *GetNameSafe(Weapon->GetOwner()) : TEXT("None"),
+				IsValid(Weapon) && Weapon->IsHidden() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsVisible() ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(WeaponMesh1P) && WeaponMesh1P->IsRegistered() ? 1 : 0,
+				IsValid(WeaponMesh1P) ? *GetNameSafe(WeaponMesh1P->GetAttachParent()) : TEXT("None"),
+				IsValid(ArmsMesh1P) && ArmsMesh1P->IsVisible() ? 1 : 0,
+				IsValid(ArmsMesh1P) && ArmsMesh1P->bHiddenInGame ? 1 : 0,
+				IsValid(ViewedCombat) && ViewedCombat->IsAiming() ? 1 : 0);
+		}
+		if (DiagnosticState != LastSpectateDiagnosticState)
+		{
+			LastSpectateDiagnosticState = DiagnosticState;
+			if (!DiagnosticState.IsEmpty())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[SpectateDiag] %s"), *DiagnosticState);
+			}
+		}
+	}
+
 	if (!bKillcamViewTargetSuppressed || !IsLocalController() || !GetWorld())
 	{
 		return;
+	}
+
+	// 킬캠 시점 액터는 어떤 폰의 오너도 아니라 1P 메시 아래의 OwnerNoSee 파츠(스나 1P 스코프 등)가
+	// 오너 판정 없이 그대로 그려진다. 킬러의 현재 무기 외에는 1P 표현을 전부 숨긴다.
+	if (const AKillcamCameraActor* KillcamCamera = Cast<AKillcamCameraActor>(GetViewTarget()))
+	{
+		AActor* Tracked = KillcamCamera->GetTrackedActor();
+		const AWeaponBase* TrackedWeapon = IsValid(Tracked) && Tracked->Implements<UPlayerInterface>()
+			? IPlayerInterface::Execute_GetCurrentWeapon(Tracked)
+			: nullptr;
+		if (const FLevelCollection* ReplayCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicDuplicatedLevels))
+		{
+			for (ULevel* Level : ReplayCollection->GetLevels())
+			{
+				if (!IsValid(Level))
+				{
+					continue;
+				}
+
+				for (AActor* Actor : Level->Actors)
+				{
+					const AWeaponBase* Weapon = Cast<AWeaponBase>(Actor);
+					USkeletalMeshComponent* WeaponMesh1P = IsValid(Weapon) && Weapon != TrackedWeapon
+						? Weapon->GetMesh1P()
+						: nullptr;
+					if (!IsValid(WeaponMesh1P))
+					{
+						continue;
+					}
+
+					TArray<USceneComponent*> Mesh1PTree;
+					WeaponMesh1P->GetChildrenComponents(true, Mesh1PTree);
+					Mesh1PTree.Add(WeaponMesh1P);
+					for (USceneComponent* Child : Mesh1PTree)
+					{
+						if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Child);
+							IsValid(Primitive) && Primitive->IsRegistered())
+						{
+							HiddenComponents.Add(Primitive->GetPrimitiveSceneId());
+						}
+					}
+				}
+			}
+		}
 	}
 
 	const FLevelCollection* LiveCollection = GetWorld()->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels);
@@ -2519,6 +2624,19 @@ void AShooterPlayerController::Input_OpenChat()
 
 void AShooterPlayerController::OpenChatInput(const FVector2D& ScreenOffset)
 {
+	// 채팅이 열린 상태인데 Enter가 게임 입력으로 들어왔다면 입력란이 포커스를 잃은 것(알트탭 등)이다.
+	// 예전에는 여기서 그냥 return해서 다시 Enter를 눌러도 복구할 방법이 없었으므로 입력란 포커스를 되돌린다.
+	if (IsLocalController() && bIsChatInputOpen)
+	{
+		if (UShooterChatInputBox* OpenChatInputWidget = ChatInputWidget.Get())
+		{
+			OpenChatInputWidget->RestoreMessageFocus();
+			return;
+		}
+		// 입력창 위젯은 없는데 열림 상태만 남은 경우는 상태를 정리하고 새로 연다.
+		CloseChatInput();
+	}
+
 	if (!IsLocalController() || bIsChatInputOpen)
 	{
 		return;
@@ -2574,6 +2692,36 @@ void AShooterPlayerController::SetMatchChatChannelAllowed(const bool bAllowed)
 	{
 		ChatInputWidget->SetChannel(CurrentChatChannel, CurrentWhisperTarget);
 	}
+}
+
+// 채팅 로그가 입력창을 자기 아래에 맞춰 붙일 때 사용
+UShooterChatInputBox* AShooterPlayerController::GetChatInputWidget() const
+{
+	return ChatInputWidget.Get();
+}
+
+// 채팅 입력 중 내역 스크롤
+void AShooterPlayerController::RequestChatScroll(const float Steps)
+{
+	if (bIsChatInputOpen)
+	{
+		OnChatScrollRequested.Broadcast(Steps);
+	}
+}
+
+bool AShooterPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	// 채팅 입력창이 열려 있으면 휠은 내역 스크롤에만 쓰고 게임 입력으로 넘기지 않는다.
+	if (bIsChatInputOpen && (Params.Key == EKeys::MouseScrollUp || Params.Key == EKeys::MouseScrollDown))
+	{
+		if (Params.Event == IE_Pressed)
+		{
+			RequestChatScroll(Params.Key == EKeys::MouseScrollUp ? -1.0f : 1.0f);
+		}
+		return true;
+	}
+
+	return Super::InputKey(Params);
 }
 
 void AShooterPlayerController::CloseChatInput()
@@ -3026,7 +3174,7 @@ ULoadingScreenSubsystem* AShooterPlayerController::GetLoadingScreenSubsystem() c
 	return nullptr;
 }
 
-// Modified: 트레일러 촬영용 카메라(개발 전용). 쉬핑 빌드에서는 모든 함수가 아무 일도 하지 않는다.
+// 트레일러 촬영용 카메라(개발 전용). 쉬핑 빌드에서는 모든 함수가 아무 일도 하지 않는다.
 namespace
 {
 #if !UE_BUILD_SHIPPING

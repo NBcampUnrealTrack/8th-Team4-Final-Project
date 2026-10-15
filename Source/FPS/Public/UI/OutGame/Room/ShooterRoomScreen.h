@@ -65,6 +65,7 @@ private:
 		EGameTeam Team);
 	void RebuildUnassignedEntries(const TArray<FShooterRoomSlotView>& UnassignedViews);
 	void RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views);
+	void RefreshTalkingIndicators(const TArray<FShooterRoomSlotView>& Views);
 	void HandleSlotJoinRequested(EGameTeam Team);
 
 	// 모드 패널
@@ -130,7 +131,8 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UShooterButtonBase> Btn_Leave;
 	
-	UPROPERTY(meta = (BindWidget))
+	// BindWidget -> BindWidgetOptional
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UShooterButtonBase> Btn_ModeNext;
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_ModeName;

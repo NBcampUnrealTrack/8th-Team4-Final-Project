@@ -156,6 +156,19 @@ public:
 
 	void ResetInputModes();
 
+	// 채팅 표시 옵션. 투명도 단계 0=끄기, 1=50%, 2=75%, 3=100% / 크기 단계 0=작게, 1=보통, 2=크게
+	static constexpr int32 ChatOpacityLevelCount = 4;
+	static constexpr int32 ChatSizeLevelCount = 3;
+
+	int32 GetChatOpacityLevel() const { return ChatOpacityLevel; }
+	void SetChatOpacityLevel(int32 NewLevel);
+	// 0이면 채팅을 끈 상태(입력창을 열었을 때만 보임)
+	float GetChatOpacity() const;
+
+	int32 GetChatSizeLevel() const { return ChatSizeLevel; }
+	void SetChatSizeLevel(int32 NewLevel);
+	float GetChatScale() const;
+
 	/** Applies the saved X/Y sensitivity, invert-Y and ADS multiplier in one place. */
 	UFUNCTION(BlueprintPure, Category = "FPS|Settings|Input")
 	FVector2D ApplyLookSensitivity(FVector2D RawLookInput, bool bAiming) const;
@@ -246,6 +259,13 @@ protected:
 
 	UPROPERTY(Config)
 	bool bToggleCrouch = false;
+
+	// 채팅 표시 옵션 (GetChatOpacity/GetChatScale 참고)
+	UPROPERTY(Config)
+	int32 ChatOpacityLevel = 3;
+
+	UPROPERTY(Config)
+	int32 ChatSizeLevel = 1;
 
 	UPROPERTY(Config, meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float MasterVolume = 1.0f;

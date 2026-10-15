@@ -16,6 +16,7 @@
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/Engine.h"
 #include "Engine/EngineTypes.h"
@@ -88,6 +89,27 @@ namespace
 		return FallbackIndex;
 	}
 
+	void ResizeLocalPIEViewport(UGameInstance* GameInstance, const FIntPoint Resolution,
+		const EWindowMode::Type WindowMode)
+	{
+		if (!GameInstance)
+		{
+			return;
+		}
+
+		UGameViewportClient* ViewportClient = GameInstance->GetGameViewportClient();
+		if (ViewportClient && ViewportClient->bIsPlayInEditorViewport)
+		{
+			if (FSceneViewport* SceneViewport = ViewportClient->GetGameViewport())
+			{
+				SceneViewport->ResizeFrame(
+					static_cast<uint32>(Resolution.X),
+					static_cast<uint32>(Resolution.Y),
+					WindowMode);
+			}
+		}
+	}
+
 	// Padding 프로퍼티를 가진 슬롯이면 타입과 무관하게 적용한다.
 	bool SetSlotPadding(UPanelSlot* Slot, const FMargin& Padding)
 	{
@@ -138,25 +160,24 @@ void UShooterOptionsScreen::RequestClose()
 void UShooterOptionsScreen::SaveOptions()
 {
 	UShooterGameUserSettings* Settings = GetGameUserSettings();
-	if (!IsValid(Settings))
+	// 확인 대기 중인 임시 화면 모드는 파일에 저장하지 않는다.
+	if (!IsValid(Settings) || bVideoModeConfirmationPending)
 	{
 		return;
 	}
 
-	// 해상도/창 모드는 선택만 보관하고 적용 버튼에서 한 번만 미리보기한다.
-	if (bVideoModeSelectionDirty && !bVideoModeConfirmationPending)
+	// 일반 옵션은 변경 시 이미 적용된다. 저장할 때 품질 설정을 재적용하지 않는다.
+	Settings->SaveSettings();
+
+	// 해상도/창 모드는 저장 후 한 번만 미리보기하고, 유지/취소로 확정한다.
+	if (bVideoModeSelectionDirty)
 	{
-		Settings->ApplyNonResolutionSettings();
-		Settings->SaveSettings();
+		StopSaveFeedback();
 		PreviewVideoMode(PendingResolution, PendingWindowMode);
-		return;
 	}
-
-	// 화면 설정 확인 창이 열린 동안에는 임시 화면 모드를 저장하지 않는다.
-	if (!bVideoModeConfirmationPending)
+	else
 	{
-		Settings->ApplyNonResolutionSettings();
-		Settings->SaveSettings();
+		ShowSaveFeedback();
 	}
 }
 
@@ -165,7 +186,6 @@ void UShooterOptionsScreen::FinishEditing()
 	RevertVideoModeInternal(false);
 	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
 	{
-		Settings->ApplyNonResolutionSettings();
 		Settings->SaveSettings();
 	}
 }
@@ -213,10 +233,13 @@ void UShooterOptionsScreen::NativeOnActivated()
 
 	Super::NativeOnActivated();
 	RefreshOptionsUI();
+	StartPageTransition();
 }
 
 void UShooterOptionsScreen::NativeOnDeactivated()
 {
+	StopPageTransition();
+	StopSaveFeedback();
 	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
 	{
 		Settings->OnCrosshairSettingsChanged.RemoveAll(this);
@@ -233,6 +256,8 @@ bool UShooterOptionsScreen::NativeOnHandleBackAction()
 
 void UShooterOptionsScreen::NativeDestruct()
 {
+	StopPageTransition();
+	StopSaveFeedback();
 	if (UShooterGameUserSettings* Settings = GetGameUserSettings())
 	{
 		Settings->OnCrosshairSettingsChanged.RemoveAll(this);
@@ -386,22 +411,7 @@ void UShooterOptionsScreen::PreviewVideoMode(
 
 	// A floating PIE window has its own scene viewport. Resize that exact local
 	// viewport as well so resolution changes are visible during two-player PIE tests.
-	if (UGameInstance* GameInstance = GetGameInstance())
-	{
-		if (UGameViewportClient* ViewportClient = GameInstance->GetGameViewportClient())
-		{
-			if (ViewportClient->bIsPlayInEditorViewport)
-			{
-				if (FSceneViewport* SceneViewport = ViewportClient->GetGameViewport())
-				{
-					SceneViewport->ResizeFrame(
-						static_cast<uint32>(PendingResolution.X),
-						static_cast<uint32>(PendingResolution.Y),
-						ToEngineWindowMode(PendingWindowMode));
-				}
-			}
-		}
-	}
+	ResizeLocalPIEViewport(GetGameInstance(), PendingResolution, ToEngineWindowMode(PendingWindowMode));
 
 	StartVideoModeConfirmationTimeout();
 	OnSettingsChanged.Broadcast();
@@ -425,9 +435,7 @@ void UShooterOptionsScreen::ConfirmVideoMode()
 		return;
 	}
 
-	Settings->SetScreenResolution(PendingResolution);
-	Settings->SetFullscreenMode(ToEngineWindowMode(PendingWindowMode));
-	Settings->ApplyResolutionSettings(false);
+	// 미리보기에서 적용한 화면 모드를 재적용하지 않고 확정만 한다.
 	Settings->ConfirmVideoMode();
 
 	ClearVideoModeConfirmationTimeout();
@@ -436,6 +444,7 @@ void UShooterOptionsScreen::ConfirmVideoMode()
 	VideoModeBaselineResolution = FIntPoint::ZeroValue;
 	Settings->SaveSettings();
 	OnSettingsChanged.Broadcast();
+	ShowSaveFeedback();
 }
 
 void UShooterOptionsScreen::RevertVideoMode()
@@ -476,22 +485,7 @@ void UShooterOptionsScreen::RevertVideoModeInternal(const bool bNotifySettingsCh
 		Settings->SetFullscreenMode(ToEngineWindowMode(WindowMode));
 		Settings->ApplyResolutionSettings(false);
 
-		if (UGameInstance* GameInstance = GetGameInstance())
-		{
-			if (UGameViewportClient* ViewportClient = GameInstance->GetGameViewportClient())
-			{
-				if (ViewportClient->bIsPlayInEditorViewport)
-				{
-					if (FSceneViewport* SceneViewport = ViewportClient->GetGameViewport())
-					{
-						SceneViewport->ResizeFrame(
-							static_cast<uint32>(Resolution.X),
-							static_cast<uint32>(Resolution.Y),
-							ToEngineWindowMode(WindowMode));
-					}
-				}
-			}
-		}
+		ResizeLocalPIEViewport(GetGameInstance(), Resolution, ToEngineWindowMode(WindowMode));
 	}
 
 	bVideoModeConfirmationPending = false;
@@ -1294,6 +1288,11 @@ void UShooterOptionsScreen::BindOptionControls()
 	BIND_CLICK("Btn_ADSModeNext", HandleADSModeChanged);
 	BIND_CLICK("Btn_CrouchModePrev", HandleCrouchModeChanged);
 	BIND_CLICK("Btn_CrouchModeNext", HandleCrouchModeChanged);
+	// 채팅 표시 옵션
+	BIND_CLICK("Btn_ChatOpacityPrev", HandleChatOpacityPrev);
+	BIND_CLICK("Btn_ChatOpacityNext", HandleChatOpacityNext);
+	BIND_CLICK("Btn_ChatSizePrev", HandleChatSizePrev);
+	BIND_CLICK("Btn_ChatSizeNext", HandleChatSizeNext);
 	BIND_CLICK("Btn_DynamicCrosshairToggle", HandleDynamicCrosshairToggle);
 	BIND_CLICK("Btn_EnemyCrosshairColorToggle", HandleEnemyCrosshairColorToggle);
 	BIND_CLICK("Btn_MasterMuteToggle", HandleMasterMuteToggle);
@@ -1358,6 +1357,7 @@ void UShooterOptionsScreen::ApplyOptionStaticStyles()
 		TEXT("GlobalIllumination"), TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"),
 		TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"), TEXT("Language"),
 		TEXT("ADSMode"), TEXT("CrouchMode"),
+		TEXT("ChatOpacity"), TEXT("ChatSize"), // 채팅 표시 옵션
 	};
 
 	if (bOverrideValueBoxStyle)
@@ -1503,8 +1503,8 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Btn_Side_Controls"), TEXT("조작 설정"), TEXT("Controls"));
 	Set(TEXT("TXT_Btn_Side_KeyBindings"), TEXT("키 설정"), TEXT("Key Bindings"));
 	Set(TEXT("TXT_Btn_Side_Audio"), TEXT("오디오 설정"), TEXT("Audio"));
-	Set(TEXT("TXT_Btn_Side_VoiceChat"), TEXT("보이스 채팅"), TEXT("Voice Chat"));
-	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("옵션 설정"), TEXT("Options"));
+	Set(TEXT("TXT_Btn_Side_Chat"), TEXT("채팅 설정"), TEXT("Chat"));
+	Set(TEXT("TXT_Btn_Side_Settings"), TEXT("언어 설정"), TEXT("Language"));
 	Set(TEXT("TXT_Btn_Side_Crosshair"), TEXT("크로스헤어"), TEXT("Crosshair"));
 
 	Set(TEXT("TXT_Section_GraphicsPreset"), TEXT("GRAPHICS PRESET"), TEXT("GRAPHICS PRESET"));
@@ -1516,7 +1516,7 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Section_Volume"), TEXT("VOLUME"), TEXT("VOLUME"));
 	Set(TEXT("TXT_Section_Voice"), TEXT("GAME VOICE"), TEXT("GAME VOICE"));
 	Set(TEXT("TXT_Section_VoiceChat"), TEXT("VOICE CHAT"), TEXT("VOICE CHAT"));
-	Set(TEXT("TXT_Section_Options"), TEXT("OPTIONS"), TEXT("OPTIONS"));
+	Set(TEXT("TXT_Section_Options"), TEXT("LANGUAGE"), TEXT("LANGUAGE"));
 	Set(TEXT("TXT_Section_CrosshairPreview"), TEXT("CROSSHAIR PREVIEW"), TEXT("CROSSHAIR PREVIEW"));
 	Set(TEXT("TXT_Section_CrosshairColor"), TEXT("COLOR"), TEXT("COLOR"));
 	Set(TEXT("TXT_Label_CrosshairRed"), TEXT("R · 빨강"), TEXT("R · Red"));
@@ -1551,6 +1551,10 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 	Set(TEXT("TXT_Label_InvertY"), TEXT("Y축 반전"), TEXT("Invert Y"));
 	Set(TEXT("TXT_Label_ADSMode"), TEXT("ADS"), TEXT("ADS"));
 	Set(TEXT("TXT_Label_CrouchMode"), TEXT("앉기"), TEXT("Crouch"));
+	
+	//채팅 표시 옵션
+	Set(TEXT("TXT_Label_ChatOpacity"), TEXT("채팅 불투명도"), TEXT("Chat Opacity"));
+	Set(TEXT("TXT_Label_ChatSize"), TEXT("채팅 크기"), TEXT("Chat Size"));
 	Set(TEXT("TXT_Label_DynamicCrosshair"), TEXT("동적 크로스헤어"), TEXT("Dynamic Crosshair"));
 
 	Set(TEXT("TXT_Label_MasterVolume"), TEXT("마스터"), TEXT("Master"));
@@ -1569,6 +1573,7 @@ void UShooterOptionsScreen::ApplyOptionLanguage()
 
 	Set(TEXT("TXT_Btn_Reset"), TEXT("초기화"), TEXT("Reset"));
 	Set(TEXT("TXT_Btn_Save"), TEXT("저장"), TEXT("Save"));
+	Set(TEXT("TXT_SaveFeedback"), TEXT("저장되었습니다"), TEXT("Settings saved"));
 	Set(TEXT("TXT_Btn_Back"), TEXT("뒤로"), TEXT("Back"));
 	Set(TEXT("TXT_Btn_VideoKeep"), TEXT("유지"), TEXT("Keep"));
 	Set(TEXT("TXT_Btn_VideoRevert"), TEXT("취소"), TEXT("Revert"));
@@ -1662,6 +1667,20 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 
 	TArray<FShooterInputBindingEntry> Bindings;
 	Controller->GetRebindableInputBindings(Bindings);
+
+	const UTextBlock* LabelTemplate = Cast<UTextBlock>(GetWidgetFromName(TEXT("TXT_Label_Language")));
+	const FSlateColor LabelColor = LabelTemplate ? LabelTemplate->GetColorAndOpacity()
+		: FSlateColor(FLinearColor(0.88f, 0.92f, 0.93f, 1.0f));
+
+	FButtonStyle KeyButtonStyle;
+	KeyButtonStyle.SetNormal(FSlateColorBrush(TabNormalColor));
+	KeyButtonStyle.SetHovered(FSlateColorBrush(RowActiveColor));
+	KeyButtonStyle.SetPressed(FSlateColorBrush(TabActiveColor));
+	if (const UButton* StyleTemplate = Cast<UButton>(GetWidgetFromName(TEXT("Btn_Back"))))
+	{
+		KeyButtonStyle = StyleTemplate->GetStyle();
+	}
+
 	for (int32 Index = 0; Index < Bindings.Num(); ++Index)
 	{
 		const FShooterInputBindingEntry& Entry = Bindings[Index];
@@ -1688,14 +1707,16 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 		}
 
 		Row->SetBrushColor(RowNormalColor);
-		Row->SetPadding(FMargin(14.0f, 7.0f));
-		LabelBox->SetWidthOverride(500.0f);
-		SelectorBox->SetWidthOverride(260.0f);
+		Row->SetPadding(KeyBindingRowPadding);
+		SelectorBox->SetWidthOverride(KeyBindingSelectorWidth);
+		SelectorBox->SetMinDesiredHeight(FMath::Max(0.0f,
+			KeyBindingRowHeight - KeyBindingRowPadding.Top - KeyBindingRowPadding.Bottom));
 
-		FSlateFontInfo LabelFont = Label->GetFont();
-		LabelFont.Size = 18;
+		// 한글 폰트를 포함해 WBP에 지정한 행 글꼴을 재사용한다.
+		FSlateFontInfo LabelFont = LabelTemplate ? LabelTemplate->GetFont() : Label->GetFont();
+		LabelFont.Size = KeyBindingFontSize;
 		Label->SetFont(LabelFont);
-		Label->SetColorAndOpacity(FSlateColor(FLinearColor(0.88f, 0.92f, 0.93f, 1.0f)));
+		Label->SetColorAndOpacity(LabelColor);
 		Label->SetText(BuildInputBindingDisplayName(Entry));
 
 		Selector->SetAllowGamepadKeys(false);
@@ -1703,17 +1724,13 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 		Selector->SetKeySelectionText(Localize(TEXT("키 입력..."), TEXT("Press a key...")));
 		Selector->SetNoKeySpecifiedText(Localize(TEXT("미지정"), TEXT("Unbound")));
 		Selector->SetSelectedKey(FInputChord(Entry.CurrentKey));
-		Selector->SetMargin(FMargin(12.0f, 6.0f));
+		Selector->SetMargin(KeyBindingSelectorPadding);
 
-		FButtonStyle KeyButtonStyle;
-		KeyButtonStyle.SetNormal(FSlateColorBrush(TabNormalColor));
-		KeyButtonStyle.SetHovered(FSlateColorBrush(RowActiveColor));
-		KeyButtonStyle.SetPressed(FSlateColorBrush(TabActiveColor));
 		Selector->SetButtonStyle(KeyButtonStyle);
 
 		FTextBlockStyle KeyTextStyle;
 		KeyTextStyle.SetFont(LabelFont);
-		KeyTextStyle.SetColorAndOpacity(FSlateColor(FLinearColor(0.93f, 0.96f, 0.97f, 1.0f)));
+		KeyTextStyle.SetColorAndOpacity(LabelColor);
 		Selector->SetTextStyle(KeyTextStyle);
 
 		UShooterKeyBindingProxy* Proxy = NewObject<UShooterKeyBindingProxy>(this);
@@ -1723,10 +1740,15 @@ void UShooterOptionsScreen::RebuildKeyBindings()
 
 		LabelBox->AddChild(Label);
 		SelectorBox->AddChild(Selector);
-		RowBox->AddChildToHorizontalBox(LabelBox);
-		RowBox->AddChildToHorizontalBox(SelectorBox);
+		UHorizontalBoxSlot* LabelSlot = RowBox->AddChildToHorizontalBox(LabelBox);
+		LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		LabelSlot->SetVerticalAlignment(VAlign_Center);
+		LabelSlot->SetPadding(FMargin(0.0f, 0.0f, KeyBindingRowPadding.Right, 0.0f));
+		UHorizontalBoxSlot* SelectorSlot = RowBox->AddChildToHorizontalBox(SelectorBox);
+		SelectorSlot->SetVerticalAlignment(VAlign_Center);
 		Row->SetContent(RowBox);
-		List->AddChildToVerticalBox(Row);
+		UVerticalBoxSlot* RowSlot = List->AddChildToVerticalBox(Row);
+		RowSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, KeyBindingRowSpacing));
 	}
 
 	if (UTextBlock* EmptyText = Cast<UTextBlock>(GetWidgetFromName(TEXT("TXT_KeyBindingsEmpty"))))
@@ -1843,6 +1865,24 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 	SetChoiceSegments(TEXT("ADSMode"), bADSToggle ? 1 : 0, 2);
 	SetChoiceSegments(TEXT("CrouchMode"), bCrouchToggle ? 1 : 0, 2);
 
+	// 채팅 표시 옵션
+	if (const UShooterGameUserSettings* ChatSettings = GetGameUserSettings())
+	{
+		const int32 ChatOpacityLevel = ChatSettings->GetChatOpacityLevel();
+		const FText ChatOpacityText = ChatOpacityLevel == 0
+			? Localize(TEXT("끄기"), TEXT("Off"))
+			: FText::FromString(FString::Printf(TEXT("%d%%"), FMath::RoundToInt(ChatSettings->GetChatOpacity() * 100.0f)));
+		SetOptionText(TEXT("TXT_ChatOpacityValue"), ChatOpacityText);
+		SetChoiceSegments(TEXT("ChatOpacity"), ChatOpacityLevel, UShooterGameUserSettings::ChatOpacityLevelCount);
+
+		const int32 ChatSizeLevel = ChatSettings->GetChatSizeLevel();
+		const FText ChatSizeText = ChatSizeLevel == 0
+			? Localize(TEXT("작게"), TEXT("Small"))
+			: (ChatSizeLevel == 1 ? Localize(TEXT("보통"), TEXT("Medium")) : Localize(TEXT("크게"), TEXT("Large")));
+		SetOptionText(TEXT("TXT_ChatSizeValue"), ChatSizeText);
+		SetChoiceSegments(TEXT("ChatSize"), ChatSizeLevel, UShooterGameUserSettings::ChatSizeLevelCount);
+	}
+
 	// Header is intentionally not navigation; it summarizes the current runtime state.
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Display"), ResolutionText);
 	SetOptionText(TEXT("TXT_HeaderStatusValue_Quality"), OverallText);
@@ -1876,35 +1916,31 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 		SetChoiceSegments(TEXT("Overall"), Overall >= 0 && Overall <= 4 ? Overall : INDEX_NONE, 5);
 	}
 
-	const TPair<EShooterScalabilitySetting, FName> QualityTexts[] =
+	const struct
 	{
-		{EShooterScalabilitySetting::ViewDistance, TEXT("TXT_ViewDistanceValue")},
-		{EShooterScalabilitySetting::AntiAliasing, TEXT("TXT_AntiAliasingValue")},
-		{EShooterScalabilitySetting::Shadow, TEXT("TXT_ShadowValue")},
-		{EShooterScalabilitySetting::GlobalIllumination, TEXT("TXT_GlobalIlluminationValue")},
-		{EShooterScalabilitySetting::Reflection, TEXT("TXT_ReflectionValue")},
-		{EShooterScalabilitySetting::PostProcessing, TEXT("TXT_PostProcessingValue")},
-		{EShooterScalabilitySetting::Texture, TEXT("TXT_TextureValue")},
-		{EShooterScalabilitySetting::Effects, TEXT("TXT_EffectsValue")},
-		{EShooterScalabilitySetting::Foliage, TEXT("TXT_FoliageValue")},
-		{EShooterScalabilitySetting::Shading, TEXT("TXT_ShadingValue")},
+		EShooterScalabilitySetting Setting;
+		const TCHAR* Prefix;
+	} QualityOptions[] =
+	{
+		{ EShooterScalabilitySetting::ViewDistance, TEXT("ViewDistance") },
+		{ EShooterScalabilitySetting::AntiAliasing, TEXT("AntiAliasing") },
+		{ EShooterScalabilitySetting::Shadow, TEXT("Shadow") },
+		{ EShooterScalabilitySetting::GlobalIllumination, TEXT("GlobalIllumination") },
+		{ EShooterScalabilitySetting::Reflection, TEXT("Reflection") },
+		{ EShooterScalabilitySetting::PostProcessing, TEXT("PostProcessing") },
+		{ EShooterScalabilitySetting::Texture, TEXT("Texture") },
+		{ EShooterScalabilitySetting::Effects, TEXT("Effects") },
+		{ EShooterScalabilitySetting::Foliage, TEXT("Foliage") },
+		{ EShooterScalabilitySetting::Shading, TEXT("Shading") },
 	};
 
-	for (const TPair<EShooterScalabilitySetting, FName>& Entry : QualityTexts)
+	for (const auto& Option : QualityOptions)
 	{
-		SetOptionText(Entry.Value, GetQualityDisplayText(GetQualityLevel(Entry.Key)));
+		const int32 QualityLevel = GetQualityLevel(Option.Setting);
+		const FName TextName(*FString::Printf(TEXT("TXT_%sValue"), Option.Prefix));
+		SetOptionText(TextName, GetQualityDisplayText(QualityLevel));
+		SetChoiceSegments(FName(Option.Prefix), QualityLevel, 5);
 	}
-
-	SetChoiceSegments(TEXT("ViewDistance"), GetQualityLevel(EShooterScalabilitySetting::ViewDistance), 5);
-	SetChoiceSegments(TEXT("AntiAliasing"), GetQualityLevel(EShooterScalabilitySetting::AntiAliasing), 5);
-	SetChoiceSegments(TEXT("Shadow"), GetQualityLevel(EShooterScalabilitySetting::Shadow), 5);
-	SetChoiceSegments(TEXT("GlobalIllumination"), GetQualityLevel(EShooterScalabilitySetting::GlobalIllumination), 5);
-	SetChoiceSegments(TEXT("Reflection"), GetQualityLevel(EShooterScalabilitySetting::Reflection), 5);
-	SetChoiceSegments(TEXT("PostProcessing"), GetQualityLevel(EShooterScalabilitySetting::PostProcessing), 5);
-	SetChoiceSegments(TEXT("Texture"), GetQualityLevel(EShooterScalabilitySetting::Texture), 5);
-	SetChoiceSegments(TEXT("Effects"), GetQualityLevel(EShooterScalabilitySetting::Effects), 5);
-	SetChoiceSegments(TEXT("Foliage"), GetQualityLevel(EShooterScalabilitySetting::Foliage), 5);
-	SetChoiceSegments(TEXT("Shading"), GetQualityLevel(EShooterScalabilitySetting::Shading), 5);
 
 	float ResolutionMin = 50.0f;
 	float ResolutionMax = 100.0f;
@@ -2025,8 +2061,146 @@ void UShooterOptionsScreen::RefreshOptionsUI()
 
 void UShooterOptionsScreen::ShowOptionsPage(const int32 PageIndex)
 {
+	const int32 PreviousPage = ActivePage;
 	ActivePage = FMath::Clamp(PageIndex, 0, ToPageIndex(EOptionsPage::Count) - 1);
 	RefreshOptionsUI();
+	if (ActivePage != PreviousPage)
+	{
+		StartPageTransition();
+	}
+}
+
+void UShooterOptionsScreen::StartPageTransition()
+{
+	StopPageTransition();
+	if (!bEnablePageTransition || PageTransitionDuration <= 0.0f)
+	{
+		return;
+	}
+
+	UWidget* Target = GetWidgetFromName(TEXT("Switcher_MainPages"));
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	PageTransitionTarget = Target;
+	PageTransitionBaseTransform = Target->GetRenderTransform();
+	PageTransitionBaseOpacity = Target->GetRenderOpacity();
+	PageTransitionElapsed = 0.0f;
+	HandlePageTransition(0.0f);
+	PageTransitionTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateUObject(this, &ThisClass::HandlePageTransition));
+}
+
+void UShooterOptionsScreen::StopPageTransition()
+{
+	if (PageTransitionTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PageTransitionTickerHandle);
+		PageTransitionTickerHandle.Reset();
+	}
+	if (UWidget* Target = PageTransitionTarget.Get())
+	{
+		Target->SetRenderTransform(PageTransitionBaseTransform);
+		Target->SetRenderOpacity(PageTransitionBaseOpacity);
+	}
+	PageTransitionTarget.Reset();
+}
+
+bool UShooterOptionsScreen::HandlePageTransition(const float DeltaTime)
+{
+	UWidget* Target = PageTransitionTarget.Get();
+	if (!Target)
+	{
+		PageTransitionTickerHandle.Reset();
+		return false;
+	}
+
+	PageTransitionElapsed += FMath::Max(0.0f, DeltaTime);
+	const float Alpha = FMath::Clamp(PageTransitionElapsed / FMath::Max(PageTransitionDuration, UE_SMALL_NUMBER), 0.0f, 1.0f);
+	const float EasedAlpha = 1.0f - FMath::Pow(1.0f - Alpha, 3.0f);
+	FWidgetTransform Transform = PageTransitionBaseTransform;
+	Transform.Translation.X += PageTransitionDistance * (1.0f - EasedAlpha);
+	Target->SetRenderTransform(Transform);
+	Target->SetRenderOpacity(PageTransitionBaseOpacity * FMath::Lerp(0.7f, 1.0f, EasedAlpha));
+	if (Alpha >= 1.0f)
+	{
+		PageTransitionTickerHandle.Reset();
+		PageTransitionTarget.Reset();
+		return false;
+	}
+	return true;
+}
+
+void UShooterOptionsScreen::ShowSaveFeedback()
+{
+	StopSaveFeedback();
+	UWidget* Target = GetWidgetFromName(TEXT("Border_SaveFeedback"));
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	SaveFeedbackTarget = Target;
+	SaveFeedbackFadeElapsed = 0.0f;
+	Target->SetRenderOpacity(1.0f);
+	Target->SetVisibility(ESlateVisibility::HitTestInvisible);
+	// 유지 구간에는 매 프레임 갱신하지 않고 한 번만 호출한다.
+	SaveFeedbackTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateUObject(this, &ThisClass::HandleSaveFeedbackHold),
+		FMath::Max(0.0f, SaveFeedbackHoldSeconds));
+}
+
+void UShooterOptionsScreen::StopSaveFeedback()
+{
+	if (SaveFeedbackTickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(SaveFeedbackTickerHandle);
+		SaveFeedbackTickerHandle.Reset();
+	}
+	if (UWidget* Target = SaveFeedbackTarget.Get())
+	{
+		Target->SetVisibility(ESlateVisibility::Collapsed);
+		Target->SetRenderOpacity(1.0f);
+	}
+	SaveFeedbackTarget.Reset();
+}
+
+bool UShooterOptionsScreen::HandleSaveFeedbackHold(const float DeltaTime)
+{
+	(void)DeltaTime;
+	SaveFeedbackTickerHandle.Reset();
+	if (!SaveFeedbackTarget.IsValid() || SaveFeedbackFadeSeconds <= 0.0f)
+	{
+		StopSaveFeedback();
+		return false;
+	}
+	SaveFeedbackTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateUObject(this, &ThisClass::HandleSaveFeedbackFade));
+	return false;
+}
+
+bool UShooterOptionsScreen::HandleSaveFeedbackFade(const float DeltaTime)
+{
+	UWidget* Target = SaveFeedbackTarget.Get();
+	if (!Target)
+	{
+		SaveFeedbackTickerHandle.Reset();
+		SaveFeedbackTarget.Reset();
+		return false;
+	}
+
+	SaveFeedbackFadeElapsed += FMath::Max(0.0f, DeltaTime);
+	const float Alpha = FMath::Clamp(SaveFeedbackFadeElapsed / FMath::Max(SaveFeedbackFadeSeconds, UE_SMALL_NUMBER), 0.0f, 1.0f);
+	Target->SetRenderOpacity(1.0f - Alpha);
+	if (Alpha >= 1.0f)
+	{
+		SaveFeedbackTickerHandle.Reset();
+		StopSaveFeedback();
+		return false;
+	}
+	return true;
 }
 
 void UShooterOptionsScreen::RefreshTabVisuals()
@@ -2103,6 +2277,7 @@ void UShooterOptionsScreen::RefreshOptionRowVisuals()
 		TEXT("Reflection"), TEXT("PostProcessing"), TEXT("Texture"), TEXT("Effects"), TEXT("Foliage"), TEXT("Shading"),
 		TEXT("HorizontalSensitivity"), TEXT("VerticalSensitivity"), TEXT("AimSensitivity"), TEXT("InvertY"), TEXT("DynamicCrosshair"),
 		TEXT("ADSMode"), TEXT("CrouchMode"),
+		TEXT("ChatOpacity"), TEXT("ChatSize"), // 채팅 표시 옵션
 		TEXT("MasterVolume"), TEXT("MusicVolume"), TEXT("SfxVolume"), TEXT("UiVolume"), TEXT("VoiceVolume"), TEXT("MasterMute"),
 		TEXT("VoiceChat"), TEXT("VoiceChatMicrophoneVolume"), TEXT("VoiceChatOutputVolume"),
 		TEXT("Language"),
@@ -2254,6 +2429,40 @@ void UShooterOptionsScreen::HandleDynamicResolutionToggle() { ActiveOption = TEX
 void UShooterOptionsScreen::HandleInvertYToggle() { ActiveOption = TEXT("InvertY"); SetInvertVerticalLookEnabled(!IsInvertVerticalLookEnabled()); }
 void UShooterOptionsScreen::HandleADSModeChanged() { ActiveOption = TEXT("ADSMode"); SetADSToggleEnabled(!IsADSToggleEnabled()); }
 void UShooterOptionsScreen::HandleCrouchModeChanged() { ActiveOption = TEXT("CrouchMode"); SetCrouchToggleEnabled(!IsCrouchToggleEnabled()); }
+
+// 채팅 표시 옵션. 끝에서 반대쪽 끝으로 순환
+void UShooterOptionsScreen::HandleChatOpacityPrev() { StepChatOpacityLevel(-1); }
+void UShooterOptionsScreen::HandleChatOpacityNext() { StepChatOpacityLevel(+1); }
+void UShooterOptionsScreen::HandleChatSizePrev() { StepChatSizeLevel(-1); }
+void UShooterOptionsScreen::HandleChatSizeNext() { StepChatSizeLevel(+1); }
+
+void UShooterOptionsScreen::StepChatOpacityLevel(const int32 Delta)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	ActiveOption = TEXT("ChatOpacity");
+	constexpr int32 Count = UShooterGameUserSettings::ChatOpacityLevelCount;
+	Settings->SetChatOpacityLevel((Settings->GetChatOpacityLevel() + Delta + Count) % Count);
+	OnSettingsChanged.Broadcast();
+}
+
+void UShooterOptionsScreen::StepChatSizeLevel(const int32 Delta)
+{
+	UShooterGameUserSettings* Settings = GetGameUserSettings();
+	if (!IsValid(Settings))
+	{
+		return;
+	}
+
+	ActiveOption = TEXT("ChatSize");
+	constexpr int32 Count = UShooterGameUserSettings::ChatSizeLevelCount;
+	Settings->SetChatSizeLevel((Settings->GetChatSizeLevel() + Delta + Count) % Count);
+	OnSettingsChanged.Broadcast();
+}
 void UShooterOptionsScreen::HandleDynamicCrosshairToggle() { ActiveOption = TEXT("DynamicCrosshair"); SetDynamicCrosshairEnabled(!IsDynamicCrosshairEnabled()); }
 void UShooterOptionsScreen::HandleEnemyCrosshairColorToggle() { ActiveOption = TEXT("EnemyCrosshairColor"); SetEnemyCrosshairColorEnabled(!IsEnemyCrosshairColorEnabled()); }
 void UShooterOptionsScreen::HandleMasterMuteToggle() { ActiveOption = TEXT("MasterMute"); SetMasterAudioMuted(!IsMasterAudioMuted()); }

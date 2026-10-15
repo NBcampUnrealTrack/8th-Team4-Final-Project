@@ -146,9 +146,15 @@ EVoiceChatAudience UVoiceChatSubsystem::GetEffectiveVoiceAudience(
 
 	if (const ADominationGameState* DominationGameState = World->GetGameState<ADominationGameState>())
 	{
-		return DominationGameState->GetDominationPhase() == EDominationMatchPhase::InProgress
-			? EVoiceChatAudience::Team
-			: EVoiceChatAudience::Everyone;
+		// 캐릭터 선택부터는 팀 음성. 대기/종료만 전체
+		switch (DominationGameState->GetDominationPhase())
+		{
+		case EDominationMatchPhase::ClassSelecting:
+		case EDominationMatchPhase::InProgress:
+			return EVoiceChatAudience::Team;
+		default:
+			return EVoiceChatAudience::Everyone;
+		}
 	}
 
 	const ABaseRoundGameState* RoundGameState = World->GetGameState<ABaseRoundGameState>();

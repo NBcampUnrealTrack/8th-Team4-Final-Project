@@ -5,13 +5,9 @@
 #include "UI/InGame/HUD/ShooterHealthBar.h"
 #include "Animation/WidgetAnimation.h"
 #include "Components/RetainerBox.h"
-#include "Framework/Application/SlateApplication.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
-#include "Widgets/SWidget.h"
 
 UShooterPlayerHUD::UShooterPlayerHUD()
 {
@@ -84,7 +80,6 @@ void UShooterPlayerHUD::NativeDestruct()
 	}
 	BoundPlayerController.Reset();
 	UnbindCombatComponent();
-	UnbindMovement();
 
 	if (HealthBar)
 	{
@@ -122,7 +117,6 @@ void UShooterPlayerHUD::BindToPawn(APawn* Pawn)
 		}
 	}
 	ApplyMainHUDSuppression(CombatComponent && CombatComponent->ShouldSuppressMainHUDForADS());
-	BindMovement(Pawn);
 }
 
 void UShooterPlayerHUD::UnbindCombatComponent()
@@ -170,149 +164,6 @@ void UShooterPlayerHUD::ApplyMainHUDSuppression(const bool bSuppressed)
 				bIsLowHealthActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		}
 	}
-}
-
-void UShooterPlayerHUD::BindMovement(APawn* Pawn)
-{
-	ACharacter* Character = Cast<ACharacter>(Pawn);
-	if (BoundCharacter.Get() == Character)
-	{
-		return;
-	}
-
-	UnbindMovement();
-	BoundCharacter = Character;
-	if (!Character)
-	{
-		return;
-	}
-
-	Character->MovementModeChangedDelegate.AddUniqueDynamic(this, &ThisClass::HandleMovementModeChanged);
-	Character->LandedDelegate.AddUniqueDynamic(this, &ThisClass::HandleLanded);
-
-	// 공중에서 스폰·빙의됐으면 지금 높이를 기준으로 삼는다
-	const UCharacterMovementComponent* Movement = Character->GetCharacterMovement();
-	if (Movement && Movement->IsFalling())
-	{
-		TakeoffZ = Character->GetActorLocation().Z;
-		EnsureMotionScheduled();
-	}
-}
-
-void UShooterPlayerHUD::UnbindMovement()
-{
-	if (ACharacter* Character = BoundCharacter.Get())
-	{
-		Character->MovementModeChangedDelegate.RemoveDynamic(this, &ThisClass::HandleMovementModeChanged);
-		Character->LandedDelegate.RemoveDynamic(this, &ThisClass::HandleLanded);
-	}
-	BoundCharacter.Reset();
-	ResetMotion();
-}
-
-void UShooterPlayerHUD::HandleMovementModeChanged(ACharacter* Character, const EMovementMode PrevMovementMode, uint8)
-{
-	// 이동 재생 중에 모드가 바뀌어도 이륙 높이는 처음 뜬 곳으로 둔다
-	const UCharacterMovementComponent* Movement = IsValid(Character) ? Character->GetCharacterMovement() : nullptr;
-	if (Movement && Movement->IsFalling() && PrevMovementMode != MOVE_Falling && !Character->bClientUpdating)
-	{
-		TakeoffZ = Character->GetActorLocation().Z;
-	}
-	EnsureMotionScheduled();
-}
-
-void UShooterPlayerHUD::HandleLanded(const FHitResult&)
-{
-	const ACharacter* Character = BoundCharacter.Get();
-	if (!IsValid(Character) || Character->bClientUpdating)
-	{
-		return;
-	}
-
-	// SetPostLandedPhysics 전이라 낙하 속도가 아직 남아 있다
-	const float FallSpeed = FMath::Max(0.f, static_cast<float>(-Character->GetVelocity().Z));
-	const float SpeedRange = FMath::Max(1.f, FullLandingSpeed - MinLandingSpeed);
-	const float ImpactScale = FMath::Clamp((FallSpeed - MinLandingSpeed) / SpeedRange, 0.f, 1.f);
-
-	MotionVelocity += LandingKickSpeed * ImpactScale;
-	EnsureMotionScheduled();
-}
-
-void UShooterPlayerHUD::EnsureMotionScheduled()
-{
-	if (!Panel_HUDMotion || MotionTimerHandle.IsValid() || IsDesignTime() || !FSlateApplication::IsInitialized())
-	{
-		return;
-	}
-
-	// RetainerBox 가 ADS 로 접혀도 멈추지 않게 HUD 루트에 건다
-	const TSharedPtr<SWidget> CachedWidget = GetCachedWidget();
-	if (!CachedWidget.IsValid())
-	{
-		return;
-	}
-
-	MotionTimerHandle = CachedWidget->RegisterActiveTimer(
-		0.f,
-		FWidgetActiveTimerDelegate::CreateUObject(this, &ThisClass::HandleMotionTimer));
-}
-
-void UShooterPlayerHUD::StopMotion()
-{
-	const TSharedPtr<FActiveTimerHandle> Handle = MotionTimerHandle.Pin();
-	const TSharedPtr<SWidget> CachedWidget = GetCachedWidget();
-	if (Handle.IsValid() && CachedWidget.IsValid())
-	{
-		CachedWidget->UnRegisterActiveTimer(Handle.ToSharedRef());
-	}
-	MotionTimerHandle.Reset();
-}
-
-void UShooterPlayerHUD::ResetMotion()
-{
-	StopMotion();
-	MotionOffset = 0.f;
-	MotionVelocity = 0.f;
-	TakeoffZ = 0.f;
-	if (Panel_HUDMotion)
-	{
-		Panel_HUDMotion->SetRenderTranslation(FVector2D::ZeroVector);
-	}
-}
-
-EActiveTimerReturnType UShooterPlayerHUD::HandleMotionTimer(double, const float InDeltaTime)
-{
-	const ACharacter* Character = BoundCharacter.Get();
-	const UCharacterMovementComponent* Movement = IsValid(Character) ? Character->GetCharacterMovement() : nullptr;
-	const bool bAirborne = Movement && Movement->IsFalling();
-
-	// 이륙 높이보다 올라간 만큼만 뜬다. 낭떠러지로 내려가면 0
-	const float Height = bAirborne ? static_cast<float>(Character->GetActorLocation().Z - TakeoffZ) : 0.f;
-	const float Target = -FMath::Clamp(Height * AirLiftPerCm, 0.f, MaxAirLift);
-
-	const float DampingRatio = bAirborne ? 1.f : MotionDampingRatio;
-	FMath::SpringDamper(MotionOffset, MotionVelocity, Target, 0.f, InDeltaTime, MotionFrequency, DampingRatio);
-
-	// 공중에 있는 동안엔 높이가 계속 바뀌므로 땅에서만 멈춘다
-	const bool bSettled = !bAirborne && FMath::Abs(MotionOffset) < 0.05f && FMath::Abs(MotionVelocity) < 0.5f;
-	if (bSettled)
-	{
-		MotionOffset = 0.f;
-		MotionVelocity = 0.f;
-	}
-
-	if (Panel_HUDMotion)
-	{
-		Panel_HUDMotion->SetRenderTranslation(FVector2D(0.f, MotionOffset));
-	}
-
-	if (!bSettled)
-	{
-		return EActiveTimerReturnType::Continue;
-	}
-
-	MotionTimerHandle.Reset();
-	return EActiveTimerReturnType::Stop;
 }
 
 void UShooterPlayerHUD::ScheduleNextLowHealthGlitch()

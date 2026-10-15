@@ -183,6 +183,15 @@ public:
 	bool IsEmptyReloadArmed() const { return bEmptyReloadArmed; }
 	void ConsumeEmptyReloadArm() { bEmptyReloadArmed = false; }
 
+	// 발사 입력을 누른 채 마지막 탄을 쏴서 탄창이 빈 경우인지 확인하고 표시를 지운다.
+	// true면 GA_RangedAttack이 클릭음/재입력 없이 바로 재장전
+	bool ConsumeEmptiedDuringHold()
+	{
+		const bool bWasEmptied = bEmptiedDuringHold;
+		bEmptiedDuringHold = false;
+		return bWasEmptied;
+	}
+
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	float GetBaseRPM() const { return BaseRPM; }
 
@@ -205,6 +214,9 @@ public:
 	// 시그니처가 그대로 유지되므로 변경이 필요 없다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon")
 	bool IsADS() const;
+
+	// 반동이 현재 카메라 Pitch에 얹어 둔 양. 3인칭 조준 각도에서 반동을 빼는 데 쓴다.
+	float GetAccumulatedRecoilPitch() const;
 
 	// 이 무기가 애초에 ADS를 지원하는지(샷건/칼 등은 false). GA_ADS가 활성화 전에 확인한다.
 	UFUNCTION(BlueprintPure, Category = "FPS|Weapon|ADS")
@@ -612,6 +624,10 @@ private:
 	// NotifyPrimaryInputReleased()에서 true, 재장전 시작(GA_RangedAttack) 및 FinishReload/BeginPlay에서
 	// false. 비복제 - bEmptyClipNotified와 동일하게 로컬 입력 판정용이다.
 	bool bEmptyReloadArmed = false;
+
+	// 이번 발사 입력(누르고 있는 동안)에서 마지막 탄을 쏴 탄창이 비었는지. ConsumeAmmoForShot에서 true,
+	// 발사 입력을 떼거나(NotifyPrimaryInputReleased) 재장전 시작/완료, BeginPlay에서 false. 비복제 - 로컬 입력 판정용.
+	bool bEmptiedDuringHold = false;
 
 	// 직전 발사(좌/우 클릭 무관)에 적용된 쿨다운 간격(초). 마지막으로 발사된 쪽의 RPM 기준으로 갱신되며,
 	// 반대쪽 클릭이라도 이 간격이 지나기 전에는 CanFireNow()가 false를 반환한다(좌우 쿨다운 상호 차단).

@@ -11,7 +11,16 @@ void UDominationPlayerSlot::SetPlayerState(
 	ADominationPlayerState* InPlayerState,
 	const bool bInIsLocalPlayer)
 {
+	if (BoundPlayerState.Get() != InPlayerState)
+	{
+		UnbindVoiceTalking();
+	}
+
 	BoundPlayerState = InPlayerState;
+	if (IsValid(InPlayerState))
+	{
+		InPlayerState->OnVoiceTalkingChanged.AddUniqueDynamic(this, &ThisClass::HandleVoiceTalkingChanged);
+	}
 	bIsLocalPlayer = bInIsLocalPlayer;
 	bForcedDisconnected = false;
 
@@ -93,6 +102,7 @@ void UDominationPlayerSlot::RefreshFromPlayerState()
 	}
 
 	RefreshClassNameText();
+	RefreshVoiceTalkingIcon();
 
 	BP_UpdateSlotPresentation(State, bIsLocalPlayer);
 
@@ -127,6 +137,40 @@ void UDominationPlayerSlot::RefreshClassNameText()
 	Text_ClassName->SetVisibility(bHasClassName
 		? ESlateVisibility::HitTestInvisible
 		: ESlateVisibility::Collapsed);
+}
+
+void UDominationPlayerSlot::NativeDestruct()
+{
+	UnbindVoiceTalking();
+
+	Super::NativeDestruct();
+}
+
+void UDominationPlayerSlot::RefreshVoiceTalkingIcon()
+{
+	if (!IsValid(Image_VoiceTalking))
+	{
+		return;
+	}
+
+	const ADominationPlayerState* PlayerState = BoundPlayerState.Get();
+	const bool bIsTalking = IsValid(PlayerState) && !bForcedDisconnected && PlayerState->IsVoiceTalking();
+	Image_VoiceTalking->SetVisibility(bIsTalking
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+}
+
+void UDominationPlayerSlot::UnbindVoiceTalking()
+{
+	if (ADominationPlayerState* PlayerState = BoundPlayerState.Get())
+	{
+		PlayerState->OnVoiceTalkingChanged.RemoveDynamic(this, &ThisClass::HandleVoiceTalkingChanged);
+	}
+}
+
+void UDominationPlayerSlot::HandleVoiceTalkingChanged(AShooterPlayerState*, bool)
+{
+	RefreshVoiceTalkingIcon();
 }
 
 EDominationCombatClass UDominationPlayerSlot::GetDisplayClass() const

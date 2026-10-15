@@ -4,6 +4,7 @@
 #include "Character/ShooterCharacter.h"
 #include "Engine/DemoNetConnection.h"
 #include "Engine/DemoNetDriver.h"
+#include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Level.h"
 #include "Engine/LocalPlayer.h"
@@ -16,6 +17,7 @@
 #include "Player/ShooterPlayerController.h"
 #include "Player/ShooterPlayerState.h"
 #include "UI/Killcam/KillcamWidget.h"
+#include "Weapon/WeaponBase.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogKillcam, Log, All);
 
@@ -24,6 +26,38 @@ namespace
 	constexpr float KillcamSetupRetryInterval = 0.2f;
 	constexpr float KillcamSetupRetryTimeout = 30.0f;
 	constexpr float KillcamBufferSafetyMargin = 2.0f;
+
+	// 레벨 컬렉션 가시성은 USceneComponent::IsVisible()에만 반영되고, 이미 만들어진 렌더 프록시는 그대로 남는다.
+	// 그래서 라이브 월드 킬러의 3P 조준경이 킬캠 화면(킬러가 지금 서 있는 자리)에 겹쳐 보였다.
+	// 움직이는 컴포넌트만 렌더 상태를 다시 만들어 현재 컬렉션 가시성을 반영한다. (정적 지형은 복제 레벨과 겹쳐 티가 안 난다)
+	void RefreshCollectionRenderState(const FLevelCollection* Collection)
+	{
+		if (!Collection)
+		{
+			return;
+		}
+		for (const ULevel* Level : Collection->GetLevels())
+		{
+			if (!IsValid(Level))
+			{
+				continue;
+			}
+			for (AActor* Actor : Level->Actors)
+			{
+				if (!IsValid(Actor))
+				{
+					continue;
+				}
+				Actor->ForEachComponent<UPrimitiveComponent>(false, [](UPrimitiveComponent* Component)
+				{
+					if (Component->IsRegistered() && Component->Mobility != EComponentMobility::Static)
+					{
+						Component->MarkRenderStateDirty();
+					}
+				});
+			}
+		}
+	}
 }
 
 bool UKillcamReplaySubsystem::IsLiveWorldActor(const AActor* Actor)
@@ -169,6 +203,7 @@ void UKillcamReplaySubsystem::ReleaseWorld(UWorld* World)
 	SavedLiveViewTarget.Reset();
 	KillerActorGuid = FNetworkGUID();
 	VictimActorGuid = FNetworkGUID();
+	KillerWeaponGuids.Reset();
 	DeathDemoTime = 0.0f;
 	SetupRetryElapsed = 0.0f;
 	bPlaying = false;
@@ -270,6 +305,17 @@ void UKillcamReplaySubsystem::HandlePlayerEliminated(const FShooterEliminationEv
 	KillerActorGuid = RecordingDriver->GetGUIDForActor(KillerPawn);
 	PlaybackElimination = EliminationEvent;
 	VictimActorGuid = RecordingDriver->GetGUIDForActor(VictimPawn);
+	KillerWeaponGuids.Reset();
+	for (const AActor* OwnedActor : KillerPawn->Children)
+	{
+		if (const AWeaponBase* Weapon = Cast<AWeaponBase>(OwnedActor))
+		{
+			if (const FNetworkGUID WeaponGuid = RecordingDriver->GetGUIDForActor(Weapon); WeaponGuid.IsValid())
+			{
+				KillerWeaponGuids.Add(WeaponGuid);
+			}
+		}
+	}
 	DeathDemoTime = RecordingDriver->GetDemoCurrentTime();
 	if (!KillerActorGuid.IsValid() || !VictimActorGuid.IsValid())
 	{
@@ -369,8 +415,10 @@ void UKillcamReplaySubsystem::StartRecording()
 		return;
 	}
 
+	// 활성 컬렉션에 따라 World의 데모 드라이버 포인터가 바뀌므로 엔진에 등록된 이름 기준으로 확인한다.
+	UDemoNetDriver* NamedDriver = Cast<UDemoNetDriver>(GEngine->FindNamedNetDriver(World, NAME_DemoNetDriver));
 	UDemoNetDriver* ExistingDriver = World->GetDemoNetDriver();
-	if (IsValid(ExistingDriver) && ExistingDriver->IsRecording())
+	if ((IsValid(ExistingDriver) && ExistingDriver->IsRecording()) || (IsValid(NamedDriver) && NamedDriver->IsRecording()))
 	{
 		return;
 	}
@@ -378,6 +426,18 @@ void UKillcamReplaySubsystem::StartRecording()
 	TArray<FString> Options;
 	Options.Add(TEXT("ReplayStreamerOverride=InMemoryNetworkReplayStreaming"));
 	Options.Add(TEXT("SkipSpawnSpectatorController"));
+	// 킬캠 정리 타이머는 리플레이 틱 중에 걸려 복제 레벨 컬렉션이 활성인 채로 여기 들어온다.
+	// 그 상태로 녹화를 시작하면 초기 네트워크 객체 목록(FActorIterator, 활성 레벨만)에 라이브 액터가 빠져서
+	// RPC가 오기 전까지 녹화되지 않는다. 킬러 무기는 발사 RPC 전까지 리플레이에 없어 킬캠에서 총이 안 보였다.
+	// 새 드라이버를 라이브 컬렉션에 등록할 때까지 컨텍스트를 유지한다.
+	TOptional<FScopedLevelCollectionContextSwitch> CollectionContext;
+	if (FLevelCollection* LiveCollection = World->FindCollectionByType(ELevelCollectionType::DynamicSourceLevels))
+	{
+		// 녹화를 멈춰도 컬렉션 포인터는 지워지지 않는다. 파괴된 드라이버가 World로 복원되면
+		// StartRecordingReplay의 DestroyDemoNetDriver가 check에 걸리므로 실제 등록된 드라이버로 맞춘다.
+		LiveCollection->SetDemoNetDriver(NamedDriver);
+		CollectionContext.Emplace(LiveCollection, World);
+	}
 	GameInstance->StartRecordingReplay(TEXT("_Killcam"), TEXT("_Killcam"), Options);
 
 	UDemoNetDriver* RecordingDriver = World->GetDemoNetDriver();
@@ -476,6 +536,11 @@ void UKillcamReplaySubsystem::StartPlayback(const uint64 Generation,
 	DuplicateCollection->SetDemoNetDriver(PlaybackDriver);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(KillerActorGuid);
 	PlaybackDriver->AddNonQueuedGUIDForScrubbing(VictimActorGuid);
+	// CurrentWeapon이 가리키는 무기 채널이 큐에 남으면 시킹 후에도 수 초간 None으로 남는다.
+	for (const FNetworkGUID& WeaponGuid : KillerWeaponGuids)
+	{
+		PlaybackDriver->AddNonQueuedGUIDForScrubbing(WeaponGuid);
+	}
 	const TWeakObjectPtr<UDemoNetDriver> WeakPlaybackDriver = PlaybackDriver;
 	// Seeking also has a deadline; an unfinished seek cannot outlive this death indefinitely.
 	World->GetTimerManager().SetTimer(PlaybackTimerHandle,
@@ -552,6 +617,7 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 
 	SourceCollection->SetIsVisible(false);
 	DuplicateCollection->SetIsVisible(true);
+	RefreshCollectionRenderState(SourceCollection);
 
 	PlayerController->SetKillcamViewTargetSuppressed(true);
 
@@ -569,7 +635,9 @@ bool UKillcamReplaySubsystem::ShowPlayback()
 		{
 			PlaybackWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 			PlaybackWidget->SetReplay(PlaybackElimination, Cast<APawn>(KillerActor), Cast<APawn>(GetReplayActor(VictimActorGuid)));
-			PlaybackWidget->AddToPlayerScreen(100);
+			// 플레이어 스크린 레이어는 뷰포트 위젯보다 항상 아래에 그려져, 킬러 시점으로 켜지는
+			// 스나이퍼 스코프(AddToViewport)에 킬캠 HUD가 가려진다. 뷰포트에 올려 스코프 위에 그린다.
+			PlaybackWidget->AddToViewport(100);
 		}
 	}
 	return true;
@@ -737,6 +805,7 @@ void UKillcamReplaySubsystem::RestoreLiveWorld()
 	if (SourceCollection)
 	{
 		SourceCollection->SetIsVisible(true);
+		RefreshCollectionRenderState(SourceCollection);
 	}
 	if (DuplicateCollection)
 	{

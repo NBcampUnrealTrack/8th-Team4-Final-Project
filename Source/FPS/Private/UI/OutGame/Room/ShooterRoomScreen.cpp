@@ -57,7 +57,10 @@ void UShooterRoomScreen::NativeOnInitialized()
 	Btn_Ready->OnClicked().AddUObject(this, &ThisClass::HandleReadyClicked);
 	Btn_Start->OnClicked().AddUObject(this, &ThisClass::HandleStartClicked);
 	Btn_Leave->OnClicked().AddUObject(this, &ThisClass::HandleLeaveClicked);
-	Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
+	if (Btn_ModeNext)
+	{
+		Btn_ModeNext->OnClicked().AddUObject(this, &ThisClass::HandleModeNextClicked);
+	}
 
 	// 방장은 NativeGetDesiredFocusTarget이 nullptr이라, 채팅 입력창이 Pop된 뒤 포커스가 돌아올 곳이
 	// 화면 자신뿐이다. 포커스가 화면 밖으로 새면 Enter 프리뷰를 못 받아 채팅을 다시 못 연다.
@@ -350,11 +353,13 @@ void UShooterRoomScreen::Refresh()
 	const FString Signature = BuildPresentationSignature(Views, LobbyGameState);
 	if (Signature == CachedPresentationSignature)
 	{
+		RefreshTalkingIndicators(Views);
 		return;
 	}
 	CachedPresentationSignature = Signature;
 
 	RefreshTeamPanels(Views);
+	RefreshTalkingIndicators(Views);
 	RefreshRoomHeader(Views, LobbyGameState);
 	RefreshModePanel(LobbyGameState->GetSelectedMatchMode(), bIsHost);
 	RefreshActions(LobbyGameState, bIsHost);
@@ -419,6 +424,7 @@ TArray<FShooterRoomSlotView> UShooterRoomScreen::BuildSlotViews(const ALobbyGame
 		// 호스트 칸은 항상 채워진 상태이므로 서버도 레디 검사에서 호스트를 뺀다
 		View.bIsReady = View.bIsHost || ShooterPlayerState->IsLobbyReady();
 		View.bIsLocal = (PlayerState == LocalState);
+		View.bIsTalking = ShooterPlayerState->IsVoiceTalking();
 		// 없으면 다음 reconcile 에서 다시 물음
 		View.ProfileImage = IsValid(ProfileImages)
 			? ProfileImages->FindOrRequestProfileImage(PlayerState->GetUniqueId())
@@ -595,6 +601,39 @@ void UShooterRoomScreen::RebuildUnassignedEntries(const TArray<FShooterRoomSlotV
 	Box_Unassigned->AddChild(JoinEntry);
 }
 
+void UShooterRoomScreen::RefreshTalkingIndicators(const TArray<FShooterRoomSlotView>& Views)
+{
+	const auto ApplyTalking = [&Views](UShooterRoomPlayerSlot* RoomSlot)
+	{
+		if (!IsValid(RoomSlot))
+		{
+			return;
+		}
+
+		const int32 PlayerId = RoomSlot->GetCachedPlayerId();
+		const FShooterRoomSlotView* View = PlayerId == INDEX_NONE
+			? nullptr
+			: Views.FindByPredicate([PlayerId](const FShooterRoomSlotView& Candidate)
+			{
+				return Candidate.PlayerId == PlayerId;
+			});
+		RoomSlot->SetTalking(View != nullptr && View->bIsTalking);
+	};
+
+	for (UShooterRoomPlayerSlot* RoomSlot : TeamSlotsA)
+	{
+		ApplyTalking(RoomSlot);
+	}
+	for (UShooterRoomPlayerSlot* RoomSlot : TeamSlotsB)
+	{
+		ApplyTalking(RoomSlot);
+	}
+	for (UWidget* Child : Box_Unassigned->GetAllChildren())
+	{
+		ApplyTalking(Cast<UShooterRoomPlayerSlot>(Child));
+	}
+}
+
 void UShooterRoomScreen::RefreshTeamHeaders(const TArray<FShooterRoomSlotView>& Views)
 {
 	Text_TeamAReady->SetText(
@@ -625,7 +664,10 @@ void UShooterRoomScreen::RefreshModePanel(const ELobbyMatchMode SelectedMatchMod
 {
 	// 모드를 고르는 사람은 호스트뿐
 	const ESlateVisibility ArrowVisibility = bIsHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	Btn_ModeNext->SetVisibility(ArrowVisibility);
+	if (Btn_ModeNext)
+	{
+		Btn_ModeNext->SetVisibility(ArrowVisibility);
+	}
 
 	const ALobbyGameState* LobbyGameState = GetLobbyGameState();
 	const int32 TeamCapacity = IsValid(LobbyGameState) ? LobbyGameState->GetRoomSettings().MaxPlayersPerTeam : 0;

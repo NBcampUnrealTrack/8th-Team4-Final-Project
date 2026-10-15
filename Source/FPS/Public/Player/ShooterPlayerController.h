@@ -45,6 +45,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatMessageReceivedSignature, con
 // 채팅 로그(UShooterChatLog)가 구독해서 입력창이 열려 있는 동안 내역 패널을 계속 보이게 한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatInputOpenChangedSignature, bool, bIsOpen);
 
+// 채팅 입력 중 휠/PageUp·PageDown으로 내역을 스크롤할 때 채팅 로그가 구독한다. Steps < 0이면 위(과거)로.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnChatScrollRequestedSignature, float /*Steps*/);
+
 // 핑 인디케이터 레이어가 구독해서 월드에 마커를 띄운다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPingReceivedSignature, const FPingEvent&, Ping);
 
@@ -292,6 +295,16 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Shooter|Chat")
 	bool IsChatInputOpen() const { return bIsChatInputOpen; }
+
+	// 채팅 입력 중 내역 스크롤. 커서가 없어 휠 입력이 채팅 로그가 아닌 게임 뷰포트로 들어오므로
+	// InputKey에서 받아 이 델리게이트로 넘긴다
+	FOnChatScrollRequestedSignature OnChatScrollRequested;
+	void RequestChatScroll(float Steps);
+
+	// 채팅 로그가 입력창을 자기 아래에 맞춰 붙일 때 사용. 입력창이 닫혀 있으면 nullptr
+	UShooterChatInputBox* GetChatInputWidget() const;
+
+	virtual bool InputKey(const FInputKeyEventArgs& Params) override;
 
 	// 채팅 입력창이 Enter(텍스트 있음)를 감지하면 호출한다. 로컬 검증 후 서버로 전송하고 입력창을 닫는다.
 	void HandleChatSubmit(const FString& RawText);
@@ -577,4 +590,7 @@ private:
     bool bAppearanceSubmitted = false;
 	TWeakObjectPtr<AActor> PendingViewTarget;
 	FViewTargetTransitionParams PendingViewTargetTransitionParams;
+
+	// TEMP: 킬캠 후 관전 대상 1P 무기 미표시 진단 로그 중복 방지
+	FString LastSpectateDiagnosticState;
 };

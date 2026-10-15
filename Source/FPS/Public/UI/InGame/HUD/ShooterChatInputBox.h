@@ -45,6 +45,19 @@ public:
 	// 있으므로 열 때마다 명시적으로 비우고 채널을 지정한다.
 	void ResetForOpen(EChatChannel Channel, const FString& WhisperTargetName = FString());
 
+	// 알트탭 등으로 창 포커스를 잃었다가 돌아왔을 때 입력란에 키보드 포커스를 되돌린다.
+	void RestoreMessageFocus() { FocusMessageBoxDeferred(); }
+
+	// 채팅 로그(배경 박스) 바로 아래에 같은 폭으로 붙인다. 해상도/화면 비율이 바뀌어도
+	// 두 위젯이 서로 다른 레이어에 있어 따로 놀던 문제를 막기 위해 입력창을 열 때 채팅 로그가 호출한다.
+	// 아직 배치되지 않아(열린 직후) 맞추지 못했으면 false를 돌려준다.
+	// 맞춘 폭/이동값을 OutWidth/OutTranslation으로 돌려줘서 채팅 로그가 해상도별로 캐시할 수 있게 한다.
+	// OutWidth/Width는 실제 폭이 아니라 보이는 박스의 오른쪽 여백
+	bool AlignBelowChatLog(const FGeometry& ChatLogGeometry, float Gap, float& OutWidth, FVector2D& OutTranslation);
+
+	// 캐시된 폭/이동값을 측정 없이 바로 적용한다(해상도가 그대로일 때 열자마자 제자리에 보이게).
+	void ApplyAlignment(float Width, const FVector2D& Translation);
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;

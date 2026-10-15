@@ -41,6 +41,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
 	bool ContainsWorldLocation(const FVector& WorldLocation) const;
 
+	// 서버 점령 판정(캡슐이 구역에 겹치면 점령)과 같은 기준으로 폰이 구역 안인지 본다.
+	// ContainsWorldLocation(중심점)만 쓰면 가장자리나 높이가 낮은 구역에서 점령 중인데도 "밖"으로 판정된다.
+	// 클라이언트는 CaptureZone 콜리전이 꺼져 있을 수 있어 오버랩 대신 캡슐 크기만큼 넓힌 박스로 계산한다.
+	UFUNCTION(BlueprintPure, Category = "Domination|Objective")
+	bool ContainsPawn(const APawn* Pawn) const;
+
 	void GetOverlappingPawns(TArray<APawn*>& OutPawns) const;
 	void SetObjectiveActive(bool bNewActive);
 

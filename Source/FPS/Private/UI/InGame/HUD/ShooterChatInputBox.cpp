@@ -1,10 +1,14 @@
 // ShooterChatInputBox.cpp
 #include "UI/InGame/HUD/ShooterChatInputBox.h"
 
+#include "Blueprint/WidgetTree.h" // Modified: 보이는 바(Border) 찾기
 #include "Chat/ShooterChatRouting.h"
+#include "Components/Border.h" // Modified: 보이는 바(Border) 기준 정렬
 #include "Components/EditableTextBox.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
+#include "Components/SizeBox.h" // 채팅 로그 폭에 맞춤
+#include "Components/SizeBoxSlot.h" // 보이는 박스 슬롯 여백으로 폭 맞춤
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
@@ -25,7 +29,7 @@ void UShooterChatInputBox::NativeConstruct()
 
 	if (Text_Message)
 	{
-		Text_Message->OnTextChanged.AddDynamic(this, &ThisClass::HandleMessageTextChanged);
+		Text_Message->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleMessageTextChanged);
 	}
 }
 
@@ -56,6 +60,13 @@ FReply UShooterChatInputBox::NativeOnPreviewKeyDown(const FGeometry& InGeometry,
 		if (InKeyEvent.GetKey() == EKeys::Tab)
 		{
 			PlayerController->HandleChatChannelSwitchRequested();
+			return FReply::Handled();
+		}
+		// PageUp/PageDown으로 채팅 내역을 크게 스크롤한다(휠은 PlayerController::InputKey에서 처리).
+		if (InKeyEvent.GetKey() == EKeys::PageUp || InKeyEvent.GetKey() == EKeys::PageDown)
+		{
+			constexpr float PageSteps = 4.0f;
+			PlayerController->RequestChatScroll(InKeyEvent.GetKey() == EKeys::PageUp ? -PageSteps : PageSteps);
 			return FReply::Handled();
 		}
 		if ((InKeyEvent.GetKey() == EKeys::Up || InKeyEvent.GetKey() == EKeys::Down) && !CurrentSuggestions.IsEmpty())
@@ -284,6 +295,110 @@ void UShooterChatInputBox::ApplySuggestedName(FString PlayerName)
 	if (Text_Message && GetWorld())
 	{
 		GetWorld()->GetTimerManager().SetTimerForNextTick(this, &ThisClass::FocusMessageBoxDeferred);
+	}
+}
+
+// 위치·폭은 렌더 변환을 뺀 레이아웃 좌표로 계산해서, 이번에 준 이동값이
+// 다음 틱 계산에 다시 섞여 흔들리지 않게 한다.
+bool UShooterChatInputBox::AlignBelowChatLog(const FGeometry& ChatLogGeometry, const float Gap, float& OutWidth, FVector2D& OutTranslation)
+{
+	OutWidth = 0.0f;
+	OutTranslation = FVector2D::ZeroVector;
+
+	UWidget* Root = GetRootWidget();
+	// 화면별 오프셋(OpenChatInput의 ScreenOffset, 예: 클래스 선택 화면)이 지정된 경우는 그 배치를 따른다.
+	if (!Root || !GetRenderTransform().Translation.IsNearlyZero())
+	{
+		return false; // 맞출 대상이 아님 - 캐시하지 않는다
+	}
+	
+	const UContentWidget* RootContentWidget = Cast<UContentWidget>(Root);
+	const UWidget* VisibleBox = RootContentWidget && RootContentWidget->GetContent() ? RootContentWidget->GetContent() : Root;
+	const FGeometry& VisibleGeometry = VisibleBox->GetCachedGeometry();
+
+	const FSlateLayoutTransform LogLayout = ChatLogGeometry.GetAccumulatedLayoutTransform();
+	// const FSlateLayoutTransform RootLayout = Root->GetCachedGeometry().GetAccumulatedLayoutTransform(); // Removed
+	const FSlateLayoutTransform RootLayout = VisibleGeometry.GetAccumulatedLayoutTransform();
+	const float RootScale = RootLayout.GetScale();
+	const FVector2f LogLocalSize = FVector2f(ChatLogGeometry.GetLocalSize());
+	if (RootScale <= KINDA_SMALL_NUMBER || LogLocalSize.IsNearlyZero() || FVector2f(VisibleGeometry.GetLocalSize()).IsNearlyZero())
+	{
+		return false; // 아직 한 번도 배치되지 않음(열린 직후) - 다음 틱에 다시 시도
+	}
+
+	// 폭: 채팅 로그 박스와 같은 실제 폭
+	// OutWidth = LogLocalSize.X * LogLayout.GetScale() / RootScale; // Removed
+	// Modified: 루트 SizeBox의 WidthOverride는 자식 배치에 쓰이지 않는다(SBox는 자식이 원하는 크기로 왼쪽 정렬 배치).
+	// 그래서 보이는 박스 슬롯을 Fill로 두고, 화면 폭 - 원하는 폭만큼 오른쪽 여백을 줘서 폭을 정확히 맞춘다.
+	// OutWidth에는 그 오른쪽 여백을 돌려준다(화면 폭이 같으면 그대로 재사용 가능).
+	// Modified: 보이는 박스(SizeBox) 안의 실제 어두운 바(Border)는 위/왼쪽에 투명 여백이 있다(진단 로그: 위 15, 왼쪽 6).
+	// 그 여백까지 채팅 로그 아래에 붙이면 바가 아래·오른쪽으로 밀리고 폭도 좁아지므로, 위치와 폭은 Border 기준으로 계산한다.
+	const UBorder* VisibleBar = nullptr;
+	if (WidgetTree)
+	{
+		TArray<UWidget*> AllWidgets;
+		WidgetTree->GetAllWidgets(AllWidgets);
+		for (const UWidget* Widget : AllWidgets)
+		{
+			if (const UBorder* Border = Cast<UBorder>(Widget))
+			{
+				VisibleBar = Border;
+				break;
+			}
+		}
+	}
+	const FGeometry& BarGeometry = VisibleBar ? VisibleBar->GetCachedGeometry() : VisibleGeometry;
+	const FSlateLayoutTransform BarLayout = BarGeometry.GetAccumulatedLayoutTransform();
+	// 보이는 박스 폭 = 원하는 바 폭 + (박스와 바의 폭 차이)
+	const float BarExtraWidth = FMath::Max(0.0f, VisibleGeometry.GetLocalSize().X - BarGeometry.GetLocalSize().X);
+
+	const float DesiredWidth = LogLocalSize.X * LogLayout.GetScale() / RootScale + BarExtraWidth;
+	const float RootLocalWidth = Root->GetCachedGeometry().GetLocalSize().X;
+	const USizeBoxSlot* VisibleSlot = Cast<USizeBoxSlot>(VisibleBox->Slot);
+	const float LeftPadding = VisibleSlot ? VisibleSlot->GetPadding().Left : 0.0f;
+	OutWidth = FMath::Max(0.0f, RootLocalWidth - LeftPadding - DesiredWidth);
+
+	// 위치: 어두운 바의 왼쪽 위를 채팅 로그 박스 왼쪽 아래(+Gap)에 맞춘다.
+	const FVector2f Target = LogLayout.TransformPoint(FVector2f(0.0f, LogLocalSize.Y)) + FVector2f(0.0f, Gap * RootScale);
+	// OutTranslation = FVector2D((Target - RootLayout.GetTranslation()) / RootScale); // Removed
+	OutTranslation = FVector2D((Target - BarLayout.GetTranslation()) / RootScale);
+
+	ApplyAlignment(OutWidth, OutTranslation);
+	return true;
+}
+
+void UShooterChatInputBox::ApplyAlignment(const float Width, const FVector2D& Translation)
+{
+	UWidget* Root = GetRootWidget();
+	// 화면별 오프셋이 지정된 경우는 그 배치를 따른다(AlignBelowChatLog와 같은 기준).
+	if (!Root || !GetRenderTransform().Translation.IsNearlyZero())
+	{
+		return;
+	}
+
+	// Removed: 루트 SizeBox의 WidthOverride는 보이는 박스 폭에 반영되지 않음
+	// if (USizeBox* RootSizeBox = Cast<USizeBox>(Root);
+	// 	RootSizeBox && Width > 0.0f && !FMath::IsNearlyEqual(RootSizeBox->GetWidthOverride(), Width, 0.5f))
+	// {
+	// 	RootSizeBox->SetWidthOverride(Width);
+	// }
+
+	//  Width는 보이는 박스의 오른쪽 여백. 슬롯을 Fill로 바꾸고 여백으로 폭을 맞춘다.
+	const UContentWidget* RootContentWidget = Cast<UContentWidget>(Root);
+	UWidget* VisibleBox = RootContentWidget ? RootContentWidget->GetContent() : nullptr;
+	if (USizeBoxSlot* VisibleSlot = VisibleBox ? Cast<USizeBoxSlot>(VisibleBox->Slot) : nullptr)
+	{
+		VisibleSlot->SetHorizontalAlignment(HAlign_Fill);
+		FMargin SlotPadding = VisibleSlot->GetPadding();
+		if (!FMath::IsNearlyEqual(SlotPadding.Right, Width, 0.5f))
+		{
+			SlotPadding.Right = Width;
+			VisibleSlot->SetPadding(SlotPadding);
+		}
+	}
+	if (!Root->GetRenderTransform().Translation.Equals(Translation, 0.5f))
+	{
+		Root->SetRenderTranslation(Translation);
 	}
 }
 

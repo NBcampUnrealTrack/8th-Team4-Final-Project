@@ -86,6 +86,12 @@ UCombatHitZoneDefinition* ATrainingCharacter::GetCombatHitZoneDefinition_Impleme
     return HitZoneDefinition;
 }
 
+// 파티클 복구
+bool ATrainingCharacter::ShouldSpawnHitscanImpactParticle_Implementation() const
+{
+    return bEnableHitscanImpactParticles;
+}
+
 void ATrainingCharacter::HandleDeath_Implementation(const FRogueDeathContext&)
 {
     BeginDissolveRemoval();

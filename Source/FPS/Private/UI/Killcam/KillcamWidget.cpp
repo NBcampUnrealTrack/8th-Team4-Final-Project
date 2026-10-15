@@ -37,6 +37,7 @@ void UKillcamWidget::NativeConstruct()
 	if (Image_SniperScope)
 	{
 		Image_SniperScope->SetVisibility(ESlateVisibility::Hidden);
+		SendSniperScopeToBack();
 	}
 	EnsureSkipHint();
 	UpdateSkipHint();
@@ -243,6 +244,32 @@ void UKillcamWidget::EnsureSkipHint()
 	}
 
 	Text_SkipHint->SetText(SkipHintText);
+}
+
+void UKillcamWidget::SendSniperScopeToBack()
+{
+	// 스코프 오버레이는 화면 전체를 덮으므로 킬러/피해자 이름, 체력바, 스킵 안내 등 킬캠 HUD 아래에 그린다.
+	UPanelWidget* Parent = Image_SniperScope->GetParent();
+	if (!IsValid(Parent))
+	{
+		return;
+	}
+	Parent->ShiftChild(0, Image_SniperScope);
+
+	if (UCanvasPanelSlot* ScopeSlot = Cast<UCanvasPanelSlot>(Image_SniperScope->Slot))
+	{
+		// 캔버스는 ZOrder가 인덱스보다 우선하므로, 형제 중 최소 ZOrder 이하로 맞춰 맨 뒤를 보장한다.
+		int32 MinZOrder = 0;
+		for (UPanelSlot* SiblingSlot : Parent->GetSlots())
+		{
+			const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(SiblingSlot);
+			if (CanvasSlot && CanvasSlot != ScopeSlot)
+			{
+				MinZOrder = FMath::Min(MinZOrder, CanvasSlot->GetZOrder());
+			}
+		}
+		ScopeSlot->SetZOrder(MinZOrder - 1);
+	}
 }
 
 void UKillcamWidget::UpdateSkipHint()

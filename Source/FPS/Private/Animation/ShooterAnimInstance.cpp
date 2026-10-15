@@ -6,6 +6,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "Character/ShooterCharacter.h"
+#include "Character/ShooterMovementComponent.h"
 #include "Character/CharacterPresentationTags.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -20,6 +21,8 @@
 #include "Weapon/WeaponEffectsComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogShooterAnimation, Log, All);
+
+
 
 namespace
 {
@@ -152,6 +155,88 @@ void UShooterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	UpdateHolsterMontageBinding();
 	UpdateWeaponValues();
+	{
+		// Walk layer: weight follows ground speed while moving on the ground; off in the air and while the
+		// sprint pose plays. GroundSpeed/bIsMoving come from the previous thread-safe update (one frame behind).
+		const UShooterMovementComponent* ShooterMovement = Cast<UShooterMovementComponent>(CharacterMovementComponent);
+		const bool bSprintPose = ShooterMovement && ShooterMovement->ShouldPlaySprintAnimation();
+		const float SpeedRatio = GroundSpeed / FMath::Max(CurrentWalkAdditiveReferenceSpeed, 1.f);
+		const float TargetAlpha = (CurrentWalkAdditiveAnim && bIsMoving && !bIsFalling && !bSprintPose)
+			? FMath::Clamp(SpeedRatio, 0.f, 1.f) : 0.f;
+		// No sequence (another weapon): drop at once, an empty additive input must never be blended in.
+		WalkAdditiveAlpha = CurrentWalkAdditiveAnim
+			? FMath::FInterpTo(WalkAdditiveAlpha, TargetAlpha, DeltaSeconds, 10.f) : 0.f;
+		WalkAdditivePlayRate = FMath::Clamp(SpeedRatio, 0.5f, 1.5f);
+	}
+	{
+		// Jump/land layer, driven by explicit time. Takeoff plays from 0 and holds at JumpLandHoldTime
+		// while airborne (a walk-off starts at the hold pose instead); touchdown jumps to JumpLandLandStart
+		// and plays to the end. bIsFalling comes from the previous thread-safe update.
+		const float Length = CurrentJumpLandAdditiveAnim ? CurrentJumpLandAdditiveAnim->GetPlayLength() : 0.f;
+		if (Length <= 0.f)
+		{
+			JumpLandPhase = 0;
+			JumpLandAdditiveAlpha = 0.f;
+			JumpLandAdditiveTime = 0.f;
+		}
+		else
+		{
+			const float Hold = FMath::Clamp(CurrentJumpLandHoldTime, 0.f, Length);
+			const float LandStart = FMath::Clamp(CurrentJumpLandLandStart, 0.f, Length);
+			if (bIsFalling && !bJumpLandWasFalling)
+			{
+				const bool bJumped = ShooterCharacter && ShooterCharacter->GetVelocity().Z > 10.f;
+				JumpLandPhase = 1;
+				JumpLandAdditiveTime = bJumped ? 0.f : Hold;
+				if (bJumped)
+				{
+					// Takeoff starts at zero offset, so take full weight at once: easing the weight in
+					// would blunt the takeoff snap. A walk-off starts at the hold pose and keeps the ease.
+					JumpLandAdditiveAlpha = 1.f;
+				}
+			}
+			else if (!bIsFalling && bJumpLandWasFalling && JumpLandPhase == 1)
+			{
+				JumpLandPhase = 2;
+				JumpLandAdditiveTime = LandStart;
+			}
+			else if (JumpLandPhase == 1)
+			{
+				JumpLandAdditiveTime = FMath::Min(JumpLandAdditiveTime + DeltaSeconds, Hold);
+			}
+			else if (JumpLandPhase == 2)
+			{
+				JumpLandAdditiveTime += DeltaSeconds;
+				if (JumpLandAdditiveTime >= Length)
+				{
+					JumpLandPhase = 0;
+					JumpLandAdditiveTime = Length;
+				}
+			}
+			const float TargetAlpha = JumpLandPhase != 0 ? 1.f : 0.f;
+			JumpLandAdditiveAlpha = JumpLandPhase == 0 ? 0.f : FMath::FInterpTo(JumpLandAdditiveAlpha, TargetAlpha, DeltaSeconds, 20.f);
+		}
+		bJumpLandWasFalling = bIsFalling;
+	}
+	{
+		// Fire recoil layer: plays once from 0 per shot (PlayFireRecoil). It starts and ends at zero
+		// offset, so full weight while playing needs no blend.
+		const float Length = CurrentFireRecoilAdditiveAnim ? CurrentFireRecoilAdditiveAnim->GetPlayLength() : 0.f;
+		if (bFireRecoilPlaying && Length > 0.f)
+		{
+			FireRecoilAdditiveTime += DeltaSeconds;
+			if (FireRecoilAdditiveTime >= Length)
+			{
+				bFireRecoilPlaying = false;
+				FireRecoilAdditiveTime = Length;
+			}
+		}
+		else
+		{
+			bFireRecoilPlaying = false;
+		}
+		FireRecoilAdditiveAlpha = bFireRecoilPlaying ? 1.f : 0.f;
+	}
 	if (!bFirstPersonAnimation)
 	{
 		USkeletalMeshComponent* Gun = IsValid(CurrentWeapon) ? CurrentWeapon->GetMesh3P() : nullptr;
@@ -297,7 +382,8 @@ float UShooterAnimInstance::GetPreviewAwareFinalGripAlpha(float GameplayAlpha) c
 
 float UShooterAnimInstance::GetEquipAwarePostureSourceWeight() const
 {
-	const float BaseWeight = GetIdlePostureSourceWeight();
+	const float StandingWeight = 1.f - FMath::Clamp(GroundSpeed / 150.f, 0.f, 1.f);
+	const float BaseWeight = GetIdlePostureSourceWeight() * StandingWeight;
 	if (bFirstPersonAnimation || !IsValid(Combat))
 	{
 		return BaseWeight;
@@ -392,7 +478,16 @@ void UShooterAnimInstance::UpdateMovementValues()
 void UShooterAnimInstance::UpdateAimValues(float DeltaSeconds)
 {
 	AimRotation = ShooterCharacter->CalculateFixedAimRotation();
-	AO_Pitch = AimRotation.Pitch;
+	// Remote pawns: smooth the replicated pitch (large jumps such as spawning snap).
+	if (RemoteAimPitchInterpSpeed > 0.f && !ShooterCharacter->IsLocallyControlled()
+		&& FMath::Abs(AimRotation.Pitch - AO_Pitch) < 30.f)
+	{
+		AO_Pitch = FMath::FInterpTo(AO_Pitch, AimRotation.Pitch, DeltaSeconds, RemoteAimPitchInterpSpeed);
+	}
+	else
+	{
+		AO_Pitch = AimRotation.Pitch;
+	}
 
 	if (bCQBTrainingAI)
 	{
@@ -465,6 +560,9 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 {
 	CurrentIdleAnim = nullptr;
 	CurrentAimIdleAnim = nullptr;
+	CurrentWalkAdditiveAnim = nullptr;
+	CurrentJumpLandAdditiveAnim = nullptr;
+	CurrentFireRecoilAdditiveAnim = nullptr;
 
 	const UWeaponData* WeaponData = IsValid(Combat) ? Combat->GetWeaponData() : nullptr;
 	if (!IsValid(WeaponData) || !CurrentWeaponType.IsValid())
@@ -479,7 +577,25 @@ void UShooterAnimInstance::UpdateWeaponAnimationData()
 	{
 		CurrentIdleAnim = PlayerAnims->IdleAnim;
 		CurrentAimIdleAnim = PlayerAnims->AimIdleAnim;
+		CurrentWalkAdditiveAnim = PlayerAnims->WalkAdditiveAnim;
+		CurrentWalkAdditiveReferenceSpeed = PlayerAnims->WalkAdditiveReferenceSpeed;
+		CurrentJumpLandAdditiveAnim = PlayerAnims->JumpLandAdditiveAnim;
+		CurrentJumpLandHoldTime = PlayerAnims->JumpLandHoldTime;
+		CurrentJumpLandLandStart = PlayerAnims->JumpLandLandStart;
+		CurrentFireRecoilAdditiveAnim = PlayerAnims->FireRecoilAdditiveAnim;
 	}
+}
+
+void UShooterAnimInstance::PlayFireRecoil()
+{
+	if (bFirstPersonAnimation || !CurrentFireRecoilAdditiveAnim)
+	{
+		return;
+	}
+	// Restart from zero offset on every shot; an automatic weapon's previous kick has mostly recovered.
+	FireRecoilAdditiveTime = 0.f;
+	bFireRecoilPlaying = true;
+	FireRecoilAdditiveAlpha = 1.f;
 }
 
 void UShooterAnimInstance::UnbindHolsterMontageSource()
@@ -677,6 +793,22 @@ void UShooterAnimInstance::PlayFireMontageForCurrentWeapon(bool bPlayObserverWea
 	if (!IsValid(WeaponData))
 	{
 		return;
+	}
+
+	// Third-person body: every machine follows the observer rule of AWeaponBase::Multicast_PlayFireEffects -
+	// only knife, sniper (bolt) and Trooper rifle play a fire action. The other fire montages are full
+	// upper-body poses that override the fitted aim pose (the shotgun one bows the torso and head forward),
+	// and a montage the authority plays on its own pawn also reaches other clients through replicated root
+	// motion. Those weapons show the additive fire recoil instead (PlayFireRecoil).
+	if (!bFirstPersonAnimation && !bPlayObserverWeaponAction)
+	{
+		const bool bObserverFireAction = CurrentWeaponType == RogueTags::Weapon_Type_Knife
+			|| CurrentWeaponType == RogueTags::Weapon_Type_Sniper
+			|| (CurrentWeaponType == RogueTags::Weapon_Type_Rifle && GetCurrentCombatClass() == EDominationCombatClass::Trooper);
+		if (!bObserverFireAction)
+		{
+			return;
+		}
 	}
 
 	const FWeaponMontageData* MontageData = WeaponData->FindWeaponMontages(CurrentWeaponType, bFirstPersonAnimation);

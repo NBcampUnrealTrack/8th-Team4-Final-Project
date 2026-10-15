@@ -5,6 +5,7 @@
 #include "GameFramework/GameUserSettings.h"
 #include "InputCoreTypes.h"
 #include "Styling/SlateTypes.h"
+#include "Slate/WidgetTransform.h"
 #include "Types/SlateEnums.h"
 #include "Settings/ShooterGameUserSettings.h"
 #include "UI/Foundation/ShooterActivatableWidget.h"
@@ -303,6 +304,13 @@ private:
 	void ApplyOptionButtonStateStyle(UButton* Button, bool bActive) const;
 	UFUNCTION() void RefreshOptionsUI();
 	void ShowOptionsPage(int32 PageIndex);
+	void StartPageTransition();
+	void StopPageTransition();
+	bool HandlePageTransition(float DeltaTime);
+	void ShowSaveFeedback();
+	void StopSaveFeedback();
+	bool HandleSaveFeedbackHold(float DeltaTime);
+	bool HandleSaveFeedbackFade(float DeltaTime);
 	void RefreshTabVisuals();
 	void RefreshOptionRowVisuals();
 	void SetChoiceSegments(FName Prefix, int32 ActiveIndex, int32 ChoiceCount) const;
@@ -377,6 +385,13 @@ private:
 	UFUNCTION() void HandleInvertYToggle();
 	UFUNCTION() void HandleADSModeChanged();
 	UFUNCTION() void HandleCrouchModeChanged();
+	// 채팅 표시 옵션 (WBP에 Btn_ChatOpacityPrev/Next, Btn_ChatSizePrev/Next 등 추가)
+	UFUNCTION() void HandleChatOpacityPrev();
+	UFUNCTION() void HandleChatOpacityNext();
+	UFUNCTION() void HandleChatSizePrev();
+	UFUNCTION() void HandleChatSizeNext();
+	void StepChatOpacityLevel(int32 Delta);
+	void StepChatSizeLevel(int32 Delta);
 	UFUNCTION() void HandleDynamicCrosshairToggle();
 	UFUNCTION() void HandleEnemyCrosshairColorToggle();
 	UFUNCTION() void HandleMasterMuteToggle();
@@ -526,6 +541,51 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style", meta = (EditCondition = "bOverrideSliderColors"))
 	FLinearColor SliderHandleColor = FLinearColor::White;
+
+	// 런타임 생성 키 행도 WBP 기본값에서 같은 밀도로 조정한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings", meta = (ClampMin = "8"))
+	int32 KeyBindingFontSize = 15;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings", meta = (ClampMin = "24.0"))
+	float KeyBindingRowHeight = 44.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings", meta = (ClampMin = "0.0"))
+	float KeyBindingRowSpacing = 4.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings")
+	FMargin KeyBindingRowPadding = FMargin(14.0f, 5.0f);
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings", meta = (ClampMin = "80.0"))
+	float KeyBindingSelectorWidth = 180.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Style|Key Bindings")
+	FMargin KeyBindingSelectorPadding = FMargin(10.0f, 4.0f);
+
+	// 진입/카테고리 변경 때만 짧게 갱신하며 완료 후 ticker를 제거한다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Motion")
+	bool bEnablePageTransition = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Motion", meta = (ClampMin = "0.0", EditCondition = "bEnablePageTransition"))
+	float PageTransitionDuration = 0.16f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Motion", meta = (EditCondition = "bEnablePageTransition"))
+	float PageTransitionDistance = 6.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Motion", meta = (ClampMin = "0.0"))
+	float SaveFeedbackHoldSeconds = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Options|Motion", meta = (ClampMin = "0.0"))
+	float SaveFeedbackFadeSeconds = 0.25f;
+
+	FTSTicker::FDelegateHandle SaveFeedbackTickerHandle;
+	TWeakObjectPtr<UWidget> SaveFeedbackTarget;
+	float SaveFeedbackFadeElapsed = 0.0f;
+
+	FTSTicker::FDelegateHandle PageTransitionTickerHandle;
+	TWeakObjectPtr<UWidget> PageTransitionTarget;
+	FWidgetTransform PageTransitionBaseTransform;
+	float PageTransitionBaseOpacity = 1.0f;
+	float PageTransitionElapsed = 0.0f;
 
 	FTSTicker::FDelegateHandle VideoModeConfirmationTickerHandle;
 	bool bVideoModeConfirmationPending = false;
