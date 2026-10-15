@@ -204,11 +204,8 @@ void AKillcamCameraActor::SetMeshPresentation(USceneComponent* Root, bool bFirst
 		}
 		Component->SetOnlyOwnerSee(false);
 		Component->SetOwnerNoSee(false);
-		if (!bFirstPerson || Component == Root)
-		{
-			Component->SetVisibility(bFirstPerson);
-			Component->SetHiddenInGame(!bFirstPerson);
-		}
+		Component->SetVisibility(bFirstPerson);
+		Component->SetHiddenInGame(!bFirstPerson);
 		if (USkinnedMeshComponent* Mesh = Cast<USkinnedMeshComponent>(Component))
 		{
 			Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
