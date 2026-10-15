@@ -154,5 +154,6 @@ private:
 
 	// 메시지 한 줄 폭 계산과 마지막으로 엔트리들에 넘긴 값
 	float GetEntryRowWidth() const;
+	void UpdateEntryRowWidths();
 	float AppliedEntryRowWidth = -1.0f;
 };
